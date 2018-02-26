@@ -1,0 +1,30 @@
+#!/usr/bin/env python3.6
+import datetime
+import boto3
+import argh
+import sys
+import aws_util
+
+def main(*selectors, days=1, state=None, all_tags=False):
+    instances = aws_util.ls(selectors, state)
+    if not instances:
+        sys.exit(1)
+    else:
+        print('instance-id days-range average-percent max-percent', file=sys.stderr)
+        for i in instances:
+            resp = boto3.client('cloudwatch').get_metric_statistics(
+                Namespace='AWS/EC2',
+                MetricName='CPUUtilization',
+                StartTime=datetime.datetime.utcnow() - datetime.timedelta(days=days),
+                EndTime=datetime.datetime.utcnow(),
+                Period=60 * 60 * 24 * days,
+                Statistics=['Average', 'Maximum'],
+                Dimensions=[{'Name': 'InstanceId', 'Value': i.instance_id}],
+            )
+            data = resp['Datapoints'][0]
+            print(i.instance_id, days, int(data['Average']), int(data['Maximum']))
+
+
+if __name__ == '__main__':
+    with aws_util.setup():
+        argh.dispatch_command(main)

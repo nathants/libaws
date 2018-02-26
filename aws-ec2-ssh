@@ -7,6 +7,7 @@ import sys
 import shell
 import pool.thread
 import util.strings
+import util.colors
 import aws_util
 
 def _remote_cmd(cmd, stdin, instance_id):
@@ -101,10 +102,10 @@ def main(*selectors,
                                                        ipv4_private=instance.private_ip_address,
                                                        name=aws_util.name(instance)),
                                   flush=True)
-                        msg = aws_util.colors.red('failure: ') + aws_util.name(instance) + ': ' + instance.instance_id
+                        msg = util.colors.red('failure: ') + aws_util.name(instance) + ': ' + instance.instance_id
                         failures.append(msg)
                     else:
-                        msg = aws_util.colors.green('success: ') + aws_util.name(instance) + ': ' + instance.instance_id
+                        msg = util.colors.green('success: ') + aws_util.name(instance) + ': ' + instance.instance_id
                         successes.append(msg)
                     if not quiet:
                         logging.info(msg)
@@ -116,8 +117,8 @@ def main(*selectors,
                 for msg in successes + failures:
                     logging.info(' ' + msg)
                 logging.info('\ntotals:')
-                logging.info(aws_util.colors.green(' successes: ') + str(len(successes)))
-                logging.info(aws_util.colors.red(' failures: ') + str(len(failures)))
+                logging.info(util.colors.green(' successes: ') + str(len(successes)))
+                logging.info(util.colors.red(' failures: ') + str(len(failures)))
             for result in results:
                 print(result)
             assert not failures
