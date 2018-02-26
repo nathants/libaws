@@ -1,0 +1,95 @@
+#!/usr/bin/env python3.6
+import argh
+import boto3
+import functools
+import itertools
+import logging
+import os
+import random
+import sys
+import time
+import traceback
+
+for _color, _num in zip(['red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'], range(31, 38)):
+    locals()[_color] = functools.partial(lambda code, text: "\033[{}m{}\033[0m".format(code, text) if sys.stdout.isatty() else text, _num)
+
+def _tags(instance):
+    return {x['Key']: x['Value'] for x in (instance.tags or {})}
+
+def _chunk(xs, chunk_size):
+    res = []
+    for x in xs:
+        res.append(x)
+        if len(res) == chunk_size:
+            yield res
+            res = []
+    if res:
+        yield res
+
+def _retry(f):
+    def fn(*a, **kw):
+        for i in itertools.count():
+            try:
+                return f(*a, **kw)
+            except Exception as e:
+                if i == 6:
+                    raise
+                logging.info(f'retrying: {f.__module__}.{f.__name__}, because of: {e}')
+                time.sleep(i + random.random())
+    return fn
+
+def _format(i, all_tags):
+    return ' '.join([(green if i.state['Name'] == 'running' else cyan if i.state['Name'] == 'pending' else red)(_tags(i).get('Name', 'no-name')), # noqa
+                     i.instance_type,
+                     i.state['Name'],
+                     i.instance_id,
+                     i.image_id,
+                     ('spot' if i.spot_instance_request_id else 'ondemand'),
+                     ','.join(sorted([x['GroupName'] for x in i.security_groups])),
+                     ' '.join('%s=%s' % (k, v) for k, v in sorted(_tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in ['Name', 'creation-date', 'owner', 'aws:ec2spot:fleet-request-id']) and v)])
+
+def _ls(selectors, state):
+    assert state in ['running', 'pending', 'stopped', 'terminated', None]
+    if not selectors:
+        instances = list(boto3.resource('ec2').instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': [state]}] if state else []))
+    else:
+        kind = 'tags'
+        kind = 'dns-name' if selectors[0].endswith('.amazonaws.com') else kind
+        kind = 'vpc-id' if selectors[0].startswith('vpc-') else kind
+        kind = 'subnet-id' if selectors[0].startswith('subnet-') else kind
+        kind = 'instance.group-id' if selectors[0].startswith('sg-') else kind
+        kind = 'private-dns-name' if selectors[0].endswith('.ec2.internal') else kind
+        kind = 'ip-address' if all(x.isdigit() or x == '.' for x in selectors[0]) else kind
+        kind = 'private-ip-address' if all(x.isdigit() or x == '.' for x in selectors[0]) and selectors[0].startswith('10.') else kind
+        kind = 'instance-id' if selectors[0].startswith('i-') else kind
+        if kind == 'tags' and '=' not in selectors[0]:
+            selectors = f'Name={selectors[0]}', *selectors[1:] # auto add Name= to the first tag
+        instances = []
+        for chunk in _chunk(selectors, 195): # 200 boto api limit
+            filters = [{'Name': 'instance-state-name', 'Values': [state]}] if state else []
+            if kind == 'tags':
+                filters += [{'Name': f'tag:{k}', 'Values': [v]} for t in chunk for k, v in [t.split('=')]]
+            else:
+                filters += [{'Name': kind, 'Values': chunk}]
+            instances += list(boto3.resource('ec2').instances.filter(Filters=filters))
+    instances = sorted(instances, key=lambda i: _tags(i).get('name'))
+    instances = sorted(instances, key=lambda i: i.meta.data['LaunchTime'], reverse=True)
+    return instances
+
+def main(*selectors, state=None, all_tags=False):
+    instances = _ls(selectors, state)
+    if not instances:
+        sys.exit(1)
+    else:
+        return [_format(i, all_tags) for i in instances]
+
+if __name__ == '__main__':
+    logging.basicConfig(level='INFO', format='%(message)s')
+    logging.getLogger('botocore').setLevel('ERROR')
+    if 'region' in os.environ:
+        boto3.setup_default_session(region_name=os.environ['region'])
+    try:
+        argh.dispatch_command(main)
+    except AssertionError as e:
+        logging.info(red(e.args[0] if e.args else traceback.format_exc().splitlines()[-2].strip())) # noqa
+        sys.exit(1)
