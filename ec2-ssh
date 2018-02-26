@@ -1,0 +1,139 @@
+#!/usr/bin/env python3.6
+import subprocess
+import logging
+import os
+import argh
+import sys
+import shell
+import pool.thread
+import util.strings
+import aws_util
+
+def _remote_cmd(cmd, stdin, instance_id):
+    return f"""
+    fail_msg="failed to run cmd on instance: {instance_id}"
+    mkdir -p ~/.cmds || echo $fail_msg
+    path=~/.cmds/$(uuidgen)
+    input=$path.input
+    echo {util.strings.b64_encode(cmd)}   | base64 -d > $path  || echo $fail_msg
+    echo {util.strings.b64_encode(stdin)} | base64 -d > $input || echo $fail_msg
+    cat $input | bash $path
+    code=$?
+    if [ $code != 0 ]; then
+        echo $fail_msg
+        exit $code
+    fi
+    """
+
+def _make_callback(instance, quiet, append=None, no_stream=False):
+    name = aws_util.name(instance) + ': ' + instance.public_dns_name + ': '
+    def f(x):
+        val = (x if quiet else name + x).replace('\r', '')
+        if append is not None:
+            append.append(val)
+        if not no_stream:
+            logging.info(val)
+    return f
+
+def main(*selectors,
+         stdin: 'stdin value to be provided to remote cmd' = '',
+         quiet: 'less output' = False,
+         no_stream: 'dont stream to stderr, only output to stdout' = False,
+         stream_only: 'dont accumulate output for stdout, only stream to stderr' = False,
+         cmd: 'cmd to run on remote host, can also be a file which will be read' ='',
+         yes: 'no prompt to proceed' = False,
+         max_threads: 'max ssh connections' = 20,
+         timeout: 'seconds before ssh cmd considered failed' = None,
+         no_tty: 'when backgrounding a process, you dont want a tty' = False,
+         key: 'speficy ssh key' = None,
+         echo: 'echo some info about what was run on which hosts' = False,
+         batch_mode: 'operate like there are many instances, even if only one' = False,
+         prefixed: 'when running against a single host, should streaming output be prefixed with name and ip' = False,
+         error_message: 'error message to print for a failed host, something like: {id} {name} {ip} {ipv4_private} failed' = ''):
+    assert selectors, 'you must specify some selectors'
+    instances = aws_util.ls(selectors, 'running')
+    assert instances, 'didnt find any instances'
+    if os.path.exists(cmd):
+        with open(cmd) as f:
+            cmd = f.read()
+    if cmd == '-':
+        cmd = sys.stdin.read()
+    if cmd and 'set -e' not in cmd:
+        if cmd.startswith('#!'):
+            lines = cmd.splitlines()
+            lines.insert(1, 'set -e')
+            cmd = '\n'.join(lines)
+        else:
+            cmd = 'set -e\n' + cmd
+    assert (cmd and instances) or len(instances) == 1, 'must specify --cmd to target multiple instances'
+    if not (quiet and yes):
+        for i in instances:
+            logging.info(aws_util.format(i))
+    ssh_cmd = ('ssh' + (' -i {} '.format(key) if key else '') + (' -tt ' if not no_tty or not cmd else ' -T ') + aws_util.ssh_args).split()
+    if echo:
+        logging.info(f'ec2.ssh running against selectors: {selectors}, with cmd: {cmd}')
+    if timeout:
+        ssh_cmd = ['timeout', '{}s'.format(timeout)] + ssh_cmd
+    make_ssh_cmd = lambda i: ssh_cmd + [aws_util.ssh_user(i) + '@' + i.public_dns_name, _remote_cmd(cmd, stdin, i.instance_id)]
+    login = len(instances) == 1 and not cmd
+    if not yes and not login:
+        logging.info('\nwould you like to proceed? y/n\n')
+        assert shell.getch() == 'y', 'abort'
+    try:
+        if cmd and len(instances) > 1 or batch_mode:
+            failures = []
+            successes = []
+            results = None if stream_only else []
+            def run(instance):
+                def fn():
+                    try:
+                        shell.run(*make_ssh_cmd(instance),
+                                  callback=_make_callback(instance, quiet, results, no_stream),
+                                  stream_only=stream_only,
+                                  echo=False,
+                                  raw_cmd=True,
+                                  stream=False,
+                                  hide_stderr=quiet)
+                    except:
+                        if error_message:
+                            print(error_message.format(id=instance.instance_id,
+                                                       ip=instance.public_dns_name,
+                                                       ipv4_private=instance.private_ip_address,
+                                                       name=aws_util.name(instance)),
+                                  flush=True)
+                        msg = aws_util.colors.red('failure: ') + aws_util.name(instance) + ': ' + instance.instance_id
+                        failures.append(msg)
+                    else:
+                        msg = aws_util.colors.green('success: ') + aws_util.name(instance) + ': ' + instance.instance_id
+                        successes.append(msg)
+                    if not quiet:
+                        logging.info(msg)
+                return fn
+            pool.thread.wait(*map(run, instances), max_threads=max_threads)
+            # TODO would be really nice to see these results, plus unknowns:, when ^C to exit early
+            if not quiet:
+                logging.info('\nresults:')
+                for msg in successes + failures:
+                    logging.info(' ' + msg)
+                logging.info('\ntotals:')
+                logging.info(aws_util.colors.green(' successes: ') + str(len(successes)))
+                logging.info(aws_util.colors.red(' failures: ') + str(len(failures)))
+            for result in results:
+                print(result)
+            assert not failures
+        elif cmd:
+            return shell.run(*make_ssh_cmd(instances[0]),
+                             echo=False,
+                             stream=not prefixed and not no_stream,
+                             stream_only=stream_only,
+                             hide_stderr=quiet,
+                             raw_cmd=True,
+                             callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None)
+        else:
+            subprocess.check_call(ssh_cmd + [aws_util.ssh_user(instances[0]) + '@' + instances[0].public_dns_name])
+    except:
+        raise
+
+if __name__ == '__main__':
+    with aws_util.setup():
+        argh.dispatch_command(main)

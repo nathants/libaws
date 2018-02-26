@@ -3,13 +3,17 @@ import argh
 import sys
 import aws_util as util
 
-def main(*selectors, state=None, all_tags=False):
+def main(*selectors, state='running'):
     instances = util.ls(selectors, state)
     if not instances:
         sys.exit(1)
     else:
         for instance in instances:
-            print(util.format(instance, all_tags))
+            print(util.green(util.name(instance)),
+                  instance.instance_id,
+                  util.name(instance.subnet),
+                  instance.subnet.id,
+                  instance.subnet.availability_zone)
 
 if __name__ == '__main__':
     with util.setup():

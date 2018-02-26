@@ -3,13 +3,13 @@ import argh
 import sys
 import aws_util as util
 
-def main(*selectors, state=None, all_tags=False):
-    instances = util.ls(selectors, state)
+def main(*selectors):
+    instances = util.ls(selectors, 'running')
     if not instances:
         sys.exit(1)
     else:
-        for instance in instances:
-            print(util.format(instance, all_tags))
+        for instance in sorted(instances, key=lambda x: x.instance_id):
+            print(instance.public_ip_address)
 
 if __name__ == '__main__':
     with util.setup():
