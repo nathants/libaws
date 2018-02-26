@@ -5,8 +5,8 @@ import argh
 import sys
 import aws_util
 
-def main(*selectors, days=1, state=None, all_tags=False):
-    instances = aws_util.ls(selectors, state)
+def main(*selectors, days=1):
+    instances = aws_util.ls(selectors, 'running')
     if not instances:
         sys.exit(1)
     else:

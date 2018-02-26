@@ -131,7 +131,10 @@ def main(*selectors,
                              raw_cmd=True,
                              callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None)
         else:
-            subprocess.check_call(ssh_cmd + [aws_util.ssh_user(instances[0]) + '@' + instances[0].public_dns_name])
+            try:
+                subprocess.check_call(ssh_cmd + [aws_util.ssh_user(instances[0]) + '@' + instances[0].public_dns_name])
+            except subprocess.CalledProcessError:
+                sys.exit(1)
     except:
         raise
 
