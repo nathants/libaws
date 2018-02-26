@@ -6,6 +6,7 @@ import os
 import sys
 import util.iter
 from util.colors import red, green, cyan
+from util.retry import retry
 
 ssh_args = ' -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
 
@@ -37,7 +38,7 @@ def format(i, all_tags=False):
 def ls(selectors, state):
     assert state in ['running', 'pending', 'stopped', 'terminated', None]
     if not selectors:
-        instances = list(boto3.resource('ec2').instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': [state]}] if state else []))
+        instances = list(retry(boto3.resource('ec2').instances.filter)(Filters=[{'Name': 'instance-state-name', 'Values': [state]}] if state else []))
     else:
         kind = 'tags'
         kind = 'dns-name' if selectors[0].endswith('.amazonaws.com') else kind
@@ -57,7 +58,7 @@ def ls(selectors, state):
                 filters += [{'Name': f'tag:{k}', 'Values': [v]} for t in chunk for k, v in [t.split('=')]]
             else:
                 filters += [{'Name': kind, 'Values': chunk}]
-            instances += list(boto3.resource('ec2').instances.filter(Filters=filters))
+            instances += list(retry(boto3.resource('ec2').instances.filter)(Filters=filters))
     instances = sorted(instances, key=lambda i: i.instance_id)
     instances = sorted(instances, key=lambda i: tags(i).get('name', 'no-name'))
     instances = sorted(instances, key=lambda i: i.meta.data['LaunchTime'], reverse=True)
