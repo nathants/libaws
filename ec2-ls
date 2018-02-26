@@ -1,16 +1,16 @@
 #!/usr/bin/env python3.6
 import argh
 import sys
-import aws_util as util
+import aws_util
 
 def main(*selectors, state=None, all_tags=False):
-    instances = util.ls(selectors, state)
+    instances = aws_util.ls(selectors, state)
     if not instances:
         sys.exit(1)
     else:
         for instance in instances:
-            print(util.format(instance, all_tags))
+            print(aws_util.format(instance, all_tags))
 
 if __name__ == '__main__':
-    with util.setup():
+    with aws_util.setup():
         argh.dispatch_command(main)

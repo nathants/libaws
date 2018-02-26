@@ -59,7 +59,7 @@ def ls(selectors, state):
                 filters += [{'Name': kind, 'Values': chunk}]
             instances += list(boto3.resource('ec2').instances.filter(Filters=filters))
     instances = sorted(instances, key=lambda i: i.instance_id)
-    instances = sorted(instances, key=lambda i: tags(i).get('name'))
+    instances = sorted(instances, key=lambda i: tags(i).get('name', 'no-name'))
     instances = sorted(instances, key=lambda i: i.meta.data['LaunchTime'], reverse=True)
     return instances
 
