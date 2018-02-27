@@ -1,0 +1,48 @@
+#!/usr/bin/env python3.6
+import json
+import boto3
+import argh
+import util.cached
+import aws_util
+
+@util.cached.disk_memoize(max_age_seconds=60 * 60 * 24)
+def fetch(filters):
+    return boto3.client('pricing').get_products(ServiceCode='AmazonEC2', Filters=filters)['PriceList']
+
+def main(instance_type=None):
+    boto3.setup_default_session(region_name='us-east-1')
+    region = aws_util.region()
+    filters = [{"Type": "TERM_MATCH",
+                "Field": "location",
+                "Value": aws_util.region_names[region]},
+               {"Type": "TERM_MATCH",
+                "Field": "operatingSystem",
+                "Value": "Linux"},
+               {"Type": "TERM_MATCH",
+                "Field": "tenancy",
+                "Value": "Shared"}]
+    if instance_type:
+        filters.append({"Type": "TERM_MATCH",
+                        "Field": "instanceType",
+                        "Value": instance_type})
+    xs = fetch(filters)
+    res = []
+    for x in xs:
+        x = json.loads(x)
+        name = x['product']['attributes']['instanceType']
+        price = x['terms']['OnDemand']
+        price = list(price.values())[0]
+        price = list(price['priceDimensions'].values())[0]
+        price = price['pricePerUnit']['USD']
+        price = float(price)
+        res.append([name, price])
+    res = sorted(res, key=lambda x: x[1])
+    for name, price in res:
+        if instance_type:
+            print(price)
+        else:
+            print(f'{name} {price}')
+
+if __name__ == '__main__':
+    with aws_util.setup():
+        argh.dispatch_command(main)
