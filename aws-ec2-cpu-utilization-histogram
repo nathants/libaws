@@ -11,6 +11,7 @@ def main(*selectors, days=1, ids=False):
               for k, v in [x.split()]}
     xs = [dict(zip(['name', 'id', 'type', 'billing', 'days', 'avg', 'max'], x.split()))
           for x in shell.check_output('aws-ec2-cpu-utilization', *selectors, '--days', days, '2>/dev/null').splitlines()]
+    total_per_month = 0
     for k, vs in util.iter.groupby(xs, key=lambda x: x['billing']):
         print('\nbilling:', k)
         ys = util.iter.histogram(vs, size=2, exponential=True, key=lambda x: int(x['avg']), accumulate=True)
@@ -21,11 +22,13 @@ def main(*selectors, days=1, ids=False):
             for type, count in sorted(collections.Counter([x['type'] for x in results]).items(), key=lambda x: x[1]):
                 price = prices[type] * 24 * 30 * count
                 price_per_month += price
+                total_per_month += price
                 lines.append(f'   {type} x{count} ${int(price)}/month')
                 if ids:
                     lines[-1] += ','.join(x['id'] for x in results if x['type'] == type)
             lines[0] += f' ${int(price_per_month)}/month'
             print('\n'.join(lines))
+    print(f'\ntotal: ${int(total_per_month)}/month')
 
 
 if __name__ == '__main__':
