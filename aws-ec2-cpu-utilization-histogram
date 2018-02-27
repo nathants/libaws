@@ -1,0 +1,27 @@
+#!/usr/bin/env python3.6
+import collections
+import argh
+import aws_util
+import shell
+import util.iter
+
+
+def main(*selectors, days=1):
+    xs = [dict(zip(['name', 'id', 'type', 'billing', 'days', 'avg', 'max'], x.split()))
+          for x in shell.check_output('aws-ec2-cpu-utilization', *selectors, '--days', days, '2>/dev/null').splitlines()]
+    for k, vs in util.iter.groupby(xs, key=lambda x: x['billing']):
+        print('billing:', k)
+        ys = util.iter.histogram(vs, size=2, exponential=True, key=lambda x: int(x['avg']), accumulate=True)
+        for bucket, results in ys:
+            print('\n cpu percent:', bucket + '%')
+            for k, v in sorted(collections.Counter([x['type'] for x in results]).items(), key=lambda x: x[1]):
+                print(f'   {v}: {k}')
+
+
+
+
+
+
+if __name__ == '__main__':
+    with aws_util.setup():
+        argh.dispatch_command(main)

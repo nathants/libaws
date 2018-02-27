@@ -1,18 +1,20 @@
 #!/usr/bin/env python3.6
+import pool.thread
 import datetime
 import boto3
 import argh
 import sys
 import aws_util
+from util.retry import retry
 
 def main(*selectors, days=1):
     instances = aws_util.ls(selectors, 'running')
     if not instances:
         sys.exit(1)
     else:
-        print('instance-id days-range average-percent max-percent', file=sys.stderr)
-        for i in instances:
-            resp = boto3.client('cloudwatch').get_metric_statistics(
+        print('instance-name instance-id instance-type billing-type days-range average-percent max-percent', file=sys.stderr, flush=True)
+        def f(i):
+            resp = retry(boto3.client('cloudwatch').get_metric_statistics)(
                 Namespace='AWS/EC2',
                 MetricName='CPUUtilization',
                 StartTime=datetime.datetime.utcnow() - datetime.timedelta(days=days),
@@ -21,8 +23,14 @@ def main(*selectors, days=1):
                 Statistics=['Average', 'Maximum'],
                 Dimensions=[{'Name': 'InstanceId', 'Value': i.instance_id}],
             )
-            data = resp['Datapoints'][0]
-            print(i.instance_id, days, int(data['Average']), int(data['Maximum']))
+            try:
+                data = resp['Datapoints'][0]
+            except:
+                print(f'no data for: {i.instance_id}', file=sys.stderr, flush=True)
+            else:
+                name, type, _, id, _, billing, *_ = aws_util.format(i).split()
+                print(name, id, type, billing, days, int(data['Average']), int(data['Maximum']), flush=True)
+        list(pool.thread.map(f, instances))
 
 
 if __name__ == '__main__':

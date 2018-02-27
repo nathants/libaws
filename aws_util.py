@@ -12,15 +12,15 @@ ssh_args = ' -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
 
 def ssh_user(*instances):
     try:
-        users = {tags(i)['ssh-user'] for i in instances}
+        users = {tags(i)['user'] for i in instances}
     except KeyError:
-        assert False, 'instances should have a tag "ssh-user=<username>"'
-    assert len(users), 'no ssh-user tag found: %s' % '\n '.join(format(i) for i in instances)
-    assert len(users) == 1, 'cannot operate on instances with heteragenous ssh-users: %s' % users
+        assert False, 'instances should have a tag "user=<username>"'
+    assert len(users), 'no user tag found: %s' % '\n '.join(format(i) for i in instances)
+    assert len(users) == 1, 'cannot operate on instances with heteragenous users: %s' % users
     return users.pop()
 
 def tags(instance):
-    return {x['Key']: x['Value'] for x in (instance.tags or {})}
+    return {x['Key']: x['Value'].replace('\t', '_').replace(' ', '_') for x in (instance.tags or {})}
 
 def name(instance):
     return tags(instance).get('Name', '<no-name>')
@@ -33,7 +33,7 @@ def format(i, all_tags=False):
                      i.image_id,
                      ('spot' if i.spot_instance_request_id else 'ondemand'),
                      ','.join(sorted([x['GroupName'] for x in i.security_groups])),
-                     ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in ['Name', 'creation-date', 'owner', 'aws:ec2spot:fleet-request-id']) and v)])
+                     ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in ['Name', 'date', 'owner', 'aws:ec2spot:fleet-request-id']) and v)])
 
 def ls(selectors, state):
     assert state in ['running', 'pending', 'stopped', 'terminated', None]
