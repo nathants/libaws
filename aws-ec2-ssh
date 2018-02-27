@@ -51,6 +51,7 @@ def main(*selectors,
          batch_mode: 'operate like there are many instances, even if only one' = False,
          prefixed: 'when running against a single host, should streaming output be prefixed with name and ip' = False,
          error_message: 'error message to print for a failed host, something like: {id} {name} {ip} {ipv4_private} failed' = ''):
+    pool.thread._size = max_threads
     assert selectors, 'you must specify some selectors'
     instances = aws_util.ls(selectors, 'running')
     assert instances, 'didnt find any instances'
@@ -86,31 +87,29 @@ def main(*selectors,
             successes = []
             results = None if stream_only else []
             def run(instance):
-                def fn():
-                    try:
-                        shell.run(*make_ssh_cmd(instance),
-                                  callback=_make_callback(instance, quiet, results, no_stream),
-                                  stream_only=stream_only,
-                                  echo=False,
-                                  raw_cmd=True,
-                                  stream=False,
-                                  hide_stderr=quiet)
-                    except:
-                        if error_message:
-                            print(error_message.format(id=instance.instance_id,
-                                                       ip=instance.public_dns_name,
-                                                       ipv4_private=instance.private_ip_address,
-                                                       name=aws_util.name(instance)),
-                                  flush=True)
-                        msg = util.colors.red('failure: ') + aws_util.name(instance) + ': ' + instance.instance_id
-                        failures.append(msg)
-                    else:
-                        msg = util.colors.green('success: ') + aws_util.name(instance) + ': ' + instance.instance_id
-                        successes.append(msg)
-                    if not quiet:
-                        logging.info(msg)
-                return fn
-            pool.thread.wait(*map(run, instances), max_threads=max_threads)
+                resp = shell.run(*make_ssh_cmd(instance),
+                                 callback=_make_callback(instance, quiet, results, no_stream),
+                                 stream_only=stream_only,
+                                 echo=False,
+                                 raw_cmd=True,
+                                 stream=False,
+                                 warn=True,
+                                 hide_stderr=quiet)
+                if resp['exitcode'] != 0:
+                    if error_message:
+                        print(error_message.format(id=instance.instance_id,
+                                                   ip=instance.public_dns_name,
+                                                   ipv4_private=instance.private_ip_address,
+                                                   name=aws_util.name(instance)),
+                              flush=True)
+                    msg = util.colors.red('failure: ') + aws_util.name(instance) + ': ' + instance.instance_id
+                    failures.append(msg)
+                else:
+                    msg = util.colors.green('success: ') + aws_util.name(instance) + ': ' + instance.instance_id
+                    successes.append(msg)
+                if not quiet:
+                    logging.info(msg)
+            list(pool.thread.map(run, instances))
             # TODO would be really nice to see these results, plus unknowns:, when ^C to exit early
             if not quiet:
                 logging.info('\nresults:')

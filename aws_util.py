@@ -33,7 +33,7 @@ def format(i, all_tags=False):
                      i.image_id,
                      ('spot' if i.spot_instance_request_id else 'ondemand'),
                      ','.join(sorted([x['GroupName'] for x in i.security_groups])),
-                     ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in ['Name', 'date', 'owner', 'aws:ec2spot:fleet-request-id']) and v)])
+                     ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in ['Name', 'user', 'date', 'owner', 'aws:ec2spot:fleet-request-id']) and v)])
 
 def ls(selectors, state):
     assert state in ['running', 'pending', 'stopped', 'terminated', None]
