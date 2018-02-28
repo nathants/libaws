@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import util.iter
+import util.log
 from util.colors import red, green, cyan
 from util.retry import retry
 
