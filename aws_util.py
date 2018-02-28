@@ -66,7 +66,7 @@ def ls(selectors, state):
 
 @contextlib.contextmanager
 def setup():
-    logging.basicConfig(level='INFO', format='%(message)s')
+    util.log.setup(format='%(message)s')
     logging.getLogger('botocore').setLevel('ERROR')
     if 'region' in os.environ:
         boto3.setup_default_session(region_name=os.environ['region'])
