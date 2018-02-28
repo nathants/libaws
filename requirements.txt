@@ -1,3 +1,5 @@
 git+https://github.com/nathants/py-util@e4aafbbb0f6e1bea793791356636968bef1924a2
 git+https://github.com/nathants/py-pool@88bb744cbc6dc2a37499a0308372c6507129186a
-git+https://github.com/nathants/py-shell@f1ece0fbafa1be6729db0f8519c25599e8cb1057
+git+https://github.com/nathants/py-shell@3a5063e6488cb913dcb03c8cb084a902a89252e2
+boto3 >1, <2
+argh==0.26.2
