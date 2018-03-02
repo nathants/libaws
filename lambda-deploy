@@ -1,0 +1,197 @@
+#!/usr/bin/env python3.6
+import argh
+import aws_util
+import tempfile
+import sys
+import os
+import shell
+import boto3
+import util.exceptions
+from util.retry import retry
+
+def _parse_file(path):
+    path = os.path.abspath(path)
+    if not os.path.isfile(path):
+        print('no such file:', path, file=sys.stderr)
+        sys.exit(1)
+    if not path.endswith('.py') or len(path.split('.py')) > 2:
+        print('usage: python deploy.py some_lambda_file.py', file=sys.stderr)
+        sys.exit(1)
+    name = os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
+    with open(path) as f:
+        lines = f.read().splitlines()
+    policies = _parse('policy:', lines)
+    allows = _parse('allow:', lines)
+    requires = _parse('require:', lines)
+    return name, path, lines, policies, allows, requires
+
+def _policy_name(allow):
+    return allow.replace('*', 'All').replace(' ', '-').replace(':', '--')
+
+def _remove_extra_policies(name, policies):
+    print('\nremove extra policies', file=sys.stderr)
+    attached_role_policies = [policy for page in boto3.client('iam').get_paginator('list_attached_role_policies').paginate(RoleName=name) for policy in page['AttachedPolicies']]
+    for policy in attached_role_policies:
+        if policy['PolicyName'] not in policies:
+            print('detaching policy:', policy['PolicyName'], file=sys.stderr)
+            boto3.client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
+
+def _remove_extra_allows(name, allows):
+    print('\nremove extra allows', file=sys.stderr)
+    role_policies = [policy for page in boto3.client('iam').get_paginator('list_role_policies').paginate(RoleName=name) for policy in page['PolicyNames']]
+    for policy in role_policies:
+        if policy not in [_policy_name(x) for x in allows]:
+            print('removing policy:', policy, file=sys.stderr)
+            shell.run(f'aws iam delete-role-policy --role-name {name} --policy-name {policy}')
+
+def _ensure_allows(name, allows):
+    print('\nensure allows', file=sys.stderr)
+    for allow in allows:
+        action, resource = allow.split()
+        print('ensure allow:', allow, file=sys.stderr)
+        policy = f'''{{"Version": "2012-10-17",
+                       "Statement": [{{"Effect": "Allow",
+                                       "Action": "{action}",
+                                       "Resource": "{resource}"}}]}}'''
+        boto3.client('iam').put_role_policy(RoleName=name, PolicyName=_policy_name(allow), PolicyDocument=policy)
+
+def _ensure_policies(name, policies):
+    print('\nensure policies', file=sys.stderr)
+    all_policies = [policy for page in boto3.client('iam').get_paginator('list_policies').paginate() for policy in page['Policies']]
+    for policy in policies:
+        matched_polices = [x for x in all_policies if x['Arn'].split('/')[-1] == policy]
+        if 0 == len(matched_polices):
+            print('didnt find any policy:', policy, file=sys.stderr)
+            sys.exit(1)
+        elif 1 == len(matched_polices):
+            boto3.client('iam').attach_role_policy(RoleName=name, PolicyArn=matched_polices[0]["Arn"])
+            print('attached policy:', policy, file=sys.stderr)
+        else:
+            print('found more than 1 policy:', policy, file=sys.stderr)
+            for p in matched_polices:
+                print(p['Arn'], file=sys.stderr)
+            sys.exit(1)
+
+def _ensure_role(name):
+    print('\nensure role', file=sys.stderr)
+    role_path = f'/lambda/{name}-path/'
+    roles = boto3.client('iam').list_roles(PathPrefix=role_path)['Roles']
+    if 0 == len(roles):
+        print('create role:', name, file=sys.stderr)
+        policy = '''{"Version": "2012-10-17",
+                     "Statement": [{"Effect": "Allow",
+                                    "Principal": {"Service": "lambda.amazonaws.com"},
+                                    "Action": "sts:AssumeRole"}]}'''
+        return boto3.client('iam').create_role(Path=role_path, RoleName=name, AssumeRolePolicyDocument=policy)['Role']['Arn']
+    elif 1 == len(roles):
+        print('role exists:', name, file=sys.stderr)
+        return roles[0]['Arn']
+    else:
+        print('error: there is more than 1 role under path:', role_path, file=sys.stderr)
+        for role in roles:
+            print(role, file=sys.stderr)
+        sys.exit(1)
+
+def _parse(token, xs):
+    vals = [x.split(token, 1)[-1].strip()
+            for x in xs
+            if x.strip().startswith('#')
+            and token in x]
+    print(token)
+    for val in vals:
+        print('', val)
+    print()
+    return vals
+
+def _ensure_key(name, arn_user, arn_role):
+    print('\nensure kms key:', name, file=sys.stderr)
+    keys = [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
+    keys = [x for x in keys if x['AliasArn'].endswith(f'/lambda/{name}')]
+    if 0 == len(keys):
+        arn_root = ':'.join(arn_user.split(':')[:-1]) + ':root'
+        policy = """
+        {"Version": "2012-10-17",
+         "Statement": [{"Sid": "Enable IAM User Permissions",
+                        "Effect": "Allow",
+                        "Principal": {"AWS": ["%(arn_user)s", "%(arn_root)s"]},
+                        "Action": "kms:*",
+                        "Resource": "*"},
+                       {"Sid": "Allow use of the key",
+                        "Effect": "Allow",
+                        "Principal": {"AWS": ["%(arn_user)s", "%(arn_role)s", "%(arn_root)s"]},
+                        "Action": ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"],
+                        "Resource": "*"},
+                       {"Sid": "Allow attachment of persistent resources",
+                        "Effect": "Allow",
+                        "Principal": {"AWS": ["%(arn_user)s", "%(arn_role)s", "%(arn_root)s"]},
+                        "Action": ["kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant"],
+                        "Resource": "*",
+                        "Condition": {"Bool": {"kms:GrantIsForAWSResource": true}}}]}
+        """ % {'arn_role': arn_role,
+               'arn_user': arn_user,
+               'arn_root': arn_root}
+        key_id = retry(boto3.client('kms').create_key, exponent=2, silent=True)(Policy=policy, Description=name)['KeyMetadata']['KeyId']
+        boto3.client('kms').create_alias(AliasName=f'alias/lambda/{name}', TargetKeyId=key_id)
+        keys = [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
+        keys = [x for x in keys if x['AliasArn'].endswith(f'/lambda/{name}')]
+        assert len(keys) == 1
+        print('created key:', keys[0]['AliasArn'], file=sys.stderr)
+        return keys[0]['AliasArn'].split(':alias/')[0] + f':key/{keys[0]["TargetKeyId"]}'
+    elif 1 == len(keys):
+        print('key already exists:', keys[0]['AliasArn'], file=sys.stderr)
+        return keys[0]['AliasArn'].split(':alias/')[0] + f':key/{keys[0]["TargetKeyId"]}'
+    else:
+        print('error: found more than 1 key for:', name, '\n' + '\n'.join(keys), file=sys.stderr)
+        sys.exit(1)
+
+def _create_zip(path, requires):
+    print('\ncreate zip', file=sys.stderr)
+    tempdir = tempfile.mkdtemp()
+    shell.run(f'virtualenv --python python3.6 {tempdir}/env')
+    shell.run(f'{tempdir}/env/bin/pip install', *requires, '2>/dev/null')
+    with shell.cd(f'{tempdir}/env/lib/python3.6/site-packages'):
+        shell.run(f'cp {path} .')
+        shell.run('rm -rf wheel pip setuptools pkg_resources easy_install.py')
+        shell.run("ls | grep -E 'info$' | xargs rm -rf")
+        shell.run(f'zip -r {tempdir}/lambda.zip .')
+    with open(f'{tempdir}/lambda.zip', 'rb') as f:
+        return f.read()
+
+def main(path, timeout=300, *env_vars: 'KEY=VALUE', yes=False):
+    for var in env_vars:
+        assert var.count('=') == 1, 'bad env-var, should be: KEY=VALUE'
+    name, path, lines, policies, allows, requires = _parse_file(path)
+    arn_user = boto3.client('sts').get_caller_identity()['Arn']
+    print(f'arn_user: {arn_user}')
+    print(f'file: {path}')
+    print(f'names:')
+    print(f'  lambda: {name}')
+    print(f'  role: {name}')
+    print(f'  kms: {name}')
+    if not yes:
+        print('\nproceed? y/n ')
+        assert shell.getch() == 'y'
+    arn_role = _ensure_role(name)
+    _ensure_policies(name, policies)
+    _ensure_allows(name, allows)
+    _remove_extra_allows(name, allows)
+    _remove_extra_policies(name, policies)
+    key_alias = _ensure_key(name, arn_user, arn_role)
+    zipfile = _create_zip(path, requires)
+    with util.exceptions.ignore(boto3.client('lambda').exceptions.ResourceNotFoundException):
+        boto3.client('lambda').delete_function(FunctionName=name)
+    env_vars = {k: v for var in env_vars for k, v in [var.split('=')]}
+    kw = dict()
+    __import__('pprint').pprint(kw)
+    boto3.client('lambda').create_function(Code={'ZipFile': zipfile},
+                                           FunctionName=name,
+                                           Runtime='python3.6',
+                                           Role=arn_role,
+                                           Timeout=timeout,
+                                           KMSKeyArn=key_alias,
+                                           Environment={'Variables': env_vars},
+                                           Handler=os.path.basename(path).split('.py')[0] + '.main')
+
+if __name__ == '__main__':
+    with aws_util.setup():
+        argh.dispatch_command(main)

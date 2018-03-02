@@ -1,0 +1,13 @@
+#!/usr/bin/env python3.6
+import os
+import argh
+import aws_util
+import shell
+
+def main(path):
+    name = os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
+    print(shell.run(f'aws lambda invoke --function-name {name} >(cat - | jq -r .)', hide_stderr=True))
+
+if __name__ == '__main__':
+    with aws_util.setup():
+        argh.dispatch_command(main)
