@@ -155,7 +155,9 @@ def _create_zip(path, requires):
         shell.run("ls | grep -E 'info$' | xargs rm -rf")
         shell.run(f'zip -r {tempdir}/lambda.zip .')
     with open(f'{tempdir}/lambda.zip', 'rb') as f:
-        return f.read()
+        val = f.read()
+    os.remove(f'{tempdir}/lambda.zip')
+    return val
 
 def main(path, timeout=300, *env_vars: 'KEY=VALUE', yes=False):
     for var in env_vars:

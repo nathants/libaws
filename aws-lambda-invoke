@@ -10,7 +10,7 @@ def main(path, payload=None):
         payload = f'--payload file://{payload}'
     else:
         payload = ''
-    print(shell.run(f'aws lambda invoke {payload} --function-name {name} >(cat - | jq -r .)', hide_stderr=True))
+    print(shell.run(f'aws lambda invoke {payload} --function-name {name} >(cat - | jq -r .)'))
 
 if __name__ == '__main__':
     with aws_util.setup():
