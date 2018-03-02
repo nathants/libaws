@@ -4,9 +4,13 @@ import argh
 import aws_util
 import shell
 
-def main(path):
+def main(path, payload=None):
     name = os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
-    print(shell.run(f'aws lambda invoke --function-name {name} >(cat - | jq -r .)', hide_stderr=True))
+    if payload:
+        payload = f'--payload file://{payload}'
+    else:
+        payload = ''
+    print(shell.run(f'aws lambda invoke {payload} --function-name {name} >(cat - | jq -r .)', hide_stderr=True))
 
 if __name__ == '__main__':
     with aws_util.setup():

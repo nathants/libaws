@@ -181,8 +181,6 @@ def main(path, timeout=300, *env_vars: 'KEY=VALUE', yes=False):
     with util.exceptions.ignore(boto3.client('lambda').exceptions.ResourceNotFoundException):
         boto3.client('lambda').delete_function(FunctionName=name)
     env_vars = {k: v for var in env_vars for k, v in [var.split('=')]}
-    kw = dict()
-    __import__('pprint').pprint(kw)
     boto3.client('lambda').create_function(Code={'ZipFile': zipfile},
                                            FunctionName=name,
                                            Runtime='python3.6',
