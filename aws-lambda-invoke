@@ -5,12 +5,11 @@ import aws_util
 import shell
 
 def main(path, payload=None):
-    name = os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
     if payload:
         payload = f'--payload file://{payload}'
     else:
         payload = ''
-    print(shell.run(f'aws lambda invoke {payload} --function-name {name} >(cat -)'))
+    print(shell.run(f'aws lambda invoke {payload} --function-name {aws_util.lambda_name(path)} >(cat -)'))
 
 if __name__ == '__main__':
     with aws_util.setup():

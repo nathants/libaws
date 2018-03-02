@@ -81,6 +81,9 @@ def setup():
     except:
         raise
 
+def lambda_name(path):
+    return os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
+
 def region():
     boto3.client('ec2') # run session setup logic
     return boto3.DEFAULT_SESSION.region_name

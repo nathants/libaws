@@ -6,8 +6,7 @@ import argh
 import aws_util
 
 def main(path, limit=100):
-    group_name = os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
-    group_name = f'/aws/lambda/{group_name}'
+    group_name = f'/aws/lambda/{aws_util.lambda_name(path)}'
     stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
     logs = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name, limit=limit)['events']
     print('log group:', group_name)

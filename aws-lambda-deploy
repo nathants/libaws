@@ -17,13 +17,12 @@ def _parse_file(path):
     if not path.endswith('.py') or len(path.split('.py')) > 2:
         print('usage: python deploy.py some_lambda_file.py', file=sys.stderr)
         sys.exit(1)
-    name = os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
     with open(path) as f:
         lines = f.read().splitlines()
     policies = _parse('policy:', lines)
     allows = _parse('allow:', lines)
     requires = _parse('require:', lines)
-    return name, path, lines, policies, allows, requires
+    return aws_util.lambda_name(path), path, lines, policies, allows, requires
 
 def _policy_name(allow):
     return allow.replace('*', 'All').replace(' ', '-').replace(':', '--')
