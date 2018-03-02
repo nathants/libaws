@@ -2,4 +2,5 @@ git+https://github.com/nathants/py-util@81d2569f92c0ff9dbeded38c710ed63682dd48af
 git+https://github.com/nathants/py-pool@88bb744cbc6dc2a37499a0308372c6507129186a
 git+https://github.com/nathants/py-shell@a91acd6224ff0d80b846b302641e4c0770a23dbc
 boto3 >1, <2
+awscli >1, <2
 argh==0.26.2
