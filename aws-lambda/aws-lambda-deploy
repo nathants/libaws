@@ -183,7 +183,13 @@ def _create_zip(path, metadata):
     os.remove(f'{tempdir}/lambda.zip')
     return val
 
-def main(path, memory=128, timeout=300, *env_vars: 'KEY=VALUE', yes=False, kms=False):
+def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda*.py',
+         memory=128,
+         timeout=300,
+         *env_vars: 'KEY=VALUE',
+         yes=False,
+         kms: 'auto create a kms key for this lambda, otherwise default lambda key is used' = False,
+         kms_arn: 'use a specific kms arn' = None):
     for var in env_vars:
         assert var.count('=') == 1, 'bad env-var, should be: KEY=VALUE'
     name = aws_util.lambda_name(path)
@@ -209,7 +215,9 @@ def main(path, memory=128, timeout=300, *env_vars: 'KEY=VALUE', yes=False, kms=F
           'MemorySize': memory,
           'Environment': {'Variables': {k: v for var in env_vars for k, v in [var.split('=')]}},
           'Handler': os.path.basename(path).split('.py')[0] + '.main'}
-    if kms:
+    if kms_arn:
+        kw['KMSKeyArn'] = kms_arn
+    elif kms:
         kw['KMSKeyArn'] = _ensure_key(name, arn_user, arn_role)
     try:
         arn_lambda = boto3.client('lambda').get_function(FunctionName=name)['Configuration']['FunctionArn']
