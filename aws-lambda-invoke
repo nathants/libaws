@@ -1,4 +1,5 @@
 #!/usr/bin/env python3.6
+import tempfile
 import os
 import argh
 import aws_util
@@ -9,7 +10,11 @@ def main(path, payload=None):
         payload = f'--payload file://{payload}'
     else:
         payload = ''
-    print(shell.run(f'aws lambda invoke {payload} --function-name {aws_util.lambda_name(path)} >(cat -)'))
+    _, temp = tempfile.mkstemp()
+    print(shell.run(f'aws lambda invoke {payload} --function-name {aws_util.lambda_name(path)} {temp}'))
+    with open(temp) as f:
+        print(f.read())
+    os.remove(temp)
 
 if __name__ == '__main__':
     with aws_util.setup():

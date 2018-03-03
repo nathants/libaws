@@ -9,9 +9,9 @@ def main(*selectors, state='running'):
         sys.exit(1)
     else:
         for instance in instances:
-            print(aws_util.green(aws_util.name(instance)),
+            print(aws_util.green(aws_util.ec2_name(instance)),
                   instance.instance_id,
-                  aws_util.name(instance.subnet),
+                  aws_util.ec2_name(instance.subnet),
                   instance.subnet.id,
                   instance.subnet.availability_zone)
 

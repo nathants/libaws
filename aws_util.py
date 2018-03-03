@@ -23,11 +23,11 @@ def ssh_user(*instances):
 def tags(instance):
     return {x['Key']: x['Value'].replace('\t', '_').replace(' ', '_') for x in (instance.tags or {})}
 
-def name(instance):
+def ec2_name(instance):
     return tags(instance).get('Name', '<no-name>')
 
 def format(i, all_tags=False):
-    return ' '.join([(green if i.state['Name'] == 'running' else cyan if i.state['Name'] == 'pending' else red)(name(i)),
+    return ' '.join([(green if i.state['Name'] == 'running' else cyan if i.state['Name'] == 'pending' else red)(ec2_name(i)),
                      i.instance_type,
                      i.state['Name'],
                      i.instance_id,
@@ -81,7 +81,21 @@ def setup():
     except:
         raise
 
+def parse_metadata(token, xs):
+    vals = [x.split(token, 1)[-1].split('#')[0].strip()
+            for x in xs
+            if x.strip().startswith('#')
+            and token in x]
+    print(token, file=sys.stderr)
+    for val in vals:
+        print('', val, file=sys.stderr)
+    print(file=sys.stderr)
+    return vals
+
 def lambda_name(path):
+    if not os.path.isfile(path):
+        print('no such file:', path, file=sys.stderr)
+        sys.exit(1)
     return os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
 
 def region():

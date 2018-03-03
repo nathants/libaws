@@ -1,0 +1,19 @@
+#!/usr/bin/env python3.6
+import argh
+import aws_util
+import boto3
+
+def main(path):
+    name = aws_util.lambda_name(path)
+    print('rm:', name)
+    boto3.client('lambda').delete_function(FunctionName=name)
+    for policy in boto3.client('iam').list_attached_role_policies(RoleName=name)['AttachedPolicies']:
+        boto3.client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
+    policies = boto3.client('iam').list_role_policies(RoleName=name)['PolicyNames']
+    for policy in policies:
+        boto3.client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
+    boto3.client('iam').delete_role(RoleName=name)
+
+if __name__ == '__main__':
+    with aws_util.setup():
+        argh.dispatch_command(main)

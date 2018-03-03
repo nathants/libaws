@@ -1,0 +1,15 @@
+#!/usr/bin/env python3.6
+import util.colors
+import argh
+import aws_util
+import boto3
+
+def main():
+    for page in boto3.client('lambda').get_paginator('list_functions').paginate():
+        for function in page['Functions']:
+            function['FunctionName'] = util.colors.green(function['FunctionName'])
+            print('{FunctionName} {Runtime} {Timeout}s {MemorySize}mb'.format(**function))
+
+if __name__ == '__main__':
+    with aws_util.setup():
+        argh.dispatch_command(main)

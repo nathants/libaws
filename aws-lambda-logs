@@ -1,7 +1,6 @@
 #!/usr/bin/env python3.6
 import datetime
 import boto3
-import os
 import argh
 import aws_util
 
