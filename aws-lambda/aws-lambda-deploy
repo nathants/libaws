@@ -22,7 +22,7 @@ def _parse_file(path):
     return path, lines, {"policies": aws_util.parse_metadata('policy:', lines),
                          "allows": aws_util.parse_metadata('allow:', lines),
                          "requires": aws_util.parse_metadata('require:', lines),
-                         "triggers-sns": aws_util.parse_metadata('trigger-sns:', lines)}
+                         "triggers": aws_util.parse_metadata('trigger:', lines)}
 
 def _policy_name(allow):
     return allow.replace('*', 'All').replace(' ', '-').replace(':', '--')
@@ -43,28 +43,41 @@ def _remove_extra_allows(name, metadata):
             print('removing policy:', policy, file=sys.stderr)
             shell.run(f'aws iam delete-role-policy --role-name {name} --policy-name {policy}')
 
+def _ensure_triggers_cloudwatch(name, arn_lambda, metadata):
+    print('\nensure triggers cloudwatch', file=sys.stderr)
+    for trigger in metadata['triggers']:
+        if trigger.split()[0] == 'cloudwatch':
+            _, schedule = trigger.split(None, 1)
+            print(' add cloudwatch rule:', schedule)
+            arn_rule = boto3.client('events').put_rule(Name=name, ScheduleExpression=schedule)['RuleArn']
+            boto3.client('events').put_targets(Rule=name, Targets=[{'Id': '1', 'Arn': arn_lambda}])
+            _ensure_permission(name, 'events.amazonaws.com', arn_rule)
+
+def _ensure_permission(name, principal, arn):
+    try:
+        statements = [x['Sid'] for x in json.loads(boto3.client('lambda').get_policy(FunctionName=name)['Policy'])['Statement']]
+    except boto3.client('lambda').exceptions.ResourceNotFoundException:
+        statements = []
+    id = principal.replace('.', '-')
+    if id in statements:
+        print(' trigger permission already exists', file=sys.stderr)
+    else:
+        print(' add trigger permission:', principal, file=sys.stderr)
+        boto3.client('lambda').add_permission(FunctionName=name,
+                                              StatementId=id,
+                                              Action='lambda:InvokeFunction',
+                                              Principal=principal,
+                                              SourceArn=arn)
+
 def _ensure_triggers_sns(name, arn_lambda, metadata):
     print('\nensure triggers sns', file=sys.stderr)
-    for topic in metadata['triggers-sns']:
-        arn_sns = boto3.client('sns').create_topic(Name=topic)['TopicArn']
+    if 'sns' in metadata['triggers']:
+        arn_sns = boto3.client('sns').create_topic(Name=name)['TopicArn']
         print('arn-sns:', arn_sns)
         boto3.client('sns').subscribe(TopicArn=arn_sns,
                                       Protocol='lambda',
                                       Endpoint=arn_lambda)
-        sid = f'sns-{name}-{topic}'
-        try:
-            statements = [x['Sid'] for x in json.loads(boto3.client('lambda').get_policy(FunctionName=name)['Policy'])['Statement']]
-        except boto3.client('lambda').exceptions.ResourceNotFoundException:
-            statements = []
-        if sid in statements:
-            print(' trigger permission already exists', file=sys.stderr)
-        else:
-            print(' add trigger permission', file=sys.stderr)
-            boto3.client('lambda').add_permission(FunctionName=name,
-                                                  StatementId=sid,
-                                                  Action='lambda:InvokeFunction',
-                                                  Principal='sns.amazonaws.com',
-                                                  SourceArn=arn_sns)
+        _ensure_permission(name, 'sns.amazonaws.com', arn_sns)
 
 def _ensure_allows(name, metadata):
     print('\nensure allows', file=sys.stderr)
@@ -170,7 +183,7 @@ def _create_zip(path, metadata):
     os.remove(f'{tempdir}/lambda.zip')
     return val
 
-def main(path, memory=128, timeout=300, *env_vars: 'KEY=VALUE', yes=False):
+def main(path, memory=128, timeout=300, *env_vars: 'KEY=VALUE', yes=False, kms=False):
     for var in env_vars:
         assert var.count('=') == 1, 'bad env-var, should be: KEY=VALUE'
     name = aws_util.lambda_name(path)
@@ -187,16 +200,17 @@ def main(path, memory=128, timeout=300, *env_vars: 'KEY=VALUE', yes=False):
     _ensure_allows(name, metadata)
     _remove_extra_allows(name, metadata)
     _remove_extra_policies(name, metadata)
-    key_alias = _ensure_key(name, arn_user, arn_role)
+    # TODO kms costs $1/month per master key, lets make this opt in
     zipfile = _create_zip(path, metadata)
     kw = {'FunctionName': name,
           'Runtime': 'python3.6',
           'Role': arn_role,
           'Timeout': timeout,
           'MemorySize': memory,
-          'KMSKeyArn': key_alias,
           'Environment': {'Variables': {k: v for var in env_vars for k, v in [var.split('=')]}},
           'Handler': os.path.basename(path).split('.py')[0] + '.main'}
+    if kms:
+        kw['KMSKeyArn'] = _ensure_key(name, arn_user, arn_role)
     try:
         arn_lambda = boto3.client('lambda').get_function(FunctionName=name)['Configuration']['FunctionArn']
     except boto3.client('lambda').exceptions.ResourceNotFoundException:
@@ -205,6 +219,7 @@ def main(path, memory=128, timeout=300, *env_vars: 'KEY=VALUE', yes=False):
         boto3.client('lambda').update_function_code(FunctionName=name, ZipFile=zipfile)
         boto3.client('lambda').update_function_configuration(**kw)
     _ensure_triggers_sns(name, arn_lambda, metadata)
+    _ensure_triggers_cloudwatch(name, arn_lambda, metadata)
     print(file=sys.stderr)
     return arn_lambda
 

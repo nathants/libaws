@@ -1,15 +1,15 @@
 #!/usr/bin/env python3.6
 #
 # policy: CloudWatchLogsFullAccess
-# trigger-sns: lambda-sns-topic
+# trigger: sns
 
 def main(event, context):
     """
     >> aws-lambda-deploy examples/lambda_sns.py --yes
 
-    >> aws sns publish --topic-arn $(aws-lambda-topics examples/lambda_sns.py) --message 'on the wire'
+    >> aws sns publish --topic-arn $(aws-lambda-sns examples/lambda_sns.py) --message 'on the wire'
 
-    >> aws-lambda-logs examples/lambda_sns.py
+    >> aws-lambda-logs examples/lambda_sns.py -f
 
        log group: /aws/lambda/lambda-sns
        log stream: 2018/03/03/[$LATEST]fed20e45c1cb4b5d93bfffd7ad08d5ed

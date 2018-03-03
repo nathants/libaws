@@ -2,20 +2,51 @@
 import argh
 import aws_util
 import boto3
+import util.exceptions
 
 def main(path):
     name = aws_util.lambda_name(path)
-    print('rm function:', name)
-    boto3.client('lambda').delete_function(FunctionName=name)
-    for policy in boto3.client('iam').list_attached_role_policies(RoleName=name)['AttachedPolicies']:
-        print('rm policy:', policy['PolicyArn'])
-        boto3.client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
-    policies = boto3.client('iam').list_role_policies(RoleName=name)['PolicyNames']
-    for policy in policies:
-        print('rm allow:', policy)
-        boto3.client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
-    print('rm role:', name)
-    boto3.client('iam').delete_role(RoleName=name)
+
+    with util.exceptions.ignore(boto3.client('lambda').exceptions.ResourceNotFoundException):
+        boto3.client('lambda').delete_function(FunctionName=name)
+        print('rm function:', name)
+
+    with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
+        for policy in boto3.client('iam').list_attached_role_policies(RoleName=name)['AttachedPolicies']:
+            boto3.client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
+            print('rm policy:', policy['PolicyArn'])
+
+    with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
+        for policy in boto3.client('iam').list_role_policies(RoleName=name)['PolicyNames']:
+            boto3.client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
+            print('rm allow:', policy)
+
+    with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
+        boto3.client('iam').delete_role(RoleName=name)
+        print('rm role:', name)
+
+    with open(path) as f:
+        triggers = aws_util.parse_metadata('trigger:', f.read().splitlines(), silent=True)
+    if 'sns' in triggers:
+        for page in boto3.client('sns').get_paginator('list_topics').paginate():
+            for topic in page['Topics']:
+                arn = topic['TopicArn']
+                if arn.split(':')[-1] == name:
+                    print('rm sns:', name)
+                    boto3.client('sns').delete_topic(TopicArn=arn)
+    for trigger in triggers:
+        if trigger.split()[0] == 'cloudwatch':
+            _, schedule = trigger.split(None, 1)
+            with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
+                boto3.client('events').remove_targets(Rule=name, Ids=['1'])
+            with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
+                boto3.client('events').delete_rule(Name=name)
+                print(' rm cloudwatch rule:', schedule)
+
+    keys = [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
+    keys = [x['AliasName'] for x in keys if x['AliasArn'].endswith(f'/lambda/{name}')]
+    if keys:
+        print('NOT rm kms:', *keys)
 
 if __name__ == '__main__':
     with aws_util.setup():

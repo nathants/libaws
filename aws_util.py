@@ -81,15 +81,15 @@ def setup():
     except:
         raise
 
-def parse_metadata(token, xs):
+def parse_metadata(token, xs, silent=False):
     vals = [x.split(token, 1)[-1].split('#')[0].strip()
             for x in xs
             if x.strip().startswith('#')
             and token in x]
-    print(token, file=sys.stderr)
+    silent or print(token, file=sys.stderr)
     for val in vals:
-        print('', val, file=sys.stderr)
-    print(file=sys.stderr)
+        silent or print('', val, file=sys.stderr)
+    silent or print(file=sys.stderr)
     return vals
 
 def lambda_name(path):

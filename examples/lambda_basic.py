@@ -20,7 +20,7 @@ def main(event, context):
       >> aws-lambda-invoke examples/lambda_basic.py --payload /tmp/input
          {'foo': 'bar'}
 
-      >> aws-lambda-logs examples/lambda_basic.py
+      >> aws-lambda-logs examples/lambda_basic.py -f
 
          log group: /aws/lambda/lambda-deploy
          log stream: 2018/03/02/[$LATEST]da996d15b51941a69d76b2c8acc6a73d
