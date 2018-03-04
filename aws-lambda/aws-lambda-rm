@@ -39,9 +39,14 @@ def main(path):
             _, schedule = trigger.split(None, 1)
             with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
                 boto3.client('events').remove_targets(Rule=name, Ids=['1'])
+                print(' rm cloudwatch rule:', schedule)
             with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
                 boto3.client('events').delete_rule(Name=name)
-                print(' rm cloudwatch rule:', schedule)
+
+    with util.exceptions.ignore(boto3.client('logs').exceptions.ResourceNotFoundException):
+        logs = f'/aws/lambda/{name}'
+        boto3.client('logs').delete_log_group(logGroupName=logs)
+        print('rm logs:', logs)
 
     keys = [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
     keys = [x['AliasName'] for x in keys if x['AliasArn'].endswith(f'/lambda/{name}')]

@@ -10,28 +10,36 @@ def main(path, limit=100, follow=False):
     print('log group:', group_name)
     if follow:
         token = ''
-        stream_name = None
+        last_stream = None
+        started = False
         while True:
-            if not stream_name:
-                try:
-                    stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
+            try:
+                stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
+                if last_stream != stream_name:
                     print('log stream:', stream_name)
-                except boto3.client('logs').exceptions.ResourceNotFoundException:
-                    continue
-            kw = {}
-            if token:
-                kw['nextToken'] = token
-            resp = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name, limit=limit, **kw)
-            token = resp['nextForwardToken']
-            logs = resp['events']
-            for log in logs:
-                print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000),
-                      log['message'].replace('\t', ' ').strip())
+                    last_stream = stream_name
+            except boto3.client('logs').exceptions.ResourceNotFoundException:
+                pass
+            else:
+                kw = {}
+                if token:
+                    kw['nextToken'] = token
+                if not started:
+                    kw['limit'] = 1
+                resp = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name, **kw)
+                token = resp['nextForwardToken']
+                logs = resp['events']
+                for log in logs:
+                    if not started:
+                        started = True
+                    else:
+                        print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000),
+                              log['message'].replace('\t', ' ').strip())
             time.sleep(1)
     else:
         stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
         print('log stream:', stream_name)
-        logs = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name, limit=limit)['events']
+        logs = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name)['events']
         for log in logs:
             print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000),
                   log['message'].replace('\t', ' ').strip())
