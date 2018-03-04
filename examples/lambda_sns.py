@@ -5,21 +5,18 @@
 
 def main(event, context):
     """
-    >>> import shell, json
-
+    >>> import shell
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+    >>> path = 'examples/lambda_sns.py'
 
-    >>> run('aws-lambda-deploy examples/lambda_sns.py --yes').split(':')[-1]
+    >>> run(f'aws-lambda-deploy {path} -y').split(':')[-1]
     'lambda-sns'
 
-    >>> json.loads(run("aws sns publish --topic-arn $(aws-lambda-sns examples/lambda_sns.py) --message 'on the wire'")).popitem()[0]
-    'MessageId'
-
-    >>> ' '.join(run('aws-lambda-logs examples/lambda_sns.py -f -n 4 | grep "thanks for"').split()[2:])
-    'thanks for: on the wire'
-
-    >>> run('aws-lambda-rm examples/lambda_sns.py')
+    >>> run(f"aws sns publish --topic-arn $(aws-lambda-sns {path}) --message 'on the wire' >/dev/null")
     ''
+
+    >>> run(f'aws-lambda-logs {path} -f -e "thanks for" | tail -n1').split('thanks for: ')[-1]
+    'on the wire'
 
     """
     msg = event['Records'][0]['Sns']['Message']

@@ -14,22 +14,19 @@ import os
 def main(event, context):
     """
     >>> import shell
-
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+    >>> path = 'examples/lambda_basic.py'
 
-    >>> run('aws-lambda-deploy examples/lambda_basic.py SOME_VAR=some_val --yes').split(':')[-1]
+    >>> run(f'aws-lambda-deploy {path} SOME_VAR=some_val -y').split(':')[-1]
     'lambda-basic'
 
     >>> run('cat - > /tmp/input', stdin='{"foo": "bar"}')
     ''
-    >>> run('aws-lambda-invoke examples/lambda_basic.py --payload /tmp/input')
+    >>> run(f'aws-lambda-invoke {path} -p /tmp/input')
     '{"foo": "bar"}'
 
-    >>> run('aws-lambda-logs examples/lambda_basic.py -f -n7 | grep some_val').split()[-1]
+    >>> run(f'aws-lambda-logs {path} -f -e some_val | tail -n1').split()[-1]
     'some_val'
-
-    >>> run('aws-lambda-rm examples/lambda_basic.py')
-    ''
 
     """
     print('log some stuff about requests:', requests.get)

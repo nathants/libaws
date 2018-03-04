@@ -7,18 +7,15 @@ import pprint
 
 def main(event, context):
     """
-    >>> import shell, json
-
+    >>> import shell
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+    >>> path = 'examples/lambda_scheduled.py'
 
-    >>> run('aws-lambda-deploy examples/lambda_scheduled.py --yes').split(':')[-1]
+    >>> run(f'aws-lambda-deploy {path} -y').split(':')[-1]
     'lambda-scheduled'
 
-    >>> ' '.join(run('aws-lambda-logs examples/lambda_scheduled.py -f -n 4 | grep "scheduled trigger"').split()[2:4])
-    'scheduled trigger:'
-
-    >>> run('aws-lambda-rm examples/lambda_scheduled.py')
-    ''
+    >>> run(f'aws-lambda-logs {path} -f -e "scheduled trigger" | tail -n1').split('scheduled ')[-1]
+    'trigger:'
 
     """
-    print('scheduled trigger:', pprint.pformat(event))
+    print('scheduled trigger:\n' + pprint.pformat(event))

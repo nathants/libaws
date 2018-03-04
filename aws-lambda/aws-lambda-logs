@@ -1,4 +1,5 @@
 #!/usr/bin/env python3.6
+import shell
 import sys
 import time
 import datetime
@@ -8,20 +9,25 @@ import aws_util
 
 def main(path,
          follow: 'like tail -f' = False,
-         number: 'when following, after printing this many lines, exit' = 0):
+         exit_after: 'after this substring is seen in a log line, exit' = None):
+    shell.ignore_closed_pipes()
     group_name = f'/aws/lambda/{aws_util.lambda_name(path)}'
-    print('log group:', group_name)
+    print('log group:', group_name, file=sys.stderr)
     if follow:
         token = ''
         last_stream = None
         started = False
-        printed = 0
         while True:
             try:
                 stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
                 if last_stream != stream_name:
-                    print('log stream:', stream_name)
+                    # when LogStream flips, we want everything from the new log
+                    # stream, otherwise we want to follow from the end of the
+                    # existing LogStream
+                    if last_stream is not None:
+                        started = True # skip the seeding event with limit=1 and discarding the inital result
                     last_stream = stream_name
+                    print('log stream:', stream_name, file=sys.stderr)
             except boto3.client('logs').exceptions.ResourceNotFoundException:
                 pass
             else:
@@ -31,16 +37,14 @@ def main(path,
                 if not started:
                     kw['limit'] = 1
                 resp = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name, **kw)
-                token = resp['nextForwardToken']
-                logs = resp['events']
-                for log in logs:
+                if resp['events']:
+                    token = resp['nextForwardToken']
+                for log in resp['events']:
                     if not started:
-                        started = True
+                        started = True # skip the first entry when we use limit=1, to follow starting with no output
                     else:
-                        printed += 1
-                        print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000),
-                              log['message'].replace('\t', ' ').strip())
-                        if number and printed >= number:
+                        print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000), log['message'].replace('\t', ' ').strip())
+                        if exit_after and exit_after in log['message']:
                             sys.exit(0)
             time.sleep(1)
     else:
@@ -48,8 +52,7 @@ def main(path,
         print('log stream:', stream_name)
         logs = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name)['events']
         for log in logs:
-            print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000),
-                  log['message'].replace('\t', ' ').strip())
+            print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000), log['message'].replace('\t', ' ').strip())
 
 
 if __name__ == '__main__':

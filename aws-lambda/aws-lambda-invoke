@@ -6,6 +6,7 @@ import argh
 import aws_util
 import shell
 
+@argh.arg('-p', '--payload')
 def main(path, payload=None):
     if payload:
         payload = f'--payload file://{payload}'
