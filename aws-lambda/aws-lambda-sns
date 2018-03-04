@@ -6,7 +6,7 @@ import boto3
 def main(path):
     name = aws_util.lambda_name(path)
     with open(path) as f:
-        triggers = aws_util.parse_metadata('trigger:', f.read().splitlines())
+        triggers = aws_util.parse_metadata('trigger:', f.read().splitlines(), silent=True)
     if 'sns' in triggers:
         for page in boto3.client('sns').get_paginator('list_topics').paginate():
             for topic in page['Topics']:

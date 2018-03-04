@@ -1,17 +1,21 @@
 #!/usr/bin/env python3.6
+import sys
 import time
 import datetime
 import boto3
 import argh
 import aws_util
 
-def main(path, limit=100, follow=False):
+def main(path,
+         follow: 'like tail -f' = False,
+         number: 'when following, after printing this many lines, exit' = 0):
     group_name = f'/aws/lambda/{aws_util.lambda_name(path)}'
     print('log group:', group_name)
     if follow:
         token = ''
         last_stream = None
         started = False
+        printed = 0
         while True:
             try:
                 stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
@@ -33,8 +37,11 @@ def main(path, limit=100, follow=False):
                     if not started:
                         started = True
                     else:
+                        printed += 1
                         print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000),
                               log['message'].replace('\t', ' ').strip())
+                        if number and printed >= number:
+                            sys.exit(0)
             time.sleep(1)
     else:
         stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
@@ -43,6 +50,7 @@ def main(path, limit=100, follow=False):
         for log in logs:
             print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000),
                   log['message'].replace('\t', ' ').strip())
+
 
 if __name__ == '__main__':
     with aws_util.setup():

@@ -17,13 +17,14 @@ setuptools.setup(
                       'py-util',
                       'py-shell',
                       'py-pool'],
-    dependency_links=['https://github.com/nathants/py-util/tarball/81d2569f92c0ff9dbeded38c710ed63682dd48af#egg=py-util-0',
-                      'https://github.com/nathants/py-pool/tarball/88bb744cbc6dc2a37499a0308372c6507129186a#egg=py-pool-0',
-                      'https://github.com/nathants/py-shell/tarball/ec627065e019e4189c4b49639dc4508336196cfb#egg=py-shell-0'],
+    dependency_links=['https://github.com/nathants/py-util/tarball/81d2569f92c0ff9dbeded38c710ed63682dd48af#egg=py-util-0.0.1',
+                      'https://github.com/nathants/py-pool/tarball/88bb744cbc6dc2a37499a0308372c6507129186a#egg=py-pool-0.0.1',
+                      'https://github.com/nathants/py-shell/tarball/ec627065e019e4189c4b49639dc4508336196cfb#egg=py-shell-0.0.1'],
     scripts = [os.path.join(service, script)
                for service in os.listdir(parent)
                if service.startswith('aws-')
                and os.path.isdir(service)
-               for script in os.listdir(os.path.join(parent, service))],
+               for script in os.listdir(os.path.join(parent, service))
+               if os.path.isfile(script)],
     description='composable, succinct aws scripts',
 )

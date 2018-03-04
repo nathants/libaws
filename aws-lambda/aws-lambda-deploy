@@ -194,9 +194,9 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         assert var.count('=') == 1, 'bad env-var, should be: KEY=VALUE'
     name = aws_util.lambda_name(path)
     arn_user = boto3.client('sts').get_caller_identity()['Arn']
-    print(f'arn_user: {arn_user}')
-    print(f'file: {path}')
-    print(f'names: {name}\n')
+    print(f'arn_user: {arn_user}', file=sys.stderr)
+    print(f'file: {path}', file=sys.stderr)
+    print(f'names: {name}\n', file=sys.stderr)
     path, lines, metadata = _parse_file(path)
     if not yes:
         print('\nproceed? y/n ')
