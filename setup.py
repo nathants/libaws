@@ -11,20 +11,22 @@ setuptools.setup(
     author_email='me@nathants.com',
     url='http://github.com/nathants/aws-util',
     py_modules=['aws_util'],
+    python_requires='>=3.6',
     install_requires=['boto3 >1, <2',
                       'awscli >1, <2',
                       'argh >0.26, <0.27',
                       'py-util',
                       'py-shell',
                       'py-pool'],
-    dependency_links=['https://github.com/nathants/py-util/tarball/81d2569f92c0ff9dbeded38c710ed63682dd48af#egg=py-util-0.0.1',
-                      'https://github.com/nathants/py-pool/tarball/88bb744cbc6dc2a37499a0308372c6507129186a#egg=py-pool-0.0.1',
-                      'https://github.com/nathants/py-shell/tarball/ec627065e019e4189c4b49639dc4508336196cfb#egg=py-shell-0.0.1'],
+    dependency_links=['https://github.com/nathants/py-util/tarball/4d1fe20ecfc0b6982933a8c9b622b1b86da2be5e#egg=py-util-0.0.1',
+                      'https://github.com/nathants/py-pool/tarball/f1e9aee71bc7d8302f0df8d9111e49e008a16351#egg=py-pool-0.0.1',
+                      'https://github.com/nathants/py-shell/tarball/9cb7c3547091b1d86c523f3c3be84886e2a37a1f#egg=py-shell-0.0.1'],
     scripts = [os.path.join(service, script)
                for service in os.listdir(parent)
                if service.startswith('aws-')
                and os.path.isdir(service)
                for script in os.listdir(os.path.join(parent, service))
-               if os.path.isfile(script)],
+               for path in [os.path.join(service, script)]
+               if os.path.isfile(path)],
     description='composable, succinct aws scripts',
 )
