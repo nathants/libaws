@@ -7,7 +7,6 @@
 
 import requests
 import util.colors
-import os
 import boto3
 import os
 

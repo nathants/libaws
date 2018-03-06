@@ -1,4 +1,5 @@
 #!/usr/bin/env python3.6
+import base64
 import json
 import argh
 import cli_aws
@@ -183,6 +184,11 @@ def _create_zip(path, metadata):
     os.remove(f'{tempdir}/lambda.zip')
     return val
 
+def _encrypt(key_id, text):
+    text = bytes(text, 'utf-8')
+    text = boto3.client('kms').encrypt(KeyId=key_id, Plaintext=text)['CiphertextBlob']
+    return base64.b64encode(text).decode('utf-8')
+
 def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda*.py',
          memory=128,
          timeout=300,
@@ -219,6 +225,9 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         kw['KMSKeyArn'] = kms_arn
     elif kms:
         kw['KMSKeyArn'] = _ensure_key(name, arn_user, arn_role)
+    if 'KMSKeyArn' in kw:
+        kw['Environment']['Variables'] = {k: _encrypt(kw['KMSKeyArn'], v)
+                                          for k, v in kw['Environment']['Variables'].items()}
     try:
         arn_lambda = boto3.client('lambda').get_function(FunctionName=name)['Configuration']['FunctionArn']
     except boto3.client('lambda').exceptions.ResourceNotFoundException:
