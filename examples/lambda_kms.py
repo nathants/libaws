@@ -14,20 +14,19 @@ def _decrypt(text):
 
 def main(event, context):
     """
-    >>> import shell
+    >>> import shell, uuid
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
     >>> path = 'examples/lambda_kms.py'
+    >>> uid = str(uuid.uuid4())
 
-    >>> run(f'aws-lambda-deploy {path} SOME_VAR=some_val -y --kms').split(':')[-1]
+    >>> run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y --kms').split(':')[-1]
     'lambda-kms'
 
-    >>> run(f'aws-lambda-invoke {path}')
-    '"some_val"'
+    >>> assert f'"{uid}"' == run(f'aws-lambda-invoke {path}')
 
-    >>> run(f'aws-lambda-logs {path} -f -e some_val | tail -n1').split()[-1]
-    'some_val'
+    >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
 
     """
-    val = _decrypt(os.environ['SOME_VAR'])
+    val = _decrypt(os.environ['SOME_UUID'])
     print(val)
     return val

@@ -16,16 +16,10 @@ def main(path,
     if follow:
         token = ''
         last_stream = None
-        started = False
         while True:
             try:
                 stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
                 if last_stream != stream_name:
-                    # when LogStream flips, we want everything from the new log
-                    # stream, otherwise we want to follow from the end of the
-                    # existing LogStream
-                    if last_stream is not None:
-                        started = True # skip the seeding event with limit=1 and discarding the inital result
                     last_stream = stream_name
                     print('log stream:', stream_name, file=sys.stderr)
             except boto3.client('logs').exceptions.ResourceNotFoundException:
@@ -34,18 +28,13 @@ def main(path,
                 kw = {}
                 if token:
                     kw['nextToken'] = token
-                if not started:
-                    kw['limit'] = 1
                 resp = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name, **kw)
                 if resp['events']:
                     token = resp['nextForwardToken']
                 for log in resp['events']:
-                    if not started:
-                        started = True # skip the first entry when we use limit=1, to follow starting with no output
-                    else:
-                        print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000), log['message'].replace('\t', ' ').strip())
-                        if exit_after and exit_after in log['message']:
-                            sys.exit(0)
+                    print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000), log['message'].replace('\t', ' ').strip())
+                    if exit_after and exit_after in log['message']:
+                        sys.exit(0)
             time.sleep(1)
     else:
         stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']

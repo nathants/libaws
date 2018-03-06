@@ -21,3 +21,7 @@
 - [lambda-scheduled](./examples/lambda_scheduled.py)
 
 - [lambda-kms](./examples/lambda_kms.py)
+
+##### test
+
+`tox`
