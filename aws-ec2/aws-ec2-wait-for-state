@@ -3,18 +3,18 @@ import time
 import random
 import argh
 import sys
-import aws_util
+import cli_aws
 
 def main(*selectors, end_state, start_state=None):
     assert end_state in ['running', 'stopped']
-    instances = aws_util.ls(selectors, start_state)
+    instances = cli_aws.ls(selectors, start_state)
     ids = [i.instance_id for i in instances]
     if not instances:
         sys.exit(1)
     else:
         for i in range(300):
             try:
-                new_instances = aws_util.ls(ids, state=end_state)
+                new_instances = cli_aws.ls(ids, state=end_state)
                 assert len(ids) == len(new_instances), f'{len(ids)} != {new_instances}'
                 for i in new_instances:
                     print(i.instance_id)
@@ -24,5 +24,5 @@ def main(*selectors, end_state, start_state=None):
         assert False, f'failed to wait for {end_state} for instances {ids}'
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

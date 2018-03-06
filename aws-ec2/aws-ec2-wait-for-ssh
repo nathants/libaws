@@ -3,7 +3,7 @@ import random
 import time
 import argh
 import shell
-import aws_util
+import cli_aws
 import logging
 
 def main(*selectors,
@@ -11,24 +11,24 @@ def main(*selectors,
          seconds: 'after this many seconds, terminate any instances not ready and return the id of ready instances' = 0):
     assert selectors, 'you cannot wait for all things, specify some selectors'
     assert selectors != ['*'], 'you cannot wait for all things, specify some selectors'
-    pendings = aws_util.ls(selectors, 'pending')
+    pendings = cli_aws.ls(selectors, 'pending')
     if pendings:
         logging.info('wait for pending instances before terminate:')
         for pending in pendings:
-            logging.info(' %s', aws_util.format(pending))
+            logging.info(' %s', cli_aws.format(pending))
         shell.check_call('aws-ec2-wait-for-state -e running', *[i.instance_id for i in pendings])
-    instances = aws_util.ls(selectors, 'running')
+    instances = cli_aws.ls(selectors, 'running')
     assert instances, 'didnt find any instances for those selectors'
     logging.info('going to wait for ssh on the following instances:')
     for i in instances:
-        logging.info(' ' + aws_util.format(i))
+        logging.info(' ' + cli_aws.format(i))
     if not yes:
         logging.info('\nwould you like to proceed? y/n\n')
         assert shell.getch() == 'y', 'abort'
     logging.info('wait for ssh...')
     global_start = time.time()
     for _ in range(200):
-        running = aws_util.ls([i.instance_id for i in instances], 'running')
+        running = cli_aws.ls([i.instance_id for i in instances], 'running')
         running_ids = ' '.join([i.instance_id for i in running])
         local_start = time.time()
         try:
@@ -56,5 +56,5 @@ def main(*selectors,
     assert False, 'failed to wait for ssh'
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

@@ -3,7 +3,7 @@ import sys
 import tempfile
 import os
 import argh
-import aws_util
+import cli_aws
 import shell
 
 @argh.arg('-p', '--payload')
@@ -13,11 +13,11 @@ def main(path, payload=None):
     else:
         payload = ''
     _, temp = tempfile.mkstemp()
-    print(shell.run(f'aws lambda invoke {payload} --function-name {aws_util.lambda_name(path)} {temp}'), file=sys.stderr)
+    print(shell.run(f'aws lambda invoke {payload} --function-name {cli_aws.lambda_name(path)} {temp}'), file=sys.stderr)
     with open(temp) as f:
         print(f.read())
     os.remove(temp)
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

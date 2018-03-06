@@ -1,20 +1,20 @@
 #!/usr/bin/env python3.6
 import argh
 import sys
-import aws_util
+import cli_aws
 
 def main(*selectors, state='running'):
-    instances = aws_util.ls(selectors, state)
+    instances = cli_aws.ls(selectors, state)
     if not instances:
         sys.exit(1)
     else:
         for instance in instances:
-            print(aws_util.green(aws_util.ec2_name(instance)),
+            print(cli_aws.green(cli_aws.ec2_name(instance)),
                   instance.instance_id,
-                  aws_util.ec2_name(instance.subnet),
+                  cli_aws.ec2_name(instance.subnet),
                   instance.subnet.id,
                   instance.subnet.availability_zone)
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

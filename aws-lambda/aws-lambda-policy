@@ -2,11 +2,11 @@
 import util.exceptions
 import json
 import argh
-import aws_util
+import cli_aws
 import boto3
 
 def main(path):
-    name = aws_util.lambda_name(path)
+    name = cli_aws.lambda_name(path)
     print('name:', name)
 
     with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
@@ -40,5 +40,5 @@ def main(path):
             print(util.strings.indent(json.dumps(resp, indent=2), 2))
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

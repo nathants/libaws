@@ -4,11 +4,11 @@ import datetime
 import boto3
 import argh
 import sys
-import aws_util
+import cli_aws
 from util.retry import retry
 
 def main(*selectors, days=1):
-    instances = aws_util.ls(selectors, 'running')
+    instances = cli_aws.ls(selectors, 'running')
     if not instances:
         sys.exit(1)
     else:
@@ -28,11 +28,11 @@ def main(*selectors, days=1):
             except:
                 print(f'no data for: {i.instance_id}', file=sys.stderr, flush=True)
             else:
-                name, type, _, id, _, billing, *_ = aws_util.format(i).split()
+                name, type, _, id, _, billing, *_ = cli_aws.format(i).split()
                 print(name, id, type, billing, days, int(data['Average']), int(data['Maximum']), flush=True)
         list(pool.thread.map(f, instances))
 
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

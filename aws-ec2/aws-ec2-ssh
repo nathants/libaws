@@ -8,7 +8,7 @@ import shell
 import pool.thread
 import util.strings
 import util.colors
-import aws_util
+import cli_aws
 
 def _remote_cmd(cmd, stdin, instance_id):
     return f"""
@@ -27,7 +27,7 @@ def _remote_cmd(cmd, stdin, instance_id):
     """
 
 def _make_callback(instance, quiet, append=None, no_stream=False):
-    name = aws_util.ec2_name(instance) + ': ' + instance.public_dns_name + ': '
+    name = cli_aws.ec2_name(instance) + ': ' + instance.public_dns_name + ': '
     def f(x):
         val = (x if quiet else name + x).replace('\r', '')
         if append is not None:
@@ -53,7 +53,7 @@ def main(*selectors,
          error_message: 'error message to print for a failed host, something like: {id} {name} {ip} {ipv4_private} failed' = ''):
     pool.thread._size = max_threads
     assert selectors, 'you must specify some selectors'
-    instances = aws_util.ls(selectors, 'running')
+    instances = cli_aws.ls(selectors, 'running')
     assert instances, 'didnt find any instances'
     if os.path.exists(cmd):
         with open(cmd) as f:
@@ -70,13 +70,13 @@ def main(*selectors,
     assert (cmd and instances) or len(instances) == 1, 'must specify --cmd to target multiple instances'
     if not (quiet and yes):
         for i in instances:
-            logging.info(aws_util.format(i))
-    ssh_cmd = ('ssh' + (' -i {} '.format(key) if key else '') + (' -tt ' if not no_tty or not cmd else ' -T ') + aws_util.ssh_args).split()
+            logging.info(cli_aws.format(i))
+    ssh_cmd = ('ssh' + (' -i {} '.format(key) if key else '') + (' -tt ' if not no_tty or not cmd else ' -T ') + cli_aws.ssh_args).split()
     if echo:
         logging.info(f'ec2.ssh running against selectors: {selectors}, with cmd: {cmd}')
     if timeout:
         ssh_cmd = ['timeout', '{}s'.format(timeout)] + ssh_cmd
-    make_ssh_cmd = lambda i: ssh_cmd + [aws_util.ssh_user(i) + '@' + i.public_dns_name, _remote_cmd(cmd, stdin, i.instance_id)]
+    make_ssh_cmd = lambda i: ssh_cmd + [cli_aws.ssh_user(i) + '@' + i.public_dns_name, _remote_cmd(cmd, stdin, i.instance_id)]
     login = len(instances) == 1 and not cmd
     if not yes and not login:
         logging.info('\nwould you like to proceed? y/n\n')
@@ -100,12 +100,12 @@ def main(*selectors,
                         print(error_message.format(id=instance.instance_id,
                                                    ip=instance.public_dns_name,
                                                    ipv4_private=instance.private_ip_address,
-                                                   name=aws_util.ec2_name(instance)),
+                                                   name=cli_aws.ec2_name(instance)),
                               flush=True)
-                    msg = util.colors.red('failure: ') + aws_util.ec2_name(instance) + ': ' + instance.instance_id
+                    msg = util.colors.red('failure: ') + cli_aws.ec2_name(instance) + ': ' + instance.instance_id
                     failures.append(msg)
                 else:
-                    msg = util.colors.green('success: ') + aws_util.ec2_name(instance) + ': ' + instance.instance_id
+                    msg = util.colors.green('success: ') + cli_aws.ec2_name(instance) + ': ' + instance.instance_id
                     successes.append(msg)
                 if not quiet:
                     logging.info(msg)
@@ -131,12 +131,12 @@ def main(*selectors,
                              callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None)
         else:
             try:
-                subprocess.check_call(ssh_cmd + [aws_util.ssh_user(instances[0]) + '@' + instances[0].public_dns_name])
+                subprocess.check_call(ssh_cmd + [cli_aws.ssh_user(instances[0]) + '@' + instances[0].public_dns_name])
             except subprocess.CalledProcessError:
                 sys.exit(1)
     except:
         raise
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.6
 import json
 import argh
-import aws_util
+import cli_aws
 import tempfile
 import sys
 import os
@@ -19,10 +19,10 @@ def _parse_file(path):
         sys.exit(1)
     with open(path) as f:
         lines = f.read().splitlines()
-    return path, lines, {"policies": aws_util.parse_metadata('policy:', lines),
-                         "allows": aws_util.parse_metadata('allow:', lines),
-                         "requires": aws_util.parse_metadata('require:', lines),
-                         "triggers": aws_util.parse_metadata('trigger:', lines)}
+    return path, lines, {"policies": cli_aws.parse_metadata('policy:', lines),
+                         "allows": cli_aws.parse_metadata('allow:', lines),
+                         "requires": cli_aws.parse_metadata('require:', lines),
+                         "triggers": cli_aws.parse_metadata('trigger:', lines)}
 
 def _policy_name(allow):
     return allow.replace('*', 'All').replace(' ', '-').replace(':', '--')
@@ -192,7 +192,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
          kms_arn: 'use a specific kms arn' = None):
     for var in env_vars:
         assert var.count('=') == 1, 'bad env-var, should be: KEY=VALUE'
-    name = aws_util.lambda_name(path)
+    name = cli_aws.lambda_name(path)
     arn_user = boto3.client('sts').get_caller_identity()['Arn']
     print(f'arn_user: {arn_user}', file=sys.stderr)
     print(f'file: {path}', file=sys.stderr)
@@ -232,5 +232,5 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
     return arn_lambda
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

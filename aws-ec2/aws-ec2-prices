@@ -3,7 +3,7 @@ import json
 import boto3
 import argh
 import util.cached
-import aws_util
+import cli_aws
 
 @util.cached.disk_memoize(max_age_seconds=60 * 60 * 24)
 def fetch(filters):
@@ -11,10 +11,10 @@ def fetch(filters):
 
 def main(instance_type=None):
     boto3.setup_default_session(region_name='us-east-1')
-    region = aws_util.region()
+    region = cli_aws.region()
     filters = [{"Type": "TERM_MATCH",
                 "Field": "location",
-                "Value": aws_util.region_names[region]},
+                "Value": cli_aws.region_names[region]},
                {"Type": "TERM_MATCH",
                 "Field": "operatingSystem",
                 "Value": "Linux"},
@@ -44,5 +44,5 @@ def main(instance_type=None):
             print(f'{name} {price}')
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

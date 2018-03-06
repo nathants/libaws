@@ -5,13 +5,13 @@ import time
 import datetime
 import boto3
 import argh
-import aws_util
+import cli_aws
 
 def main(path,
          follow: 'like tail -f' = False,
          exit_after: 'after this substring is seen in a log line, exit' = None):
     shell.ignore_closed_pipes()
-    group_name = f'/aws/lambda/{aws_util.lambda_name(path)}'
+    group_name = f'/aws/lambda/{cli_aws.lambda_name(path)}'
     print('log group:', group_name, file=sys.stderr)
     if follow:
         token = ''
@@ -56,5 +56,5 @@ def main(path,
 
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

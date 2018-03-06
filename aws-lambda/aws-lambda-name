@@ -1,10 +1,10 @@
 #!/usr/bin/env python3.6
 import argh
-import aws_util
+import cli_aws
 
 def main(path, limit=100):
-    return aws_util.lambda_name(path)
+    return cli_aws.lambda_name(path)
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)

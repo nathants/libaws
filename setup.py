@@ -6,11 +6,11 @@ parent = os.path.dirname(os.path.abspath(__file__))
 setuptools.setup(
     version="0.0.1",
     license='mit',
-    name='aws-util',
+    name='cli-aws',
     author='nathan todd-stone',
     author_email='me@nathants.com',
     url='http://github.com/nathants/aws-util',
-    py_modules=['aws_util'],
+    py_modules=['cli_aws'],
     python_requires='>=3.6',
     install_requires=['boto3 >1, <2',
                       'awscli >1, <2',

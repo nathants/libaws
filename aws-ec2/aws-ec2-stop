@@ -2,29 +2,29 @@
 import boto3
 import logging
 import argh
-import aws_util
+import cli_aws
 import shell
 from util.retry import retry
 
 def main(*selectors, yes=False):
     assert selectors, 'you cannot stop all things, specify some selectors'
     assert selectors != ('*',), 'you cannot stop all things, specify some selectors'
-    pendings = aws_util.ls(selectors, 'pending')
+    pendings = cli_aws.ls(selectors, 'pending')
     if pendings:
         logging.info('wait for pending instances before stop:')
         for pending in pendings:
-            logging.info(' %s', aws_util.format(pending))
+            logging.info(' %s', cli_aws.format(pending))
         shell.check_call('aws-ec2-wait-for-state -e running', *[i.instance_id for i in pendings])
-    instances = [i for i in aws_util.ls(selectors, None) if i.state['Name'] in ['running', 'stopped']]
+    instances = [i for i in cli_aws.ls(selectors, None) if i.state['Name'] in ['running', 'stopped']]
     assert instances, 'didnt find any instances for those selectors'
     logging.info('going to stop the following instances:')
     for i in instances:
-        logging.info(' ' + aws_util.format(i))
+        logging.info(' ' + cli_aws.format(i))
     if not yes:
         logging.info('\nwould you like to proceed? y/n\n')
         assert shell.getch() == 'y', 'abort'
     retry(boto3.client('ec2').stop_instances)(InstanceIds=[i.instance_id for i in instances])
 
 if __name__ == '__main__':
-    with aws_util.setup():
+    with cli_aws.setup():
         argh.dispatch_command(main)
