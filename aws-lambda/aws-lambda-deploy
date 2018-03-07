@@ -128,10 +128,15 @@ def _ensure_role(name):
             print('', role, file=sys.stderr)
         sys.exit(1)
 
+def _all_keys():
+    return [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
+
+def _key_id(key):
+    return key['AliasArn'].split(':alias/')[0] + f':key/{key["TargetKeyId"]}'
+
 def _ensure_key(name, arn_user, arn_role):
     print('\nensure kms key:', name, file=sys.stderr)
-    keys = [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
-    keys = [x for x in keys if x['AliasArn'].endswith(f':alias/lambda/{name}')]
+    keys = [x for x in _all_keys() if x['AliasArn'].endswith(f':alias/lambda/{name}')]
     if 0 == len(keys):
         arn_root = ':'.join(arn_user.split(':')[:-1]) + ':root'
         policy = """
@@ -157,14 +162,13 @@ def _ensure_key(name, arn_user, arn_role):
                'arn_root': arn_root}
         key_id = retry(boto3.client('kms').create_key, exponent=1.1, silent=True)(Policy=policy, Description=name)['KeyMetadata']['KeyId']
         boto3.client('kms').create_alias(AliasName=f'alias/lambda/{name}', TargetKeyId=key_id)
-        keys = [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
-        keys = [x for x in keys if x['AliasArn'].endswith(f':alias/lambda/{name}')]
+        keys = [x for x in _all_keys() if x['AliasArn'].endswith(f':alias/lambda/{name}')]
         assert len(keys) == 1
         print(' created key:', keys[0]['AliasArn'], file=sys.stderr)
-        return keys[0]['AliasArn'].split(':alias/')[0] + f':key/{keys[0]["TargetKeyId"]}'
+        return _key_id(keys[0])
     elif 1 == len(keys):
         print(' key already exists:', keys[0]['AliasArn'], file=sys.stderr)
-        return keys[0]['AliasArn'].split(':alias/')[0] + f':key/{keys[0]["TargetKeyId"]}'
+        return _key_id(keys[0])
     else:
         print(' error: found more than 1 key for:', name, '\n' + '\n'.join(keys), file=sys.stderr)
         sys.exit(1)
@@ -223,11 +227,12 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
           'Handler': os.path.basename(path).split('.py')[0] + '.main'}
     if kms_key:
         if not kms_key.startswith('arn:'):
-            keys = [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
-            keys = [x for x in keys if x['AliasArn'].endswith(f':alias/{kms_key}')]
+            assert not kms_key.startswith('/'), f'kms key alias should not start with /: {kms_key}'
+            assert 'alias' not in kms_key, f'kms key should not contain the word "alias": {kms_key}'
+            keys = [x for x in _all_keys() if x['AliasArn'].endswith(f':alias/{kms_key}')]
             assert len(keys) == 1, f'didnt find exactly 1 kms key for alias: {kms_key} => {keys}'
             print(f'using kms key: {kms_key} => {keys[0]["AliasArn"]}')
-            kms_key = keys[0]['AliasArn'].split(':alias/')[0] + f':key/{keys[0]["TargetKeyId"]}'
+            kms_key = _key_id(keys[0])
         kw['KMSKeyArn'] = kms_key
     elif kms:
         kw['KMSKeyArn'] = _ensure_key(name, arn_user, arn_role)
