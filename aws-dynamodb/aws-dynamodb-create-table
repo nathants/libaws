@@ -10,7 +10,8 @@ def main(name, *columns, read: 'capacity' = 5, write: 'capacity' = 5):
     decribe columns like: $name:s|n|b:hash|range
     example: user_name:s:hash
     """
-    retry(boto3.client('dynamodb').create_table)(
+    table_exists = boto3.client('dynamodb').exceptions.ResourceInUseException
+    retry(boto3.client('dynamodb').create_table, table_exists)(
         AttributeDefinitions=[
             {'AttributeName': attr_name,
              'AttributeType': attr_type.upper()}
