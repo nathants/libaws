@@ -1,0 +1,25 @@
+#!/usr/bin/env python3.6
+import json
+import argh
+import cli_aws
+import boto3
+from util.retry import retry
+
+def main(name, verbose=False):
+    """
+    describe table
+    """
+    table = retry(boto3.client('dynamodb').describe_table)(TableName=name)['Table']
+    table['CreationDateTime'] = table['CreationDateTime'].isoformat()
+    if verbose:
+        return json.dumps(table)
+    else:
+        attrs = {x['AttributeName']: x['AttributeType'] for x in table['AttributeDefinitions']}
+        return ' '.join([':'.join([x['AttributeName'],
+                                   attrs[x['AttributeName']].lower(),
+                                   x['KeyType'].lower()])
+                         for x in table['KeySchema']])
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)
