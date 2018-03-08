@@ -1,0 +1,13 @@
+#!/usr/bin/env python3.6
+import argh
+import cli_aws
+
+def main(path):
+    with open(path) as f:
+        requires = cli_aws.parse_metadata('require:', f.read().splitlines(), silent=True)
+    for require in requires:
+        print(require)
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)
