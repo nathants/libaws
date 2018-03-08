@@ -194,6 +194,24 @@ def _encrypt(key_id, text):
     text = boto3.client('kms').encrypt(KeyId=key_id, Plaintext=text)['CiphertextBlob']
     return base64.b64encode(text).decode('utf-8')
 
+def _ensure_key_allows_role(key_arn, user_arn):
+    resp = boto3.client('kms').get_key_policy(KeyId=key_arn, PolicyName='default')
+    policy = json.loads(resp['Policy'])
+    for statement in policy['Statement']:
+        for arn in statement['Principal']['AWS'].copy():
+            if not arn.startswith('arn:'):
+                statement['Principal']['AWS'].remove(arn)
+    for statement in policy['Statement']:
+        if statement['Sid'] == 'Allow use of the key':
+            if isinstance(statement['Principal']['AWS'], str):
+                statement['Principal']['AWS'] = [statement['Principal']['AWS']]
+            if user_arn not in statement['Principal']['AWS']:
+                statement['Principal']['AWS'].append(user_arn)
+            break
+    else:
+        assert False, 'something is wrong with your key policy, didnt find a Sid: "Allow use of the key"'
+    boto3.client('kms').put_key_policy(KeyId=key_arn, Policy=json.dumps(policy), PolicyName='default')
+
 def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda*.py',
          memory=128,
          timeout=300,
@@ -238,6 +256,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
     elif kms:
         kw['KMSKeyArn'] = _ensure_key(name, arn_user, arn_role)
     if 'KMSKeyArn' in kw:
+        _ensure_key_allows_role(kw['KMSKeyArn'], arn_role)
         kw['Environment']['Variables'] = {k: _encrypt(kw['KMSKeyArn'], v)
                                           for k, v in kw['Environment']['Variables'].items()}
     try:
