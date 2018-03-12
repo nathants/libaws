@@ -1,4 +1,5 @@
 #!/usr/bin/env python3.6
+import sys
 import argh
 import cli_aws
 import boto3
@@ -11,23 +12,27 @@ def main(name, *columns, read: 'capacity' = 5, write: 'capacity' = 5):
     example: user_name:s:hash
     """
     table_exists = boto3.client('dynamodb').exceptions.ResourceInUseException
-    retry(boto3.client('dynamodb').create_table, table_exists)(
-        AttributeDefinitions=[
-            {'AttributeName': attr_name,
-             'AttributeType': attr_type.upper()}
-            for column in columns
-            for attr_name, attr_type, _ in [column.split(':')]],
-        TableName=name,
-        KeySchema=[
-            {'AttributeName': attr_name,
-             'KeyType': key_type.upper()}
-            for column in columns
-            for attr_name, _, key_type in [column.split(':')]],
-        ProvisionedThroughput={
-            'ReadCapacityUnits': read,
-            'WriteCapacityUnits': write
-        },
-    )
+    try:
+        retry(boto3.client('dynamodb').create_table, table_exists)(
+            AttributeDefinitions=[
+                {'AttributeName': attr_name,
+                 'AttributeType': attr_type.upper()}
+                for column in columns
+                for attr_name, attr_type, _ in [column.split(':')]],
+            TableName=name,
+            KeySchema=[
+                {'AttributeName': attr_name,
+                 'KeyType': key_type.upper()}
+                for column in columns
+                for attr_name, _, key_type in [column.split(':')]],
+            ProvisionedThroughput={
+                'ReadCapacityUnits': read,
+                'WriteCapacityUnits': write
+            },
+        )
+    except table_exists:
+        print('table already exists')
+        sys.exit(0)
 
 if __name__ == '__main__':
     with cli_aws.setup():
