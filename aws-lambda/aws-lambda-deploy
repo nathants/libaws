@@ -231,6 +231,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
          timeout=300,
          *env_vars: 'KEY=VALUE',
          yes=False,
+         no_encrypt: 'do not kms-encrypt every env var, which is the default when a kms key is specified' = False,
          kms: 'auto create a kms key for this lambda, otherwise default lambda key is used' = False,
          kms_key: 'use a specific kms arn or alias' = None):
     for var in env_vars:
@@ -272,8 +273,8 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         kw['KMSKeyArn'] = _ensure_key(name, arn_user, arn_role)
     if 'KMSKeyArn' in kw:
         _ensure_key_allows_role(kw['KMSKeyArn'], arn_role)
-        kw['Environment']['Variables'] = {k: _encrypt(kw['KMSKeyArn'], v)
-                                          for k, v in kw['Environment']['Variables'].items()}
+        if not no_encrypt:
+            kw['Environment']['Variables'] = {k: _encrypt(kw['KMSKeyArn'], v) for k, v in kw['Environment']['Variables'].items()}
     try:
         arn_lambda = boto3.client('lambda').get_function(FunctionName=name)['Configuration']['FunctionArn']
     except boto3.client('lambda').exceptions.ResourceNotFoundException:
