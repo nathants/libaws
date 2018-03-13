@@ -198,13 +198,19 @@ def _ensure_key_allows_role(key_arn, user_arn):
     resp = boto3.client('kms').get_key_policy(KeyId=key_arn, PolicyName='default')
     policy = json.loads(resp['Policy'])
     for statement in policy['Statement']:
-        for arn in statement['Principal']['AWS'].copy():
-            if not arn.startswith('arn:'):
-                statement['Principal']['AWS'].remove(arn)
-    for statement in policy['Statement']:
         if statement['Sid'] == 'Allow use of the key':
             if isinstance(statement['Principal']['AWS'], str):
                 statement['Principal']['AWS'] = [statement['Principal']['AWS']]
+            break
+    else:
+        assert False, 'something is wrong with your key policy, didnt find a Sid: "Allow use of the key"'
+    for statement in policy['Statement']:
+        if statement['Sid'] == 'Allow use of the key':
+            for arn in statement['Principal']['AWS'].copy():
+                if not arn.startswith('arn:'):
+                    statement['Principal']['AWS'].remove(arn)
+    for statement in policy['Statement']:
+        if statement['Sid'] == 'Allow use of the key':
             if user_arn not in statement['Principal']['AWS']:
                 statement['Principal']['AWS'].append(user_arn)
             break
