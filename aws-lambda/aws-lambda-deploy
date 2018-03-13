@@ -216,7 +216,7 @@ def _ensure_key_allows_role(key_arn, user_arn):
             break
     else:
         assert False, 'something is wrong with your key policy, didnt find a Sid: "Allow use of the key"'
-    retry(boto3.client('kms').put_key_policy, silent=True, exponent=1.2)(KeyId=key_arn, Policy=json.dumps(policy), PolicyName='default')
+    retry(boto3.client('kms').put_key_policy, silent=True, exponent=1.1)(KeyId=key_arn, Policy=json.dumps(policy), PolicyName='default')
 
 def _ensure_log_group(name):
     name = f'/aws/lambda/{name}'
@@ -280,8 +280,8 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
     except boto3.client('lambda').exceptions.ResourceNotFoundException:
         arn_lambda = retry(boto3.client('lambda').create_function, silent=True, exponent=1.1)(Code={'ZipFile': zipfile}, **kw)['FunctionArn']
     else:
-        boto3.client('lambda').update_function_code(FunctionName=name, ZipFile=zipfile)
-        boto3.client('lambda').update_function_configuration(**kw)
+        retry(boto3.client('lambda').update_function_code, silent=True, exponent=1.1)(FunctionName=name, ZipFile=zipfile)
+        retry(boto3.client('lambda').update_function_configuration, silent=True, exponent=1.1)(**kw)
     _ensure_triggers_sns(name, arn_lambda, metadata)
     _ensure_triggers_cloudwatch(name, arn_lambda, metadata)
     print(file=sys.stderr)
