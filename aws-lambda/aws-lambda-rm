@@ -5,49 +5,59 @@ import cli_aws
 import boto3
 import util.exceptions
 
-def main(path):
+def main(path,
+         everything: 'delete everything, otherwise specify entities to delete individually' = False,
+         code = False,
+         role = False,
+         triggers=False,
+         logs=False):
     name = cli_aws.lambda_name(path)
+    print('rm assets of lambda:', name, file=sys.stderr)
 
-    with util.exceptions.ignore(boto3.client('lambda').exceptions.ResourceNotFoundException):
-        boto3.client('lambda').delete_function(FunctionName=name)
-        print('rm function:', name, file=sys.stderr)
+    if everything or code:
+        with util.exceptions.ignore(boto3.client('lambda').exceptions.ResourceNotFoundException):
+            boto3.client('lambda').delete_function(FunctionName=name)
+            print('rm function:', name, file=sys.stderr)
 
-    with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
-        for policy in boto3.client('iam').list_attached_role_policies(RoleName=name)['AttachedPolicies']:
-            boto3.client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
-            print('rm policy:', policy['PolicyArn'], file=sys.stderr)
+    if everything or role:
+        with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
+            for policy in boto3.client('iam').list_attached_role_policies(RoleName=name)['AttachedPolicies']:
+                boto3.client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
+                print('rm policy:', policy['PolicyArn'], file=sys.stderr)
 
-    with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
-        for policy in boto3.client('iam').list_role_policies(RoleName=name)['PolicyNames']:
-            boto3.client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
-            print('rm allow:', policy, file=sys.stderr)
+        with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
+            for policy in boto3.client('iam').list_role_policies(RoleName=name)['PolicyNames']:
+                boto3.client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
+                print('rm allow:', policy, file=sys.stderr)
 
-    with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
-        boto3.client('iam').delete_role(RoleName=name)
-        print('rm role:', name, file=sys.stderr)
+        with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
+            boto3.client('iam').delete_role(RoleName=name)
+            print('rm role:', name, file=sys.stderr)
 
-    with open(path) as f:
-        triggers = cli_aws.parse_metadata('trigger:', f.read().splitlines(), silent=True)
-    if 'sns' in triggers:
-        for page in boto3.client('sns').get_paginator('list_topics').paginate():
-            for topic in page['Topics']:
-                arn = topic['TopicArn']
-                if arn.split(':')[-1] == name:
-                    print('rm sns:', name, file=sys.stderr)
-                    boto3.client('sns').delete_topic(TopicArn=arn)
-    for trigger in triggers:
-        if trigger.split()[0] == 'cloudwatch':
-            _, schedule = trigger.split(None, 1)
-            with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
-                boto3.client('events').remove_targets(Rule=name, Ids=['1'])
-                print(' rm cloudwatch rule:', schedule, file=sys.stderr)
-            with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
-                boto3.client('events').delete_rule(Name=name)
+    if everything or triggers:
+        with open(path) as f:
+            triggers = cli_aws.parse_metadata('trigger:', f.read().splitlines(), silent=True)
+        if 'sns' in triggers:
+            for page in boto3.client('sns').get_paginator('list_topics').paginate():
+                for topic in page['Topics']:
+                    arn = topic['TopicArn']
+                    if arn.split(':')[-1] == name:
+                        print('rm sns:', name, file=sys.stderr)
+                        boto3.client('sns').delete_topic(TopicArn=arn)
+        for trigger in triggers:
+            if trigger.split()[0] == 'cloudwatch':
+                _, schedule = trigger.split(None, 1)
+                with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
+                    boto3.client('events').remove_targets(Rule=name, Ids=['1'])
+                    print(' rm cloudwatch rule:', schedule, file=sys.stderr)
+                with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
+                    boto3.client('events').delete_rule(Name=name)
 
-    with util.exceptions.ignore(boto3.client('logs').exceptions.ResourceNotFoundException):
-        logs = f'/aws/lambda/{name}'
-        boto3.client('logs').delete_log_group(logGroupName=logs)
-        print('rm logs:', logs, file=sys.stderr)
+    if everything or logs:
+        with util.exceptions.ignore(boto3.client('logs').exceptions.ResourceNotFoundException):
+            logs = f'/aws/lambda/{name}'
+            boto3.client('logs').delete_log_group(logGroupName=logs)
+            print('rm logs:', logs, file=sys.stderr)
 
     keys = [alias for page in boto3.client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
     keys = [x['AliasName'] for x in keys if x['AliasArn'].endswith(f'/lambda/{name}')]
