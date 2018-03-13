@@ -29,7 +29,7 @@ def main(path):
     with util.exceptions.ignore(boto3.client('iam').exceptions.NoSuchEntityException):
         policy = boto3.client('iam').get_role(RoleName=name)['Role']["AssumeRolePolicyDocument"]
         print()
-        print('role:')
+        print('trust relationships:')
         print(util.strings.indent(json.dumps(policy, indent=2), 2))
 
     with util.exceptions.ignore(boto3.client('lambda').exceptions.ResourceNotFoundException):
