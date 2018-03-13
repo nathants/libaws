@@ -235,7 +235,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
          kms: 'auto create a kms key for this lambda, otherwise default lambda key is used' = False,
          kms_key: 'use a specific kms arn or alias' = None):
     for var in env_vars:
-        assert var.count('=') == 1, 'bad env-var, should be: KEY=VALUE'
+        assert '=' in var, 'bad env-var, should be: KEY=VALUE'
     name = cli_aws.lambda_name(path)
     arn_user = boto3.client('sts').get_caller_identity()['Arn']
     print(f'arn_user: {arn_user}', file=sys.stderr)
@@ -258,7 +258,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
           'Role': arn_role,
           'Timeout': timeout,
           'MemorySize': memory,
-          'Environment': {'Variables': {k: v for var in env_vars for k, v in [var.split('=')]}},
+          'Environment': {'Variables': {k: v for var in env_vars for k, v in [var.split('=', 1)]}},
           'Handler': os.path.basename(path).split('.py')[0] + '.main'}
     if kms_key:
         if not kms_key.startswith('arn:'):
