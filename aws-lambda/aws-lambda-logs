@@ -12,7 +12,7 @@ def main(path,
          exit_after: 'after this substring is seen in a log line, exit' = None):
     shell.ignore_closed_pipes()
     group_name = f'/aws/lambda/{cli_aws.lambda_name(path)}'
-    print('log group:', group_name, file=sys.stderr)
+    print('path:', path, 'log group:', group_name, file=sys.stderr)
     if follow:
         token = ''
         last_stream = None
@@ -21,8 +21,8 @@ def main(path,
                 stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
                 if last_stream != stream_name:
                     last_stream = stream_name
-                    print('log stream:', stream_name, file=sys.stderr)
-            except boto3.client('logs').exceptions.ResourceNotFoundException:
+                    print('path:', path, 'log stream:', stream_name, file=sys.stderr)
+            except (IndexError, boto3.client('logs').exceptions.ResourceNotFoundException):
                 pass
             else:
                 kw = {}
@@ -37,11 +37,16 @@ def main(path,
                         sys.exit(0)
             time.sleep(1)
     else:
-        stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
-        print('log stream:', stream_name)
-        logs = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name)['events']
-        for log in logs:
-            print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000), log['message'].replace('\t', ' ').strip())
+        try:
+            stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
+        except IndexError:
+            print('no logs available', file=sys.stderr)
+            sys.exit(1)
+        else:
+            print('path:', path, 'log stream:', stream_name, file=sys.stderr)
+            logs = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name)['events']
+            for log in logs:
+                print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000), log['message'].replace('\t', ' ').strip())
 
 
 if __name__ == '__main__':
