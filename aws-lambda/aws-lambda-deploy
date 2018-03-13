@@ -216,7 +216,15 @@ def _ensure_key_allows_role(key_arn, user_arn):
             break
     else:
         assert False, 'something is wrong with your key policy, didnt find a Sid: "Allow use of the key"'
-    boto3.client('kms').put_key_policy(KeyId=key_arn, Policy=json.dumps(policy), PolicyName='default')
+    retry(boto3.client('kms').put_key_policy, silent=True, exponent=1.2)(KeyId=key_arn, Policy=json.dumps(policy), PolicyName='default')
+
+def _ensure_log_group(name):
+    name = f'/aws/lambda/{name}'
+    try:
+        boto3.client('logs').create_log_group(logGroupName=name)
+        print('created log group:', name, file=sys.stderr)
+    except boto3.client('logs').exceptions.ResourceAlreadyExistsException:
+        print('log group already exists:', name, file=sys.stderr)
 
 def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda*.py',
          memory=128,
@@ -237,6 +245,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         print('\nproceed? y/n ')
         assert shell.getch() == 'y'
     arn_role = _ensure_role(name)
+    _ensure_log_group(name)
     _ensure_policies(name, metadata)
     _ensure_allows(name, metadata)
     _remove_extra_allows(name, metadata)
