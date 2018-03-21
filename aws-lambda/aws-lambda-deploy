@@ -194,29 +194,43 @@ def _encrypt(key_id, text):
     text = boto3.client('kms').encrypt(KeyId=key_id, Plaintext=text)['CiphertextBlob']
     return base64.b64encode(text).decode('utf-8')
 
-def _ensure_key_allows_role(key_arn, user_arn):
-    resp = boto3.client('kms').get_key_policy(KeyId=key_arn, PolicyName='default')
+def _ensure_key_allows_role(arn_key, arn_role):
+    resp = boto3.client('kms').get_key_policy(KeyId=arn_key, PolicyName='default')
     policy = json.loads(resp['Policy'])
+    # ensure that every Statement.Principal.AWS is a list, it can be either a
+    # string or a list of strings.
     for statement in policy['Statement']:
-        if statement['Sid'] == 'Allow use of the key':
+        if statement.get('Principal', {}).get('AWS'):
             if isinstance(statement['Principal']['AWS'], str):
                 statement['Principal']['AWS'] = [statement['Principal']['AWS']]
-            break
-    else:
-        assert False, 'something is wrong with your key policy, didnt find a Sid: "Allow use of the key"'
+    # remove invalid principals from all statements, these are caused by the
+    # deletion of an iam role referenced by this policy, which transforms the
+    # principal from something like "arn:..." to "AIEKFJ...".
     for statement in policy['Statement']:
-        if statement['Sid'] == 'Allow use of the key':
+        if statement.get('Principal', {}).get('AWS'):
             for arn in statement['Principal']['AWS'].copy():
                 if not arn.startswith('arn:'):
                     statement['Principal']['AWS'].remove(arn)
+    # ensure that the "allow use of key" Statement contains our role's arn
     for statement in policy['Statement']:
         if statement['Sid'] == 'Allow use of the key':
-            if user_arn not in statement['Principal']['AWS']:
-                statement['Principal']['AWS'].append(user_arn)
+            if arn_role not in statement['Principal']['AWS']:
+                statement['Principal']['AWS'].append(arn_role)
             break
+    # if an "allow use of key" Statement didn't exist, create it
     else:
-        assert False, 'something is wrong with your key policy, didnt find a Sid: "Allow use of the key"'
-    retry(boto3.client('kms').put_key_policy, silent=True, exponent=1.1)(KeyId=key_arn, Policy=json.dumps(policy), PolicyName='default')
+        policy['Statement'].append({
+            "Sid": "Allow use of the key",
+            "Effect": "Allow",
+            "Principal": {"AWS": [arn_role]},
+            "Action": ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"],
+            "Resource": "*"
+        })
+    try:
+        retry(boto3.client('kms').put_key_policy, silent=True, exponent=1.1)(KeyId=arn_key, Policy=json.dumps(policy), PolicyName='default')
+    except boto3.client('kms').exceptions.MalformedPolicyDocumentException:
+        print(f'failed to put to key: {arn_key}, policy:\n' + json.dumps(policy, indent=2), file=sys.stderr)
+        raise
 
 def _ensure_log_group(name):
     name = f'/aws/lambda/{name}'
