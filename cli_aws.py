@@ -48,7 +48,7 @@ def ls(selectors, state):
         kind = 'instance.group-id' if selectors[0].startswith('sg-') else kind
         kind = 'private-dns-name' if selectors[0].endswith('.ec2.internal') else kind
         kind = 'ip-address' if all(x.isdigit() or x == '.' for x in selectors[0]) else kind
-        kind = 'private-ip-address' if all(x.isdigit() or x == '.' for x in selectors[0]) and selectors[0].startswith('10.') else kind
+        kind = 'private-ip-address' if all(x.isdigit() or x == '.' for x in selectors[0]) and selectors[0].split('.')[0] in ['10', '172'] else kind
         kind = 'instance-id' if selectors[0].startswith('i-') else kind
         if kind == 'tags' and '=' not in selectors[0]:
             selectors = f'Name={selectors[0]}', *selectors[1:] # auto add Name= to the first tag
