@@ -76,7 +76,7 @@ def setup():
     try:
         yield
     except AssertionError as e:
-        logging.info(red(e.args[0] if e.args else traceback.format_exc().splitlines()[-2].strip()))
+        logging.info(red('error: %s' % (e.args[0] if e.args else traceback.format_exc().splitlines()[-2].strip())))
         sys.exit(1)
     except:
         raise
