@@ -18,7 +18,7 @@ def main(path,
         last_stream = None
         while True:
             try:
-                stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
+                stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime', descending=True)['logStreams'][0]['logStreamName']
                 if last_stream != stream_name:
                     last_stream = stream_name
                     print('path:', path, 'log stream:', stream_name, file=sys.stderr)
