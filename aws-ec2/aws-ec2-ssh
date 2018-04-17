@@ -50,7 +50,8 @@ def main(*selectors,
          echo: 'echo some info about what was run on which hosts' = False,
          batch_mode: 'operate like there are many instances, even if only one' = False,
          prefixed: 'when running against a single host, should streaming output be prefixed with name and ip' = False,
-         error_message: 'error message to print for a failed host, something like: {id} {name} {ip} {ipv4_private} failed' = ''):
+         error_message: 'error message to print for a failed host, something like: {id} {name} {ip} {ipv4_private} failed' = '',
+         user: 'what user to login as, otherwise an "user" tag is expected on the instance' = ''):
     pool.thread._size = max_threads
     assert selectors, 'you must specify some selectors'
     instances = cli_aws.ls(selectors, 'running')
@@ -76,7 +77,7 @@ def main(*selectors,
         logging.info(f'ec2.ssh running against selectors: {selectors}, with cmd: {cmd}')
     if timeout:
         ssh_cmd = ['timeout', '{}s'.format(timeout)] + ssh_cmd
-    make_ssh_cmd = lambda i: ssh_cmd + [cli_aws.ssh_user(i) + '@' + i.public_dns_name, _remote_cmd(cmd, stdin, i.instance_id)]
+    make_ssh_cmd = lambda i: ssh_cmd + [(user or cli_aws.ssh_user(i)) + '@' + i.public_dns_name, _remote_cmd(cmd, stdin, i.instance_id)]
     login = len(instances) == 1 and not cmd
     if not yes and not login:
         logging.info('\nwould you like to proceed? y/n\n')
@@ -131,7 +132,7 @@ def main(*selectors,
                              callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None)
         else:
             try:
-                subprocess.check_call(ssh_cmd + [cli_aws.ssh_user(instances[0]) + '@' + instances[0].public_dns_name])
+                subprocess.check_call(ssh_cmd + [(user or cli_aws.ssh_user(instances[0])) + '@' + instances[0].public_dns_name])
             except subprocess.CalledProcessError:
                 sys.exit(1)
     except:
