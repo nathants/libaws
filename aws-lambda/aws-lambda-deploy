@@ -49,10 +49,24 @@ def _ensure_triggers_cloudwatch(name, arn_lambda, metadata):
     for trigger in metadata['triggers']:
         if trigger.split()[0] == 'cloudwatch':
             _, schedule = trigger.split(None, 1)
-            print(' add cloudwatch rule:', schedule)
+            print(' ensure cloudwatch rule:', schedule, file=sys.stderr)
             arn_rule = boto3.client('events').put_rule(Name=name, ScheduleExpression=schedule)['RuleArn']
-            boto3.client('events').put_targets(Rule=name, Targets=[{'Id': '1', 'Arn': arn_lambda}])
             _ensure_permission(name, 'events.amazonaws.com', arn_rule)
+            targets = retry(boto3.client('events').list_targets_by_rule)(Rule=name)['Targets']
+            assert all(t['Arn'] == arn_lambda for t in targets), f'there are unknown targets in cloudwatch rule: {name}'
+            if len(targets) == 0:
+                print(' add cloudwatch target', file=sys.stderr)
+                boto3.client('events').put_targets(Rule=name, Targets=[{'Id': '1', 'Arn': arn_lambda}])
+            elif len(targets) == 1:
+                print(' cloudwatch target for rule already exists', file=sys.stderr)
+            elif len(targets) > 1:
+                print(' extra cloudwatch target found, removing them', file=sys.stderr)
+                targets = sorted(targets, key=lambda x: x['Id'])
+                boto3.client('events').remove_targets(Rule=name, Ids=[t['Id'] for t in targets[1:]])
+            def ensure_only_one_target():
+                targets = retry(boto3.client('events').list_targets_by_rule)(Rule=name)['Targets']
+                assert len(targets) == 1, f'more than one target found for cloudwatch rule: {name}'
+            retry(ensure_only_one_target, exponent=1.1)()
 
 def _ensure_permission(name, principal, arn):
     try:
@@ -177,8 +191,9 @@ def _create_zip(path, metadata):
     print('\ncreate zip', file=sys.stderr)
     tempdir = tempfile.mkdtemp()
     shell.run(f'virtualenv --python python3.6 {tempdir}/env')
-    with shell.cd(os.path.dirname(path)):
-        shell.run(f'{tempdir}/env/bin/pip install', *metadata['requires'], '2>/dev/null')
+    if metadata['requires']:
+        with shell.cd(os.path.dirname(path)):
+            shell.run(f'{tempdir}/env/bin/pip install', *metadata['requires'], '2>/dev/null')
     with shell.cd(f'{tempdir}/env/lib/python3.6/site-packages'):
         shell.run(f'cp {path} .')
         shell.run('rm -rf wheel pip setuptools pkg_resources easy_install.py')
