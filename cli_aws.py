@@ -120,3 +120,71 @@ region_names = {
     "eu-west-3": "EU (Paris)",
     "sa-east-1": "South America (São Paulo)",
 }
+
+
+def ensure_allows(name, allows):
+    print('\nensure allows', file=sys.stderr)
+    for allow in allows:
+        action, resource = allow.split()
+        print(' ensure allow:', allow, file=sys.stderr)
+        policy = f'''{{"Version": "2012-10-17",
+                       "Statement": [{{"Effect": "Allow",
+                                       "Action": "{action}",
+                                       "Resource": "{resource}"}}]}}'''
+        boto3.client('iam').put_role_policy(RoleName=name, PolicyName=_policy_name(allow), PolicyDocument=policy)
+
+def ensure_policies(name, policies):
+    print('\nensure policies', file=sys.stderr)
+    all_policies = [policy for page in boto3.client('iam').get_paginator('list_policies').paginate() for policy in page['Policies']]
+    for policy in policies:
+        matched_polices = [x for x in all_policies if x['Arn'].split('/')[-1] == policy]
+        if 0 == len(matched_polices):
+            print(' didnt find any policy:', policy, file=sys.stderr)
+            sys.exit(1)
+        elif 1 == len(matched_polices):
+            boto3.client('iam').attach_role_policy(RoleName=name, PolicyArn=matched_polices[0]["Arn"])
+            print(' attached policy:', policy, file=sys.stderr)
+        else:
+            print(' found more than 1 policy:', policy, file=sys.stderr)
+            for p in matched_polices:
+                print(p['Arn'], file=sys.stderr)
+            sys.exit(1)
+
+def ensure_role(name, principal):
+    print('ensure role', file=sys.stderr)
+    role_path = f'/{principal}/{name}-path/'
+    roles = boto3.client('iam').list_roles(PathPrefix=role_path)['Roles']
+    if 0 == len(roles):
+        print(' create role:', name, file=sys.stderr)
+        policy = '''{"Version": "2012-10-17",
+                     "Statement": [{"Effect": "Allow",
+                                    "Principal": {"Service": "%s.amazonaws.com"},
+                                    "Action": "sts:AssumeRole"}]}''' % principal
+        return boto3.client('iam').create_role(Path=role_path, RoleName=name, AssumeRolePolicyDocument=policy)['Role']['Arn']
+    elif 1 == len(roles):
+        print(' role exists:', name, file=sys.stderr)
+        return roles[0]['Arn']
+    else:
+        print(' error: there is more than 1 role under path:', role_path, file=sys.stderr)
+        for role in roles:
+            print('', role, file=sys.stderr)
+        sys.exit(1)
+
+def _policy_name(allow):
+    return allow.replace('*', 'All').replace(' ', '-').replace(':', '--')
+
+def remove_extra_policies(name, policies):
+    print('\nremove extra policies', file=sys.stderr)
+    attached_role_policies = [policy for page in boto3.client('iam').get_paginator('list_attached_role_policies').paginate(RoleName=name) for policy in page['AttachedPolicies']]
+    for policy in attached_role_policies:
+        if policy['PolicyName'] not in policies:
+            print('detaching policy:', policy['PolicyName'], file=sys.stderr)
+            boto3.client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
+
+def remove_extra_allows(name, allows):
+    print('\nremove extra allows', file=sys.stderr)
+    role_policies = [policy for page in boto3.client('iam').get_paginator('list_role_policies').paginate(RoleName=name) for policy in page['PolicyNames']]
+    for policy in role_policies:
+        if policy not in [_policy_name(x) for x in allows]:
+            print('removing policy:', policy, file=sys.stderr)
+            boto3.client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
