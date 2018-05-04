@@ -20,11 +20,11 @@ def main(name, *tags, xx=0, description=None):
                                                for k, v in [tag.split('=')]]
     cidr = cidr.replace('xx', str(xx))
     print('cidr:', cidr, file=sys.stderr)
-    vpc = boto3.resource('vpc').create_vpc(CidrBlock=cidr)
+    vpc = boto3.resource('ec2').create_vpc(CidrBlock=cidr)
     retry(vpc.create_tags)(Tags=tags)
     vpc.wait_until_available()
     retry(vpc.modify_attribute)(EnableDnsHostnames={'Value': True})
-    gateway = boto3.resource('vpc').create_internet_gateway()
+    gateway = boto3.resource('ec2').create_internet_gateway()
     retry(gateway.create_tags)(Tags=tags)
     retry(vpc.attach_internet_gateway)(InternetGatewayId=gateway.id)
     route_table = list(vpc.route_tables.all())[0]
@@ -33,15 +33,15 @@ def main(name, *tags, xx=0, description=None):
     for i, zone in enumerate(cli_aws.zones()):
         block = '.'.join(cidr.split('/')[0].split('.')[:2] + [str(16 * i + 1), '0/20'])
         print('zone:', zone, 'block:', block, file=sys.stderr)
-        subnet = boto3.resource('vpc').create_subnet(CidrBlock=block, VpcId=vpc.id, AvailabilityZone=zone)
+        subnet = boto3.resource('ec2').create_subnet(CidrBlock=block, VpcId=vpc.id, AvailabilityZone=zone)
         _tags = copy.deepcopy(tags)
         for tag in _tags:
             if tag['Key'] == 'Name':
                 tag['Value'] += '-subnet-' + zone[-1]
-        retry(boto3.client('vpc').create_tags)(Resources=[subnet.id], Tags=_tags)
-        retry(boto3.client('vpc').modify_subnet_attribute)(SubnetId=subnet.id, MapPublicIpOnLaunch={'Value': True})
-        retry(boto3.client('vpc').associate_route_table)(RouteTableId=route_table.route_table_id, SubnetId=subnet.id)
-    sg = boto3.resource('vpc').create_security_group(GroupName=name, Description=description or name, VpcId=vpc.id)
+        retry(boto3.client('ec2').create_tags)(Resources=[subnet.id], Tags=_tags)
+        retry(boto3.client('ec2').modify_subnet_attribute)(SubnetId=subnet.id, MapPublicIpOnLaunch={'Value': True})
+        retry(boto3.client('ec2').associate_route_table)(RouteTableId=route_table.route_table_id, SubnetId=subnet.id)
+    sg = boto3.resource('ec2').create_security_group(GroupName=name, Description=description or name, VpcId=vpc.id)
     retry(sg.create_tags)(Tags=tags)
     return vpc.id
 

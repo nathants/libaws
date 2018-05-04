@@ -6,7 +6,7 @@ import cli_aws
 import sys
 
 def main(vpc_id, yes=False):
-    vpc = boto3.resource('vpc').Vpc(vpc_id)
+    vpc = boto3.resource('ec2').Vpc(vpc_id)
     print('going to delete:', cli_aws.tags(vpc).get('Name', '<no-name>'), vpc_id)
     if not yes:
         print('\nwould you like to proceed? y/n\n')
@@ -25,17 +25,17 @@ def main(vpc_id, yes=False):
             if not association.main:
                 association.delete()
                 print('deleted:', association)
-    endpoints = boto3.client('vpc').describe_vpc_endpoints(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['VpcEndpoints']
+    endpoints = boto3.client('ec2').describe_vpc_endpoints(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['VpcEndpoints']
     for endpoint in endpoints:
-        boto3.client('vpc').delete_vpc_endpoints(VpcEndpointIds=[endpoint['VpcEndpointId']])
+        boto3.client('ec2').delete_vpc_endpoints(VpcEndpointIds=[endpoint['VpcEndpointId']])
         print('deleted:', endpoint)
     for sg in vpc.security_groups.all():
         if sg.group_name != 'default':
             sg.delete()
             print('deleted:', sg)
-    vpc_peers = boto3.client('vpc').describe_vpc_peering_connections(Filters=[{'Name': 'requester-vpc-info.vpc-id', 'Values': [vpc_id]}])['VpcPeeringConnections']
+    vpc_peers = boto3.client('ec2').describe_vpc_peering_connections(Filters=[{'Name': 'requester-vpc-info.vpc-id', 'Values': [vpc_id]}])['VpcPeeringConnections']
     for vpc_peer in vpc_peers:
-        boto3.resource('vpc').VpcPeeringConnection(vpc_peer['VpcPeeringConnectionId']).delete()
+        boto3.resource('ec2').VpcPeeringConnection(vpc_peer['VpcPeeringConnectionId']).delete()
         print('deleted:', vpc_peer)
     for nacl in vpc.network_acls.all():
         if not nacl.is_default:
@@ -47,7 +47,7 @@ def main(vpc_id, yes=False):
             print('deleted:', interface)
         subnet.delete()
         print('deleted:', subnet)
-    boto3.client('vpc').delete_vpc(VpcId=vpc_id)
+    boto3.client('ec2').delete_vpc(VpcId=vpc_id)
     print('deleted:', vpc)
 
 if __name__ == '__main__':
