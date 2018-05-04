@@ -11,6 +11,9 @@ from util.retry import retry
 
 ssh_args = ' -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
 
+def zones():
+    return [x['ZoneName'] for x in boto3.client('ec2').describe_availability_zones()['AvailabilityZones']]
+
 def ssh_user(*instances):
     try:
         users = {tags(i)['user'] for i in instances}

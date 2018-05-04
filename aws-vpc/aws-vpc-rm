@@ -1,0 +1,55 @@
+#!/usr/bin/env python3.6
+import shell
+import boto3
+import argh
+import cli_aws
+import sys
+
+def main(vpc_id, yes=False):
+    vpc = boto3.resource('vpc').Vpc(vpc_id)
+    print('going to delete:', cli_aws.tags(vpc).get('Name', '<no-name>'), vpc_id)
+    if not yes:
+        print('\nwould you like to proceed? y/n\n')
+        assert shell.getch() == 'y', 'abort'
+    for subnet in vpc.subnets.all():
+        instances = list(subnet.instances.all())
+        if instances:
+            print('error: there are ec2 instances in vpc:', vpc_id)
+            sys.exit(1)
+    for gateway in vpc.internet_gateways.all():
+        vpc.detach_internet_gateway(InternetGatewayId=gateway.id)
+        gateway.delete()
+        print('deleted:', gateway)
+    for route_table in vpc.route_tables.all():
+        for association in route_table.associations:
+            if not association.main:
+                association.delete()
+                print('deleted:', association)
+    endpoints = boto3.client('vpc').describe_vpc_endpoints(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['VpcEndpoints']
+    for endpoint in endpoints:
+        boto3.client('vpc').delete_vpc_endpoints(VpcEndpointIds=[endpoint['VpcEndpointId']])
+        print('deleted:', endpoint)
+    for sg in vpc.security_groups.all():
+        if sg.group_name != 'default':
+            sg.delete()
+            print('deleted:', sg)
+    vpc_peers = boto3.client('vpc').describe_vpc_peering_connections(Filters=[{'Name': 'requester-vpc-info.vpc-id', 'Values': [vpc_id]}])['VpcPeeringConnections']
+    for vpc_peer in vpc_peers:
+        boto3.resource('vpc').VpcPeeringConnection(vpc_peer['VpcPeeringConnectionId']).delete()
+        print('deleted:', vpc_peer)
+    for nacl in vpc.network_acls.all():
+        if not nacl.is_default:
+            nacl.delete()
+            print('deleted:', nacl)
+    for subnet in vpc.subnets.all():
+        for interface in subnet.network_interfaces.all():
+            interface.delete()
+            print('deleted:', interface)
+        subnet.delete()
+        print('deleted:', subnet)
+    boto3.client('vpc').delete_vpc(VpcId=vpc_id)
+    print('deleted:', vpc)
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)

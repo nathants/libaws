@@ -1,0 +1,51 @@
+#!/usr/bin/env python3.6
+import itertools
+import argh
+import sys
+import cli_aws
+import shell
+import util.colors
+import pool.thread
+
+def main(src, dst, *selectors, user='', yes=False):
+    assert selectors, 'you must specify some selectors'
+    instances = cli_aws.ls(selectors, 'running')
+    assert instances, 'didnt find any instances'
+    if not instances:
+        sys.exit(1)
+    else:
+        for instance in instances:
+            print(cli_aws.format(instance), file=sys.stderr)
+        if not yes:
+            print('\nwould you like to proceed? y/n\n', file=sys.stderr)
+            assert shell.getch() == 'y', 'abort'
+        justify = max(len(i.public_dns_name) for i in instances)
+        def run(instance, color):
+            if color:
+                color = getattr(util.colors, color)
+            else:
+                color = lambda x: x
+            name = (instance.public_dns_name + ': ').ljust(justify + 2)
+            def fn():
+                host = (user or cli_aws.ssh_user(instance)) + '@' + instance.public_dns_name
+                _src = host + src if src.startswith(':') else src
+                _dst = host + dst if dst.startswith(':') else dst
+                try:
+                    shell.run('scp', cli_aws.ssh_args, _src, _dst, callback=lambda x: print(color(name + x), file=sys.stderr, flush=True))
+                except:
+                    failures.append(util.colors.red('failure: ') + instance.public_dns_name)
+                else:
+                    successes.append(util.colors.green('success: ') + instance.public_dns_name)
+            return fn
+        failures = []
+        successes = []
+        pool.thread.wait(*map(run, instances, itertools.cycle(util.colors._colors) if len(instances) > 1 else [False]))
+        print('\nresults:', file=sys.stderr)
+        for msg in successes + failures:
+            print(' ' + msg)
+        if failures:
+            sys.exit(1)
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)
