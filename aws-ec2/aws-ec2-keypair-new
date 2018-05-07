@@ -1,0 +1,24 @@
+#!/usr/bin/env python3.6
+import logging
+import shell
+import boto3
+import argh
+import cli_aws
+
+def main(name, pub_key: 'path on disk to pubkey file'):
+    try:
+        with open(pub_key) as f:
+            boto3.client('ec2').import_key_pair(KeyName=name, PublicKeyMaterial=f.read())
+        logging.info('key created')
+    except Exception as e:
+        if '(InvalidKeyPair.Duplicate)' in str(e):
+            remote_fingerprint = boto3.resource('ec2').KeyPair(name).key_fingerprint
+            local_fingerprint = shell.run(f'ssh-keygen -e -f {pub_key} -m pkcs8 | openssl pkey -pubin -outform der | openssl md5 -c | cut -d" " -f2')
+            assert remote_fingerprint == local_fingerprint, 'key exists with that name exists, but is not the same pub_key'
+            logging.info('key already exists and pub_key fingerprints match')
+        else:
+            raise
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)

@@ -1,0 +1,27 @@
+#!/usr/bin/env python3.6
+import sys
+import logging
+import shell
+import boto3
+import argh
+import cli_aws
+
+def main(name, yes=False):
+    key = boto3.resource('ec2').KeyPair(name)
+    try:
+        key.load()
+    except Exception as e:
+        if '(InvalidKeyPair.NotFound)' in str(e):
+            logging.info('error: no such key')
+            sys.exit(1)
+        else:
+            raise
+    if not yes:
+        logging.info('going to delete key: %s %s', key.name, key.key_fingerprint)
+        logging.info('\nwould you like to proceed? y/n\n')
+        assert shell.getch() == 'y', 'abort'
+    boto3.client('ec2').delete_key_pair(KeyName=name)
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)
