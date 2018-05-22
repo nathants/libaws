@@ -26,8 +26,12 @@ def ssh_user(*instances):
     assert len(users) == 1, 'cannot operate on instances with heteragenous users: %s' % users
     return users.pop()
 
-def tags(instance):
-    return {x['Key']: x['Value'].replace('\t', '_').replace(' ', '_') for x in (instance.tags or {})}
+def tags(obj):
+    if isinstance(obj, dict):
+        tags = obj.get('Tags') or {}
+    else:
+        tags = obj.tags or {}
+    return {x['Key']: x['Value'].replace('\t', '_').replace(' ', '_') for x in tags}
 
 def ec2_name(instance):
     return tags(instance).get('Name', '<no-name>')
