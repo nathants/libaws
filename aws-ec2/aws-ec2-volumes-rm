@@ -1,0 +1,28 @@
+#!/usr/bin/env python3.6
+import boto3
+import argh
+import cli_aws
+import logging
+import shell
+
+def main(*volume_ids, yes=False):
+    filters = []
+    filters += [{'Name': 'status', 'Values': ['available']}]
+    if volume_ids:
+        filters += [{'Name': 'volume-id', 'Values': volume_ids}]
+    logging.info('going to remove:')
+    ids = []
+    for page in boto3.client('ec2').get_paginator('describe_volumes').paginate(Filters=filters):
+        for v in page['Volumes']:
+            ids.append(v['VolumeId'])
+            logging.info(f' {ids[-1]}')
+    if not yes:
+        logging.info('\nwould you like to proceed? y/n\n')
+        assert shell.getch() == 'y', 'abort'
+    for volume_id in ids:
+        boto3.client('ec2').delete_volume(VolumeId=volume_id)
+        logging.info(f'deleted: {volume_id}')
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)
