@@ -3,9 +3,15 @@ import boto3
 import argh
 import cli_aws
 
-def main(state: 'creating|available|in-use|deleting|deleted|error' = None,
+def main(*volume_ids,
+         state: 'creating|available|in-use|deleting|deleted|error' = None,
          tags = False):
-    for page in boto3.client('ec2').get_paginator('describe_volumes').paginate(Filters=[{'Name': 'status', 'Values': [state]}] if state else []):
+    filters = []
+    if state:
+        filters += [{'Name': 'status', 'Values': [state]}]
+    if volume_ids:
+        filters += [{'Name': 'volume-id', 'Values': volume_ids}]
+    for page in boto3.client('ec2').get_paginator('describe_volumes').paginate(Filters=filters):
         for v in page['Volumes']:
             print(v['VolumeId'],
                   v['State'],
@@ -14,8 +20,7 @@ def main(state: 'creating|available|in-use|deleting|deleted|error' = None,
                   v['VolumeType'],
                   v['CreateTime'].isoformat() + 'Z',
                   ','.join([a['InstanceId'] for a in v['Attachments']]) or '-',
-                  (','.join(f'{k}={cli_aws.tags(v)[k].replace(" ", "_")}' for k in sorted(cli_aws.tags(v))) or '-') if tags else '',
-                  )
+                  (','.join(f'{k}={cli_aws.tags(v)[k].replace(" ", "_")}' for k in sorted(cli_aws.tags(v))) or '-') if tags else '')
 
 if __name__ == '__main__':
     with cli_aws.setup():
