@@ -3,7 +3,6 @@ import base64
 import json
 import argh
 import cli_aws
-import tempfile
 import sys
 import os
 import shell
@@ -23,7 +22,8 @@ def _parse_file(path):
     return path, lines, {"policies": cli_aws.parse_metadata('policy:', lines),
                          "allows": cli_aws.parse_metadata('allow:', lines),
                          "requires": cli_aws.parse_metadata('require:', lines),
-                         "triggers": cli_aws.parse_metadata('trigger:', lines)}
+                         "triggers": cli_aws.parse_metadata('trigger:', lines),
+                         "concurrencies": cli_aws.parse_metadata('concurrency:', lines)}
 
 def _ensure_triggers_api(name, arn_lambda, metadata):
     print('\nensure triggers api', file=sys.stderr)
@@ -159,7 +159,10 @@ def _ensure_key(name, arn_user, arn_role):
 
 def _create_zip(path, requires):
     print('\ncreate zip', file=sys.stderr)
-    tempdir = tempfile.mkdtemp()
+    name = cli_aws.lambda_name(path)
+    tempdir = f'/tmp/{name}'
+    shell.run('rm -rf', tempdir)
+    shell.run('mkdir -p', tempdir)
     shell.run(f'virtualenv --python python3.6 {tempdir}/env')
     if requires:
         with shell.cd(os.path.dirname(path)):
@@ -171,7 +174,17 @@ def _create_zip(path, requires):
         shell.run(f'zip -r {tempdir}/lambda.zip .')
     with open(f'{tempdir}/lambda.zip', 'rb') as f:
         val = f.read()
-    os.remove(f'{tempdir}/lambda.zip')
+    return val
+
+def _update_zip(path):
+    print('\nupdate code', file=sys.stderr)
+    name = cli_aws.lambda_name(path)
+    tempdir = f'/tmp/{name}'
+    with shell.cd(f'{tempdir}/env/lib/python3.6/site-packages'):
+        shell.run(f'cp {path} .')
+        shell.run(f'zip {tempdir}/lambda.zip {os.path.basename(path)}')
+    with open(f'{tempdir}/lambda.zip', 'rb') as f:
+        val = f.read()
     return val
 
 def _encrypt(key_id, text):
@@ -225,66 +238,78 @@ def _ensure_log_group(name):
     except boto3.client('logs').exceptions.ResourceAlreadyExistsException:
         print('log group already exists:', name, file=sys.stderr)
 
+def _set_concurrency(name, metadata):
+    if metadata['concurrencies']:
+        i = int(metadata['concurrencies'][0])
+        boto3.client('lambda').put_function_concurrency(FunctionName=name, ReservedConcurrentExecutions=i)
+        print('\nset lambda concurrency to:', i, file=sys.stderr)
+
 def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda*.py',
          memory=128,
          timeout=300,
          *env_vars: 'KEY=VALUE',
          yes=False,
+         quick: 'update code only' = False,
          no_encrypt: 'do not kms-encrypt every env var, which is the default when a kms key is specified' = False,
          kms: 'auto create a kms key for this lambda, otherwise default lambda key is used' = False,
          kms_key: 'use a specific kms arn or alias' = None):
-    for var in env_vars:
-        assert '=' in var, f'bad env-var, should be: KEY=VALUE, not: {var}'
-    name = cli_aws.lambda_name(path)
-    arn_user = boto3.client('sts').get_caller_identity()['Arn']
-    print(f'arn_user: {arn_user}', file=sys.stderr)
-    print(f'file: {path}', file=sys.stderr)
-    print(f'names: {name}\n', file=sys.stderr)
     path, lines, metadata = _parse_file(path)
-    if not yes:
-        print('\nproceed? y/n ')
-        assert shell.getch() == 'y'
-    _ensure_log_group(name)
-    arn_role = cli_aws.ensure_role(name, 'lambda')
-    cli_aws.ensure_policies(name, metadata['policies'])
-    cli_aws.ensure_allows(name, metadata['allows'])
-    cli_aws.remove_extra_allows(name, metadata['allows'])
-    cli_aws.remove_extra_policies(name, metadata['policies'])
-    zipfile = _create_zip(path, metadata['requires'])
-    kw = {'FunctionName': name,
-          'Runtime': 'python3.6',
-          'Role': arn_role,
-          'Timeout': timeout,
-          'MemorySize': memory,
-          'Environment': {'Variables': {k: v for var in env_vars for k, v in [var.split('=', 1)]}},
-          'Handler': os.path.basename(path).split('.py')[0] + '.main'}
-    if kms_key:
-        if not kms_key.startswith('arn:'):
-            assert not kms_key.startswith('/'), f'kms key alias should not start with /: {kms_key}'
-            assert 'alias' not in kms_key, f'kms key should not contain the word "alias": {kms_key}'
-            keys = [x for x in _all_keys() if x['AliasArn'].endswith(f':alias/{kms_key}')]
-            assert len(keys) == 1, f'didnt find exactly 1 kms key for alias: {kms_key} => {keys}'
-            print(f'using kms key: {kms_key} => {keys[0]["AliasArn"]}')
-            kms_key = _key_id(keys[0])
-        kw['KMSKeyArn'] = kms_key
-    elif kms:
-        kw['KMSKeyArn'] = _ensure_key(name, arn_user, arn_role)
-    if 'KMSKeyArn' in kw:
-        _ensure_key_allows_role(kw['KMSKeyArn'], arn_role)
-        if not no_encrypt:
-            kw['Environment']['Variables'] = {k: _encrypt(kw['KMSKeyArn'], v) for k, v in kw['Environment']['Variables'].items()}
-    try:
-        arn_lambda = boto3.client('lambda').get_function(FunctionName=name)['Configuration']['FunctionArn']
-    except boto3.client('lambda').exceptions.ResourceNotFoundException:
-        arn_lambda = retry(boto3.client('lambda').create_function, silent=True, exponent=1.1)(Code={'ZipFile': zipfile}, **kw)['FunctionArn']
-    else:
+    name = cli_aws.lambda_name(path)
+    if quick:
+        zipfile = _update_zip(path)
         retry(boto3.client('lambda').update_function_code, silent=True, exponent=1.1)(FunctionName=name, ZipFile=zipfile)
-        retry(boto3.client('lambda').update_function_configuration, silent=True, exponent=1.1)(**kw)
-    _ensure_triggers_sns(name, arn_lambda, metadata)
-    _ensure_triggers_cloudwatch(name, arn_lambda, metadata)
-    _ensure_triggers_api(name, arn_lambda, metadata)
-    print(file=sys.stderr)
-    return arn_lambda
+    else:
+        for var in env_vars:
+            assert '=' in var, f'bad env-var, should be: KEY=VALUE, not: {var}'
+        arn_user = boto3.client('sts').get_caller_identity()['Arn']
+        print(f'arn_user: {arn_user}', file=sys.stderr)
+        print(f'file: {path}', file=sys.stderr)
+        print(f'names: {name}\n', file=sys.stderr)
+        if not yes:
+            print('\nproceed? y/n ')
+            assert shell.getch() == 'y'
+        _ensure_log_group(name)
+        arn_role = cli_aws.ensure_role(name, 'lambda')
+        cli_aws.ensure_policies(name, metadata['policies'])
+        cli_aws.ensure_allows(name, metadata['allows'])
+        cli_aws.remove_extra_allows(name, metadata['allows'])
+        cli_aws.remove_extra_policies(name, metadata['policies'])
+        zipfile = _create_zip(path, metadata['requires'])
+        kw = {'FunctionName': name,
+              'Runtime': 'python3.6',
+              'Role': arn_role,
+              'Timeout': timeout,
+              'MemorySize': memory,
+              'Environment': {'Variables': {k: v for var in env_vars for k, v in [var.split('=', 1)]}},
+              'Handler': os.path.basename(path).split('.py')[0] + '.main'}
+        if kms_key:
+            if not kms_key.startswith('arn:'):
+                assert not kms_key.startswith('/'), f'kms key alias should not start with /: {kms_key}'
+                assert 'alias' not in kms_key, f'kms key should not contain the word "alias": {kms_key}'
+                keys = [x for x in _all_keys() if x['AliasArn'].endswith(f':alias/{kms_key}')]
+                assert len(keys) == 1, f'didnt find exactly 1 kms key for alias: {kms_key} => {keys}'
+                print(f'using kms key: {kms_key} => {keys[0]["AliasArn"]}')
+                kms_key = _key_id(keys[0])
+            kw['KMSKeyArn'] = kms_key
+        elif kms:
+            kw['KMSKeyArn'] = _ensure_key(name, arn_user, arn_role)
+        if 'KMSKeyArn' in kw:
+            _ensure_key_allows_role(kw['KMSKeyArn'], arn_role)
+            if not no_encrypt:
+                kw['Environment']['Variables'] = {k: _encrypt(kw['KMSKeyArn'], v) for k, v in kw['Environment']['Variables'].items()}
+        try:
+            arn_lambda = boto3.client('lambda').get_function(FunctionName=name)['Configuration']['FunctionArn']
+        except boto3.client('lambda').exceptions.ResourceNotFoundException:
+            arn_lambda = retry(boto3.client('lambda').create_function, silent=True, exponent=1.1)(Code={'ZipFile': zipfile}, **kw)['FunctionArn']
+        else:
+            retry(boto3.client('lambda').update_function_code, silent=True, exponent=1.1)(FunctionName=name, ZipFile=zipfile)
+            retry(boto3.client('lambda').update_function_configuration, silent=True, exponent=1.1)(**kw)
+        _ensure_triggers_sns(name, arn_lambda, metadata)
+        _ensure_triggers_cloudwatch(name, arn_lambda, metadata)
+        _ensure_triggers_api(name, arn_lambda, metadata)
+        _set_concurrency(name, metadata)
+        print(file=sys.stderr)
+        return arn_lambda
 
 if __name__ == '__main__':
     with cli_aws.setup():
