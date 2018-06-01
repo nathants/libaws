@@ -246,11 +246,12 @@ def _set_concurrency(name, concurrency):
         boto3.client('lambda').put_function_concurrency(FunctionName=name, ReservedConcurrentExecutions=concurrency)
         print('\nset lambda concurrency to:', concurrency, file=sys.stderr)
 
+@argh.arg('env_vars', help='KEY=VALUE')
 def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda*.py',
          memory=128,
          timeout=300,
          concurrency=0,
-         *env_vars: 'KEY=VALUE',
+         *env_vars,
          yes=False,
          quick: 'update code only' = False,
          no_encrypt: 'do not kms-encrypt every env var, which is the default when a kms key is specified' = False,
