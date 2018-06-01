@@ -22,6 +22,10 @@
 
 - [lambda-kms](./examples/lambda_kms.py)
 
+- [lambda-api](./examples/lambda_api.py)
+
+- [lambda-dependencies](./examples/lambda_dependencies.py)
+
 ##### test
 
 `tox`
