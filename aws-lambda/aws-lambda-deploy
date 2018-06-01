@@ -36,7 +36,7 @@ def _ensure_triggers_api(name, arn_lambda, metadata):
                 print(' create rest api', file=sys.stderr)
                 rest_api_id = boto3.client('apigateway').create_rest_api(name=name, endpointConfiguration={'types': ['REGIONAL']})['id']
             parent_id = cli_aws.rest_resource_id(rest_api_id, '/')
-            resource_id = cli_aws.rest_resource_id(rest_api_id, f'/{name}')
+            resource_id = cli_aws.rest_resource_id(rest_api_id, f'/{name}') # TODO child resource wildcard /name/{proxy+}
             if not resource_id:
                 resource_id = boto3.client('apigateway').create_resource(restApiId=rest_api_id, parentId=parent_id, pathPart=name)['id']
             api = boto3.client('lambda').meta.service_model.api_version
