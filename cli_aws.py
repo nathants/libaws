@@ -112,6 +112,25 @@ def region():
     boto3.client('ec2') # run session setup logic
     return boto3.DEFAULT_SESSION.region_name
 
+def rest_apis(name=None):
+    for page in boto3.client('apigateway').get_paginator('get_rest_apis').paginate():
+        for item in page['items']:
+            if not name or item['name'] == name:
+                yield item['name'], item['id'], ','.join(item['endpointConfiguration']['types']), item['createdDate']
+
+def rest_api_id(name):
+    for _, id, *_ in rest_apis(name):
+        return id
+
+def rest_resource_id(rest_api_id, path):
+    for page in boto3.client('apigateway').get_paginator('get_resources').paginate(restApiId=rest_api_id):
+        for item in page['items']:
+            if item['path'] == path:
+                return item['id']
+
+def account():
+    return boto3.client('sts').get_caller_identity()['Account']
+
 region_names = {
     "us-east-2": "US East (Ohio)",
     "us-east-1": "US East (N. Virginia)",

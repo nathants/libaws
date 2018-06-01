@@ -25,6 +25,43 @@ def _parse_file(path):
                          "requires": cli_aws.parse_metadata('require:', lines),
                          "triggers": cli_aws.parse_metadata('trigger:', lines)}
 
+def _ensure_triggers_api(name, arn_lambda, metadata):
+    print('\nensure triggers api', file=sys.stderr)
+    for trigger in metadata['triggers']:
+        if trigger.split()[0] == 'api':
+            rest_api_id = cli_aws.rest_api_id(name)
+            if rest_api_id:
+                print(' rest api already exists', file=sys.stderr)
+            else:
+                print(' create rest api', file=sys.stderr)
+                rest_api_id = boto3.client('apigateway').create_rest_api(name=name, endpointConfiguration={'types': ['REGIONAL']})['id']
+            parent_id = cli_aws.rest_resource_id(rest_api_id, '/')
+            resource_id = cli_aws.rest_resource_id(rest_api_id, f'/{name}')
+            if not resource_id:
+                resource_id = boto3.client('apigateway').create_resource(restApiId=rest_api_id, parentId=parent_id, pathPart=name)['id']
+            api = boto3.client('lambda').meta.service_model.api_version
+            uri = f"arn:aws:apigateway:{cli_aws.region()}:lambda:path/{api}/functions/"
+            uri += f'arn:aws:lambda:{cli_aws.region()}:{cli_aws.account()}:function:{name}/invocations'
+            for resource_id in [parent_id, resource_id]:
+                for method in ['ANY']:
+                    try:
+                        boto3.client('apigateway').put_method(restApiId=rest_api_id,
+                                                              resourceId=resource_id,
+                                                              httpMethod=method,
+                                                              authorizationType='NONE')
+                    except boto3.client('apigateway').exceptions.ConflictException:
+                        pass
+                    else:
+                        boto3.client('apigateway').put_integration(restApiId=rest_api_id,
+                                                                   resourceId=resource_id,
+                                                                   httpMethod=method,
+                                                                   type="AWS_PROXY",
+                                                                   integrationHttpMethod='POST',
+                                                                   uri=uri)
+            boto3.client('apigateway').create_deployment(restApiId=rest_api_id, stageName=name)
+            arn = f"arn:aws:execute-api:{cli_aws.region()}:{cli_aws.account()}:{rest_api_id}/*/*/{name}"
+            _ensure_permission(name, 'apigateway.amazonaws.com', arn)
+
 def _ensure_triggers_cloudwatch(name, arn_lambda, metadata):
     print('\nensure triggers cloudwatch', file=sys.stderr)
     for trigger in metadata['triggers']:
@@ -245,6 +282,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         retry(boto3.client('lambda').update_function_configuration, silent=True, exponent=1.1)(**kw)
     _ensure_triggers_sns(name, arn_lambda, metadata)
     _ensure_triggers_cloudwatch(name, arn_lambda, metadata)
+    _ensure_triggers_api(name, arn_lambda, metadata)
     print(file=sys.stderr)
     return arn_lambda
 

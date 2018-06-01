@@ -11,6 +11,7 @@ def main(path,
          role = False,
          triggers=False,
          logs=False):
+    assert everything or code or role or triggers or logs, 'you probably meant to specify an arg, try --help'
     name = cli_aws.lambda_name(path)
     print('rm assets of lambda:', name, file=sys.stderr)
 
@@ -37,6 +38,11 @@ def main(path,
     if everything or triggers:
         with open(path) as f:
             triggers = cli_aws.parse_metadata('trigger:', f.read().splitlines(), silent=True)
+        if 'api' in triggers:
+            rest_api_id = cli_aws.rest_api_id(name)
+            if rest_api_id:
+                print('rm api:', name, file=sys.stderr)
+                boto3.client('apigateway').delete_rest_api(restApiId=rest_api_id)
         if 'sns' in triggers:
             for page in boto3.client('sns').get_paginator('list_topics').paginate():
                 for topic in page['Topics']:
@@ -49,7 +55,7 @@ def main(path,
                 _, schedule = trigger.split(None, 1)
                 with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
                     boto3.client('events').remove_targets(Rule=name, Ids=['1'])
-                    print(' rm cloudwatch rule:', schedule, file=sys.stderr)
+                    print('rm cloudwatch rule:', schedule, file=sys.stderr)
                 with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
                     boto3.client('events').delete_rule(Name=name)
 
