@@ -21,9 +21,8 @@ def _parse_file(path):
         lines = f.read().splitlines()
     return path, lines, {"policies": cli_aws.parse_metadata('policy:', lines),
                          "allows": cli_aws.parse_metadata('allow:', lines),
-                         "requires": cli_aws.parse_metadata('require:', lines),
-                         "triggers": cli_aws.parse_metadata('trigger:', lines),
-                         "concurrencies": cli_aws.parse_metadata('concurrency:', lines)}
+                         "requires": [os.path.expanduser(x) for x in cli_aws.parse_metadata('require:', lines)],
+                         "triggers": cli_aws.parse_metadata('trigger:', lines)}
 
 def _ensure_triggers_api(name, arn_lambda, metadata):
     print('\nensure triggers api', file=sys.stderr)
@@ -157,10 +156,14 @@ def _ensure_key(name, arn_user, arn_role):
         print(' error: found more than 1 key for:', name, '\n' + '\n'.join(keys), file=sys.stderr)
         sys.exit(1)
 
+def _zip_file(path):
+    name = cli_aws.lambda_name(path)
+    return f'/tmp/{name}/lambda.zip'
+
 def _create_zip(path, requires):
     print('\ncreate zip', file=sys.stderr)
-    name = cli_aws.lambda_name(path)
-    tempdir = f'/tmp/{name}'
+    zip_file = _zip_file(path)
+    tempdir = os.path.dirname(zip_file)
     shell.run('rm -rf', tempdir)
     shell.run('mkdir -p', tempdir)
     shell.run(f'virtualenv --python python3.6 {tempdir}/env')
@@ -171,19 +174,19 @@ def _create_zip(path, requires):
         shell.run(f'cp {path} .')
         shell.run('rm -rf wheel pip setuptools pkg_resources easy_install.py')
         shell.run("ls | grep -E 'info$' | xargs rm -rf")
-        shell.run(f'zip -r {tempdir}/lambda.zip .')
-    with open(f'{tempdir}/lambda.zip', 'rb') as f:
+        shell.run(f'zip -r {zip_file} .')
+    with open(zip_file, 'rb') as f:
         val = f.read()
     return val
 
 def _update_zip(path):
     print('\nupdate code', file=sys.stderr)
-    name = cli_aws.lambda_name(path)
-    tempdir = f'/tmp/{name}'
+    zip_file = _zip_file(path)
+    tempdir = os.path.dirname(zip_file)
     with shell.cd(f'{tempdir}/env/lib/python3.6/site-packages'):
         shell.run(f'cp {path} .')
-        shell.run(f'zip {tempdir}/lambda.zip {os.path.basename(path)}')
-    with open(f'{tempdir}/lambda.zip', 'rb') as f:
+        shell.run(f'zip {zip_file} {os.path.basename(path)}')
+    with open(zip_file, 'rb') as f:
         val = f.read()
     return val
 
@@ -238,15 +241,15 @@ def _ensure_log_group(name):
     except boto3.client('logs').exceptions.ResourceAlreadyExistsException:
         print('log group already exists:', name, file=sys.stderr)
 
-def _set_concurrency(name, metadata):
-    if metadata['concurrencies']:
-        i = int(metadata['concurrencies'][0])
-        boto3.client('lambda').put_function_concurrency(FunctionName=name, ReservedConcurrentExecutions=i)
-        print('\nset lambda concurrency to:', i, file=sys.stderr)
+def _set_concurrency(name, concurrency):
+    if concurrency:
+        boto3.client('lambda').put_function_concurrency(FunctionName=name, ReservedConcurrentExecutions=concurrency)
+        print('\nset lambda concurrency to:', concurrency, file=sys.stderr)
 
 def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda*.py',
          memory=128,
          timeout=300,
+         concurrency=0,
          *env_vars: 'KEY=VALUE',
          yes=False,
          quick: 'update code only' = False,
@@ -255,9 +258,10 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
          kms_key: 'use a specific kms arn or alias' = None):
     path, lines, metadata = _parse_file(path)
     name = cli_aws.lambda_name(path)
-    if quick:
+    if quick and os.path.isfile(_zip_file(path)):
         zipfile = _update_zip(path)
         retry(boto3.client('lambda').update_function_code, silent=True, exponent=1.1)(FunctionName=name, ZipFile=zipfile)
+        print('\ndone', file=sys.stderr)
     else:
         for var in env_vars:
             assert '=' in var, f'bad env-var, should be: KEY=VALUE, not: {var}'
@@ -307,8 +311,8 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         _ensure_triggers_sns(name, arn_lambda, metadata)
         _ensure_triggers_cloudwatch(name, arn_lambda, metadata)
         _ensure_triggers_api(name, arn_lambda, metadata)
-        _set_concurrency(name, metadata)
-        print(file=sys.stderr)
+        _set_concurrency(name, concurrency)
+        print('\ndone\n', file=sys.stderr)
         return arn_lambda
 
 if __name__ == '__main__':
