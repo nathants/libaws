@@ -269,7 +269,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         arn_user = boto3.client('sts').get_caller_identity()['Arn']
         print(f'arn_user: {arn_user}', file=sys.stderr)
         print(f'file: {path}', file=sys.stderr)
-        print(f'names: {name}\n', file=sys.stderr)
+        print(f'name: {name}\n', file=sys.stderr)
         if not yes:
             print('\nproceed? y/n ')
             assert shell.getch() == 'y'
