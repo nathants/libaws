@@ -106,7 +106,9 @@ def lambda_name(path):
     if not os.path.isfile(path):
         print('no such file:', path, file=sys.stderr)
         sys.exit(1)
-    return os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
+    name = os.path.basename(path).replace(' ', '-').replace('_', '-').split('.py')[0]
+    assert '.' not in name, '"." should not be in your filepath except for a file extension'
+    return name
 
 def region():
     boto3.client('ec2') # run session setup logic
