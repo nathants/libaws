@@ -7,18 +7,22 @@ import boto3
 import argh
 import cli_aws
 
+def most_recent_stream(group_name):
+    return boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime', descending=True)['logStreams'][0]['logStreamName']
+
 def main(path,
          follow: 'like tail -f' = False,
          exit_after: 'after this substring is seen in a log line, exit' = None):
     shell.ignore_closed_pipes()
     group_name = f'/aws/lambda/{cli_aws.lambda_name(path)}'
+
     print('path:', path, 'log group:', group_name, file=sys.stderr)
     if follow:
         token = ''
         last_stream = None
         while True:
             try:
-                stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime', descending=True)['logStreams'][0]['logStreamName']
+                stream_name = most_recent_stream(group_name)
                 if last_stream != stream_name:
                     last_stream = stream_name
                     print('path:', path, 'log stream:', stream_name, file=sys.stderr)
@@ -38,7 +42,7 @@ def main(path,
             time.sleep(1)
     else:
         try:
-            stream_name = boto3.client('logs').describe_log_streams(logGroupName=group_name, orderBy='LastEventTime')['logStreams'][-1]['logStreamName']
+            stream_name = most_recent_stream(group_name)
         except IndexError:
             print('no logs available', file=sys.stderr)
             sys.exit(1)
@@ -47,7 +51,6 @@ def main(path,
             logs = boto3.client('logs').get_log_events(logGroupName=group_name, logStreamName=stream_name)['events']
             for log in logs:
                 print(datetime.datetime.fromtimestamp(log['timestamp'] / 1000), log['message'].replace('\t', ' ').strip())
-
 
 if __name__ == '__main__':
     with cli_aws.setup():
