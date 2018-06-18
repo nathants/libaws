@@ -24,6 +24,18 @@ def _parse_file(path):
                          "requires": [os.path.expanduser(x) for x in cli_aws.parse_metadata('require:', lines)],
                          "triggers": cli_aws.parse_metadata('trigger:', lines)}
 
+def _ensure_triggers_s3(name, arn_lambda, metadata):
+    print('\nensure triggers s3', file=sys.stderr)
+    for trigger in metadata['triggers']:
+        if trigger.split()[0] == 's3':
+            _, bucket = trigger.split(None, 1)
+            _ensure_permission(name, 's3.amazonaws.com', f'arn:aws:s3::{cli_aws.account()}:{bucket}')
+            boto3.resource('s3').BucketNotification(bucket).put(NotificationConfiguration={'LambdaFunctionConfigurations': [
+                {'LambdaFunctionArn': arn_lambda,
+                 'Events': ['s3:ObjectCreated:*']}
+            ]})
+            print(' ensure trigger s3:', bucket, file=sys.stderr)
+
 def _ensure_triggers_api(name, arn_lambda, metadata):
     print('\nensure triggers api', file=sys.stderr)
     for trigger in metadata['triggers']:
@@ -60,6 +72,7 @@ def _ensure_triggers_api(name, arn_lambda, metadata):
             boto3.client('apigateway').create_deployment(restApiId=rest_api_id, stageName=name)
             arn = f"arn:aws:execute-api:{cli_aws.region()}:{cli_aws.account()}:{rest_api_id}/*/*/{name}"
             _ensure_permission(name, 'apigateway.amazonaws.com', arn)
+            break
 
 def _ensure_triggers_cloudwatch(name, arn_lambda, metadata):
     print('\nensure triggers cloudwatch', file=sys.stderr)
@@ -312,6 +325,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         _ensure_triggers_sns(name, arn_lambda, metadata)
         _ensure_triggers_cloudwatch(name, arn_lambda, metadata)
         _ensure_triggers_api(name, arn_lambda, metadata)
+        _ensure_triggers_s3(name, arn_lambda, metadata)
         _set_concurrency(name, concurrency)
         print('\ndone\n', file=sys.stderr)
         return arn_lambda

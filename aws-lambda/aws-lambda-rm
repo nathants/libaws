@@ -51,7 +51,18 @@ def main(path,
                         print('rm sns:', name, file=sys.stderr)
                         boto3.client('sns').delete_topic(TopicArn=arn)
         for trigger in triggers:
-            if trigger.split()[0] == 'cloudwatch':
+            if trigger.split()[0] == 's3':
+                _, bucket = trigger.split(None, 1)
+                bucket_notifications = boto3.resource('s3').BucketNotification(bucket)
+                lambda_arn = cli_aws.lambda_arn(name)
+                notifications = []
+                for config in bucket_notifications.lambda_function_configurations:
+                    if config['LambdaFunctionArn'] != lambda_arn:
+                        notifications.append(config)
+                    else:
+                        print('rm s3 notification:', bucket, file=sys.stderr)
+                bucket_notifications.put(NotificationConfiguration={'LambdaFunctionConfigurations': notifications})
+            elif trigger.split()[0] == 'cloudwatch':
                 _, schedule = trigger.split(None, 1)
                 with util.exceptions.ignore(boto3.client('events').exceptions.ResourceNotFoundException):
                     boto3.client('events').remove_targets(Rule=name, Ids=['1'])

@@ -1,4 +1,4 @@
-### cli-aws: composable, succinct aws scripts
+### composable, succinct scripts to complement the aws cli
 
 ##### the successor to [py-aws](https://github.com/nathants/py-aws)
 

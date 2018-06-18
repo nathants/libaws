@@ -102,6 +102,9 @@ def parse_metadata(token, xs, silent=False):
     silent or print(file=sys.stderr)
     return vals
 
+def lambda_arn(name):
+    return boto3.client('lambda').get_function(FunctionName=name)['Configuration']['FunctionArn']
+
 def lambda_name(path):
     if not os.path.isfile(path):
         print('no such file:', path, file=sys.stderr)
