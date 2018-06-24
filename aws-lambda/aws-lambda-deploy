@@ -182,7 +182,7 @@ def _create_zip(path, requires):
     shell.run(f'virtualenv --python python3.6 {tempdir}/env')
     if requires:
         with shell.cd(os.path.dirname(path)):
-            shell.run(f'{tempdir}/env/bin/pip install', *requires, '2>/dev/null')
+            shell.run(f'{tempdir}/env/bin/pip install', *[f'"{r}"' for r in requires], '2>/dev/null')
     with shell.cd(f'{tempdir}/env/lib/python3.6/site-packages'):
         shell.run(f'cp {path} .')
         shell.run('rm -rf wheel pip setuptools pkg_resources easy_install.py')
