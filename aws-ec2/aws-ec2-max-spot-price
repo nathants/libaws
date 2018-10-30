@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+import shell
+import logging
+import os
+import json
+import boto3
+import argh
+import util.cached
+import cli_aws
+import datetime
+
+def _chunk_by_day(days=7):
+    now_end = datetime.datetime.utcnow().replace(second=0, microsecond=0)
+    now_start = now_end.replace(hour=0, minute=0)
+    start = now_start - datetime.timedelta(days=days)
+    f = lambda x: x.isoformat() + 'Z'
+    for i in range(days):
+        s = start + datetime.timedelta(days=i)
+        e = start + datetime.timedelta(days=i + 1)
+        yield [f(s), f(e)]
+    yield [f(now_start), f(now_end)]
+
+def _spot_price_cache_path(type, start, end):
+    start = start.split('T')[0]
+    end = end.split('T')[0]
+    return '/tmp/cache.py-aws.spot-price.%(type)s.%(start)s.%(end)s.json' % locals()
+
+def _spot_price_history(type, days=7): # some notes on possible improvements: https://github.com/nathants/py-aws/blob/7f436794e3cfaeeb6da3e85d457307e2eef442c2/aws/ec2.py#L1375
+    dates = list(_chunk_by_day(days))
+    cacheable_dates = dates[:-1] # everything but the latest is a 24hr period
+    cached_dates = []
+    for start, end in cacheable_dates:
+        if os.path.exists(_spot_price_cache_path(type, start, end)):
+            cached_dates.append([start, end])
+        else:
+            break
+    uncached_dates = dates[len(cached_dates):]
+    cached_data = []
+    for start, end in cached_dates:
+        try:
+            with open(_spot_price_cache_path(type, start, end)) as f:
+                cached_data.extend(json.load(f))
+        except (IOError, ValueError):
+            cached_data = []
+            uncached_dates = dates
+            break
+    start = uncached_dates[0][0]
+    end = uncached_dates[-1][1]
+    data = list(_get_spot_price(type, start, end))
+    for k, v in util.iter.groupby(data, lambda x: x['date'].split('T')[0]):
+        start = datetime.datetime.strptime(k, "%Y-%m-%d")
+        end = (start + datetime.timedelta(days=1)).isoformat() + 'Z'
+        start = start.isoformat() + 'Z'
+        if any([start, end] == x for x in cacheable_dates) and not any([start, end] == x for x in cached_dates):
+            with open(_spot_price_cache_path(type, start, end), 'w') as f:
+                json.dump(v, f)
+    return cached_data + data
+
+def _get_spot_price(type, start, end):
+    token = ''
+    logging.info('get spot prices: %s from %s to %s', type, start, end)
+    assert start < end
+    total = 0
+    while True:
+        res = boto3.client('ec2').describe_spot_price_history(
+            NextToken=token,
+            StartTime=start,
+            EndTime=end,
+            InstanceTypes=[type],
+            ProductDescriptions=['Linux/UNIX (Amazon VPC)'])
+        result = [{'zone': x['AvailabilityZone'],
+                   'price': x['SpotPrice'],
+                   'date': x['Timestamp'].isoformat().split('+')[0] + 'Z'}
+                  for x in res['SpotPriceHistory']]
+        total += len(result)
+        yield from result
+        if res['NextToken']:
+            logging.info('check next token for more results. total so far: %s', total)
+            token = res['NextToken']
+        else:
+            break
+
+def main(type, days=7):
+    vals = _spot_price_history(type, days)
+    results = []
+    for zone, xs in util.iter.groupby(vals, lambda x: x['zone']):
+        if zone.startswith(boto3.client('ec2')._client_config.region_name):
+            results.append([zone, max([x['price'] for x in xs])])
+    results = sorted(results, key=lambda x: float(x[1]))
+    try:
+        ondemand = float(shell.run('aws-ec2-prices -i', type))
+        spot = min(float(price) for zone, price in results)
+        logging.info(f'on demand: {ondemand}, spot offers {int((ondemand - spot) / ondemand * 100)}% savings')
+    except:
+        logging.exception('failed to check on demand price')
+    return [' '.join(x) for x in results]
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)

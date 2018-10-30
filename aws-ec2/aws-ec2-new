@@ -1,10 +1,437 @@
 #!/usr/bin/env python3
-import argh
 import sys
+import datetime
+import util.strings
+import util.iter
+import util.dicts
+import random
+import time
+import pprint
+import copy
+import boto3
+import requests
+import re
+import util.colors
+import logging
+import os
+import argh
+import shell
 import cli_aws
 
-def main():
-    pass
+_default_init = 'date > /tmp/cloudinit.log'
+
+_st1_init = """
+(
+ echo g # Create a new empty GPT partition table
+ echo n # Add a new partition
+ echo 1 # Partition number
+ echo   # First sector (Accept default: 1)
+ echo   # Last sector (Accept default: varies)
+ echo w # Write changes
+) | sudo fdisk /dev/xvdb
+sleep 2
+yes|sudo mkfs -t ext4 /dev/xvdb
+sudo mkdir -p /mnt
+sudo mount -a
+sudo chown -R $(whoami):$(whoami) /mnt
+"""
+
+_nvme_init = """
+# pick the first nvme drive which is NOT mounted as / and prepare that as /mnt
+disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
+(
+ echo g # Create a new empty GPT partition table
+ echo n # Add a new partition
+ echo 1 # Partition number
+ echo   # First sector (Accept default: 1)
+ echo   # Last sector (Accept default: varies)
+ echo w # Write changes
+) | sudo fdisk /dev/nvme0n1
+sleep 2
+sudo mkfs -t ext4 /dev/nvme0n1p1
+sudo mkdir -p /mnt
+sudo mount -o discard /dev/nvme0n1p1 /mnt
+sudo chown -R $(whoami):$(whoami) /mnt
+"""
+
+_timeout_init = """
+echo '# timeout will call this script before it `sudo poweroff`s, and wait 60 seconds for this script to complete' >> /tmp/timeout.sh
+echo '
+    echo {} > /tmp/timeout.seconds
+    # count down until timeout
+    start=$(date +%s)
+    while true; do
+        now=$(date +%s)
+        duration=$(($now - $start))
+        timeout=$(cat /tmp/timeout.seconds)
+        (($duration > $timeout)) && break
+        remaining=$(($timeout - $duration))
+        (($remaining <= 300)) && (($remaining % 60 == 0)) && wall "$(cat /tmp/timeout.seconds) seconds remaining until timeout poweroff. tail -f /var/log/timeout.log to follow, increase /tmp/timeout.seconds to delay, or kill timeout.poweroff.sh to cancel."
+        echo uptime seconds: $duration | sudo tee /var/log/timeout.log
+        echo poweroff in seconds: $remaining | sudo tee -a /var/log/timeout.log
+        sleep 1
+    done
+    # run timeout script and wait 60 seconds
+    echo run: bash /tmp/timeout.sh > /var/log/timeout.log
+    bash /tmp/timeout.sh &
+    pid=$!
+    start=$(date +%s)
+    overtime=60
+    while true; do
+        ps $pid || break
+        now=$(date +%s)
+        duration=$(($now - $start))
+        (($duration > $overtime)) && break
+        remaining=$(($overtime - $duration))
+        echo seconds until poweroff: $remaining > /var/log/timeout.log
+        sleep 1
+    done
+    sudo poweroff
+' > /tmp/timeout.poweroff.sh
+bash /tmp/timeout.poweroff.sh &> /dev/null </dev/null &
+disown %1
+"""
+
+ubuntus = {'bionic', 'xenial', 'trusty'}
+ubuntus_hvm_ssd = {'bionic': 'ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server',
+                   'xenial': 'ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server',
+                   'trusty': 'ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-amd64-server'}
+ubuntus_pv = {'xenial': 'ubuntu/images/ebs-ssd/ubuntu-xenial-16.04-amd64-server',
+              'trusty': 'ubuntu/images/ebs-ssd/ubuntu-trusty-14.04-amd64-server'}
+
+def _ami_lambda():
+    logging.info('fetching latest lambda ami')
+    resp = requests.get('https://docs.aws.amazon.com/lambda/latest/dg/current-supported-versions.html')
+    assert resp.status_code == 200
+    ami = re.findall(r'(amzn-ami-hvm[^ ]+)"', resp.text)[0]
+    amis = list(boto3.resource('ec2').images.filter(Filters=[{'Name': 'name', 'Values': [ami]}]))
+    assert len(amis) == 1
+    ami_id = amis[0].image_id
+    logging.info('using ami %s %s', ami, ami_id)
+    return ami_id
+
+def _ami_ubuntu(name_fragment, ena=False, sriov=False):
+    filters = [{'Name': 'name', 'Values': [f'*{name_fragment}*']},
+               {'Name': 'architecture', 'Values': ['x86_64']}]
+    if ena:
+        filters.append({'Name': 'ena-support', 'Values': ['true']})
+    if sriov:
+        filters.append({'Name': 'sriov-net-support', 'Values': ['simple']})
+    amis = list(cli_aws.retry(boto3.resource('ec2').images.filter)(Owners=['099720109477'], Filters=filters))
+    amis = sorted(amis, key=lambda x: x.creation_date)
+    logging.info(f'using ami {amis[-1].name} {amis[-1].id}')
+    return amis[-1].id
+
+def _ami_arch():
+    filters = [{'Name': 'name', 'Values': ['arch-linux-hvm-*-ebs']},
+               {'Name': 'architecture', 'Values': ['x86_64']}]
+    amis = list(cli_aws.retry(boto3.resource('ec2').images.filter)(Owners=['093273469852'], Filters=filters))
+    amis = sorted(amis, key=lambda x: x.creation_date)
+    logging.info(f'using ami {amis[-1].name} {amis[-1].id}')
+    return amis[-1].id
+
+def _ami_deeplearning():
+    filters = [{'Name': 'name', 'Values': ['Deep Learning AMI (Ubuntu)*']},
+               {'Name': 'architecture', 'Values': ['x86_64']}]
+    amis = list(cli_aws.retry(boto3.resource('ec2').images.filter)(Owners=[], Filters=filters))
+    amis = sorted(amis, key=lambda x: x.creation_date)
+    logging.info(f'using ubuntu ami {amis[-1].name} {amis[-1].id}')
+    return amis[-1].id
+
+def _blocks(gigs, gigs_st1=None, naming='sda'):
+    assert naming in ['sda', 'xvda'] # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html
+    blocks = [{'DeviceName': ('/dev/sda1' if naming == 'sda' else '/dev/xvda'),
+               'Ebs': {'VolumeSize': int(gigs),
+                       'VolumeType': 'gp2',
+                       'DeleteOnTermination': True}}]
+    if gigs_st1:
+        blocks.append({'DeviceName': ('/dev/sda2' if naming == 'sda' else '/dev/xvdb'),
+                       'Ebs': {'VolumeSize': int(gigs_st1),
+                               'VolumeType': 'st1',
+                               'DeleteOnTermination': True}})
+    return blocks
+
+@cli_aws.retry
+def _sgs(names=None):
+    sgs = list(boto3.resource('ec2').security_groups.all())
+    if names:
+        sgs = [x
+               for x in sgs
+               if x.group_name in names
+               or x.group_id in names]
+    return sgs
+
+def _subnet(vpc, zone):
+    vpcs = list(boto3.resource('ec2').vpcs.filter(Filters=[{'Name': 'vpc-id' if vpc.startswith('vpc-') else 'tag:Name', 'Values': [vpc]}]))
+    assert len(vpcs) == 1, 'no vpc named: %s' % vpc
+    if zone:
+        subnets = [x for x in vpcs[0].subnets.all() if x.availability_zone == zone]
+    else:
+        subnets = list(vpcs[0].subnets.all())[:1]
+    assert len(subnets) == 1, 'no subnet for vpc=%(vpc)s zone=%(zone)s' % locals()
+    return subnets[0].id
+
+def _make_spot_opts(spot, opts, fleet_role):
+    if 'arn' not in fleet_role:
+        fleet_role = cli_aws.retry(boto3.client('iam').get_role)(RoleName=fleet_role)['Role']['Arn']
+    spot_opts = {}
+    spot_opts['Type'] = 'request'
+    spot_opts['ReplaceUnhealthyInstances'] = False
+    spot_opts['InstanceInterruptionBehavior'] = 'terminate'
+    spot_opts['TerminateInstancesWithExpiration'] = False
+    spot_opts['SpotPrice'] = str(float(spot))
+    spot_opts['IamFleetRole'] = fleet_role
+    spot_opts['TargetCapacity'] = opts['MaxCount']
+    opts['SecurityGroups'] = [{'GroupId': x} for x in opts['SecurityGroupIds']]
+    opts = util.dicts.drop(opts, ['MaxCount', 'MinCount', 'SecurityGroupIds'])
+    for tags in opts['TagSpecifications'].copy():
+        if tags['ResourceType'] == 'volume':
+            opts['TagSpecifications'].remove(tags) # volume tagging not supported with RequestSpotFleet
+    if 'UserData' in opts:
+        opts['UserData'] = util.strings.b64_encode(opts['UserData'])
+    spot_opts['LaunchSpecifications'] = [opts]
+    return spot_opts
+
+def _tear_down_spot_instances(request_id):
+    boto3.client('ec2').cancel_spot_fleet_requests(SpotFleetRequestIds=[request_id], TerminateInstances=True)
+    logging.info('cancelled spot fleet request:\n%s', request_id)
+    xs = boto3.client('ec2').describe_spot_fleet_instances(SpotFleetRequestId=request_id)['ActiveInstances']
+    xs = [x.get('InstanceId') for x in xs]
+    xs = [x for x in xs if x]
+    if xs:
+        shell.run('aws-ec2-wait-for-state -y', *xs, stream=True)
+        shell.run('aws-ec2-rm -y', *xs, stream=True)
+
+def _spot_errors(request_id):
+    request_id = 'sfr-71797965-2d8c-4521-978e-7b0d82fe6228'
+    date = cli_aws.retry(boto3.client('ec2').describe_spot_fleet_requests)(SpotFleetRequestIds=[request_id])['SpotFleetRequestConfigs'][0]['CreateTime']
+    start = datetime.datetime(date.year, date.month, date.day)
+    val = ''
+    for record in cli_aws.retry(boto3.client('ec2').describe_spot_fleet_request_history)(SpotFleetRequestId=request_id, EventType='error', StartTime=start)['HistoryRecords']:
+        val += record['EventInformation']['EventDescription'] + '\n\n'
+    return val
+
+# TODO have a max seconds before returning whatever came up and terminating the
+# rest, just like wait-for-ssh
+def _create_spot_instances(**opts):
+    request_id = boto3.client('ec2').request_spot_fleet(SpotFleetRequestConfig=opts)['SpotFleetRequestId']
+    logging.info("wait for spot request to be filled for fleet:\n%s", request_id)
+    try:
+        for _ in range(300):
+            resp = cli_aws.retry(boto3.client('ec2').describe_spot_fleet_requests)(SpotFleetRequestIds=[request_id])['SpotFleetRequestConfigs'][0]
+            state = resp['SpotFleetRequestState']
+            failed_states = ['cancelled', 'failed', 'cancelled_running', 'cancelled_terminating']
+            assert state not in failed_states, 'spot fleet failed with: %s' % state
+            assert resp.get('ActivityStatus') != 'error', f'spot fleet failed with errors:\n\n{_spot_errors(request_id)}'
+            xs = cli_aws.retry(boto3.client('ec2').describe_spot_fleet_instances)(SpotFleetRequestId=request_id)['ActiveInstances']
+            if len(xs) == opts['TargetCapacity']:
+                break
+            else:
+                current = len(xs)
+                logging.info('waiting for %s requests', opts['TargetCapacity'] - current)
+                time.sleep(4 + random.random())
+        else:
+            raise AssertionError('failed to wait for spot requests')
+    except:
+        _tear_down_spot_instances(request_id)
+        raise
+    else:
+        instance_ids = [x['InstanceId'] for x in xs]
+        for _ in range(5):
+            instances = cli_aws.ls(instance_ids, None)
+            if len(instances) == len(instance_ids):
+                return instances
+            time.sleep(5)
+        raise Exception('failed to get the right number of instances')
+
+def main(name: 'name of the instance',
+         *tags: 'tags to set as "<key>=<value>"',
+         key: 'key pair name'                          = os.environ.get('AWS_EC2_KEY'),
+         ami: 'ami id'                                 = os.environ.get('AWS_EC2_AMI'),
+         sg: 'security group name'                     = os.environ.get('AWS_EC2_SG'),
+         type: 'instance type'                         = os.environ.get('AWS_EC2_TYPE'),
+         vpc: 'vpc name'                               = os.environ.get('AWS_EC2_VPC'),
+         subnet: 'subnet id'                           = None,
+         role: 'ec2 instance iam role'                 = None,
+         fleet_role: 'ec2 spot fleet iam role'         = 'aws-ec2-spot-fleet-tagging-role',
+         zone: 'ec2 availability zone'                 = None,
+         gigs: 'gb capacity of primary gp2 disk'       = 8,
+         gigs_st1: 'gb capacity of secondary st1 disk' = 0,
+         init: 'run some bash via cloud init'          = _default_init,
+         cmd: 'ssh command'                            = None,
+         num: 'number of instances'                    = 1,
+         spot_days: 'num days for spot price check'    = 2,
+         no_wait: 'do not wait for ssh'                = False,
+         login: 'login in to the instance'             = False,
+         ssh_user: (
+             'what ssh user to use for this instance. '
+             'this is ami specific, if not provided '
+             'will try to guess based on ami choice, '
+             'finally defaulting to "ubuntu".')        = None,
+         verbatim_init: (
+             'use this string verbatim as the '
+             'cloud-init user data.')                  = None,
+         spot: (
+             'spot bid as percentage of the '
+             'on-demand price for current type. '
+             'check prices with `ec2 prices -h`. '
+             'a value of 1.0, the default, bids '
+             'at the on-demand price, so only get '
+             'terminated if spot market rises above '
+             'on-demand market. set to 0 use '
+             'on-demand instead of spot.')             = os.environ.get('AWS_EC2_SPOT', 0),
+         seconds_timeout: (
+             'will `sudo poweroff` after this many '
+             'seconds. calls `bash /tmp/timeout.sh` '
+             'if it exists and waits 60 seconds for '
+             'it to exit before calling `sudo poweroff`. '
+             'set to 0 to disable.')                   = os.environ.get('AWS_EC2_TIMEOUT', 0),
+         seconds_wait: (
+             'how many seconds to wait for ssh '
+             'before continuing with however '
+             'many instances became available '
+             'and terminating the rest. set to 0 '
+             ' to disable.           ')               = 0):
+    assert key, '--key must be provided'
+    assert ami, '--ami must be provided'
+    assert sg, '--sg must be provided'
+    assert type, '--type must be provided'
+    assert vpc, '--vpc must be provided'
+    if spot:
+        spot_percentage = spot
+        ondemand_price = shell.run('aws-ec2-prices -i', type)
+        spot = float(spot) * float(ondemand_price)
+        logging.info('bidding spot at: (spot * on-demand) %s * %s = %s', spot_percentage, ondemand_price, spot)
+    num = int(num)
+    assert not (spot and type == 't2.nano'), 'no spot pricing for t2.nano'
+    assert not login or num == 1, util.colors.red('you asked to login, but you are starting more than one instance, so its not gonna happen')
+    owner = shell.run('whoami')
+    for tag in tags:
+        assert '=' in tag, 'bad tag, should be key=value, not: %s' % tag
+    if ssh_user:
+        user = ssh_user
+    elif ami == 'lambda':
+        user = 'ec2-user'
+    elif ami == 'arch':
+        user = 'root'
+    else:
+        user = 'ubuntu'
+    if verbatim_init:
+        init = verbatim_init
+    else:
+        if seconds_timeout:
+            logging.info('this instance will `sudo poweroff` after %s seconds, or %s hours, because of --seconds-timeout', seconds_timeout, round(int(seconds_timeout) / 60. / 60., 1))
+            init = _timeout_init.format(seconds_timeout) + init
+        if gigs_st1:
+            init = _st1_init + init
+        if type.split('.')[0] in ['i3', 'c5d', 'm5d', 'r5d', 'z1d']:
+            init = _nvme_init + init
+        assert not init.startswith('#!'), 'init commands are bash snippets, and should not include a hashbang'
+        init = '#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1' % (util.strings.b64_encode(init), user)
+    if ami == 'lambda':
+        ami = _ami_lambda()
+    elif ami == 'deeplearning':
+        ami = _ami_deeplearning()
+    elif ami == 'arch':
+        ami = _ami_arch()
+    elif ami in ubuntus:
+        logging.info('fetch latest ami for: %s', ami)
+        distro = ami
+        images = ubuntus_pv if type.split('.')[0] in ['t1', 'm1'] else ubuntus_hvm_ssd
+        ami = _ami_ubuntu(images[distro])
+    elif ami.startswith('ami-'):
+        ami = ami.strip()
+        logging.info('using ami: %s', ami)
+    else:
+        ami_name = ami
+        ami = shell.run('aws-ec2-amis -im')
+        logging.info('using most recent ami for name: %s %s', ami_name, ami)
+    opts = {}
+    opts['UserData'] = init
+    opts['ImageId'] = ami
+    opts['MinCount'] = num
+    opts['MaxCount'] = num
+    opts['KeyName'] = key
+    opts['SecurityGroupIds'] = [x.id for x in _sgs(names=[sg])]
+    opts['InstanceType'] = type
+    opts['BlockDeviceMappings'] = _blocks(gigs, gigs_st1, 'xvda' if user == 'ec2-user' else 'sda')
+    opts['TagSpecifications'] = [{'ResourceType': resource,
+                                  'Tags': [{'Key': 'Name', 'Value': name},
+                                           {'Key': 'owner', 'Value': owner},
+                                           {'Key': 'ssh-user', 'Value': user},
+                                           {'Key': 'creation-date', 'Value': cli_aws.now()},
+                                           {'Key': 'num', 'Value': str(num)}] + [{'Key': k, 'Value': v}
+                                                                                 for tag in tags
+                                                                                 for k, v in [tag.split('=')]]}
+                                 for resource in ['instance', 'volume']]
+    if role:
+        opts['IamInstanceProfile'] = {'Name': role}
+    # some notes on possible improvements: https://github.com/nathants/py-aws/blob/7f436794e3cfaeeb6da3e85d457307e2eef442c2/aws/ec2.py#L1276
+    if spot and zone is None:
+        zone = shell.run('aws-ec2-cheapest-zone', type, '-d', spot_days, stream=True)
+    for _ in range(5):
+        assert vpc or subnet, 'need to provide a --vpc or --subnet'
+        if subnet is not None:
+            opts['SubnetId'] = subnet
+        else:
+            opts['SubnetId'] = _subnet(vpc, zone)
+        logging.info('using vpc: %s', vpc)
+        if spot:
+            spot_opts = _make_spot_opts(spot, opts, fleet_role)
+            _spot_opts = copy.deepcopy(spot_opts)
+            _spot_opts['LaunchSpecifications'][0].pop('UserData', None)
+            logging.info('request spot instances:\n' + pprint.pformat(_spot_opts))
+            # TODO improve the wait-for-spot-fullfillment logic inside _create_spot_instances()
+            # TODO currently this can error, which is not so good. compared to boto3.resource().create_instances().
+            try:
+                instances = _create_spot_instances(**spot_opts)
+            except KeyboardInterrupt:
+                raise
+            except AssertionError:
+                logging.exception('')
+                sys.exit(1)
+            except:
+                logging.exception('failed to create spot instances, retrying...')
+                continue
+        else:
+            logging.info('create instances:\n' + pprint.pformat(util.dicts.drop(opts, ['UserData'])))
+            instances = boto3.resource('ec2').create_instances(**opts)
+        ids = [i.instance_id for i in instances]
+        if no_wait:
+            logging.info('instances:')
+            return [i.instance_id for i in instances]
+        else:
+            logging.info('instances:\n%s', '\n'.join(ids))
+            try:
+                ready_ids = shell.run('aws-ec2-wait-for-ssh -ys', seconds_wait, *ids, stream=True).splitlines()
+                break
+            except KeyboardInterrupt:
+                try:
+                    shell.run('aws-ec2-rm -y', *ids, stream=True)
+                except AssertionError:
+                    pass # when $seconds, and no instances where ready, everything has already been terminated, and rm fails an assert
+                raise
+            except:
+                try:
+                    shell.run('aws-ec2-rm -y', *ids, stream=True)
+                except AssertionError:
+                    pass # when $seconds, and no instances where ready, everything has already been terminated, and rm fails an assert
+                logging.exception('failed to spinup and then wait for ssh on instances, retrying...')
+    else:
+        assert False, 'failed to spinup and then wait for ssh on instances after 5 tries. aborting.'
+    ready_instances = cli_aws.ls(ready_ids, 'running')
+    if login:
+        logging.info('logging in...')
+        shell.call('aws-ec2-ssh -yq', ready_instances[0].instance_id)
+    elif cmd:
+        if os.path.exists(cmd):
+            logging.info('reading cmd from: %s', os.path.abspath(cmd))
+            with open(cmd) as f:
+                cmd = f.read()
+        logging.info('running cmd...')
+        shell.run('aws-ec2-ssh', *[i.instance_id for i in ready_instances], '-nyc -', stdin=cmd, stream=True)
+    logging.info('done')
+    return [i.instance_id for i in ready_instances]
 
 if __name__ == '__main__':
     with cli_aws.setup():

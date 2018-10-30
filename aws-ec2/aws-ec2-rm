@@ -14,7 +14,7 @@ def main(*selectors, yes=False):
         logging.info('wait for pending instances before terminate:')
         for pending in pendings:
             logging.info(' %s', cli_aws.format(pending))
-        shell.check_call('aws-ec2-wait-for-state -e running', *[i.instance_id for i in pendings])
+        shell.check_call('aws-ec2-wait-for-state -y', *[i.instance_id for i in pendings])
     instances = [i for i in cli_aws.ls(selectors, None) if i.state['Name'] in ['running', 'stopped']]
     assert instances, 'didnt find any instances for those selectors'
     logging.info('going to terminate the following instances:')

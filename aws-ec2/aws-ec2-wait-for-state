@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
+import logging
+import shell
 import time
 import random
 import argh
 import sys
 import cli_aws
 
-def main(*selectors, end_state, start_state=None):
+def main(*selectors, end_state='running', start_state=None, yes=False):
     assert end_state in ['running', 'stopped']
     instances = cli_aws.ls(selectors, start_state)
     ids = [i.instance_id for i in instances]
+    for i in instances:
+        logging.info('going to wait for:')
+        logging.info(' %s', cli_aws.format(i))
     if not instances:
         sys.exit(1)
+    if not yes:
+        logging.info('\nwould you like to proceed? y/n\n')
+        assert shell.getch() == 'y', 'abort'
     else:
         for i in range(300):
             try:

@@ -13,10 +13,10 @@ def main(*selectors,
     assert selectors != ['*'], 'you cannot wait for all things, specify some selectors'
     pendings = cli_aws.ls(selectors, 'pending')
     if pendings:
-        logging.info('wait for pending instances before terminate:')
+        logging.info('wait for pending instances:')
         for pending in pendings:
             logging.info(' %s', cli_aws.format(pending))
-        shell.check_call('aws-ec2-wait-for-state -e running', *[i.instance_id for i in pendings])
+        shell.check_call('aws-ec2-wait-for-state -y', *[i.instance_id for i in pendings])
     instances = cli_aws.ls(selectors, 'running')
     assert instances, 'didnt find any instances for those selectors'
     logging.info('going to wait for ssh on the following instances:')
@@ -27,12 +27,12 @@ def main(*selectors,
         assert shell.getch() == 'y', 'abort'
     logging.info('wait for ssh...')
     global_start = time.time()
-    for _ in range(200):
+    for i in range(200):
         running = cli_aws.ls([i.instance_id for i in instances], 'running')
         running_ids = ' '.join([i.instance_id for i in running])
         local_start = time.time()
         try:
-            res = shell.run(f'aws-ec2-ssh {running_ids} --batch-mode -t 10 -yc "whoami >/dev/null" 2>&1', warn=True)
+            res = shell.run(f'aws-ec2-ssh {running_ids} --batch-mode -t 10 -yc "whoami >/dev/null" 2>&1', warn=True, stream=i > 20)
             ready_ids = [x.split()[-1]
                          for x in res['stdout'].splitlines()
                          if x.startswith('success: ')]

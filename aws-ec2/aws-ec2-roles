@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+import util.dicts
+import argh
+import boto3
+import cli_aws
+import pprint
+import util.strings
+
+def main(print_policies=False, role_name=None):
+    for role in boto3.client('iam').list_roles()['Roles']:
+        if role['AssumeRolePolicyDocument']['Statement'] == [{'Action': 'sts:AssumeRole', 'Effect': 'Allow', 'Principal': {'Service': 'ec2.amazonaws.com'}}]:
+            name = role['RoleName']
+            if not role_name or role_name == name:
+                if print_policies:
+                    attached_role_policies = [policy
+                                              for page in boto3.client('iam').get_paginator('list_attached_role_policies').paginate(RoleName=name)
+                                              for policy in page['AttachedPolicies']]
+                    role['AttachedPolicies'] = attached = []
+                    for policy in attached_role_policies:
+                        attached.append(policy)
+                    role_policies = [policy
+                                     for page in boto3.client('iam').get_paginator('list_role_policies').paginate(RoleName=name)
+                                     for policy in page['PolicyNames']]
+                    role['InlinePolicies'] = inline = []
+                    for policy in role_policies:
+                        policy = boto3.client('iam').get_role_policy(RoleName=name, PolicyName=policy)
+                        inline.append(util.dicts.take(policy, ['PolicyDocument', 'PolicyName']))
+                    print(name, util.strings.indent(pprint.pformat(role, width=120), len(name) + 1).lstrip())
+                else:
+                    print(role['RoleName'])
+            if role_name and role_name == name:
+                return
+
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)

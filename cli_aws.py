@@ -1,4 +1,7 @@
 import boto3
+import shell
+from unittest import mock
+import datetime
 import contextlib
 import traceback
 import logging
@@ -11,6 +14,9 @@ from util.retry import retry
 
 ssh_args = ' -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
 
+def now():
+    return str(datetime.datetime.utcnow().isoformat()) + 'Z'
+
 def regions():
     return [x['RegionName'] for x in boto3.client('ec2').describe_regions()['Regions']]
 
@@ -19,7 +25,7 @@ def zones():
 
 def ssh_user(*instances):
     try:
-        users = {tags(i)['user'] for i in instances}
+        users = {tags(i)['ssh-user'] for i in instances}
     except KeyError:
         assert False, 'instances should have a tag "user=<username>"'
     assert len(users), 'no user tag found: %s' % '\n '.join(format(i) for i in instances)
@@ -47,7 +53,7 @@ def format(i, all_tags=False):
                      ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in ['Name', 'user', 'date', 'owner', 'aws:ec2spot:fleet-request-id']) and v)])
 
 def ls(selectors, state):
-    assert state in ['running', 'pending', 'stopped', 'terminated', None]
+    assert state in ['running', 'pending', 'stopped', 'terminated', None], f'bad state: {state}'
     if not selectors:
         instances = list(retry(boto3.resource('ec2').instances.filter)(Filters=[{'Name': 'instance-state-name', 'Values': [state]}] if state else []))
     else:
@@ -60,6 +66,7 @@ def ls(selectors, state):
         kind = 'ip-address' if all(x.isdigit() or x == '.' for x in selectors[0]) else kind
         kind = 'private-ip-address' if all(x.isdigit() or x == '.' for x in selectors[0]) and selectors[0].split('.')[0] in ['10', '172'] else kind
         kind = 'instance-id' if selectors[0].startswith('i-') else kind
+
         if kind == 'tags' and '=' not in selectors[0]:
             selectors = f'Name={selectors[0]}', *selectors[1:] # auto add Name= to the first tag
         instances = []
@@ -83,6 +90,8 @@ def setup():
         boto3.setup_default_session(region_name=os.environ['region'])
     elif 'REGION' in os.environ:
         boto3.setup_default_session(region_name=os.environ['REGION'])
+    if util.hacks.override('--stream'):
+        shell.set_stream().__enter__()
     try:
         yield
     except AssertionError as e:
