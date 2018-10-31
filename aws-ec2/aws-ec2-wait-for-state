@@ -11,8 +11,8 @@ def main(*selectors, end_state='running', start_state=None, yes=False):
     assert end_state in ['running', 'stopped']
     instances = cli_aws.ls(selectors, start_state)
     ids = [i.instance_id for i in instances]
+    logging.info('going to wait for:')
     for i in instances:
-        logging.info('going to wait for:')
         logging.info(' %s', cli_aws.format(i))
     if not instances:
         sys.exit(1)

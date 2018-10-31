@@ -7,17 +7,17 @@ import cli_aws
 import shell
 
 @argh.arg('-p', '--payload')
-def main(path, payload=None, async=False):
+def main(path, payload=None, event=False):
     if payload:
         payload = f'--payload file://{payload}'
     else:
         payload = ''
-    if async:
-        async = '--invocation-type Event'
+    if event:
+        event = '--invocation-type Event'
     else:
-        async = ''
+        event = ''
     _, temp = tempfile.mkstemp()
-    print(shell.run(f'aws lambda invoke {async} {payload} --function-name {cli_aws.lambda_name(path)} {temp}'), file=sys.stderr)
+    print(shell.run(f'aws lambda invoke {event} {payload} --function-name {cli_aws.lambda_name(path)} {temp}'), file=sys.stderr)
     with open(temp) as f:
         print(f.read())
     os.remove(temp)

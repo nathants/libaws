@@ -40,7 +40,6 @@ def main(*selectors,
          stdin: 'stdin value to be provided to remote cmd' = '',
          quiet: 'less output' = False,
          no_stream: 'dont stream to stderr, only output to stdout' = False,
-         stream_only: 'dont accumulate output for stdout, only stream to stderr' = False,
          cmd: 'cmd to run on remote host, can also be a file which will be read' ='',
          yes: 'no prompt to proceed' = False,
          max_threads: 'max ssh connections' = 20,
@@ -86,11 +85,10 @@ def main(*selectors,
         if cmd and len(instances) > 1 or batch_mode:
             failures = []
             successes = []
-            results = None if stream_only else []
+            results = []
             def run(instance):
                 resp = shell.run(*make_ssh_cmd(instance),
                                  callback=_make_callback(instance, quiet, results, no_stream),
-                                 stream_only=stream_only,
                                  echo=False,
                                  raw_cmd=True,
                                  stream=False,
@@ -126,7 +124,6 @@ def main(*selectors,
             return shell.run(*make_ssh_cmd(instances[0]),
                              echo=False,
                              stream=not prefixed and not no_stream,
-                             stream_only=stream_only,
                              hide_stderr=quiet,
                              raw_cmd=True,
                              callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None)
