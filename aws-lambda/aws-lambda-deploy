@@ -189,11 +189,15 @@ def _create_zip(path, requires):
         shell.run("ls | grep -E 'info$' | xargs rm -rf")
         libs = shell.run('ls').splitlines()
         for binpath in shell.run(f"find {tempdir}/env/bin/ -type f").splitlines():
-            if os.path.basename(binpath) not in libs:
+            name = os.path.basename(binpath)
+            if name not in libs:
                 with open(binpath, 'rb') as f:
-                    line = f.readline()
-                if line.startswith(b"#!") and b'python' in line:
-                    shell.run('mv', binpath, '.')
+                    lines = f.read().splitlines()
+                if lines[0].startswith(b"#!") and b'python' in lines[0]:
+                    with open(name, 'wb') as f:
+                        f.write(b'#!/var/lang/bin/python\n')
+                        f.write(b'\n'.join(lines[1:]))
+                    shell.run('chmod +x', name)
         shell.run(f'zip -r {zip_file} .')
     with open(zip_file, 'rb') as f:
         val = f.read()
