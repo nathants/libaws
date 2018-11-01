@@ -21,7 +21,7 @@ setuptools.setup(
                       'py-pool'],
     dependency_links=['https://github.com/nathants/py-util/tarball/0e2f7c7637bb2907a817b343712289d64119377b#egg=py-util-0.0.1',
                       'https://github.com/nathants/py-pool/tarball/784c70058fe7bb835fe05e38c49b6632b09f242d#egg=py-pool-0.0.1',
-                      'https://github.com/nathants/py-shell/tarball/f137e1050fad33e7b92831097f96c6daa1a6b6d5#egg=py-shell-0.0.1'],
+                      'https://github.com/nathants/py-shell/tarball/19d7d2a873c4cfff6a8dc0b202a4f68678e95a9a#egg=py-shell-0.0.1'],
     scripts = [os.path.join(service, script)
                for service in os.listdir(parent)
                if service.startswith('aws-')
