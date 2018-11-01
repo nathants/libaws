@@ -1,26 +1,20 @@
 #!/usr/bin/env python3
+import util.strings
+import boto3
 import sys
-import tempfile
-import os
 import argh
 import cli_aws
-import shell
 
 @argh.arg('-p', '--payload')
 def main(path, payload=None, event=False):
-    if payload:
-        payload = f'--payload file://{payload}'
-    else:
-        payload = ''
-    if event:
-        event = '--invocation-type Event'
-    else:
-        event = ''
-    _, temp = tempfile.mkstemp()
-    print(shell.run(f'aws lambda invoke {event} {payload} --function-name {cli_aws.lambda_name(path)} {temp}'), file=sys.stderr)
-    with open(temp) as f:
-        print(f.read())
-    os.remove(temp)
+    resp = boto3.client('lambda').invoke(
+        FunctionName=cli_aws.lambda_name(path),
+        InvocationType='Event' if event else 'RequestResponse',
+        LogType=None if event else 'Tail',
+        Payload=open(payload, 'rb') if payload else '',
+    )
+    print(util.strings.b64_decode(resp['LogResult']), file=sys.stderr)
+    print(resp['Payload'].read().decode('utf-8'))
 
 if __name__ == '__main__':
     with cli_aws.setup():
