@@ -187,6 +187,13 @@ def _create_zip(path, requires):
         shell.run(f'cp {path} .')
         shell.run('rm -rf wheel pip setuptools pkg_resources easy_install.py')
         shell.run("ls | grep -E 'info$' | xargs rm -rf")
+        libs = shell.run('ls').splitlines()
+        for binpath in shell.run(f"find {tempdir}/env/bin/ -type f").splitlines():
+            if os.path.basename(binpath) not in libs:
+                with open(binpath, 'rb') as f:
+                    line = f.readline()
+                if line.startswith(b"#!") and b'python' in line:
+                    shell.run('mv', binpath, '.')
         shell.run(f'zip -r {zip_file} .')
     with open(zip_file, 'rb') as f:
         val = f.read()
