@@ -41,7 +41,7 @@ sudo chown -R $(whoami):$(whoami) /mnt
 _timeout_init = """
 echo '# timeout will call this script before it `sudo poweroff`s, and wait 60 seconds for this script to complete' >> /tmp/timeout.sh
 echo '
-    warning="seconds remaining until timeout poweroff. tail -f /var/log/timeout.log to follow, increase /tmp/timeout.seconds to delay, or kill timeout.poweroff.sh to cancel.
+    warning="seconds remaining until timeout poweroff. tail -f /var/log/timeout.log to follow, increase /tmp/timeout.seconds to delay, or kill timeout.poweroff.sh to cancel."
     echo {} > /tmp/timeout.seconds
     # count down until timeout
     start=$(date +%s)
@@ -298,11 +298,11 @@ def main(name: 'name of the instance',
     if verbatim_init:
         init = verbatim_init
     else:
+        if type.split('.')[0] in ['i3', 'c5d', 'm5d', 'r5d', 'z1d']:
+            init = _nvme_init + init
         if seconds_timeout:
             logging.info('this instance will `sudo poweroff` after %s seconds, or %s hours, because of --seconds-timeout', seconds_timeout, round(int(seconds_timeout) / 60. / 60., 1))
             init = _timeout_init.format(seconds_timeout) + init
-        if type.split('.')[0] in ['i3', 'c5d', 'm5d', 'r5d', 'z1d']:
-            init = _nvme_init + init
         assert not init.startswith('#!'), 'init commands are bash snippets, and should not include a hashbang'
         init = '#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1' % (util.strings.b64_encode(init), user)
     if ami == 'lambda':
