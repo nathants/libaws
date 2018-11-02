@@ -81,59 +81,61 @@ def main(*selectors,
     if not yes and not login:
         logging.info('\nwould you like to proceed? y/n\n')
         assert shell.getch() == 'y', 'abort'
-    try:
-        if cmd and len(instances) > 1 or batch_mode:
-            failures = []
-            successes = []
-            results = []
-            def run(instance):
-                resp = shell.run(*make_ssh_cmd(instance),
-                                 callback=_make_callback(instance, quiet, results, no_stream),
-                                 echo=False,
-                                 raw_cmd=True,
-                                 stream=False,
-                                 warn=True,
-                                 hide_stderr=quiet)
-                if resp['exitcode'] != 0:
-                    if error_message:
-                        print(error_message.format(id=instance.instance_id,
-                                                   ip=instance.public_dns_name,
-                                                   ipv4_private=instance.private_ip_address,
-                                                   name=cli_aws.ec2_name(instance)),
-                              flush=True)
-                    msg = util.colors.red('failure: ') + cli_aws.ec2_name(instance) + ': ' + instance.instance_id
-                    failures.append(msg)
-                else:
-                    msg = util.colors.green('success: ') + cli_aws.ec2_name(instance) + ': ' + instance.instance_id
-                    successes.append(msg)
-                if not quiet:
-                    logging.info(msg)
-            list(pool.thread.map(run, instances))
-            # TODO would be really nice to see these results, plus unknowns:, when ^C to exit early
-            if not quiet:
-                logging.info('\nresults:')
-                for msg in successes + failures:
-                    logging.info(' ' + msg)
-                logging.info('\ntotals:')
-                logging.info(util.colors.green(' successes: ') + str(len(successes)))
-                logging.info(util.colors.red(' failures: ') + str(len(failures)))
-            for result in results:
-                print(result)
-            assert not failures
-        elif cmd:
-            return shell.run(*make_ssh_cmd(instances[0]),
+    if cmd and len(instances) > 1 or batch_mode:
+        failures = []
+        successes = []
+        results = []
+        def run(instance):
+            resp = shell.run(*make_ssh_cmd(instance),
+                             callback=_make_callback(instance, quiet, results, no_stream),
                              echo=False,
-                             stream=not prefixed and not no_stream,
-                             hide_stderr=quiet,
                              raw_cmd=True,
-                             callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None)
-        else:
-            try:
-                subprocess.check_call(ssh_cmd + [(user or cli_aws.ssh_user(instances[0])) + '@' + instances[0].public_dns_name])
-            except subprocess.CalledProcessError:
-                sys.exit(1)
-    except:
-        raise
+                             stream=False,
+                             warn=True,
+                             hide_stderr=quiet)
+            if resp['exitcode'] != 0:
+                if error_message:
+                    print(error_message.format(id=instance.instance_id,
+                                               ip=instance.public_dns_name,
+                                               ipv4_private=instance.private_ip_address,
+                                               name=cli_aws.ec2_name(instance)),
+                          flush=True)
+                msg = util.colors.red('failure: ') + cli_aws.ec2_name(instance) + ': ' + instance.instance_id
+                failures.append(msg)
+            else:
+                msg = util.colors.green('success: ') + cli_aws.ec2_name(instance) + ': ' + instance.instance_id
+                successes.append(msg)
+            if not quiet:
+                logging.info(msg)
+        list(pool.thread.map(run, instances))
+        # TODO would be really nice to see these results, plus unknowns:, when ^C to exit early
+        if not quiet:
+            logging.info('\nresults:')
+            for msg in successes + failures:
+                logging.info(' ' + msg)
+            logging.info('\ntotals:')
+            logging.info(util.colors.green(' successes: ') + str(len(successes)))
+            logging.info(util.colors.red(' failures: ') + str(len(failures)))
+        for result in results:
+            print(result)
+        assert not failures
+    elif cmd:
+        res = shell.run(*make_ssh_cmd(instances[0]),
+                        echo=False,
+                        stream=not prefixed and not no_stream,
+                        hide_stderr=quiet,
+                        raw_cmd=True,
+                        callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None,
+                        warn=True,
+                        quiet=True)
+        if res['exitcode'] != 0:
+            sys.exit(res['exitcode'])
+        return res['stdout']
+    else:
+        try:
+            subprocess.check_call(ssh_cmd + [(user or cli_aws.ssh_user(instances[0])) + '@' + instances[0].public_dns_name])
+        except subprocess.CalledProcessError:
+            sys.exit(1)
 
 if __name__ == '__main__':
     with cli_aws.setup():
