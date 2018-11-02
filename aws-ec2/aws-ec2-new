@@ -51,7 +51,7 @@ echo '
         timeout=$(cat /tmp/timeout.seconds)
         (($duration > $timeout)) && break
         remaining=$(($timeout - $duration))
-        (($remaining <= 300)) && (($remaining % 60 == 0)) && wall "$(cat /tmp/timeout.seconds) $warning"
+        (($remaining <= 300)) && (($remaining % 60 == 0)) && wall "$remaining $warning"
         echo uptime seconds: $duration | sudo tee /var/log/timeout.log
         echo poweroff in seconds: $remaining | sudo tee -a /var/log/timeout.log
         sleep 1
