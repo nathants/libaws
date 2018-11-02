@@ -17,14 +17,12 @@ def main(event, context):
     >>> path = 'examples/lambda_basic.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y').split(':')[-1]
-    'lambda-basic'
+    >>> _ = run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y').split(':')[-1]
 
-    >>> run('cat - > /tmp/input', stdin='{"foo": "bar"}')
-    ''
+    >>> _ = run('cat - > /tmp/input', stdin='{"foo": "bar"}')
 
     >>> run(f'aws-lambda-invoke {path} -p /tmp/input')
-    '{"foo": "bar"}'
+    '"foo=>bar"'
 
     >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
 
@@ -33,5 +31,4 @@ def main(event, context):
     print('you have some buckets:', len(list(boto3.client('s3').list_buckets()['Buckets'])))
     print(util.colors.green('green means go'))
     print(os.environ['SOME_UUID'])
-    print(event)
-    return event
+    return ' '.join(f'{k}=>{v}' for k, v in event.items())

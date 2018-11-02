@@ -16,8 +16,7 @@ def main(event, context):
     >>> _ = run(f'aws s3 rb s3://{bucket} || true')
     >>> _ = run(f'aws s3 mb s3://{bucket}')
 
-    >>> run(f'aws-lambda-deploy {path} -y').split(':')[-1]
-    'lambda-s3'
+    >>> _ = run(f'aws-lambda-deploy {path} -y').split(':')[-1]
 
     >>> _ = run(f'echo | aws s3 cp - s3://{bucket}/{uid}')
 

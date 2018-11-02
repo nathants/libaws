@@ -10,11 +10,9 @@ def main(event, context):
     >>> path = 'examples/lambda_sns.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> run(f'aws-lambda-deploy {path} -y').split(':')[-1]
-    'lambda-sns'
+    >>> _ = run(f'aws-lambda-deploy {path} -y').split(':')[-1]
 
-    >>> run(f"aws sns publish --topic-arn $(aws-lambda-sns {path}) --message {uid} >/dev/null")
-    ''
+    >>> _ = run(f"aws sns publish --topic-arn $(aws-lambda-sns {path}) --message {uid} >/dev/null")
 
     >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
 

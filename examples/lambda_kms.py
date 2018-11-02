@@ -19,8 +19,7 @@ def main(event, context):
     >>> path = 'examples/lambda_kms.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y --kms').split(':')[-1]
-    'lambda-kms'
+    >>> _ = run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y --kms').split(':')[-1]
 
     >>> assert f'"{uid}"' == run(f'aws-lambda-invoke {path}')
 

@@ -13,11 +13,9 @@ def main(event, context):
     >>> path = 'examples/lambda_dependencies.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y').split(':')[-1]
-    'lambda-dependencies'
+    >>> _ = run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y').split(':')[-1]
 
-    >>> run(f'aws-lambda-invoke {path}')
-    'null'
+    >>> _ = run(f'aws-lambda-invoke {path}')
 
     >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
 
