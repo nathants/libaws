@@ -19,8 +19,8 @@ setuptools.setup(
                       'py-util',
                       'py-shell',
                       'py-pool'],
-    dependency_links=['https://github.com/nathants/py-util/tarball/0e2f7c7637bb2907a817b343712289d64119377b#egg=py-util-0.0.1',
-                      'https://github.com/nathants/py-pool/tarball/784c70058fe7bb835fe05e38c49b6632b09f242d#egg=py-pool-0.0.1',
+    dependency_links=['https://github.com/nathants/py-util/tarball/0a45ac7fca5c3b4ccf33f019a5459cc5c5ab467a#egg=py-util-0.0.1',
+                      'https://github.com/nathants/py-pool/tarball/51bddeb322a3abb2c493a3d3d3d0136590e49068#egg=py-pool-0.0.1',
                       'https://github.com/nathants/py-shell/tarball/8153d55f0a5fce8ac5eb05066d2f899fb53ba3fa#egg=py-shell-0.0.1'],
     scripts = [os.path.join(service, script)
                for service in os.listdir(parent)
