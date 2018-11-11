@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+import boto3
+import logging
+import argh
+import cli_aws
+import shell
+from util.retry import retry
+
+def main(*selectors, yes=False):
+    assert selectors, 'you cannot start all things, specify some selectors'
+    assert selectors != ('*',), 'you cannot start all things, specify some selectors'
+    instances = cli_aws.ls(selectors, 'stopped')
+    assert instances, 'didnt find any instances for those selectors'
+    logging.info('going to start the following instances:')
+    for i in instances:
+        logging.info(' ' + cli_aws.format(i))
+    if not yes:
+        logging.info('\nwould you like to proceed? y/n\n')
+        assert shell.getch() == 'y', 'abort'
+    retry(boto3.client('ec2').start_instances)(InstanceIds=[i.instance_id for i in instances])
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)

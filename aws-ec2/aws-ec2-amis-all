@@ -21,12 +21,9 @@ def main(id_only=False):
                 return
             else:
                 description = ami.description or '-' if ami.description != name else '-'
-                tag = '%(Key)s=%(Value)s' % ami.tags[0] if ami.tags else '-'
-                try:
-                    return ' '.join([name, ami.image_id, date, description, tag])
-                except:
-                    print([name, ami.image_id, date, description, tag], '???')
-        logging.info('id date description tag')
+                tags = ','.join('%(Key)s=%(Value)s' % tag for tag in ami.tags) if ami.tags else '-'
+                return ' '.join([name, ami.image_id, date, description, tags])
+        logging.info('id date description tags...')
         xs = [f(ami) for ami in amis]
         return [x for x in xs if x]
 

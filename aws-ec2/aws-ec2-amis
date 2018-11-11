@@ -13,10 +13,8 @@ def main(name, *tags, id_only=False, most_recent=False):
         tag_filter = []
     amis = boto3.resource('ec2').images.filter(
         Owners=['self'],
-        Filters=[{'Name': 'name',
-                  'Values': ['*%s*' % name]},
-                 {'Name': 'state',
-                  'Values': ['available']}] + tag_filter
+        Filters=[{'Name': 'name', 'Values': ['*%s*' % name]},
+                 {'Name': 'state', 'Values': ['available']}] + tag_filter
     )
     amis = [x for x in amis if x.name.split('__')[0] == name]
     if not amis:

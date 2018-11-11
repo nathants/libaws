@@ -40,7 +40,7 @@ def main(*selectors,
          stdin: 'stdin value to be provided to remote cmd' = '',
          quiet: 'less output' = False,
          no_stream: 'dont stream to stderr, only output to stdout' = False,
-         cmd: 'cmd to run on remote host, can also be a file which will be read' ='',
+         cmd: 'cmd to run on remote host, or - to read from stdin' = '',
          yes: 'no prompt to proceed' = False,
          max_threads: 'max ssh connections' = 20,
          timeout: 'seconds before ssh cmd considered failed' = None,
@@ -50,14 +50,12 @@ def main(*selectors,
          batch_mode: 'operate like there are many instances, even if only one' = False,
          prefixed: 'when running against a single host, should streaming output be prefixed with name and ip' = False,
          error_message: 'error message to print for a failed host, something like: {id} {name} {ip} {ipv4_private} failed' = '',
-         user: 'what user to login as, otherwise an "user" tag is expected on the instance' = ''):
+         user: 'what user to login as, otherwise an "user" tag is expected on the instance' = '',
+         forward_agent = False):
     pool.thread._size = max_threads
     assert selectors, 'you must specify some selectors'
     instances = cli_aws.ls(selectors, 'running')
     assert instances, 'didnt find any instances'
-    if os.path.exists(cmd):
-        with open(cmd) as f:
-            cmd = f.read()
     if cmd == '-':
         cmd = sys.stdin.read()
     if cmd and 'set -e' not in cmd:
@@ -133,7 +131,7 @@ def main(*selectors,
         return res['stdout']
     else:
         try:
-            subprocess.check_call(ssh_cmd + [(user or cli_aws.ssh_user(instances[0])) + '@' + instances[0].public_dns_name])
+            subprocess.check_call(ssh_cmd + (['-A'] if forward_agent else []) + [(user or cli_aws.ssh_user(instances[0])) + '@' + instances[0].public_dns_name])
         except subprocess.CalledProcessError:
             sys.exit(1)
 

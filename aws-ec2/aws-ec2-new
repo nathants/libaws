@@ -287,29 +287,13 @@ def main(name: 'name of the instance',
     owner = shell.run('whoami')
     for tag in tags:
         assert '=' in tag, 'bad tag, should be key=value, not: %s' % tag
-    if ssh_user:
-        user = ssh_user
-    elif ami == 'lambda':
-        user = 'ec2-user'
-    elif ami == 'arch':
-        user = 'root'
-    else:
-        user = 'ubuntu'
-    if verbatim_init:
-        init = verbatim_init
-    else:
-        if type.split('.')[0] in ['i3', 'c5d', 'm5d', 'r5d', 'z1d']:
-            init = _nvme_init + init
-        if seconds_timeout:
-            logging.info('this instance will `sudo poweroff` after %s seconds, or %s hours, because of --seconds-timeout', seconds_timeout, round(int(seconds_timeout) / 60. / 60., 1))
-            init = _timeout_init.format(seconds_timeout) + init
-        assert not init.startswith('#!'), 'init commands are bash snippets, and should not include a hashbang'
-        init = '#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1' % (util.strings.b64_encode(init), user)
-    if ami == 'lambda':
+    ami_tags = {}
+    ami_name = ami
+    if ami_name == 'lambda':
         ami = _ami_lambda()
-    elif ami == 'deeplearning':
+    elif ami_name == 'deeplearning':
         ami = _ami_deeplearning()
-    elif ami == 'arch':
+    elif ami_name == 'arch':
         ami = _ami_arch()
     elif ami in ubuntus:
         logging.info('fetch latest ami for: %s', ami)
@@ -320,9 +304,32 @@ def main(name: 'name of the instance',
         ami = ami.strip()
         logging.info('using ami: %s', ami)
     else:
-        ami_name = ami
-        ami = shell.run('aws-ec2-amis -im')
+        ami, date, description, ami_tags = shell.run('aws-ec2-amis -m', ami_name).split()
+        ami_tags = {k: v
+                    for ami_tag in ami_tags.split(',')
+                    for k, v in [ami_tag.split('=')]}
         logging.info('using most recent ami for name: %s %s', ami_name, ami)
+    if ssh_user:
+        user = ssh_user
+    elif 'ssh-user' in ami_tags:
+        user = ami_tags['ssh-user']
+    elif ami_name == 'lambda':
+        user = 'ec2-user'
+    elif ami_name == 'arch':
+        user = 'root'
+    else:
+        user = 'ubuntu'
+    logging.info(f'ssh-user: {user}')
+    if verbatim_init:
+        init = verbatim_init
+    else:
+        if type.split('.')[0] in ['i3', 'c5d', 'm5d', 'r5d', 'z1d']:
+            init = _nvme_init + init
+        if seconds_timeout:
+            logging.info('this instance will `sudo poweroff` after %s seconds, or %s hours, because of --seconds-timeout', seconds_timeout, round(int(seconds_timeout) / 60. / 60., 1))
+            init = _timeout_init.format(seconds_timeout) + init
+        assert not init.startswith('#!'), 'init commands are bash snippets, and should not include a hashbang'
+        init = '#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1' % (util.strings.b64_encode(init), user)
     opts = {}
     opts['UserData'] = init
     opts['ImageId'] = ami
