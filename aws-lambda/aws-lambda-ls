@@ -8,7 +8,8 @@ def main():
     for page in boto3.client('lambda').get_paginator('list_functions').paginate():
         for function in page['Functions']:
             function['FunctionName'] = util.colors.green(function['FunctionName'])
-            print('{FunctionName} {Runtime} {Timeout}s {MemorySize}mb'.format(**function))
+            function['LastModified'] = ':'.join(function['LastModified'].split(':')[:2]) + 'Z'
+            print('{FunctionName} {Runtime} {Timeout}s {MemorySize}mb {LastModified}'.format(**function))
 
 if __name__ == '__main__':
     with cli_aws.setup():
