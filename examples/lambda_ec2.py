@@ -37,6 +37,7 @@ def main(event, context):
     with shell.set_stream():
         instance_id = shell.run('aws-ec2-new',
                                 name,
+                                '--ami arch',
                                 '--type t3.nano',
                                 '--seconds-timeout 300',
                                 '--role s3-all',
