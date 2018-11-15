@@ -30,11 +30,11 @@ disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sor
  echo   # First sector (Accept default: 1)
  echo   # Last sector (Accept default: varies)
  echo w # Write changes
-) | sudo fdisk /dev/nvme0n1
+) | sudo fdisk $disk
 sleep 2
-sudo mkfs -t ext4 /dev/nvme0n1p1
+sudo mkfs -t ext4 ${disk}p1
 sudo mkdir -p /mnt
-sudo mount -o discard /dev/nvme0n1p1 /mnt
+sudo mount -o discard ${disk}p1 /mnt
 sudo chown -R $(whoami):$(whoami) /mnt
 """
 
