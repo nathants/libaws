@@ -35,7 +35,7 @@ def main(src, dst, *selectors, user='', yes=False):
                               cli_aws.ssh_args,
                               _src,
                               _dst,
-                              callback=lambda x: print(color(name + x), file=sys.stderr, flush=True))
+                              callback=lambda _, x: print(color(name + x), file=sys.stderr, flush=True))
                 except:
                     failures.append(util.colors.red('failure: ') + instance.public_dns_name)
                 else:
