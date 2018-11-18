@@ -32,7 +32,7 @@ def main(*selectors,
         running_ids = ' '.join([i.instance_id for i in running])
         local_start = time.time()
         try:
-            res = shell.run(f'aws-ec2-ssh {running_ids} --batch-mode -t 10 -yc "whoami >/dev/null" 2>&1', warn=True, stream=i > 20)
+            res = shell.run(f'aws-ec2-ssh {running_ids} --batch-mode -t 10 -yc "whoami >/dev/null" 2>&1', warn=True, stream=i > 10)
             ready_ids = [x.split()[-1]
                          for x in res['stdout'].splitlines()
                          if x.startswith('success: ')]
