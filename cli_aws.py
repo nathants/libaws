@@ -1,6 +1,5 @@
 import boto3
 import shell
-from unittest import mock
 import datetime
 import contextlib
 import traceback
@@ -13,6 +12,16 @@ from util.colors import red, green, cyan
 from util.retry import retry
 
 ssh_args = ' -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
+
+@retry
+def sgs(names=None):
+    sgs = list(boto3.resource('ec2').security_groups.all())
+    if names:
+        sgs = [x
+               for x in sgs
+               if x.group_name in names
+               or x.group_id in names]
+    return sgs
 
 def now():
     return str(datetime.datetime.utcnow().isoformat()) + 'Z'

@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+import re
+import shell
+import logging
+import util.strings
+import argh
+import cli_aws
+
+def _has_ssh_permission(sg, ip):
+    assert '/' not in ip
+    for sg_perm in sg.ip_permissions:
+        with util.exceptions.ignore(KeyError):
+            ssh_port = sg_perm['FromPort'] == sg_perm['ToPort'] == 22
+            matches_ip = any(x['CidrIp'] == ip + '/32' for x in sg_perm['IpRanges'])
+            if ssh_port and matches_ip:
+                return True
+
+def _ssh_security_groups(ip):
+    return [sg for sg in cli_aws.sgs() if _has_ssh_permission(sg, ip)]
+
+def main(ip, *names, yes=False):
+    assert all(x == '.' or x.isdigit() for x in ip), 'bad ip: %s' % ip
+    sgs = cli_aws.sgs(names) if names else _ssh_security_groups(ip)
+    assert sgs, 'didnt find any security groups'
+    logging.info('your ip %s is currently allowed ssh to the following security groups:\n', util.colors.yellow(ip))
+    for sg in sgs:
+        logging.info(' %s [%s]', sg.group_name, sg.group_id)
+    if not yes:
+        logging.info('\nwould you like to revoke access to these groups for your ip %s? y/n\n', util.colors.yellow(ip))
+        assert shell.getch() == 'y', 'abort'
+    for sg in sgs:
+        for proto in ['tcp', 'udp']:
+            try:
+                sg.revoke_ingress(
+                    IpProtocol=proto,
+                    FromPort=22,
+                    ToPort=22,
+                    CidrIp='%s/32' % ip
+                )
+                logging.info('revoked: %s %s %s', sg.group_name, sg.group_id, proto)
+            except Exception as e:
+                logging.info('%s: %s %s %s', re.sub(r'.*\((.*)\).*', r'\1', str(e)), sg.group_name, sg.group_id, proto)
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)
