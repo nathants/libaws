@@ -20,17 +20,16 @@ def main(ip, *names, yes=False):
     with open('/var/log/ec2_auth_ips.log', 'a') as f:
         f.write(ip + ' ' + ','.join(names) + '\n')
     for sg in sgs:
-        for proto in ['tcp', 'udp']:
-            try:
-                sg.authorize_ingress(
-                    IpProtocol=proto,
-                    FromPort=22,
-                    ToPort=22,
-                    CidrIp='%s/32' % ip
-                )
-                logging.info('authorized: %s %s %s', sg.group_name, sg.group_id, proto)
-            except Exception as e:
-                logging.info('%s: %s %s %s', re.sub(r'.*\((.*)\).*', r'\1', str(e)), sg.group_name, sg.group_id, proto)
+        try:
+            sg.authorize_ingress(
+                IpProtocol='tcp',
+                FromPort=22,
+                ToPort=22,
+                CidrIp='%s/32' % ip
+            )
+            logging.info('authorized: %s %s %s', sg.group_name, sg.group_id)
+        except Exception as e:
+            logging.info('%s: %s %s %s', re.sub(r'.*\((.*)\).*', r'\1', str(e)), sg.group_name, sg.group_id)
 
 if __name__ == '__main__':
     with cli_aws.setup():

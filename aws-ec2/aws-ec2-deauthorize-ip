@@ -29,17 +29,16 @@ def main(ip, *names, yes=False):
         logging.info('\nwould you like to revoke access to these groups for your ip %s? y/n\n', util.colors.yellow(ip))
         assert shell.getch() == 'y', 'abort'
     for sg in sgs:
-        for proto in ['tcp', 'udp']:
-            try:
-                sg.revoke_ingress(
-                    IpProtocol=proto,
-                    FromPort=22,
-                    ToPort=22,
-                    CidrIp='%s/32' % ip
-                )
-                logging.info('revoked: %s %s %s', sg.group_name, sg.group_id, proto)
-            except Exception as e:
-                logging.info('%s: %s %s %s', re.sub(r'.*\((.*)\).*', r'\1', str(e)), sg.group_name, sg.group_id, proto)
+        try:
+            sg.revoke_ingress(
+                IpProtocol='tcp',
+                FromPort=22,
+                ToPort=22,
+                CidrIp='%s/32' % ip
+            )
+            logging.info('revoked: %s %s %s', sg.group_name, sg.group_id)
+        except Exception as e:
+            logging.info('%s: %s %s %s', re.sub(r'.*\((.*)\).*', r'\1', str(e)), sg.group_name, sg.group_id)
 
 if __name__ == '__main__':
     with cli_aws.setup():
