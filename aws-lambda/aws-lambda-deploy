@@ -179,11 +179,11 @@ def _create_zip(path, requires):
     tempdir = os.path.dirname(zip_file)
     shell.run('rm -rf', tempdir)
     shell.run('mkdir -p', tempdir)
-    shell.run(f'virtualenv --python python3.6 {tempdir}/env')
+    shell.run(f'virtualenv --python python3.7 {tempdir}/env')
     if requires:
         with shell.cd(os.path.dirname(path)):
-            shell.run(f'{tempdir}/env/bin/pip install', *[f'"{r}"' for r in requires], '2>/dev/null')
-    with shell.cd(f'{tempdir}/env/lib/python3.6/site-packages'):
+            shell.run(f'{tempdir}/env/bin/pip install', *[f'"{r}"' for r in requires])
+    with shell.cd(f'{tempdir}/env/lib/python3.7/site-packages'):
         shell.run(f'cp {path} .')
         shell.run('rm -rf wheel pip setuptools pkg_resources easy_install.py')
         shell.run("ls | grep -E 'info$' | xargs rm -rf")
@@ -207,7 +207,7 @@ def _update_zip(path):
     print('\nupdate code', file=sys.stderr)
     zip_file = _zip_file(path)
     tempdir = os.path.dirname(zip_file)
-    with shell.cd(f'{tempdir}/env/lib/python3.6/site-packages'):
+    with shell.cd(f'{tempdir}/env/lib/python3.7/site-packages'):
         shell.run(f'cp {path} .')
         shell.run(f'zip {zip_file} {os.path.basename(path)}')
     with open(zip_file, 'rb') as f:
@@ -305,7 +305,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         cli_aws.remove_extra_policies(name, metadata['policies'])
         zipfile = _create_zip(path, metadata['requires'])
         kw = {'FunctionName': name,
-              'Runtime': 'python3.6',
+              'Runtime': 'python3.7',
               'Role': arn_role,
               'Timeout': timeout,
               'MemorySize': memory,

@@ -11,7 +11,7 @@ setuptools.setup(
     author_email='me@nathants.com',
     url='http://github.com/nathants/aws-util',
     py_modules=['cli_aws'],
-    python_requires='>=3.6',
+    python_requires='>=3.7',
     install_requires=['requests >2, <3',
                       'boto3 >1, <2',
                       'awscli >1, <2',

@@ -5,13 +5,14 @@ import sys
 import argh
 import cli_aws
 
-@argh.arg('-p', '--payload')
-def main(path, payload=None, event=False):
+@argh.arg('-p', '--payload-file')
+@argh.arg('-s', '--payload-string')
+def main(path, payload_file=None, payload_string='', event=False):
     resp = boto3.client('lambda').invoke(
         FunctionName=cli_aws.lambda_name(path),
         InvocationType='Event' if event else 'RequestResponse',
         LogType=None if event else 'Tail',
-        Payload=open(payload, 'rb') if payload else '',
+        Payload=payload_string if payload_string else open(payload_file, 'rb') if payload_file else '',
     )
     print(util.strings.b64_decode(resp['LogResult']), file=sys.stderr)
     output = resp['Payload'].read().decode('utf-8')

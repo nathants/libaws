@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.6
+#!/usr/bin/env python3.7
 #
 # require: git+https://github.com/nathants/py-util
 # require: git+https://github.com/nathants/py-pool
@@ -19,7 +19,7 @@ def main(event, context):
     >>> path = 'examples/lambda_ec2.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> _ = run(f'aws-lambda-deploy {path} UUID={uid} $(env | grep -i ^aws) -y').split(':')[-1]
+    >>> _ = run(f'aws-lambda-deploy {path} UUID={uid} $(env | grep ^AWS_EC2_) -y').split(':')[-1]
 
     >>> instance_id = run(f'aws-lambda-invoke {path}').replace('"', '')
 
