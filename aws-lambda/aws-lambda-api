@@ -6,7 +6,7 @@ def main(path):
     name = cli_aws.lambda_name(path)
     region = cli_aws.region()
     rest_api_id = cli_aws.rest_api_id(name)
-    return f'https://{rest_api_id}.execute-api.{region}.amazonaws.com/{name}/{name}'
+    return f'https://{rest_api_id}.execute-api.{region}.amazonaws.com/{name}'
 
 if __name__ == '__main__':
     with cli_aws.setup():

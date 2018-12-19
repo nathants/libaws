@@ -47,9 +47,13 @@ def _ensure_triggers_api(name, arn_lambda, metadata):
                 print(' create rest api', file=sys.stderr)
                 rest_api_id = boto3.client('apigateway').create_rest_api(name=name, endpointConfiguration={'types': ['REGIONAL']})['id']
             parent_id = cli_aws.rest_resource_id(rest_api_id, '/')
-            resource_id = cli_aws.rest_resource_id(rest_api_id, f'/{name}') # TODO child resource wildcard /name/{proxy+}
+            resource_id = cli_aws.rest_resource_id(rest_api_id, '/{proxy+}') # TODO child resource wildcard /name/{proxy+}
             if not resource_id:
-                resource_id = boto3.client('apigateway').create_resource(restApiId=rest_api_id, parentId=parent_id, pathPart=name)['id']
+                resource_id = boto3.client('apigateway').create_resource(
+                    restApiId=rest_api_id,
+                    parentId=parent_id,
+                    pathPart='{proxy+}'
+                )['id']
             api = boto3.client('lambda').meta.service_model.api_version
             uri = f"arn:aws:apigateway:{cli_aws.region()}:lambda:path/{api}/functions/"
             uri += f'arn:aws:lambda:{cli_aws.region()}:{cli_aws.account()}:function:{name}/invocations'
@@ -70,7 +74,7 @@ def _ensure_triggers_api(name, arn_lambda, metadata):
                                                                    integrationHttpMethod='POST',
                                                                    uri=uri)
             boto3.client('apigateway').create_deployment(restApiId=rest_api_id, stageName=name)
-            arn = f"arn:aws:execute-api:{cli_aws.region()}:{cli_aws.account()}:{rest_api_id}/*/*/{name}"
+            arn = f"arn:aws:execute-api:{cli_aws.region()}:{cli_aws.account()}:{rest_api_id}/*/*/*"
             _ensure_permission(name, 'apigateway.amazonaws.com', arn)
             break
 
