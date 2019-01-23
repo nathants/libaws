@@ -1,0 +1,7 @@
+requests >2, <3
+boto3 >1, <2
+awscli >1, <2
+argh >0.26, <0.27
+git+https://github.com/nathants/py-util@0a45ac7fca5c3b4ccf33f019a5459cc5c5ab467a
+git+https://github.com/nathants/py-pool@31dae540c2b7d581cb81301b0e5e72fdfe233dff
+git+https://github.com/nathants/py-shell@e22fe49b432f583cf1dc158698197eb26323412e

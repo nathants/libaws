@@ -3,7 +3,11 @@
 ##### the successor to [py-aws](https://github.com/nathants/py-aws)
 
 ##### installation
-`pip install --process-dependency-links git+https://github.com/nathants/cli-aws@<git-hash>`
+```
+git clone https://github.com/nathants/cli-aws
+cd cli-aws
+pip install -r requirements.txt .
+```
 
 ##### usage and help
 
