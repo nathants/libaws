@@ -12,6 +12,10 @@ setuptools.setup(
     url='http://github.com/nathants/aws-util',
     py_modules=['cli_aws'],
     python_requires='>=3.7',
+    install_requires=['requests >2, <3',
+                      'boto3 >1, <2',
+                      'awscli >1, <2',
+                      'argh >0.26, <0.27'],
     scripts = [os.path.join(service, script)
                for service in os.listdir(parent)
                if service.startswith('aws-')
