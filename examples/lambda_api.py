@@ -13,7 +13,7 @@ def main(event, context):
     >>> path = 'examples/lambda_api.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> _ = run(f'aws-lambda-deploy {path} -y').split(':')[-1]
+    >>> _ = run(f'aws-lambda-deploy {path} -y')
 
     >>> api = run('aws-lambda-api', path)
 

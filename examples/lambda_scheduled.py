@@ -12,7 +12,7 @@ def main(event, context):
     >>> path = 'examples/lambda_scheduled.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> _ = run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y').split(':')[-1]
+    >>> _ = run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y')
 
     >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
 

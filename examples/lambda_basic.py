@@ -17,7 +17,7 @@ def main(event, context):
     >>> path = 'examples/lambda_basic.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> _ = run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y').split(':')[-1]
+    >>> _ = run(f'aws-lambda-deploy {path} SOME_UUID={uid} -y')
 
     >>> _ = run('cat - > /tmp/input', stdin='{"foo": "bar"}')
 

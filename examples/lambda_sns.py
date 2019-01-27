@@ -10,7 +10,7 @@ def main(event, context):
     >>> path = 'examples/lambda_sns.py'
     >>> uid = str(uuid.uuid4())
 
-    >>> _ = run(f'aws-lambda-deploy {path} -y').split(':')[-1]
+    >>> _ = run(f'aws-lambda-deploy {path} -y')
 
     >>> _ = run(f"aws sns publish --topic-arn $(aws-lambda-sns {path}) --message {uid} >/dev/null")
 
