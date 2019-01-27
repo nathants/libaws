@@ -21,6 +21,7 @@ def _parse_file(path):
         lines = f.read().splitlines()
     return path, lines, {"policies": cli_aws.parse_metadata('policy:', lines),
                          "allows": cli_aws.parse_metadata('allow:', lines),
+                         "includes": cli_aws.parse_metadata('include:', lines),
                          "requires": [os.path.expanduser(x) for x in cli_aws.parse_metadata('require:', lines)],
                          "triggers": cli_aws.parse_metadata('trigger:', lines)}
 
@@ -203,20 +204,26 @@ def _create_zip(path, requires):
                         f.write(b'\n'.join(lines[1:]))
                     shell.run('chmod +x', name)
         shell.run(f'zip -r {zip_file} .')
-    with open(zip_file, 'rb') as f:
-        val = f.read()
-    return val
 
-def _update_zip(path):
+def _zip_bytes(path):
+    zip_file = _zip_file(path)
+    with open(zip_file, 'rb') as f:
+        return f.read()
+
+def _include_in_zip(path, includes):
+    zip_file = _zip_file(path)
+    with shell.cd(os.path.dirname(os.path.abspath(path))):
+        for include in includes:
+            print('\ninclude in zip:', include, file=sys.stderr)
+            shell.run(f'zip {zip_file} {include}')
+
+def _update_zip(path, *includes):
     print('\nupdate code', file=sys.stderr)
     zip_file = _zip_file(path)
     tempdir = os.path.dirname(zip_file)
     with shell.cd(f'{tempdir}/env/lib/python3.7/site-packages'):
         shell.run(f'cp {path} .')
         shell.run(f'zip {zip_file} {os.path.basename(path)}')
-    with open(zip_file, 'rb') as f:
-        val = f.read()
-    return val
 
 def _encrypt(key_id, text):
     text = bytes(text, 'utf-8')
@@ -288,7 +295,8 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
     path, lines, metadata = _parse_file(path)
     name = cli_aws.lambda_name(path)
     if quick and os.path.isfile(_zip_file(path)):
-        zipfile = _update_zip(path)
+        _update_zip(path)
+        zipfile = _zip_bytes(path)
         retry(boto3.client('lambda').update_function_code, silent=True, exponent=1.1)(FunctionName=name, ZipFile=zipfile)
         print('\ndone', file=sys.stderr)
     else:
@@ -307,7 +315,9 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         cli_aws.ensure_allows(name, metadata['allows'])
         cli_aws.remove_extra_allows(name, metadata['allows'])
         cli_aws.remove_extra_policies(name, metadata['policies'])
-        zipfile = _create_zip(path, metadata['requires'])
+        _create_zip(path, metadata['requires'])
+        _include_in_zip(path, metadata['includes'])
+        zipfile = _zip_bytes(path)
         kw = {'FunctionName': name,
               'Runtime': 'python3.7',
               'Role': arn_role,
