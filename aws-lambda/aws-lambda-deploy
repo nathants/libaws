@@ -30,7 +30,7 @@ def _ensure_triggers_s3(name, arn_lambda, metadata):
     for trigger in metadata['triggers']:
         if trigger.split()[0] == 's3':
             _, bucket = trigger.split(None, 1)
-            _ensure_permission(name, 's3.amazonaws.com', f'arn:aws:s3::{cli_aws.account()}:{bucket}')
+            _ensure_permission(name, 's3.amazonaws.com', f'arn:aws:s3:::{bucket}')
             boto3.resource('s3').BucketNotification(bucket).put(NotificationConfiguration={'LambdaFunctionConfigurations': [
                 {'LambdaFunctionArn': arn_lambda,
                  'Events': ['s3:ObjectCreated:*']}
