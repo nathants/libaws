@@ -74,7 +74,7 @@ def _ensure_triggers_api(name, arn_lambda, metadata):
                                                                    type="AWS_PROXY",
                                                                    integrationHttpMethod='POST',
                                                                    uri=uri)
-            boto3.client('apigateway').create_deployment(restApiId=rest_api_id, stageName=name)
+            boto3.client('apigateway').create_deployment(restApiId=rest_api_id, stageName=cli_aws.lambda_stage_name)
             arn = f"arn:aws:execute-api:{cli_aws.region()}:{cli_aws.account()}:{rest_api_id}/*/*/*"
             _ensure_permission(name, 'apigateway.amazonaws.com', arn)
             break

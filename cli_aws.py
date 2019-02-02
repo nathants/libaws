@@ -13,6 +13,8 @@ from util.retry import retry
 
 ssh_args = ' -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
 
+lambda_stage_name = 'main'
+
 @retry
 def sgs(names=None):
     sgs = list(boto3.resource('ec2').security_groups.all())
