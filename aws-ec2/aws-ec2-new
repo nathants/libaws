@@ -4,6 +4,7 @@ import datetime
 import util.strings
 import util.iter
 import util.dicts
+import util.date
 import random
 import time
 import pprint
@@ -353,6 +354,7 @@ def main(name: 'name of the instance',
     # some notes on possible improvements: https://github.com/nathants/py-aws/blob/7f436794e3cfaeeb6da3e85d457307e2eef442c2/aws/ec2.py#L1276
     if spot and zone is None:
         zone = shell.run('aws-ec2-cheapest-zone', type, '-d', spot_days, stream=True)
+    _start = time.time()
     for _ in range(5):
         assert vpc or subnet, 'need to provide a --vpc or --subnet'
         if subnet is not None:
@@ -374,9 +376,13 @@ def main(name: 'name of the instance',
             except AssertionError:
                 logging.exception('')
                 sys.exit(1)
-            except:
-                logging.exception('failed to create spot instances, retrying...')
-                continue
+            except Exception as e:
+                if isinstance(e, boto3.client('ec2').exceptions.ClientError) and e.response.get('Error', {}).get('Code') == 'InvalidSpotFleetRequestId.NotFound':
+                    logging.info('there is an error with the spot request, check the aws console')
+                    sys.exit(1)
+                else:
+                    logging.exception('failed to create spot instances, retrying...')
+                    continue
         else:
             logging.info('create instances:\n' + pprint.pformat(util.dicts.drop(opts, ['UserData'])))
             instances = boto3.resource('ec2').create_instances(**opts)
@@ -403,6 +409,7 @@ def main(name: 'name of the instance',
                 logging.exception('failed to spinup and then wait for ssh on instances, retrying...')
     else:
         assert False, 'failed to spinup and then wait for ssh on instances after 5 tries. aborting.'
+    logging.info(f'instance instantiation took {int(time.time() - _start)} seconds')
     ready_instances = cli_aws.ls(ready_ids, 'running')
     if login:
         logging.info('logging in...')
