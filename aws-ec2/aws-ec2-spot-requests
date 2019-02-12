@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+import json
+import argh
+import cli_aws
+import boto3
+
+def main(*ids, state: 'open | active | closed | cancelled | failed' = None): # noqa
+    resp = boto3.client('ec2').describe_spot_instance_requests(
+        SpotInstanceRequestIds=ids,
+        Filters=([{'Name': 'state', 'Values': [state]}] if state else [])
+    )['SpotInstanceRequests']
+    for r in sorted(resp, key=lambda x: x['CreateTime'], reverse=True):
+        yield json.dumps({
+            'instance-id': r.get('InstanceId'),
+            'id': r['SpotInstanceRequestId'],
+            'date': r['CreateTime'].isoformat()[:-6],
+            'state': r['State'],
+            'status': r['Status']['Code'],
+            'type': r['LaunchSpecification']['InstanceType'],
+        })
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)
