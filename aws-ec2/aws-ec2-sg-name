@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+import argh
+import cli_aws
+
+def main(id):
+    xs = [x for x in cli_aws.sgs() if x.group_id == id]
+    assert len(xs) == 1, 'didnt find exactly one match: %s' % xs
+    return xs[0].group_name
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)

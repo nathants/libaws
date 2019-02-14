@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+import sys
+import util.strings
+import boto3
+import argh
+import cli_aws
+import shell
+
+def main(name_or_id, quiet=False):
+    if not name_or_id.startswith('sg-'):
+        name_or_id = shell.run('aws-ec2-sg-id', name_or_id)
+    sg = list(boto3.resource('ec2').security_groups.filter(GroupIds=[name_or_id]))
+    assert len(sg) == 1, 'found more than 1 sg matching: %s\n\n %s' % (name_or_id, '\n '.join(sg))
+    sg = sg[0]
+    if not quiet:
+        print('\nname = ' + sg.group_name, '\nid = ' + sg.group_id, '\ndescription = "' + sg.description + '"', file=sys.stderr)
+    lines = ['protocol port source description']
+    for sg_perm in sg.ip_permissions:
+        ips = sg_perm.get('IpRanges', [])
+        ips += sg_perm.get('Ipv6Ranges', [])
+        ips += sg_perm.get('UserIdGroupPairs', [])
+        ips += sg_perm.get('PrefixListIds', [])
+        for ip in ips:
+            protocol = sg_perm.get('IpProtocol', 'All')
+            if protocol == '-1':
+                protocol = 'All'
+            if sg_perm.get('FromPort') != sg_perm.get('ToPort'):
+                port = '{}-{}'.format(sg_perm['FromPort'], sg_perm['ToPort'])
+            else:
+                port = str(sg_perm.get('FromPort', 'All'))
+            if port in ['-1', '0-65535']:
+                port = 'All'
+            lines.append(' '.join([
+                protocol,
+                port,
+                str(ip.get('CidrIp') or ip.get('CidrIpv6') or ip.get('GroupId') or ip.get('PrefixListId')),
+                str(ip.get('Description', '')).replace(' ', '_'),
+            ]))
+    if not quiet:
+        print('\n' + lines[0] + '\n', file=sys.stderr)
+    return util.strings.align('\n'.join(lines[1:]))
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)

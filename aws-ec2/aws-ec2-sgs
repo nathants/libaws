@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+import argh
+import cli_aws
+
+def main():
+    for sg in cli_aws.sgs():
+        yield '%s %s' % (sg.group_name, sg.group_id)
+
+if __name__ == '__main__':
+    with cli_aws.setup():
+        argh.dispatch_command(main)
