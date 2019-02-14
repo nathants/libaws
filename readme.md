@@ -15,6 +15,23 @@ pip install -r requirements.txt .
 
 - `aws-ec2-ssh --help`
 
+##### bash completion
+
+have something like this in your bashrc:
+
+```
+for completion in ~/.completions.d/*.sh; do
+    . $completion
+done
+```
+
+then install the cli-aws completion:
+
+```
+./completions.d/install.py ~/completions.d
+```
+
+now when you tab complete any cli that takes *selectors, you will see the results of `aws-ec2-ls`
 
 ##### examples
 
