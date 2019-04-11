@@ -296,6 +296,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
     name = cli_aws.lambda_name(path)
     if quick and os.path.isfile(_zip_file(path)):
         _update_zip(path)
+        _include_in_zip(path, metadata['includes'])
         zipfile = _zip_bytes(path)
         retry(boto3.client('lambda').update_function_code, silent=True, exponent=1.1)(FunctionName=name, ZipFile=zipfile)
         print('\ndone', file=sys.stderr)
