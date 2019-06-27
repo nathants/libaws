@@ -27,9 +27,9 @@ def main(ip, *names, yes=False):
                 ToPort=22,
                 CidrIp='%s/32' % ip
             )
-            logging.info('authorized: %s %s %s', sg.group_name, sg.group_id)
+            logging.info('authorized: %s %s', sg.group_name, sg.group_id)
         except Exception as e:
-            logging.info('%s: %s %s %s', re.sub(r'.*\((.*)\).*', r'\1', str(e)), sg.group_name, sg.group_id)
+            logging.info('%s: %s %s', re.sub(r'.*\((.*)\).*', r'\1', str(e)), sg.group_name, sg.group_id)
 
 if __name__ == '__main__':
     with cli_aws.setup():
