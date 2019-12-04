@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.7
+#!/usr/bin/env python3.8
 #
 # policy: CloudWatchLogsFullAccess
 # include: include_me.txt

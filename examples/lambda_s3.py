@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.7
+#!/usr/bin/env python3.8
 #
 # policy: CloudWatchLogsFullAccess
 # trigger: s3 cli-aws-s3-test-bucket
