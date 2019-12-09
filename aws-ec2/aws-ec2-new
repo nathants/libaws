@@ -124,12 +124,15 @@ def _ami_deeplearning():
     logging.info(f'using ubuntu ami {amis[-1].name} {amis[-1].id}')
     return amis[-1].id
 
-def _blocks(gigs, naming='sda'):
+def _blocks(gigs, naming='sda', kms_id=None):
     assert naming in ['sda', 'xvda'] # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html
     blocks = [{'DeviceName': ('/dev/sda1' if naming == 'sda' else '/dev/xvda'),
                'Ebs': {'VolumeSize': int(gigs),
                        'VolumeType': 'gp2',
+                       'Encrypted': True,
                        'DeleteOnTermination': True}}]
+    if kms_id:
+        blocks[0]['Ebs']['KmsKeyId'] = kms_id
     return blocks
 
 @cli_aws.retry
@@ -154,7 +157,11 @@ def _subnet(vpc, zone):
 
 def _make_spot_opts(spot, opts, fleet_role):
     if 'arn' not in fleet_role:
-        fleet_role = cli_aws.retry(boto3.client('iam').get_role)(RoleName=fleet_role)['Role']['Arn']
+        err = boto3.client('iam').exceptions.NoSuchEntityException
+        try:
+            fleet_role = cli_aws.retry(boto3.client('iam').get_role, err)(RoleName=fleet_role)['Role']['Arn']
+        except err:
+            assert False, util.colors.red(f'no such iam role {fleet_role}. specify a different one with `--fleet-role` or create defaults with `aws-iam-ensure-common-roles`')
     spot_opts = {}
     spot_opts['Type'] = 'request'
     spot_opts['ReplaceUnhealthyInstances'] = False
@@ -232,9 +239,10 @@ def main(name: 'name of the instance',
          sg: 'security group name'                     = os.environ.get('AWS_EC2_SG'),
          type: 'instance type'                         = os.environ.get('AWS_EC2_TYPE'),
          vpc: 'vpc name'                               = os.environ.get('AWS_EC2_VPC'),
+         kms_key_id: 'custom kms key for ebs'          = None,
          subnet: 'subnet id'                           = None,
          role: 'ec2 instance iam role'                 = None,
-         fleet_role: 'ec2 spot fleet iam role'         = 'aws-ec2-spot-fleet-tagging-role',
+         fleet_role: 'ec2 spot fleet iam role'         = 'AWSServiceRoleForEC2SpotFleet',
          zone: 'ec2 availability zone'                 = None,
          gigs: 'gb capacity of primary gp2 disk'       = 8,
          init: 'run some bash via cloud init'          = _default_init,
@@ -339,7 +347,7 @@ def main(name: 'name of the instance',
     opts['KeyName'] = key
     opts['SecurityGroupIds'] = [x.id for x in _sgs(names=[sg])]
     opts['InstanceType'] = type
-    opts['BlockDeviceMappings'] = _blocks(gigs, 'xvda' if user == 'ec2-user' else 'sda')
+    opts['BlockDeviceMappings'] = _blocks(gigs, 'xvda' if user == 'ec2-user' else 'sda', kms_key_id)
     opts['TagSpecifications'] = [{'ResourceType': resource,
                                   'Tags': [{'Key': 'Name', 'Value': name},
                                            {'Key': 'owner', 'Value': owner},
