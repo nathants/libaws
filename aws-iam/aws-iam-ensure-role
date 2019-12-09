@@ -3,7 +3,7 @@ import argh
 import cli_aws
 
 @argh.arg('--policy', action='append')
-@argh.arg('--allow', action='append')
+@argh.arg('--allow', action='append', help='"s3.Get $SOME_RESOURCE", or "s3:* *"')
 def main(name, principal, policy=None, allow=None):
     arn_role = cli_aws.ensure_role(name, principal)
     cli_aws.ensure_policies(name, policy or [])

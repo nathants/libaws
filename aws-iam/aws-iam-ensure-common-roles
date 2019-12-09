@@ -1,0 +1,15 @@
+#!/bin/bash
+
+echo idempotently create some common roles that are need to use EC2
+
+aws iam create-role \
+    --role-name AmazonEC2SpotFleetRole \
+    --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Sid":"","Effect":"Allow","Principal":{"Service":"spotfleet.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+
+aws iam attach-role-policy \
+    --policy-arn arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole \
+    --role-name AmazonEC2SpotFleetRole
+
+aws iam create-service-linked-role --aws-service-name spot.amazonaws.com
+
+aws iam create-service-linked-role --aws-service-name spotfleet.amazonaws.com
