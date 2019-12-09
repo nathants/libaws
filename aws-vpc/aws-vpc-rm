@@ -6,6 +6,10 @@ import cli_aws
 import sys
 
 def main(vpc_id, yes=False):
+    if not vpc_id.startswith('vpc-'):
+        vpcs = list(boto3.resource('ec2').vpcs.filter(Filters=[{'Name': 'tag:Name', 'Values': [vpc_id]}]))
+        assert len(vpcs) == 1, vpcs
+        vpc_id = vpcs[0].id
     vpc = boto3.resource('ec2').Vpc(vpc_id)
     print('going to delete:', cli_aws.tags(vpc).get('Name', '<no-name>'), vpc_id)
     if not yes:
