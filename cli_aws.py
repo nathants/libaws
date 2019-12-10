@@ -207,7 +207,7 @@ def ensure_policies(name, policies):
 def ensure_role(name, principal):
     print('ensure role', file=sys.stderr)
     role_path = f'/{principal}/{name}-path/'
-    roles = boto3.client('iam').list_roles(PathPrefix=role_path)['Roles']
+    roles = [role for page in boto3.client('iam').get_paginator('list_roles').paginate(PathPrefix=role_path) for role in page['Roles']]
     if 0 == len(roles):
         print(' create role:', name, file=sys.stderr)
         policy = '''{"Version": "2012-10-17",
