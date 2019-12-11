@@ -1,15 +1,19 @@
-#!/bin/bash
+#!/usr/bin/env python3
+import shell
 
-echo idempotently create some common roles that are need to use EC2
+print('idempotently create some common roles that are need to use EC2')
 
-aws iam create-role \
-    --role-name aws-ec2-spot-fleet-tagging-role \
-    --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Sid":"","Effect":"Allow","Principal":{"Service":"spotfleet.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+with shell.set_echo():
+    shell.run('aws iam create-role',
+              '--role-name aws-ec2-spot-fleet-tagging-role',
+              '--assume-role-policy-document', "'%s'" % '{"Version":"2012-10-17","Statement":[{"Sid":"","Effect":"Allow","Principal":{"Service":"spotfleet.amazonaws.com"},"Action":"sts:AssumeRole"}]}',
+              warn=True)
 
-aws iam attach-role-policy \
-    --role-name aws-ec2-spot-fleet-tagging-role \
-    --policy-arn arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
+    shell.run('aws iam attach-role-policy',
+              '--role-name aws-ec2-spot-fleet-tagging-role',
+              '--policy-arn arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole',
+              warn=True)
 
-aws iam create-service-linked-role --aws-service-name spot.amazonaws.com
+    shell.run('aws iam create-service-linked-role --aws-service-name spot.amazonaws.com', warn=True)
 
-aws iam create-service-linked-role --aws-service-name spotfleet.amazonaws.com
+    shell.run('aws iam create-service-linked-role --aws-service-name spotfleet.amazonaws.com', warn=True)
