@@ -428,7 +428,7 @@ def main(name: 'name of the instance',
             with open(cmd) as f:
                 cmd = f.read()
         logging.info('running cmd...')
-        shell.run('aws-ec2-ssh', *[i.instance_id for i in ready_instances], '-nyc -', stdin=cmd, stream=True)
+        shell.run('aws-ec2-ssh', *[i.instance_id for i in ready_instances], '--no-tty -yc -', stdin=cmd, stream=True)
     logging.info('done')
     return [i.instance_id for i in ready_instances]
 
