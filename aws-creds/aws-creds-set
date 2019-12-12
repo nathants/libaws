@@ -14,7 +14,7 @@ def main(name):
             if 'AWS_ACCESS_KEY_ID' in text and 'AWS_SECRET_ACCESS_KEY' in text and 'AWS_DEFAULT_REGION' in text:
                 creds.append(cred_path)
             if name + '.sh' == cred_path:
-                print(f'{cred_path} > ~/.aws_creds/_temp_creds.sh', file=sys.stderr)
+                print(f'~/.aws_creds/{cred_path} > ~/.aws_creds/_temp_creds.sh', file=sys.stderr)
                 shell.run(f'echo export AWS_CREDS_NAME={cred_path.split(".")[0]} > _temp_creds.sh')
                 shell.run(f'cat {cred_path} | grep export >> _temp_creds.sh')
                 return os.path.abspath(cred_path)
