@@ -8,7 +8,7 @@ import pprint
 
 @util.cached.disk_memoize(max_age_seconds=60 * 60 * 24)
 def fetch(filters):
-    return boto3.client('pricing').get_products(ServiceCode='AmazonEC2', Filters=filters)['PriceList']
+    return [price for page in boto3.client('pricing').get_paginator('get_products').paginate(ServiceCode='AmazonEC2', Filters=filters) for price in page['PriceList']]
 
 def main(instance_type=None, print_everything=False, ):
     boto3.setup_default_session(region_name='us-east-1')
