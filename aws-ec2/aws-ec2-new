@@ -78,8 +78,10 @@ bash /tmp/timeout.poweroff.sh &> /dev/null </dev/null &
 disown %1
 """
 
-ubuntus = {'bionic', 'xenial', 'trusty'}
-ubuntus_hvm_ssd = {'bionic': 'ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server',
+ubuntus = {'bionic', 'xenial', 'trusty', 'eoan', 'focal'}
+ubuntus_hvm_ssd = {'focal':   'ubuntu/images/hvm-ssd/ubuntu-eoan-20.04-amd64-server',
+                   'eoan':   'ubuntu/images/hvm-ssd/ubuntu-eoan-19.10-amd64-server',
+                   'bionic': 'ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server',
                    'xenial': 'ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server',
                    'trusty': 'ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-amd64-server'}
 ubuntus_pv = {'xenial': 'ubuntu/images/ebs-ssd/ubuntu-xenial-16.04-amd64-server',
