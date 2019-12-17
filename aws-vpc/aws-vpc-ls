@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-import shell
 import boto3
 import argh
 import cli_aws
-import sys
 
 def main():
     for vpc in boto3.resource('ec2').vpcs.filter():

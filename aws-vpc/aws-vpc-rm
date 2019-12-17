@@ -32,7 +32,7 @@ def main(vpc_id, yes=False):
     endpoints = boto3.client('ec2').describe_vpc_endpoints(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['VpcEndpoints']
     for endpoint in endpoints:
         boto3.client('ec2').delete_vpc_endpoints(VpcEndpointIds=[endpoint['VpcEndpointId']])
-        print('deleted:', endpoint)
+        print('deleted:', endpoint['VpcEndpointId'], endpoint['ServiceName'])
     for sg in vpc.security_groups.all():
         if sg.group_name != 'default':
             sg.delete()
