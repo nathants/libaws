@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import shell
 import sys
 import argh
 import cli_aws
@@ -10,10 +11,15 @@ def main(path,
          code = False,
          role = False,
          triggers=False,
-         logs=False):
+         logs=False,
+         yes=False):
     assert everything or code or role or triggers or logs, 'you probably meant to specify an arg, try --help'
     name = cli_aws.lambda_name(path)
     print('rm assets of lambda:', name, file=sys.stderr)
+
+    if not yes:
+        print('\nproceed? y/n ')
+        assert shell.getch() == 'y'
 
     if everything or code:
         with util.exceptions.ignore(boto3.client('lambda').exceptions.ResourceNotFoundException):
