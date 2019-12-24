@@ -35,17 +35,17 @@ now when you tab complete any cli that takes *selectors, you will see the result
 
 ##### examples
 
-- [lambda-basic](./examples/lambda_basic.py)
+- [lambda-basic](./examples/lambda/basic.py)
 
-- [lambda-sns](./examples/lambda_sns.py)
+- [lambda-sns](./examples/lambda/sns.py)
 
-- [lambda-scheduled](./examples/lambda_scheduled.py)
+- [lambda-scheduled](./examples/lambda/scheduled.py)
 
-- [lambda-kms](./examples/lambda_kms.py)
+- [lambda-kms](./examples/lambda/kms.py)
 
-- [lambda-api](./examples/lambda_api.py)
+- [lambda-api](./examples/lambda/api.py)
 
-- [lambda-dependencies](./examples/lambda_dependencies.py)
+- [lambda-dependencies](./examples/lambda/dependencies.py)
 
 ##### test
 
