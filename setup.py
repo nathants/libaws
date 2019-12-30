@@ -9,7 +9,7 @@ setuptools.setup(
     name='cli-aws',
     author='nathan todd-stone',
     author_email='me@nathants.com',
-    url='http://github.com/nathants/aws-util',
+    url='http://github.com/nathants/cli-aws',
     py_modules=['cli_aws'],
     python_requires='>=3.7',
     install_requires=['requests >2, <3',

@@ -336,6 +336,13 @@ def main(name: 'name of the instance',
     else:
         if type.split('.')[0] in ['i3', 'i3en', 'c5d', 'm5d', 'r5d', 'z1d']:
             init = _nvme_init + init
+        if os.path.isfile(init):
+            logging.info(f'loading init script from file: {init}')
+            with open(init) as f:
+                init = f.read()
+            if init.startswith('#!'):
+                assert init.startswith('#!/bin/bash'), f'bad init script: {init[:50]}...'
+                init = '\n'.join(init.split('\n')[1:])
         if seconds_timeout:
             logging.info('this instance will `sudo poweroff` after %s seconds, or %s hours, because of --seconds-timeout', seconds_timeout, round(int(seconds_timeout) / 60. / 60., 1))
             init = _timeout_init.format(seconds_timeout) + init
