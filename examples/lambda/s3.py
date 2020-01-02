@@ -8,7 +8,7 @@ def main(event, context):
     """
     >>> import shell, uuid
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
-    >>> path = 'examples/lambda_s3.py'
+    >>> path = 'examples/lambda/s3.py'
     >>> bucket = 'cli-aws-s3-test-bucket'
     >>> uid = str(uuid.uuid4())
 

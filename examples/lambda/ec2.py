@@ -16,7 +16,7 @@ def main(event, context):
     """
     >>> import shell, uuid
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
-    >>> path = 'examples/lambda_ec2.py'
+    >>> path = 'examples/lambda/ec2.py'
     >>> uid = str(uuid.uuid4())
 
     >>> _ = run(f'aws-lambda-deploy {path} UUID={uid} $(env | grep ^AWS_EC2_) -y')

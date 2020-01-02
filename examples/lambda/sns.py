@@ -7,7 +7,7 @@ def main(event, context):
     """
     >>> import shell, uuid
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
-    >>> path = 'examples/lambda_sns.py'
+    >>> path = 'examples/lambda/sns.py'
     >>> uid = str(uuid.uuid4())
 
     >>> _ = run(f'aws-lambda-deploy {path} -y')

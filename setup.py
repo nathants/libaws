@@ -1,4 +1,5 @@
 import setuptools
+import sys
 import os
 
 parent = os.path.dirname(os.path.abspath(__file__))
@@ -12,16 +13,26 @@ setuptools.setup(
     url='http://github.com/nathants/cli-aws',
     py_modules=['cli_aws'],
     python_requires='>=3.7',
-    install_requires=['requests >2, <3',
-                      'boto3 >1, <2',
-                      'awscli >1, <2',
-                      'argh >0.26, <0.27'],
-    scripts = [os.path.join(service, script)
-               for service in os.listdir(parent)
-               if service.startswith('aws-')
-               and os.path.isdir(service)
-               for script in os.listdir(os.path.join(parent, service))
-               for path in [os.path.join(service, script)]
-               if os.path.isfile(path)],
     description='composable, succinct aws scripts',
 )
+
+parent = os.path.dirname(os.path.abspath(__file__))
+scripts = [os.path.abspath(os.path.join(service, script))
+           for service in os.listdir(parent)
+           if service.startswith('aws')
+           and os.path.isdir(service)
+           for script in os.listdir(os.path.join(parent, service))
+           for path in [os.path.join(service, script)]
+           if os.path.isfile(path)]
+
+dst_path = os.path.dirname(os.path.abspath(sys.executable))
+for src in scripts:
+    name = os.path.basename(src)
+    dst = os.path.join(dst_path, name)
+    try:
+        os.remove(dst)
+    except FileNotFoundError:
+        pass
+    os.symlink(src, dst)
+    os.chmod(dst, 0o775)
+    print('link:', dst, '=>', src)
