@@ -40,7 +40,7 @@ def ssh_user(*instances):
     except KeyError:
         assert False, 'instances should have a tag "user=<username>"'
     assert len(users), 'no user tag found: %s' % '\n '.join(format(i) for i in instances)
-    assert len(users) == 1, 'cannot operate on instances with heteragenous users: %s' % users
+    assert len(users) == 1, 'cannot operate on instances with heterogeneous users: %s' % users
     return users.pop()
 
 def tags(obj):

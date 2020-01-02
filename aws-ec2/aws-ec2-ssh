@@ -50,8 +50,7 @@ def main(*selectors,
          batch_mode: 'operate like there are many instances, even if only one' = False,
          prefixed: 'when running against a single host, should streaming output be prefixed with name and ip' = False,
          error_message: 'error message to print for a failed host, something like: {id} {name} {ip} {ipv4_private} failed' = '',
-         user: 'what user to login as, otherwise an "user" tag is expected on the instance' = '',
-         forward_agent = False):
+         user: 'what user to login as, otherwise an "user" tag is expected on the instance' = ''):
     pool.thread._size = max_threads
     assert selectors, 'you must specify some selectors'
     instances = cli_aws.ls(selectors, 'running')
@@ -61,10 +60,10 @@ def main(*selectors,
     if cmd and 'set -e' not in cmd:
         if cmd.startswith('#!'):
             lines = cmd.splitlines()
-            lines.insert(1, 'set -e')
+            lines.insert(1, 'set -euo pipefail')
             cmd = '\n'.join(lines)
         else:
-            cmd = 'set -e\n' + cmd
+            cmd = 'set -euo pipefail\n' + cmd
     assert (cmd and instances) or len(instances) == 1, 'must specify --cmd to target multiple instances'
     if not (quiet and yes):
         for i in instances:
@@ -131,7 +130,7 @@ def main(*selectors,
         return res['stdout']
     else:
         try:
-            subprocess.check_call(ssh_cmd + (['-A'] if forward_agent else []) + [(user or cli_aws.ssh_user(instances[0])) + '@' + instances[0].public_dns_name])
+            subprocess.check_call(ssh_cmd + [(user or cli_aws.ssh_user(instances[0])) + '@' + instances[0].public_dns_name])
         except subprocess.CalledProcessError:
             sys.exit(1)
 

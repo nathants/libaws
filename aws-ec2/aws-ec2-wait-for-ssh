@@ -9,6 +9,7 @@ import logging
 def main(*selectors,
          yes=False,
          seconds: 'after this many seconds, terminate any instances not ready and return the id of ready instances' = 0):
+
     assert selectors, 'you cannot wait for all things, specify some selectors'
     assert selectors != ['*'], 'you cannot wait for all things, specify some selectors'
     pendings = cli_aws.ls(selectors, 'pending')
