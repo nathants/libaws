@@ -73,6 +73,7 @@ def main(*selectors,
         logging.info(f'ec2.ssh running against selectors: {selectors}, with cmd: {cmd}')
     if timeout:
         ssh_cmd = ['timeout', '{}s'.format(timeout)] + ssh_cmd
+    _asserts = cli_aws.ssh_user(*instances)
     make_ssh_cmd = lambda i: ssh_cmd + [(user or cli_aws.ssh_user(i)) + '@' + i.public_dns_name, _remote_cmd(cmd, stdin, i.instance_id)]
     login = len(instances) == 1 and not cmd
     if not yes and not login:

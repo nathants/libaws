@@ -282,7 +282,7 @@ def _set_concurrency(name, concurrency):
         print('\nset lambda concurrency to:', concurrency, file=sys.stderr)
 
 @argh.arg('env_vars', help='KEY=VALUE')
-def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda*.py',
+def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda/*.py',
          memory=128,
          timeout=300,
          concurrency=0,
