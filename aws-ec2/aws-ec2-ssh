@@ -40,7 +40,7 @@ def main(*selectors,
          stdin: 'stdin value to be provided to remote cmd' = '',
          quiet: 'less output' = False,
          no_stream: 'dont stream to stderr, only output to stdout' = False,
-         cmd: 'cmd to run on remote host, or - to read from stdin' = '',
+         cmd: 'cmd to run on remote host, - to read from stdin, or script file path' = '',
          yes: 'no prompt to proceed' = False,
          max_threads: 'max ssh connections' = 20,
          timeout: 'seconds before ssh cmd considered failed' = None,
@@ -57,6 +57,9 @@ def main(*selectors,
     assert instances, 'didnt find any instances'
     if cmd == '-':
         cmd = sys.stdin.read()
+    if os.path.isfile(cmd):
+        with open(cmd) as f:
+            cmd = f.read()
     if cmd and 'set -e' not in cmd:
         if cmd.startswith('#!'):
             lines = cmd.splitlines()
@@ -73,7 +76,7 @@ def main(*selectors,
         logging.info(f'ec2.ssh running against selectors: {selectors}, with cmd: {cmd}')
     if timeout:
         ssh_cmd = ['timeout', '{}s'.format(timeout)] + ssh_cmd
-    _asserts = cli_aws.ssh_user(*instances)
+    _ = cli_aws.ssh_user(*instances) # asserts
     make_ssh_cmd = lambda i: ssh_cmd + [(user or cli_aws.ssh_user(i)) + '@' + i.public_dns_name, _remote_cmd(cmd, stdin, i.instance_id)]
     login = len(instances) == 1 and not cmd
     if not yes and not login:
