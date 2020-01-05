@@ -13,6 +13,10 @@ setuptools.setup(
     url='http://github.com/nathants/cli-aws',
     py_modules=['cli_aws'],
     python_requires='>=3.6',
+    install_requires=['requests >2, <3',
+                      'boto3 >1, <2',
+                      'awscli >1, <2',
+                      'argh >0.26, <0.27'],
     description='composable, succinct aws scripts',
 )
 

@@ -327,7 +327,7 @@ def main(name: 'name of the instance',
     elif ami_name == 'lambda':
         user = 'ec2-user'
     elif ami_name == 'arch':
-        user = 'root'
+        user = 'arch'
     else:
         user = 'ubuntu'
     logging.info(f'ssh-user: {user}')
