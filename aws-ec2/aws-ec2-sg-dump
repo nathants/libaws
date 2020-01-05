@@ -4,7 +4,7 @@ import cli_aws
 import logging
 
 def main(sort: 'id | 0 | 32' = 'id', check_num_instances=False):
-    logging.info('source num-instances destination protocol:from-port:to-port')
+    logging.info('source num-instances direction destination protocol:from-port:to-port')
     vals = []
     for sg in cli_aws.sgs():
         src = '%s:%s' % (sg.group_id, getattr(sg, 'group_name', None) or getattr(sg, 'description', '<no-name>'))
@@ -18,9 +18,12 @@ def main(sort: 'id | 0 | 32' = 'id', check_num_instances=False):
                 for dst in [cidr['CidrIp'] for cidr in x['IpRanges']] + ['%s:%s' % (group['GroupId'], group.get('GroupName', '<no-name>')) for group in x['UserIdGroupPairs']]:
                     dst = dst.replace(' ', '_')
                     vals.append(
-                        '{} {} {} {}'.format(src, num, dst, ' %(IpProtocol)s:%(FromPort)s:%(ToPort)s' % x
-                                                            if 'FromPort' in x else
-                                                            ' Any:Any:Any').replace(':-1', ':Any'))
+                        '{} {} {} {} {}'.format(src,
+                                                num,
+                                                'ingress' if key == 'ip_permissions' else 'egress',
+                                                dst,
+                                                ' %(IpProtocol)s:%(FromPort)s:%(ToPort)s' % x if 'FromPort' in x else ' Any:Any:Any'
+                                                ).replace(':-1', ':Any'))
     if sort != 'id':
         assert sort in ['0', '32']
         if sort == '0':

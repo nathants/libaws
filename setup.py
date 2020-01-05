@@ -12,7 +12,7 @@ setuptools.setup(
     author_email='me@nathants.com',
     url='http://github.com/nathants/cli-aws',
     py_modules=['cli_aws'],
-    python_requires='>=3.7',
+    python_requires='>=3.6',
     description='composable, succinct aws scripts',
 )
 
