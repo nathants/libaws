@@ -1,3 +1,3 @@
 git+https://github.com/nathants/py-util@d63445ba286ef165ce09c2a4b896dacd5a3bfa1d
 git+https://github.com/nathants/py-pool@31dae540c2b7d581cb81301b0e5e72fdfe233dff
-git+https://github.com/nathants/py-shell@2101f972f13b6c2b73ed476ac0a3a7793285fa07
+git+https://github.com/nathants/py-shell@772514605bab11c06c7b689465d2491dbfd2520f
