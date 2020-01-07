@@ -6,7 +6,8 @@
 ```
 git clone https://github.com/nathants/cli-aws
 cd cli-aws
-pip install -r requirements.txt .
+pip install -r requirements.txt
+python setup.py install
 ```
 
 ##### usage and help
