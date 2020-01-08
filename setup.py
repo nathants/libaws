@@ -39,4 +39,4 @@ for src in scripts:
         pass
     os.symlink(src, dst)
     os.chmod(dst, 0o775)
-    print('link:', dst, '=>', src)
+    print('link:', dst, '=>', src, file=sys.stderr)
