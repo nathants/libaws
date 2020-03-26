@@ -127,8 +127,7 @@ def main(*selectors,
                         hide_stderr=quiet,
                         raw_cmd=True,
                         callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None,
-                        warn=True,
-                        quiet=True)
+                        warn=True)
         if res['exitcode'] != 0:
             sys.exit(res['exitcode'])
         return res['stdout']
