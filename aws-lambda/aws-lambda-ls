@@ -5,11 +5,14 @@ import cli_aws
 import boto3
 
 def main():
+    fns = []
     for page in boto3.client('lambda').get_paginator('list_functions').paginate():
-        for function in page['Functions']:
-            function['FunctionName'] = util.colors.green(function['FunctionName'])
-            function['LastModified'] = ':'.join(function['LastModified'].split(':')[:2]) + 'Z'
-            print('{FunctionName} {Runtime} {Timeout}s {MemorySize}mb {LastModified}'.format(**function))
+        for fn in page['Functions']:
+            fn['FunctionName'] = util.colors.green(fn['FunctionName'])
+            fn['LastModified'] = ':'.join(fn['LastModified'].split(':')[:2]) + 'Z'
+            fns.append(fn)
+    for fn in sorted(fns, key=lambda x: x['LastModified'], reverse=True):
+        print('{FunctionName} {Runtime} {Timeout}s {MemorySize}mb {LastModified}'.format(**fn))
 
 if __name__ == '__main__':
     with cli_aws.setup():
