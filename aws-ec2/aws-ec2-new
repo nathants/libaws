@@ -98,14 +98,17 @@ def _ami_lambda():
     logging.info('using ami %s %s', ami, ami_id)
     return ami_id
 
-def _ami_ubuntu(name_fragment, ena=False, sriov=False):
+def _ami_ubuntu(name_fragment):
     filters = [{'Name': 'name', 'Values': [f'*{name_fragment}*']},
                {'Name': 'architecture', 'Values': ['x86_64']}]
-    if ena:
-        filters.append({'Name': 'ena-support', 'Values': ['true']})
-    if sriov:
-        filters.append({'Name': 'sriov-net-support', 'Values': ['simple']})
     amis = list(cli_aws.retry(boto3.resource('ec2').images.filter)(Owners=['099720109477'], Filters=filters))
+    amis = sorted(amis, key=lambda x: x.creation_date)
+    return amis[-1].id
+
+def _ami_amzn():
+    filters = [{'Name': 'name', 'Values': ['amzn2-ami-hvm-2.0*-ebs']},
+               {'Name': 'architecture', 'Values': ['x86_64']}]
+    amis = list(cli_aws.retry(boto3.resource('ec2').images.filter)(Owners=['137112412989'], Filters=filters))
     amis = sorted(amis, key=lambda x: x.creation_date)
     logging.info(f'using ami {amis[-1].name} {amis[-1].id}')
     return amis[-1].id
@@ -306,6 +309,8 @@ def main(name: 'name of the instance',
         ami = _ami_deeplearning()
     elif ami_name == 'arch':
         ami = _ami_arch()
+    elif ami_name == 'amzn':
+        ami = _ami_amzn()
     elif ami in ubuntus:
         logging.info('fetch latest ami for: %s', ami)
         distro = ami
@@ -324,7 +329,7 @@ def main(name: 'name of the instance',
         user = ssh_user
     elif 'ssh-user' in ami_tags:
         user = ami_tags['ssh-user']
-    elif ami_name == 'lambda':
+    elif ami_name in {'lambda', 'amzn'}:
         user = 'ec2-user'
     elif ami_name == 'arch':
         user = 'arch'
