@@ -79,7 +79,7 @@ disown %1
 """
 
 ubuntus = {'bionic', 'xenial', 'trusty', 'eoan', 'focal'}
-ubuntus_hvm_ssd = {'focal':   'ubuntu/images/hvm-ssd/ubuntu-eoan-20.04-amd64-server',
+ubuntus_hvm_ssd = {'focal':  'ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server',
                    'eoan':   'ubuntu/images/hvm-ssd/ubuntu-eoan-19.10-amd64-server',
                    'bionic': 'ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server',
                    'xenial': 'ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server',
