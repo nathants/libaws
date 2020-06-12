@@ -92,8 +92,7 @@ def main(*selectors,
                              echo=False,
                              raw_cmd=True,
                              stream=False,
-                             warn=True,
-                             hide_stderr=quiet)
+                             warn=True)
             if resp['exitcode'] != 0:
                 if error_message:
                     print(error_message.format(id=instance.instance_id,
@@ -124,7 +123,6 @@ def main(*selectors,
         res = shell.run(*make_ssh_cmd(instances[0]),
                         echo=False,
                         stream=not prefixed and not no_stream,
-                        hide_stderr=quiet,
                         raw_cmd=True,
                         callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None,
                         warn=True)
