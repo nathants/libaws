@@ -23,20 +23,28 @@ _default_init = 'date > /tmp/cloudinit.log'
 
 _nvme_init = """
 # pick the first nvme drive which is NOT mounted as / and prepare that as /mnt
-disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
-(
- echo g # Create a new empty GPT partition table
- echo n # Add a new partition
- echo 1 # Partition number
- echo   # First sector (Accept default: 1)
- echo   # Last sector (Accept default: varies)
- echo w # Write changes
-) | sudo fdisk $disk
-sleep 2
-sudo mkfs -t ext4 ${disk}p1
-sudo mkdir -p /mnt
-sudo mount -o discard ${disk}p1 /mnt
-sudo chown -R $(whoami):$(whoami) /mnt
+for i in {1..5}; do
+    if (
+        set -e
+        disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
+        (
+         echo g # Create a new empty GPT partition table
+         echo n # Add a new partition
+         echo 1 # Partition number
+         echo   # First sector (Accept default: 1)
+         echo   # Last sector (Accept default: varies)
+         echo w # Write changes
+        ) | sudo fdisk $disk
+        sleep 2
+        sudo mkfs -t ext4 ${disk}p1
+        sudo mkdir -p /mnt
+        sudo mount -o discard ${disk}p1 /mnt
+        sudo chown -R $(whoami):$(whoami) /mnt
+    ); then
+        break
+    fi
+    sleep 15
+done
 """
 
 _timeout_init = """
