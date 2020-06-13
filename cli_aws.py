@@ -101,7 +101,7 @@ def setup():
         boto3.setup_default_session(region_name=os.environ['region'])
     elif 'REGION' in os.environ:
         boto3.setup_default_session(region_name=os.environ['REGION'])
-    if util.hacks.override('--stream'):
+    if util.misc.override('--stream'):
         shell.set_stream().__enter__()
     try:
         yield
