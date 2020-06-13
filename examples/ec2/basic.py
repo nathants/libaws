@@ -15,7 +15,7 @@ def ec2_name():
         finally:
             try:
                 ids = run('aws-ec2-id', name).splitlines()
-            except AssertionError:
+            except:
                 pass
             else:
                 print('cleaning up left over ec2 ids:', *ids)

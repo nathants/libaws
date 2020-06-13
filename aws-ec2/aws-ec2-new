@@ -428,13 +428,13 @@ def main(name: 'name of the instance',
             except KeyboardInterrupt:
                 try:
                     shell.run('aws-ec2-rm -y', *ids, stream=True)
-                except AssertionError:
+                except:
                     pass # when $seconds, and no instances where ready, everything has already been terminated, and rm fails an assert
                 raise
             except:
                 try:
                     shell.run('aws-ec2-rm -y', *ids, stream=True)
-                except AssertionError:
+                except:
                     pass # when $seconds, and no instances where ready, everything has already been terminated, and rm fails an assert
                 logging.exception('failed to spinup and then wait for ssh on instances, retrying...')
     else:
