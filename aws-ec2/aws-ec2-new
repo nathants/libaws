@@ -63,7 +63,7 @@ echo '
         (($remaining <= 300)) && (($remaining % 60 == 0)) && wall "$remaining $warning"
         echo uptime seconds: $duration | sudo tee /var/log/timeout.log
         echo poweroff in seconds: $remaining | sudo tee -a /var/log/timeout.log
-        sleep 1
+        sleep 5
     done
     # run timeout script and wait 60 seconds
     echo run: bash /tmp/timeout.sh > /var/log/timeout.log
