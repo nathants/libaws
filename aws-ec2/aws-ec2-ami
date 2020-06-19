@@ -18,7 +18,7 @@ def main(*selectors, yes=False, no_wait=False, name=None, description=None, no_a
     assert len(instances) == 1, 'didnt find exactly one instance:\n%s' % ('\n'.join(cli_aws.format(i) for i in instances) or '<nothing>')
     instance = instances[0]
     if instance.state['Name'] == 'running':
-        instance.stop()
+        shell.run('aws-ec2-stop -y', instance.instance_id)
         shell.run('aws-ec2-wait-for-state -y', instance.instance_id, '--end-state stopped', stream=True)
     logging.info('going to image the following instance:')
     logging.info(' ' + cli_aws.format(instance))
