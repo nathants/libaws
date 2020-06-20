@@ -17,14 +17,14 @@ def main(*selectors, yes=False, no_wait=False, name=None, description=None, no_a
     instances = cli_aws.ls(selectors, 'running') + cli_aws.ls(selectors, 'stopped')
     assert len(instances) == 1, 'didnt find exactly one instance:\n%s' % ('\n'.join(cli_aws.format(i) for i in instances) or '<nothing>')
     instance = instances[0]
-    if instance.state['Name'] == 'running':
-        shell.run('aws-ec2-stop -y', instance.instance_id)
-        shell.run('aws-ec2-wait-for-state -y', instance.instance_id, '--end-state stopped', stream=True)
     logging.info('going to image the following instance:')
     logging.info(' ' + cli_aws.format(instance))
     if not yes:
         logging.info('\nwould you like to proceed? y/n\n')
         assert shell.getch() == 'y', 'abort'
+    if instance.state['Name'] == 'running':
+        shell.run('aws-ec2-stop -y', instance.instance_id)
+        shell.run('aws-ec2-wait-for-state -y', instance.instance_id, '--end-state stopped', stream=True)
     image = instance.create_image(Name=name, Description=description)
     tags = [{'Key': 'ssh-user', 'Value': cli_aws.tags(instance)['ssh-user']}]
     if tag:
