@@ -71,11 +71,11 @@ def main(*selectors,
     if not (quiet and yes):
         for i in instances:
             logging.info(cli_aws.format(i))
-    ssh_cmd = ('ssh' + (' -i {} '.format(key) if key else '') + (' -tt ' if not no_tty or not cmd else ' -T ') + cli_aws.ssh_args).split()
+    ssh_cmd = ('ssh' + (f' -i {key} ' if key else '') + (' -tt ' if not no_tty or not cmd else ' -T ') + cli_aws.ssh_args).split()
     if echo:
         logging.info(f'ec2.ssh running against selectors: {selectors}, with cmd: {cmd}')
     if timeout:
-        ssh_cmd = ['timeout', '{}s'.format(timeout)] + ssh_cmd
+        ssh_cmd = ['timeout', str(timeout)] + ssh_cmd
     _ = cli_aws.ssh_user(*instances) # asserts
     make_ssh_cmd = lambda i: ssh_cmd + [(user or cli_aws.ssh_user(i)) + '@' + i.public_dns_name, _remote_cmd(cmd, stdin, i.instance_id)]
     login = len(instances) == 1 and not cmd
