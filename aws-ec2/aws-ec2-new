@@ -2,6 +2,7 @@
 # type: ignore
 import sys
 import datetime
+import util.exceptions
 import util.strings
 import util.iter
 import util.dicts
@@ -214,8 +215,6 @@ def _spot_errors(request_id):
         val += record['EventInformation']['EventDescription'] + '\n\n'
     return val
 
-# TODO have a max seconds before returning whatever came up and terminating the
-# rest, just like wait-for-ssh
 def _create_spot_instances(**opts):
     request_id = boto3.client('ec2').request_spot_fleet(SpotFleetRequestConfig=opts)['SpotFleetRequestId']
     logging.info("wait for spot request to be filled for fleet:\n%s", request_id)
@@ -383,7 +382,6 @@ def main(name: 'name of the instance',
                                  for resource in ['instance', 'volume']]
     if role:
         opts['IamInstanceProfile'] = {'Name': role}
-    # some notes on possible improvements: https://github.com/nathants/py-aws/blob/7f436794e3cfaeeb6da3e85d457307e2eef442c2/aws/ec2.py#L1276
     if spot and zone is None:
         zone = shell.run('aws-ec2-cheapest-zone', type, '-d', spot_days, stream=True)
     _start = time.time()
@@ -399,8 +397,6 @@ def main(name: 'name of the instance',
             _spot_opts = copy.deepcopy(spot_opts)
             _spot_opts['LaunchSpecifications'][0].pop('UserData', None)
             logging.info('request spot instances:\n' + pprint.pformat(_spot_opts))
-            # TODO improve the wait-for-spot-fullfillment logic inside _create_spot_instances()
-            # TODO currently this can error, which is not so good. compared to boto3.resource().create_instances().
             try:
                 instances = _create_spot_instances(**spot_opts)
             except KeyboardInterrupt:
@@ -428,16 +424,12 @@ def main(name: 'name of the instance',
                 ready_ids = shell.run('aws-ec2-wait-for-ssh -ys', seconds_wait, *ids, stream=True).splitlines()
                 break
             except KeyboardInterrupt:
-                try:
+                with util.exceptions.ignore():
                     shell.run('aws-ec2-rm -y', *ids, stream=True)
-                except:
-                    pass # when $seconds, and no instances where ready, everything has already been terminated, and rm fails an assert
                 raise
             except:
-                try:
+                with util.exceptions.ignore():
                     shell.run('aws-ec2-rm -y', *ids, stream=True)
-                except:
-                    pass # when $seconds, and no instances where ready, everything has already been terminated, and rm fails an assert
                 logging.exception('failed to spinup and then wait for ssh on instances, retrying...')
     else:
         assert False, 'failed to spinup and then wait for ssh on instances after 5 tries. aborting.'
