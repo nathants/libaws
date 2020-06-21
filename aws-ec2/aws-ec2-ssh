@@ -27,7 +27,7 @@ def _remote_cmd(cmd, stdin, instance_id):
     """
 
 def _make_callback(instance, quiet, append=None, no_stream=False):
-    name = cli_aws.ec2_name(instance) + ': ' + instance.public_dns_name + ': '
+    name = cli_aws.ec2_name(instance) + ': ' + instance.id + ': '
     def f(_, line):
         val = (line if quiet else name + line).replace('\r', '')
         if append is not None:
