@@ -25,29 +25,30 @@ _default_init = 'date > /tmp/cloudinit.log'
 
 _nvme_init = """
 # pick the first nvme drive which is NOT mounted as / and prepare that as /mnt
-for i in {1..5}; do
-    if (
-        set -e
-        disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
-        (
-         echo g # Create a new empty GPT partition table
-         echo n # Add a new partition
-         echo 1 # Partition number
-         echo   # First sector (Accept default: 1)
-         echo   # Last sector (Accept default: varies)
-         echo w # Write changes
-        ) | sudo fdisk $disk
-        sleep 2
-        sudo mkfs -t ext4 ${disk}p1
-        sudo mkdir -p /mnt
-        sudo mount -o discard,noatime ${disk}p1 /mnt
-        sudo chown -R $(whoami):$(whoami) /mnt
-        echo ${disk}p1 /mnt ext4 discard,noatime 0 1 | sudo tee -a /etc/fstab
-    ); then
+set -x
+while true; do
+    echo 'wait for /dev/nvme*'
+    if sudo fdisk -l | grep /dev/nvme &>/dev/null; then
         break
     fi
-    sleep 15
+    sleep 1
 done
+disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
+(
+ echo g # Create a new empty GPT partition table
+ echo n # Add a new partition
+ echo 1 # Partition number
+ echo   # First sector (Accept default: 1)
+ echo   # Last sector (Accept default: varies)
+ echo w # Write changes
+) | sudo fdisk $disk
+sleep 5
+yes | sudo mkfs -t ext4 ${disk}p1
+sudo mkdir -p /mnt
+sudo mount -o discard,noatime ${disk}p1 /mnt
+sudo chown -R $(whoami):$(whoami) /mnt
+echo ${disk}p1 /mnt ext4 discard,noatime 0 1 | sudo tee -a /etc/fstab
+set +x
 """
 
 _timeout_init = """
