@@ -40,7 +40,7 @@ def main(*selectors,
                          if x.startswith('success: ')]
             num_ready = len(ready_ids)
             num_not_ready = len(instances) - num_ready
-            logging.info(f'waiting for {num_not_ready} nodes')
+            logging.info(f'waiting for {num_not_ready}/{len(instances)} nodes')
             if seconds and time.time() - global_start > seconds and num_not_ready:
                 logging.info(f'waited for {seconds} seconds, {num_ready} ready, {num_not_ready} not ready and will be terminated')
                 not_ready_ids = [i.instance_id
