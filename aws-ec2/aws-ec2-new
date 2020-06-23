@@ -169,7 +169,9 @@ def _subnet(vpc, zone):
     else:
         subnets = list(vpcs[0].subnets.all())[:1]
     assert len(subnets) == 1, 'no subnet for vpc=%(vpc)s zone=%(zone)s' % locals()
-    return subnets[0].id
+    subnet = subnets[0].id
+    logging.info(f'using zone: {zone}, subnet: {subnet}, vpn: {vpc}')
+    return subnet
 
 def _make_spot_opts(spot, opts, fleet_role):
     if 'arn' not in fleet_role:
@@ -383,7 +385,7 @@ def main(name: 'name of the instance',
     if role:
         opts['IamInstanceProfile'] = {'Name': role}
     if spot and zone is None:
-        zone = shell.run('aws-ec2-cheapest-zone', type, '-d', spot_days, stream=True)
+        zone = shell.run('aws-ec2-cheapest-zone', type, '-d', spot_days)
     _start = time.time()
     for _ in range(5):
         assert vpc or subnet, 'need to provide a --vpc or --subnet'
