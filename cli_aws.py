@@ -102,7 +102,7 @@ def setup():
     elif 'REGION' in os.environ:
         boto3.setup_default_session(region_name=os.environ['REGION'])
     if util.misc.override('--stream'):
-        shell.set_stream().__enter__()
+        shell.set['stream'] = 'yes'
     try:
         yield
     except AssertionError as e:
