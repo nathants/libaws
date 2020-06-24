@@ -7,6 +7,7 @@ import cli_aws
 import logging
 
 def main(*selectors,
+         internal: 'use internal ipv4 address' = False,
          yes=False,
          seconds: 'after this many seconds, terminate any instances not ready and return the id of ready instances' = 0):
 
@@ -31,7 +32,7 @@ def main(*selectors,
     for i in range(200):
         running = cli_aws.ls([i.instance_id for i in instances], 'running')
         running_ids = ' '.join([i.instance_id for i in running])
-        shell.run('aws-ec2-ip-callback', *[i.public_dns_name for i in running], '&& sleep 1', warn=True) # define this entrypoint if you want to do something with ipv4 of new instances
+        shell.run('aws-ec2-ip-callback', *[i.private_ip_address if internal else i.public_dns_name for i in running], '&& sleep 1', warn=True) # define this entrypoint if you want to do something with ipv4 of new instances
         local_start = time.time()
         try:
             res = shell.run(f'aws-ec2-ssh {running_ids} --batch-mode -t 10 -yc "whoami >/dev/null" 2>&1', warn=True, stream=i > 10)
