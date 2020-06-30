@@ -119,7 +119,7 @@ def main(*selectors,
             logging.info(util.colors.red(' failures: ') + str(len(failures)))
         for result in results:
             print(result)
-        assert not failures
+        assert not failures, '\n'.join(util.strings.rm_color(f) for f in failures)
     elif cmd:
         res = shell.run(*make_ssh_cmd(instances[0]),
                         echo=False,
