@@ -15,6 +15,18 @@ ssh_args = ' -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
 
 lambda_stage_name = 'main'
 
+def subnet(vpc, zone):
+    vpcs = list(boto3.resource('ec2').vpcs.filter(Filters=[{'Name': 'vpc-id' if vpc.startswith('vpc-') else 'tag:Name', 'Values': [vpc]}]))
+    assert len(vpcs) == 1, 'no vpc named: %s' % vpc
+    if zone:
+        subnets = [x for x in vpcs[0].subnets.all() if x.availability_zone == zone]
+    else:
+        subnets = list(vpcs[0].subnets.all())[:1]
+    assert len(subnets) == 1, 'no subnet for vpc=%(vpc)s zone=%(zone)s' % locals()
+    subnet = subnets[0].id
+    logging.info(f'using zone: {zone}, subnet: {subnet}, vpn: {vpc}')
+    return subnet
+
 @retry
 def sgs(names=None):
     sgs = list(boto3.resource('ec2').security_groups.all())
@@ -53,6 +65,15 @@ def tags(obj):
 def ec2_name(instance):
     return tags(instance).get('Name', '<no-name>')
 
+_hidden_tags = [
+    'Name',
+    'user',
+    'creation-date',
+    'owner',
+    'aws:ec2spot:fleet-request-id',
+    'aws:elasticmapreduce:job-flow-id',
+]
+
 def format(i, all_tags=False):
     return ' '.join([(green if i.state['Name'] == 'running' else cyan if i.state['Name'] == 'pending' else red)(ec2_name(i)),
                      i.instance_type,
@@ -61,7 +82,7 @@ def format(i, all_tags=False):
                      i.image_id,
                      ('spot' if i.spot_instance_request_id else 'ondemand'),
                      ','.join(sorted([x['GroupName'] for x in i.security_groups])),
-                     ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in ['Name', 'user', 'creation-date', 'owner', 'aws:ec2spot:fleet-request-id']) and v)])
+                     ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in _hidden_tags) and v)])
 
 def ls(selectors, state):
     assert state in ['running', 'pending', 'stopped', 'terminated', None], f'bad state: {state}'

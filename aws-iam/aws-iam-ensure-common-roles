@@ -17,3 +17,5 @@ with shell.set_echo():
     shell.run('aws iam create-service-linked-role --aws-service-name spot.amazonaws.com', warn=True)
 
     shell.run('aws iam create-service-linked-role --aws-service-name spotfleet.amazonaws.com', warn=True)
+
+    shell.run('aws emr create-default-roles', warn=True)

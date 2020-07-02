@@ -162,18 +162,6 @@ def _sgs(names=None):
                or x.group_id in names]
     return sgs
 
-def _subnet(vpc, zone):
-    vpcs = list(boto3.resource('ec2').vpcs.filter(Filters=[{'Name': 'vpc-id' if vpc.startswith('vpc-') else 'tag:Name', 'Values': [vpc]}]))
-    assert len(vpcs) == 1, 'no vpc named: %s' % vpc
-    if zone:
-        subnets = [x for x in vpcs[0].subnets.all() if x.availability_zone == zone]
-    else:
-        subnets = list(vpcs[0].subnets.all())[:1]
-    assert len(subnets) == 1, 'no subnet for vpc=%(vpc)s zone=%(zone)s' % locals()
-    subnet = subnets[0].id
-    logging.info(f'using zone: {zone}, subnet: {subnet}, vpn: {vpc}')
-    return subnet
-
 def _make_spot_opts(spot, opts, fleet_role):
     if 'arn' not in fleet_role:
         err = boto3.client('iam').exceptions.NoSuchEntityException
@@ -393,7 +381,7 @@ def main(name: 'name of the instance',
         if subnet is not None:
             opts['SubnetId'] = subnet
         else:
-            opts['SubnetId'] = _subnet(vpc, zone)
+            opts['SubnetId'] = cli_aws.subnet(vpc, zone)
         logging.info('using vpc: %s', vpc)
         if spot:
             spot_opts = _make_spot_opts(spot, opts, fleet_role)
