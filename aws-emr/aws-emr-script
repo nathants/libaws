@@ -22,7 +22,7 @@ def main(cluster_id, schema_file, script_file, terminate_on_fail=False, interact
     if interactive:
         shell.check_call(f'aws-emr-scp {schema_file} :/tmp/schema.hql {cluster_id} 1>&2')
         shell.check_call(f'aws-emr-scp {script_file} :/tmp/script.hql {cluster_id} 1>&2')
-        shell.check_call(f'aws-emr-ssh {cluster_id} --cmd "hive -i /tmp/schema.hql -f /tmp/script.hql"')
+        shell.check_call(f'aws-emr-ssh {cluster_id} --cmd "time hive -i /tmp/schema.hql -f /tmp/script.hql"')
     else:
         bucket = os.environ['AWS_EMR_SCRIPT_BUCKET']
         schema_path = f's3://{bucket}/tmp/scripts/{uuid.uuid4()}'

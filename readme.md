@@ -8,6 +8,21 @@ cd cli-aws
 python3 -m pip install -r requirements.txt .
 ```
 
+##### setup
+
+define some environement variables in your bashrc for common default values
+
+```
+export AWS_EMR_SCRIPT_BUCKET=$NAME
+export AWS_EC2_KEY=$NAME
+export AWS_EC2_AMI=$NAME
+export AWS_EC2_SG=$NAME
+export AWS_EC2_VPC=NAME
+export AWS_EC2_TYPE=i3en.xlarge
+export AWS_EC2_SPOT=1.0
+export AWS_EC2_TIMEOUT=$((60*60))
+```
+
 ##### usage and help
 
 - `aws-*-* --help`
