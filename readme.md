@@ -10,7 +10,7 @@ python3 -m pip install -r requirements.txt .
 
 ##### setup
 
-define some environement variables in your bashrc for common default values
+define some environment variables in your bashrc for common default values
 
 ```
 export AWS_EMR_SCRIPT_BUCKET=$NAME
@@ -49,17 +49,23 @@ now when you tab complete any cli that takes *selectors, you will see the result
 
 ##### examples
 
+- [lambda-api](./examples/lambda/api.py)
+
 - [lambda-basic](./examples/lambda/basic.py)
 
-- [lambda-sns](./examples/lambda/sns.py)
+- [lambda-dependencies](./examples/lambda/dependencies.py)
 
-- [lambda-scheduled](./examples/lambda/scheduled.py)
+- [lambda-ec2](./examples/lambda/ec2.py)
+
+- [lambda-includes](./examples/lambda/includes.py)
 
 - [lambda-kms](./examples/lambda/kms.py)
 
-- [lambda-api](./examples/lambda/api.py)
+- [lambda-s3](./examples/lambda/s3.py)
 
-- [lambda-dependencies](./examples/lambda/dependencies.py)
+- [lambda-scheduled](./examples/lambda/scheduled.py)
+
+- [lambda-sns](./examples/lambda/sns.py)
 
 ##### test
 
