@@ -49,23 +49,23 @@ now when you tab complete any cli that takes *selectors, you will see the result
 
 ##### examples
 
-- [lambda-api](./examples/lambda/api.py)
+- [lambda-api](https://github.com/nathants/cli-aws/blob/master/examples/lambda/api.py)
 
-- [lambda-basic](./examples/lambda/basic.py)
+- [lambda-basic](https://github.com/nathants/cli-aws/blob/master/examples/lambda/basic.py)
 
-- [lambda-dependencies](./examples/lambda/dependencies.py)
+- [lambda-dependencies](https://github.com/nathants/cli-aws/blob/master/examples/lambda/dependencies.py)
 
-- [lambda-ec2](./examples/lambda/ec2.py)
+- [lambda-ec2](https://github.com/nathants/cli-aws/blob/master/examples/lambda/ec2.py)
 
-- [lambda-includes](./examples/lambda/includes.py)
+- [lambda-includes](https://github.com/nathants/cli-aws/blob/master/examples/lambda/includes.py)
 
-- [lambda-kms](./examples/lambda/kms.py)
+- [lambda-kms](https://github.com/nathants/cli-aws/blob/master/examples/lambda/kms.py)
 
-- [lambda-s3](./examples/lambda/s3.py)
+- [lambda-s3](https://github.com/nathants/cli-aws/blob/master/examples/lambda/s3.py)
 
-- [lambda-scheduled](./examples/lambda/scheduled.py)
+- [lambda-scheduled](https://github.com/nathants/cli-aws/blob/master/examples/lambda/scheduled.py)
 
-- [lambda-sns](./examples/lambda/sns.py)
+- [lambda-sns](https://github.com/nathants/cli-aws/blob/master/examples/lambda/sns.py)
 
 ##### test
 
