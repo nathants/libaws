@@ -7,6 +7,7 @@ import sys
 import os
 import shell
 import boto3
+import glob
 from util.retry import retry
 
 def _parse_file(path):
@@ -212,10 +213,16 @@ def _zip_bytes(path):
 
 def _include_in_zip(path, includes):
     zip_file = _zip_file(path)
+    print('', file=sys.stderr)
     with shell.cd(os.path.dirname(os.path.abspath(path))):
         for include in includes:
-            print('\ninclude in zip:', include, file=sys.stderr)
-            shell.run(f'zip {zip_file} {include}')
+            if '*' in include:
+                for path in glob.glob(include):
+                    print('include in zip:', path, file=sys.stderr)
+                    shell.run(f'zip {zip_file} {path}')
+            else:
+                print('include in zip:', include, file=sys.stderr)
+                shell.run(f'zip {zip_file} {include}')
 
 def _update_zip(path, *includes):
     print('\nupdate code', file=sys.stderr)
