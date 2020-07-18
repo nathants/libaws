@@ -69,4 +69,6 @@ now when you tab complete any cli that takes *selectors, you will see the result
 
 ##### test
 
-`tox`
+```
+tox
+```
