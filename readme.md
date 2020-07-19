@@ -1,6 +1,8 @@
-### composable, succinct scripts to complement the aws cli
+## what
 
-##### installation
+composable, succinct scripts to complement the aws cli
+
+## install
 
 ```
 git clone https://github.com/nathants/cli-aws
@@ -8,7 +10,7 @@ cd cli-aws
 python3 -m pip install -r requirements.txt .
 ```
 
-##### setup
+## setup
 
 define some environment variables in your bashrc for common default values
 
@@ -23,13 +25,13 @@ export AWS_EC2_SPOT=1.0
 export AWS_EC2_TIMEOUT=$((60*60))
 ```
 
-##### usage and help
+## usage and help
 
 - `aws-*-* --help`
 
 - `aws-ec2-ssh --help`
 
-##### bash completion
+## bash completion
 
 have something like this in your bashrc:
 
@@ -47,7 +49,7 @@ then install the cli-aws completion:
 
 now when you tab complete any cli that takes *selectors, you will see the results of `aws-ec2-ls`
 
-##### examples
+## examples
 
 - [lambda-api](https://github.com/nathants/cli-aws/blob/master/examples/lambda/api.py)
 
@@ -67,7 +69,7 @@ now when you tab complete any cli that takes *selectors, you will see the result
 
 - [lambda-sns](https://github.com/nathants/cli-aws/blob/master/examples/lambda/sns.py)
 
-##### test
+## test
 
 ```
 tox
