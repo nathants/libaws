@@ -1,6 +1,10 @@
+## why
+
+wrangling cloud infra should be both easy and simple.
+
 ## what
 
-composable, succinct scripts to complement the aws cli
+composable, succinct scripts to complement the aws cli.
 
 ## install
 
@@ -12,7 +16,7 @@ python3 -m pip install -r requirements.txt .
 
 ## setup
 
-define some environment variables in your bashrc for common default values
+define some environment variables in your bashrc for common default values.
 
 ```
 export AWS_EMR_SCRIPT_BUCKET=$NAME
@@ -47,7 +51,7 @@ then install the cli-aws completion:
 ./completions.d/install.py ~/completions.d
 ```
 
-now when you tab complete any cli that takes *selectors, you will see the results of `aws-ec2-ls`
+now when you tab complete any cli that takes *selectors, you will see the results of `aws-ec2-ls`.
 
 ## examples
 
