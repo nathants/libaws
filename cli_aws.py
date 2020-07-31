@@ -245,6 +245,28 @@ def ensure_role(name, principal):
             print('', role, file=sys.stderr)
         sys.exit(1)
 
+def ensure_instance_profile(name, role_name):
+    print('\nensure instance profile', file=sys.stderr)
+    profiles = [profile
+                for page in boto3.client('iam').get_paginator('list_instance_profiles').paginate()
+                for profile in page['InstanceProfiles']
+                if profile['InstanceProfileName'] == name]
+    if 0 == len(profiles):
+        print(' create instance profile:', name, file=sys.stderr)
+        profile = boto3.client('iam').create_instance_profile(InstanceProfileName=name)['InstanceProfile']
+    elif 1 == len(profiles):
+        print(' profile exists:', name, file=sys.stderr)
+        profile = profiles[0]
+    else:
+        assert False, profiles
+    roles = [role['RoleName'] for role in profile['Roles']]
+    if role_name not in roles:
+        print(' add role to instance profile:', role_name, file=sys.stderr)
+        boto3.client('iam').add_role_to_instance_profile(InstanceProfileName=name, RoleName=role_name)
+    else:
+        print(' role already added to instance profile:', role_name, file=sys.stderr)
+    return profile['Arn']
+
 def _policy_name(allow):
     return allow.replace('*', 'All').replace(' ', '-').replace(':', '--')
 

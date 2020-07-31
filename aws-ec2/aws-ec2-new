@@ -246,7 +246,7 @@ def main(name: 'name of the instance',
          vpc: 'vpc name'                               = os.environ.get('AWS_EC2_VPC'),
          kms_key_id: 'custom kms key for ebs'          = None,
          subnet: 'subnet id'                           = None,
-         role: 'ec2 instance iam role'                 = None,
+         profile: 'iam instance profile'               = None,
          fleet_role: 'ec2 spot fleet iam role'         = 'aws-ec2-spot-fleet-tagging-role',
          zone: 'ec2 availability zone'                 = None,
          gigs: 'gb capacity of primary gp2 disk'       = 8,
@@ -371,8 +371,8 @@ def main(name: 'name of the instance',
                                                                                  for tag in tags
                                                                                  for k, v in [tag.split('=')]]}
                                  for resource in ['instance', 'volume']]
-    if role:
-        opts['IamInstanceProfile'] = {'Name': role}
+    if profile:
+        opts['IamInstanceProfile'] = {'Name': profile}
     if spot and zone is None:
         zone = shell.run('aws-ec2-cheapest-zone', type, '-d', spot_days)
     _start = time.time()

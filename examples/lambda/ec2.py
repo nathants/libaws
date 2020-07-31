@@ -40,7 +40,6 @@ def main(event, context):
                                 '--ami arch',
                                 '--type t3.nano',
                                 '--seconds-timeout 300',
-                                '--role s3-all',
                                 '--no-wait',
                                 '--init', f'"echo {name} > /tmp/name.txt"')
         return instance_id
