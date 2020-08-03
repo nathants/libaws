@@ -29,7 +29,15 @@ export AWS_EC2_SPOT=1.0
 export AWS_EC2_TIMEOUT=$((60*60))
 ```
 
-## usage and help
+## discovery
+
+tab complete:
+
+```
+aws-
+```
+
+## usage
 
 - `aws-*-* --help`
 
