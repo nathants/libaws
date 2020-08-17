@@ -34,7 +34,7 @@ def main(*selectors, yes=False, no_wait=False, name=None, description=None, no_a
     ami_id = image.image_id
     if not no_wait:
         logging.info('wait for image...')
-        boto3.client('ec2').get_waiter('image_available').wait(ImageIds=[ami_id]) # TODO this appears to wait way longer than necessary. instead, wait until ami-id appears in amis(name)
+        boto3.client('ec2').get_waiter('image_available').wait(ImageIds=[ami_id], WaiterConfig={'MaxAttempts': 256})
     return ami_id
 
 if __name__ == '__main__':
