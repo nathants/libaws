@@ -35,7 +35,7 @@ def main(*selectors,
         shell.run('aws-ec2-ip-callback', *[i.private_ip_address if internal else i.public_dns_name for i in running], '&& sleep 1', warn=True) # define this entrypoint if you want to do something with ipv4 of new instances
         local_start = time.time()
         try:
-            res = shell.run(f'aws-ec2-ssh {running_ids} --batch-mode -t 10 -yc "whoami >/dev/null" 2>&1', warn=True, stream=i > 10)
+            res = shell.run(f'aws-ec2-ssh {running_ids} --batch-mode -t 10 -yc "whoami >/dev/null" 2>&1', warn=True, stream=i > 30)
             ready_ids = [x.split()[-1]
                          for x in res['stdout'].splitlines()
                          if x.startswith('success: ')]
