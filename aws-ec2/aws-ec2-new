@@ -43,7 +43,7 @@ disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sor
  echo w # Write changes
 ) | sudo fdisk $disk
 sleep 5
-yes | sudo mkfs -t ext4 ${disk}p1
+yes | sudo mkfs -t ext4 -N 1000000000 ${disk}p1
 sudo mkdir -p /mnt
 sudo mount -o discard,noatime ${disk}p1 /mnt
 sudo chown -R $(whoami):$(whoami) /mnt
