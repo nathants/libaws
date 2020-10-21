@@ -275,13 +275,13 @@ def main(name: 'name of the instance',
              'at the on-demand price, so only get '
              'terminated if spot market rises above '
              'on-demand market. set to 0 use '
-             'on-demand instead of spot.')             = os.environ.get('AWS_EC2_SPOT', 0.0),
+             'on-demand instead of spot.')             = float(os.environ.get('AWS_EC2_SPOT', 0.0)),
          seconds_timeout: (
              'will `sudo poweroff` after this many '
              'seconds. calls `bash /tmp/timeout.sh` '
              'if it exists and waits 60 seconds for '
              'it to exit before calling `sudo poweroff`. '
-             'set to 0 to disable.')                   = os.environ.get('AWS_EC2_TIMEOUT', 0),
+             'set to 0 to disable.')                   = int(os.environ.get('AWS_EC2_TIMEOUT', 0)),
          seconds_wait: (
              'how many seconds to wait for ssh '
              'before continuing with however '
