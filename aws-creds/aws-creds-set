@@ -9,12 +9,17 @@ def main(name):
     """
     easily switch between aws creds stored as environement vars in files like: ~/.aws_creds/NAME.sh
 
-    defines env var AWS_CREDS_NAME= when switching
+    NAME.sh should contain at least:
+      export AWS_ACCESS_KEY_ID=
+      export AWS_SECRET_ACCESS_KEY=
+      export AWS_DEFAULT_REGION
+
+    defines env var AWS_CREDS_NAME=NAME when switching
 
     define a bash function like this to make your life easier:
-       aws-creds() {
-           . $(aws-creds-set $1)
-       }
+        aws-creds() {
+            aws-creds-set $1 && . ~/.aws_creds/_temp_creds.sh
+        }
 
     """
     with shell.cd('~/.aws_creds'):
@@ -22,17 +27,17 @@ def main(name):
         for cred_path in shell.files():
             with open(cred_path) as f:
                 text = f.read()
-            if 'AWS_ACCESS_KEY_ID' in text and 'AWS_SECRET_ACCESS_KEY' in text and 'AWS_DEFAULT_REGION' in text:
+            if 'AWS_ACCESS_KEY_ID=' in text and 'AWS_SECRET_ACCESS_KEY=' in text and 'AWS_DEFAULT_REGION=' in text:
                 creds.append(cred_path)
             if name + '.sh' == cred_path:
-                print(f'~/.aws_creds/{cred_path} > ~/.aws_creds/_temp_creds.sh', file=sys.stderr)
-                shell.run(f'echo export AWS_CREDS_NAME={cred_path.split(".")[0]} > _temp_creds.sh')
-                shell.run(f'cat {cred_path} | grep export >> _temp_creds.sh')
-                return os.path.abspath(cred_path)
-        print('fatal: no match, try:\n')
+                temp_creds = '_temp_creds.sh'
+                shell.run(f'echo export AWS_CREDS_NAME={cred_path.split(".")[0]} > {temp_creds}')
+                shell.run(f'cat {cred_path} | grep export >> {temp_creds}')
+                return
+        print('fatal: no match, try:\n', file=sys.stderr)
         for cred in creds:
             if '_temp' not in cred:
-                print('            ', cred.split('.')[0])
+                print('', cred.split('.')[0], file=sys.stderr)
         sys.exit(1)
 
 if __name__ == '__main__':

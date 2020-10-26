@@ -9,11 +9,11 @@ def main():
         for cred_path in shell.files():
             with open(cred_path) as f:
                 text = f.read()
-            if 'AWS_ACCESS_KEY_ID' in text and 'AWS_SECRET_ACCESS_KEY' in text and 'AWS_DEFAULT_REGION' in text and cred_path != '_temp_creds.sh':
+            if 'AWS_ACCESS_KEY_ID=' in text and 'AWS_SECRET_ACCESS_KEY=' in text and 'AWS_DEFAULT_REGION=' in text and cred_path != '_temp_creds.sh':
                 creds.append(cred_path)
         print('~/.aws_creds/')
         for cred in creds:
-            print('            ', cred)
+            print('', cred)
 
 if __name__ == '__main__':
     with cli_aws.setup():
