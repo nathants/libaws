@@ -165,8 +165,11 @@ def rest_apis(name=None):
                 yield item['name'], item['id'], ','.join(item['endpointConfiguration']['types']), item['createdDate']
 
 def rest_api_id(name):
+    apis = []
     for _, id, *_ in rest_apis(name):
-        return id
+        apis.append(id)
+    assert len(apis) == 1, f'didnt find exactly 1 api for name: {name}, {apis}'
+    return apis[0]
 
 def rest_resource_id(rest_api_id, path):
     for page in boto3.client('apigateway').get_paginator('get_resources').paginate(restApiId=rest_api_id):
