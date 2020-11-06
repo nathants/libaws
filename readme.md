@@ -1,3 +1,5 @@
+# cli-aws
+
 ## why
 
 wrangling cloud infra should be both easy and simple.
