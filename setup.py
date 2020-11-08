@@ -1,4 +1,5 @@
 import setuptools
+import shutil
 import sys
 import os
 
@@ -37,6 +38,12 @@ for src in scripts:
         os.remove(dst)
     except FileNotFoundError:
         pass
-    os.symlink(src, dst)
-    os.chmod(dst, 0o775)
-    print('link:', dst, '=>', src, file=sys.stderr)
+    else:
+        if 'symlink' in os.environ:
+            os.symlink(src, dst)
+            os.chmod(dst, 0o775)
+            print('link:', dst, '=>', src, file=sys.stderr)
+        else:
+            shutil.copyfile(src, dst)
+            os.chmod(dst, 0o775)
+            print('copy:', dst, '=>', src, file=sys.stderr)
