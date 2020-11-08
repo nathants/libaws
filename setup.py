@@ -3,8 +3,6 @@ import shutil
 import sys
 import os
 
-parent = os.path.dirname(os.path.abspath(__file__))
-
 setuptools.setup(
     version="0.0.1",
     license='mit',
@@ -38,12 +36,11 @@ for src in scripts:
         os.remove(dst)
     except FileNotFoundError:
         pass
+    if 'symlink' in os.environ:
+        os.symlink(src, dst)
+        os.chmod(dst, 0o775)
+        print('link:', dst, '=>', src, file=sys.stderr)
     else:
-        if 'symlink' in os.environ:
-            os.symlink(src, dst)
-            os.chmod(dst, 0o775)
-            print('link:', dst, '=>', src, file=sys.stderr)
-        else:
-            shutil.copyfile(src, dst)
-            os.chmod(dst, 0o775)
-            print('copy:', dst, '=>', src, file=sys.stderr)
+        shutil.copyfile(src, dst)
+        os.chmod(dst, 0o775)
+        print('copy:', dst, '=>', src, file=sys.stderr)
