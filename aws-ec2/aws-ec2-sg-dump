@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
+# type: ignore
 import argh
 import cli_aws
-import logging
+import sys
 
 def main(sort: 'id | 0 | 32' = 'id', check_num_instances=False):
-    logging.info('source num-instances direction destination protocol:from-port:to-port')
+    print('source num-instances direction destination protocol:from-port:to-port', file=sys.stderr)
     vals = []
-    for sg in cli_aws.sgs():
+    for sg in cli_aws.ec2_sgs():
         src = '%s:%s' % (sg.group_id, getattr(sg, 'group_name', None) or getattr(sg, 'description', '<no-name>'))
         src = src.replace(' ', '_')
         if check_num_instances:
-            num = len(cli_aws.ls([sg.group_id], 'running'))
+            num = len(cli_aws.ec2_ls([sg.group_id], 'running'))
         else:
             num = '?'
         for key in ['ip_permissions_egress', 'ip_permissions']:

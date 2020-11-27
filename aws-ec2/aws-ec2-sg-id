@@ -3,7 +3,7 @@ import argh
 import cli_aws
 
 def main(name):
-    xs = [x for x in cli_aws.sgs() if x.group_name == name]
+    xs = [x for x in cli_aws.ec2_sgs() if x.group_name == name]
     assert len(xs) == 1, 'didnt find exactly one match: %s' % xs
     return xs[0].group_id
 

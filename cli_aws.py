@@ -28,7 +28,7 @@ def subnet(vpc, zone):
     return subnet
 
 @retry
-def sgs(names=None):
+def ec2_sgs(names=None):
     sgs = list(boto3.resource('ec2').security_groups.all())
     if names:
         sgs = [x
