@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import botocore
 import boto3
 import argh
 import cli_aws
@@ -20,11 +21,13 @@ def main(vpc_name, sg_name, *rules, quiet=False):
                 delete[(r['IpProtocol'], str(r['ToPort']), ip['CidrIp'])] = True
     for r in rules:
         proto, port, cidr = r.split(':')
-        print(proto, port, cidr)
         if (proto, port, cidr) in delete:
             delete[(proto, port, cidr)] = False
         else:
-            sg.authorize_ingress(CidrIp=cidr, FromPort=int(port), ToPort=int(port), IpProtocol=proto)
+            try:
+                sg.authorize_ingress(CidrIp=cidr, FromPort=int(port), ToPort=int(port), IpProtocol=proto)
+            except botocore.exceptions.ClientError:
+                assert port == '22' and cidr.endswith('/32'), f'only tcp:22:/32 is allowed to be a duplicate: {[proto, port, cidr]}'
     for (proto, port, cidr), v in delete.items():
         if v:
             sg.revoke_ingress(CidrIp=cidr, FromPort=int(port), ToPort=int(port), IpProtocol=proto)
