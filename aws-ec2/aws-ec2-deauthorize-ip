@@ -16,11 +16,11 @@ def _has_ssh_permission(sg, ip):
                 return True
 
 def _ssh_security_groups(ip):
-    return [sg for sg in cli_aws.sgs() if _has_ssh_permission(sg, ip)]
+    return [sg for sg in cli_aws.ec2_sgs() if _has_ssh_permission(sg, ip)]
 
 def main(ip, *names, yes=False):
     assert all(x == '.' or x.isdigit() for x in ip), 'bad ip: %s' % ip
-    sgs = cli_aws.sgs(names) if names else _ssh_security_groups(ip)
+    sgs = cli_aws.ec2_sgs(names) if names else _ssh_security_groups(ip)
     assert sgs, 'didnt find any security groups'
     logging.info('your ip %s is currently allowed ssh to the following security groups:\n', util.colors.yellow(ip))
     for sg in sgs:

@@ -9,7 +9,7 @@ import cli_aws
 def main(ip, *names, yes=False):
     assert all(x == '.' or x.isdigit() for x in ip), 'bad ip: %s' % ip
     names = [util.strings.rm_color(x) for x in names]
-    sgs = cli_aws.sgs(names)
+    sgs = cli_aws.ec2_sgs(names)
     assert sgs, 'didnt find any security groups'
     logging.info('going to authorize your ip %s to these groups:', util.colors.yellow(ip))
     for sg in sgs:
