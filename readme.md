@@ -11,9 +11,7 @@ composable, succinct scripts to complement the aws cli.
 ## install
 
 ```
-git clone https://github.com/nathants/cli-aws
-cd cli-aws
-python3 -m pip install -r requirements.txt .
+python -m pip install -v git+https://github.com/nathants/cli-aws
 ```
 
 ## setup
