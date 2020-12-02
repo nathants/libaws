@@ -2,6 +2,7 @@ import setuptools
 import shutil
 import sys
 import os
+import subprocess
 
 setuptools.setup(
     version="0.0.1",
@@ -20,6 +21,10 @@ setuptools.setup(
 )
 
 parent = os.path.dirname(os.path.abspath(__file__))
+
+if 'develop' not in sys.argv:
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])
+
 scripts = [os.path.abspath(os.path.join(service, script))
            for service in os.listdir(parent)
            if service.startswith('aws')
