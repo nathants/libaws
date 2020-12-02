@@ -8,7 +8,7 @@ import boto3
 from util.retry import retry
 
 def f(v):
-    if isinstance(v, dict) and len(v) == 1 and list(v)[0] in ['S', 'N', 'B', 'L', 'M']:
+    if isinstance(v, dict) and len(v) == 1 and list(v)[0] in ['S', 'N', 'B', 'L', 'M', 'BOOL']:
         v = list(v.values())[0]
     return v
 
