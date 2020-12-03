@@ -41,7 +41,7 @@ for src in scripts:
         os.remove(dst)
     except FileNotFoundError:
         pass
-    if 'symlink' in os.environ:
+    if 'develop' in sys.argv:
         os.symlink(src, dst)
         os.chmod(dst, 0o775)
         print('link:', dst, '=>', src, file=sys.stderr)
