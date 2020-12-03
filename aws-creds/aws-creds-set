@@ -15,9 +15,15 @@ def main(name):
 
     defines env var AWS_CREDS_NAME=NAME when switching
 
-    define a bash function like this to make your life easier:
+    define bash functions like this to make your life easier:
+
         aws-creds() {
             aws-creds-set $1 && . ~/.aws_creds/_temp_creds.sh
+        }
+
+        aws-creds-temp() {
+            export AWS_CREDS_NAME=$(echo $1|cut -d. -f1)
+            . ~/.aws_creds/$1.sh
         }
 
     """
