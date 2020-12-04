@@ -14,9 +14,13 @@ def main():
                    for page in retry(boto3.client('route53').get_paginator('list_resource_record_sets').paginate)(HostedZoneId=zone['Id'])
                    for record in page['ResourceRecordSets'])
         for record in records:
-            if record['Type'] in {'CNAME', 'A'} and not record['Name'].startswith('_'):
+            if 'AliasTarget' in record:
+                record['Value'] = record['AliasTarget']['DNSName']
+                print('- {Name} Alias => {Value}'.format(**record))
+            else:
                 record['Value'] = ' '.join(r['Value'] for r in record['ResourceRecords'])
                 print('- {Name} {Type} {TTL} => {Value}'.format(**record))
+        print()
 
 if __name__ == '__main__':
     with cli_aws.setup():
