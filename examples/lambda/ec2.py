@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 #
 # require: git+https://github.com/nathants/py-util
 # require: git+https://github.com/nathants/py-pool

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 #
 # require: git+https://github.com/nathants/py-util@e4aafbbb0f6e1bea793791356636968bef1924a2
 # require: requests==2.18.4

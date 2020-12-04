@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 #
 # policy: CloudWatchLogsFullAccess
 # trigger: cloudwatch cron(* * * * ? *) # or: cloudwatch rate(1 minute)

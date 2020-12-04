@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import glob
 import base64
 import json
 import argh
@@ -185,11 +186,12 @@ def _create_zip(path, requires):
     tempdir = os.path.dirname(zip_file)
     shell.run('rm -rf', tempdir)
     shell.run('mkdir -p', tempdir)
-    shell.run(f'virtualenv --python python3.8 {tempdir}/env')
+    shell.run(f'virtualenv --python python3 {tempdir}/env')
     if requires:
         with shell.cd(os.path.dirname(path)):
             shell.run(f'{tempdir}/env/bin/pip install', *[f'"{r}"' for r in requires])
-    with shell.cd(f'{tempdir}/env/lib/python3.8/site-packages'):
+    [site_packages] = glob.glob(f'{tempdir}/env/lib/python3*/site-packages')
+    with shell.cd(site_packages):
         shell.run(f'cp {path} .')
         shell.run('rm -rf wheel pip setuptools pkg_resources easy_install.py')
         shell.run("ls | grep -E 'info$' | xargs rm -rf")
@@ -293,6 +295,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
          memory=128,
          timeout=300,
          concurrency=0,
+         runtime='python3.8',
          *env_vars,
          yes=False,
          quick: 'update code only' = False,
@@ -327,7 +330,7 @@ def main(path: 'python file that defines the lambda, see cli-aws/examples/lambda
         _include_in_zip(path, metadata['includes'])
         zipfile = _zip_bytes(path)
         kw = {'FunctionName': name,
-              'Runtime': 'python3.8',
+              'Runtime': runtime,
               'Role': arn_role,
               'Timeout': timeout,
               'MemorySize': memory,
