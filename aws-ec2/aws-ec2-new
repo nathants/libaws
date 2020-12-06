@@ -164,7 +164,7 @@ def _sgs(names=None):
                or x.group_id in names]
     return sgs
 
-def _make_spot_opts(spot, opts, fleet_role):
+def _make_spot_opts(spot, opts, fleet_role, vpc):
     if 'arn' not in fleet_role:
         err = boto3.client('iam').exceptions.NoSuchEntityException
         try:
@@ -172,6 +172,7 @@ def _make_spot_opts(spot, opts, fleet_role):
         except err:
             assert False, util.colors.red(f'no such iam role {fleet_role}. specify a different one with `--fleet-role` or create defaults with `aws-iam-ensure-common-roles`')
     spot_opts = {}
+    spot_opts['AllocationStrategy'] = 'lowestPrice'
     spot_opts['Type'] = 'request'
     spot_opts['ReplaceUnhealthyInstances'] = False
     spot_opts['InstanceInterruptionBehavior'] = 'terminate'
@@ -186,7 +187,23 @@ def _make_spot_opts(spot, opts, fleet_role):
             opts['TagSpecifications'].remove(tags) # volume tagging not supported with RequestSpotFleet
     if 'UserData' in opts:
         opts['UserData'] = util.strings.b64_encode(opts['UserData'])
-    spot_opts['LaunchSpecifications'] = [opts]
+    if 'SubnetId' in opts:
+        spot_opts['LaunchSpecifications'] = [opts]
+    else:
+        spot_opts['LaunchSpecifications'] = []
+        for zone in cli_aws.zones():
+            _opts = copy.deepcopy(opts)
+            _opts['SubnetId'] = cli_aws.subnet(vpc, zone)
+            spot_opts['LaunchSpecifications'].append(_opts)
+    # log the spot opts minus userdata and after combining subnets
+    _spot_opts = copy.deepcopy(spot_opts)
+    subnets = [opt['SubnetId'] for opt in _spot_opts['LaunchSpecifications']]
+    _spot_opts['LaunchSpecifications'] = [_spot_opts['LaunchSpecifications'][0]]
+    _spot_opts['LaunchSpecifications'][0]['SubnetId'] = subnets
+    for spec in _spot_opts['LaunchSpecifications']:
+        spec.pop('UserData', None)
+    logging.info('request spot instances:\n' + pprint.pformat(_spot_opts))
+    # return spot opts
     return spot_opts
 
 def _tear_down_spot_instances(request_id):
@@ -239,6 +256,10 @@ def _create_spot_instances(**opts):
             time.sleep(5)
         raise Exception('failed to get the right number of instances')
 
+@argh.arg('-s', '--spot')
+@argh.arg('-i', '--init')
+@argh.arg('-k', '--key')
+@argh.arg('-n', '--num')
 def main(name: 'name of the instance',
          *tags: 'tags to set as "<key>=<value>"',
          key: 'key pair name'                          = os.environ.get('AWS_EC2_KEY'),
@@ -249,8 +270,8 @@ def main(name: 'name of the instance',
          kms_key_id: 'custom kms key for ebs'          = None,
          subnet: 'subnet id'                           = None,
          profile: 'iam instance profile'               = None,
-         fleet_role: 'ec2 spot fleet iam role'         = 'aws-ec2-spot-fleet-tagging-role',
-         zone: 'ec2 availability zone'                 = None,
+         fleet_role: 'spot fleet iam role'             = 'aws-ec2-spot-fleet-tagging-role',
+         zone: 'availability zone'                     = None,
          gigs: 'gb capacity of primary gp2 disk'       = 16,
          iops: 'use io2 disk with this many iops instead of gp2' = 0,
          init: 'run some bash via cloud init'          = _default_init,
@@ -376,21 +397,25 @@ def main(name: 'name of the instance',
                                  for resource in ['instance', 'volume']]
     if profile:
         opts['IamInstanceProfile'] = {'Name': profile}
-    if spot and zone is None:
-        zone = shell.run('aws-ec2-cheapest-zone', type, '-d', spot_days)
     _start = time.time()
     for _ in range(5):
         assert vpc or subnet, 'need to provide a --vpc or --subnet'
-        if subnet is not None:
+        # explicit subnet
+        if subnet:
             opts['SubnetId'] = subnet
-        else:
+        # explicit zone
+        elif zone:
             opts['SubnetId'] = cli_aws.subnet(vpc, zone)
+        # random subnet for on-deman
+        elif not spot:
+            zone = shell.run('aws-ec2-cheapest-zone', type, '-d', spot_days)
+            opts['SubnetId'] = cli_aws.subnet(vpc, zone)
+        # spot fleets will place in all zones by default, see _make_spot_opts()
+        else:
+            pass
         logging.info('using vpc: %s', vpc)
         if spot:
-            spot_opts = _make_spot_opts(spot, opts, fleet_role)
-            _spot_opts = copy.deepcopy(spot_opts)
-            _spot_opts['LaunchSpecifications'][0].pop('UserData', None)
-            logging.info('request spot instances:\n' + pprint.pformat(_spot_opts))
+            spot_opts = _make_spot_opts(spot, opts, fleet_role, vpc)
             try:
                 instances = _create_spot_instances(**spot_opts)
             except KeyboardInterrupt:
