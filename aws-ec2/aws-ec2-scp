@@ -24,7 +24,7 @@ def main(src, dst, *selectors, user='', yes=False, internal=False):
                 color = getattr(util.colors, color)
             else:
                 color = lambda x: x
-            name = cli_aws.ec2_name(instance) + ' ' + instance.id + ': '
+            name = cli_aws.tag_name(instance) + ' ' + instance.id + ': '
             def fn():
                 host = (user or cli_aws.ssh_user(instance)) + '@' + (instance.private_ip_address if internal else instance.public_dns_name)
                 _src = host + src if src.startswith(':') else src
@@ -36,9 +36,9 @@ def main(src, dst, *selectors, user='', yes=False, internal=False):
                               _dst,
                               callback=lambda _, x: print(color(name + x), file=sys.stderr, flush=True))
                 except:
-                    failures.append(util.colors.red('failure: ') + cli_aws.ec2_name(instance) + ' ' + instance.id)
+                    failures.append(util.colors.red('failure: ') + cli_aws.tag_name(instance) + ' ' + instance.id)
                 else:
-                    successes.append(util.colors.green('success: ') + cli_aws.ec2_name(instance) + ' ' + instance.id)
+                    successes.append(util.colors.green('success: ') + cli_aws.tag_name(instance) + ' ' + instance.id)
             return fn
         failures = []
         successes = []

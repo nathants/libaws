@@ -9,9 +9,9 @@ def main(*selectors, state='running'):
         sys.exit(1)
     else:
         for instance in instances:
-            print(cli_aws.green(cli_aws.ec2_name(instance)),
+            print(cli_aws.green(cli_aws.tag_name(instance)),
                   instance.instance_id,
-                  cli_aws.ec2_name(instance.subnet),
+                  cli_aws.tag_name(instance.subnet),
                   instance.subnet.id,
                   instance.subnet.availability_zone)
 

@@ -24,7 +24,7 @@ def subnet(vpc, zone):
         subnets = list(vpcs[0].subnets.all())[:1]
     assert len(subnets) == 1, 'no subnet for vpc=%(vpc)s zone=%(zone)s' % locals()
     subnet = subnets[0].id
-    logging.info(f'using zone: {zone}, subnet: {subnet}, vpn: {vpc}')
+    logging.info(f'using zone: {zone}, subnet: {subnet}, vpc: {vpc}')
     return subnet
 
 @retry
@@ -62,8 +62,8 @@ def tags(obj):
         tags = obj.tags or {}
     return {x['Key']: x['Value'].replace('\t', '_').replace(' ', '_') for x in tags}
 
-def ec2_name(instance):
-    return tags(instance).get('Name', '<no-name>')
+def tag_name(obj, default='<no-name>'):
+    return tags(obj).get('Name', default)
 
 _hidden_tags = [
     'Name',
@@ -74,15 +74,33 @@ _hidden_tags = [
     'aws:elasticmapreduce:job-flow-id',
 ]
 
-def format(i, all_tags=False):
-    return ' '.join([(green if i.state['Name'] == 'running' else cyan if i.state['Name'] == 'pending' else red)(ec2_name(i)),
-                     i.instance_type,
-                     i.state['Name'],
-                     i.instance_id,
-                     i.image_id,
-                     ('spot' if i.spot_instance_request_id else 'ondemand'),
-                     ','.join(sorted([x['GroupName'] for x in i.security_groups])),
-                     ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in _hidden_tags) and v)])
+def format_header(all_tags=False, placement=False):
+    return ' '.join(filter(None, [
+        'name',
+        'type',
+        'state',
+        'id',
+        'image-id',
+        'kind',
+        'security-group',
+        'vpc' if placement else None,
+        'zone' if placement else None,
+        'tags...',
+    ]))
+
+def format(i, all_tags=False, placement=False):
+    return ' '.join(filter(None, [
+        (green if i.state['Name'] == 'running' else cyan if i.state['Name'] == 'pending' else red)(tag_name(i)),
+        i.instance_type,
+        i.state['Name'],
+        i.instance_id,
+        i.image_id,
+        ('spot' if i.spot_instance_request_id else 'ondemand'),
+        ','.join(sorted([x['GroupName'] for x in i.security_groups]) or ['-']),
+        tag_name(i.vpc or {}, '-') if placement else None,
+        (i.subnet.availability_zone if i.subnet else '-') if placement else None,
+        ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in _hidden_tags) and v),
+    ]))
 
 def ls(selectors, state):
     assert state in ['running', 'pending', 'stopped', 'terminated', None], f'bad state: {state}'

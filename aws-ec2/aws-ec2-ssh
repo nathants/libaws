@@ -100,12 +100,12 @@ def main(*selectors,
                     print(error_message.format(id=instance.instance_id,
                                                ip=instance.public_dns_name,
                                                ipv4_private=instance.private_ip_address,
-                                               name=cli_aws.ec2_name(instance)),
+                                               name=cli_aws.tag_name(instance)),
                           flush=True)
-                msg = util.colors.red('failure: ') + cli_aws.ec2_name(instance) + ': ' + instance.instance_id
+                msg = util.colors.red('failure: ') + cli_aws.tag_name(instance) + ': ' + instance.instance_id
                 failures.append(msg)
             else:
-                msg = util.colors.green('success: ') + cli_aws.ec2_name(instance) + ': ' + instance.instance_id
+                msg = util.colors.green('success: ') + cli_aws.tag_name(instance) + ': ' + instance.instance_id
                 successes.append(msg)
             if not quiet:
                 logging.info(msg)
