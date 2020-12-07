@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+import argh
+import aws
+import aws.ec2
+import shell as sh
+from util.retry import retry
+
+def main(*selectors, yes=False):
+    assert selectors, 'you cannot stop all things, specify some selectors'
+    assert selectors != ('*',), 'you cannot stop all things, specify some selectors'
+    pendings = aws.ec2.ls(selectors, 'pending')
+    if pendings:
+        print('wait for pending instances before stop:')
+        for pending in pendings:
+            print('', aws.ec2.format(pending))
+        sh.check_call('aws-ec2-wait-for-state', *[i.instance_id for i in pendings])
+    instances = aws.ec2.ls(selectors, 'running')
+    assert instances, 'didnt find any instances for those selectors'
+    print('going to stop the following instances:')
+    for i in instances:
+        print('', aws.ec2.format(i))
+    if not yes:
+        print('\nwould you like to proceed? y/n\n')
+        assert sh.getch() == 'y', 'abort'
+    retry(aws.client('ec2').stop_instances)(InstanceIds=[i.instance_id for i in instances])
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

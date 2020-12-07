@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import argh
+import aws.ec2
+import aws
+
+def main(*volume_ids,
+         state: 'creating|available|in-use|deleting|deleted|error' = None, # type: ignore # noqa
+         tags = False):
+    filters = []
+    if state:
+        filters += [{'Name': 'status', 'Values': [state]}]
+    if volume_ids:
+        filters += [{'Name': 'volume-id', 'Values': volume_ids}]
+    for page in aws.client('ec2').get_paginator('describe_volumes').paginate(Filters=filters):
+        for v in page['Volumes']:
+            print(v['VolumeId'],
+                  v['State'],
+                  v['Size'],
+                  v['AvailabilityZone'],
+                  v['VolumeType'],
+                  v['CreateTime'].isoformat() + 'Z',
+                  ','.join([a['InstanceId'] for a in v['Attachments']]) or '-',
+                  (','.join(f'{k}={aws.ec2.tags(v)[k].replace(" ", "_")}' for k in sorted(aws.ec2.tags(v))) or '-') if tags else '')
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

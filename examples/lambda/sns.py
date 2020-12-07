@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 #
-# policy: CloudWatchLogsFullAccess
-# trigger: sns
+# conf: concurrency 0
+# conf: memory 128
+# conf: timeout 60
+# policy: AWSLambdaBasicExecutionRole
+# sns: test-sns
+# trigger: sns test-sns
 
 def main(event, context):
     """
     >>> import shell, uuid
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
-    >>> path = 'examples/lambda/sns.py'
-    >>> uid = str(uuid.uuid4())
+    >>> path = __file__
+    >>> uid = str(uuid.uuid4())[-12:]
 
     >>> _ = run(f'aws-lambda-deploy {path} -y')
 
-    >>> _ = run(f"aws sns publish --topic-arn $(aws-lambda-sns {path}) --message {uid} >/dev/null")
+    >>> _ = run(f"aws-sns-publish test-sns {uid}")
 
     >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
+
+    >>> _ = run('aws-lambda-rm -ey', path)
 
     """
     msg = event['Records'][0]['Sns']['Message']

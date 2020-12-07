@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+import sys
+import argh
+import aws
+import util.dicts
+import yaml as _yaml
+import json
+
+def main(yaml=False):
+    data = sys.stdin.read()
+    try:
+        data = json.loads(data)
+    except:
+        data = _yaml.safe_load(data)
+    if not data:
+        sys.exit(1)
+    data = util.dicts.from_dotted(data)
+    if yaml:
+        print(_yaml.safe_dump(data))
+    else:
+        print(json.dumps(data, indent=4))
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

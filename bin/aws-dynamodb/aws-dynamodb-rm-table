@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import util.dicts
+import shell as sh
+import shell as sh
+import argh
+import aws
+import aws.dynamodb
+
+def main(name, yes=False):
+    not_found = aws.client('dynamodb').exceptions.ResourceNotFoundException
+    if not yes:
+        try:
+            table = aws.client('dynamodb').describe_table(TableName=name)['Table']
+        except not_found:
+            print('dynamodb already deleted:', name)
+            return
+        else:
+            print('going to delete table:\n')
+            for k, v in util.dicts.to_dotted(table).items():
+                print(f'{k}: {v}')
+            print('\nwould you like to proceed? y/n\n')
+            assert sh.getch() == 'y', 'abort'
+    aws.dynamodb.rm_table(name)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

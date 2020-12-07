@@ -1,12 +1,12 @@
 from shell import run
-import shell
+import shell as sh
 import pytest
 import uuid
 import contextlib
 
 @contextlib.contextmanager
 def ec2_name():
-    with shell.set_stream():
+    with sh.set_stream():
         name = str(uuid.uuid4())
         try:
             yield name

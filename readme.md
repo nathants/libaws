@@ -69,6 +69,8 @@ now when you tab complete any cli that takes *selectors, you will see the result
 
 - [lambda-dependencies](https://github.com/nathants/cli-aws/blob/master/examples/lambda/dependencies.py)
 
+- [lambda-dynamodb](https://github.com/nathants/cli-aws/blob/master/examples/lambda/dynamodb.py)
+
 - [lambda-ec2](https://github.com/nathants/cli-aws/blob/master/examples/lambda/ec2.py)
 
 - [lambda-includes](https://github.com/nathants/cli-aws/blob/master/examples/lambda/includes.py)
@@ -80,6 +82,8 @@ now when you tab complete any cli that takes *selectors, you will see the result
 - [lambda-scheduled](https://github.com/nathants/cli-aws/blob/master/examples/lambda/scheduled.py)
 
 - [lambda-sns](https://github.com/nathants/cli-aws/blob/master/examples/lambda/sns.py)
+
+- [lambda-sqs](https://github.com/nathants/cli-aws/blob/master/examples/lambda/sqs.py)
 
 ## test
 

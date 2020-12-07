@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+import sys
+import argh
+import aws
+
+def main(state=None):
+    kw = {}
+    if state:
+        assert state.upper() in ['STARTING', 'BOOTSTRAPPING', 'RUNNING', 'WAITING', 'TERMINATING', 'TERMINATED', 'TERMINATED_WITH_ERRORS']
+        kw['ClusterStates'] = [state.upper()]
+    print('name id instance-hours state creation-date', file=sys.stderr)
+    for resp in aws.client('emr').get_paginator('list_clusters').paginate(**kw):
+        for cluster in resp['Clusters']:
+            print(' '.join(map(str, [
+                cluster['Name'],
+                cluster['Id'],
+                cluster['NormalizedInstanceHours'],
+                cluster['Status']['State'],
+                cluster['Status']['Timeline']['CreationDateTime'],
+            ])))
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

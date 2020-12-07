@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+import argh
+import aws
+import aws.iam
+
+@argh.arg('--policy', action='append')
+@argh.arg('--allow', action='append', help='"s3.Get $SOME_RESOURCE", or "s3:* *"')
+def main(name, principal, policy=None, allow=None):
+    arn_role = aws.iam.ensure_role(name, principal)
+    aws.iam.ensure_policies(name, policy or [])
+    aws.iam.ensure_allows(name, allow or [])
+    aws.iam.rm_extra_allows(name, allow or [])
+    aws.iam.rm_extra_policies(name, policy or [])
+    print(arn_role)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

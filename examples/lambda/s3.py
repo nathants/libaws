@@ -1,26 +1,31 @@
 #!/usr/bin/env python3
 #
-# policy: CloudWatchLogsFullAccess
-# trigger: s3 cli-aws-s3-test-bucket
-#
+# conf: concurrency 0
+# conf: memory 128
+# conf: timeout 60
+# policy: AWSLambdaBasicExecutionRole
+# s3: ${bucket}
+# trigger: s3 ${bucket}
+
+import boto3
+
+s3 = boto3.client('s3')
 
 def main(event, context):
     """
     >>> import shell, uuid
     >>> run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
-    >>> path = 'examples/lambda/s3.py'
-    >>> bucket = 'cli-aws-s3-test-bucket'
-    >>> uid = str(uuid.uuid4())
+    >>> path = __file__
+    >>> bucket = f'cli-aws-{str(uuid.uuid4())[-12:]}'
+    >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'aws s3 rm s3://{bucket} --recursive || true')
-    >>> _ = run(f'aws s3 rb s3://{bucket} || true')
-    >>> _ = run(f'aws s3 mb s3://{bucket}')
-
-    >>> _ = run(f'aws-lambda-deploy {path} -y')
+    >>> _ = run(f'bucket={bucket} aws-lambda-deploy -y {path}')
 
     >>> _ = run(f'echo | aws s3 cp - s3://{bucket}/{uid}')
 
     >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
+
+    >>> _ = run(f'bucket={bucket} aws-lambda-rm -ey', path)
 
     """
     for record in event['Records']:

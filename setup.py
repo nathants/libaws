@@ -11,7 +11,7 @@ setuptools.setup(
     author='nathan todd-stone',
     author_email='me@nathants.com',
     url='http://github.com/nathants/cli-aws',
-    py_modules=['cli_aws'],
+    packages=['aws'],
     python_requires='>=3.6',
     install_requires=['requests >2, <3',
                       'boto3 >1, <2',
@@ -20,17 +20,20 @@ setuptools.setup(
     description='composable, succinct aws scripts',
 )
 
-parent = os.path.dirname(os.path.abspath(__file__))
+parent = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bin')
 
 if 'develop' not in sys.argv:
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])
+    try:
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])
+    except:
+        print('fatal: failure: pip install -r requirements.txt ')
+        sys.exit(1)
 
-scripts = [os.path.abspath(os.path.join(service, script))
+scripts = [path
            for service in os.listdir(parent)
            if service.startswith('aws')
-           and os.path.isdir(service)
            for script in os.listdir(os.path.join(parent, service))
-           for path in [os.path.join(service, script)]
+           for path in [os.path.abspath(os.path.join(parent, service, script))]
            if os.path.isfile(path)]
 
 dst_path = os.path.dirname(os.path.abspath(sys.executable))

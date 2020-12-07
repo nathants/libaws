@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import argh
+import aws
+import aws.ec2
+
+def main(id):
+    xs = [x for x in aws.ec2.sgs() if x.group_id == id]
+    assert len(xs) == 1, 'didnt find exactly one match: %s' % xs
+    return xs[0].group_name
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

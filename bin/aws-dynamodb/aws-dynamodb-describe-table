@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import datetime
+import json
+import argh
+import aws
+import util.iter
+from util.retry import retry
+
+def main(name, verbose=False):
+    not_found = aws.client('dynamodb').exceptions.ResourceNotFoundException
+    table = retry(aws.client('dynamodb').describe_table, not_found)(TableName=name)['Table']
+    table = util.iter.walk(lambda x: x.isoformat() if isinstance(x, datetime.datetime) else x, table)
+    if verbose:
+        return json.dumps(table)
+    else:
+        attrs = {
+            x['AttributeName']: x['AttributeType']
+            for x in table['AttributeDefinitions']
+        }
+        return ' '.join([
+            ':'.join([x['AttributeName'], attrs[x['AttributeName']].lower(), x['KeyType'].lower()])
+            for x in table['KeySchema']]
+        )
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

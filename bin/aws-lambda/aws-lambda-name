@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+import argh
+import aws
+import aws.lamda
+
+def main(path):
+    return aws.lamda.name(path)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

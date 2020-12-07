@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+import sys
+import os
+import argh
+import shell as sh
+import aws
+import aws.ec2
+
+def main(
+    name,
+    *tags,
+    applications='hive,presto',
+    auto_shutdown=False,
+    release_label=shell.run('aws-emr-releases --latest'), # type: ignore # noqa
+    type='i3en.xlarge',
+    count=10,
+    spot: 'spot bid, if 0 use on-demand instead of spot' = shell.run('aws-ec2-prices -i i3en.xlarge'), # type: ignore # noqa
+    zone = None,
+    key: 'key pair name' = os.environ.get('AWS_EC2_KEY'), # type: ignore
+    sg: 'security group name' = os.environ.get('AWS_EC2_SG'), # type: ignore
+    vpc: 'vpc name' = os.environ.get('AWS_EC2_VPC'), # type: ignore
+    job_flow_role='EMR_EC2_DefaultRole',
+    service_role='EMR_DefaultRole',
+):
+    assert type.split('.')[0] in ['i3', 'i3en']
+    if not sg.startswith('sg-'):
+        sg = sh.run(f'aws-ec2-sg-id {sg}')
+
+    owner = sh.run('whoami')
+    instance_groups = [{'Name': 'Main',
+                        'InstanceRole': 'MASTER',
+                        'InstanceType': type,
+                        'InstanceCount': 1},
+                       {'Name': 'Worker',
+                        'InstanceRole': 'CORE',
+                        'InstanceType': type,
+                        'InstanceCount': count}]
+    instances = {'InstanceGroups': instance_groups,
+                 'Ec2KeyName': key,
+                 'TerminationProtected': False,
+                 'EmrManagedMasterSecurityGroup': sg,
+                 'EmrManagedSlaveSecurityGroup': sg,
+                 'KeepJobFlowAliveWhenNoSteps': not auto_shutdown}
+    if spot == '0':
+        for i in instance_groups:
+            i['Market'] = 'ON_DEMAND'
+    else:
+        for i in instance_groups:
+            i['Market'] = 'SPOT'
+            i['BidPrice'] = spot
+        zone = zone or sh.run('aws-ec2-cheapest-zone', type)
+        print(f'using zone: {zone}', file=sys.stderr)
+        instances['Ec2SubnetId'] = aws.ec2.subnet(vpc, zone)
+    set_tags = [
+        {'Key': 'ssh-user', 'Value': 'hadoop'},
+        {'Key': 'owner', 'Value': owner},
+        {'Key': 'Name', 'Value': "emr-{}-cluster".format(name)},
+        {'Key': 'group', 'Value': 'emr'}
+    ]
+    for tag in tags:
+        k, v = tag.split('=')
+        assert k not in ['owner', 'Name', 'group'], "reserved tag, the tag {} is set by the system".format(k)
+        set_tags.append({'Key': k, 'Value': v})
+    resp = aws.client('emr').run_job_flow(
+        Name=name,
+        ReleaseLabel=release_label,
+        Instances=instances,
+        Applications=[{'Name': application.capitalize()} for application in applications.split(',')],
+        VisibleToAllUsers=True,
+        JobFlowRole=job_flow_role,
+        ServiceRole=service_role,
+        Tags=set_tags,
+    )
+    cluster_id = resp['JobFlowId']
+    return cluster_id
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

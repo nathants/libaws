@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+import argh
+import aws
+import os
+import shell as sh
+
+import aws.kms
+import aws.lamda
+import aws.iam
+from aws import stderr, retry
+
+@argh.arg('env_vars', help='KEY=VALUE')
+@argh.arg('-p', '--preview')
+def main(path: 'the python file that defines the lambda, see cli-aws/examples/lambda/*.py', # type: ignore
+         *env_vars,
+         memory=128,
+         timeout=300,
+         concurrency=0,
+         runtime='python3.8',
+         preview=False,
+         yes=False,
+         quick: 'quick update code only' = False, # type: ignore
+         no_encrypt: 'do not kms-encrypt every env var, which is the default when a kms key is specified' = False, # type: ignore
+         kms: 'auto create a kms key for this lambda, otherwise default lambda key is used' = False, # type: ignore
+         kms_key: 'use a specific kms arn or alias' = None): # type: ignore
+    path = os.path.abspath(path)
+    name = aws.lamda.name(path)
+    arn_user = aws.client('sts').get_caller_identity()['Arn']
+    stderr(f'user: {arn_user}')
+    stderr(f'file: {path}')
+    stderr(f'name: {name}')
+    if not quick:
+        stderr()
+    path, metadata = aws.lamda.parse_file(path, silent=quick)
+    if quick and os.path.isfile(aws.lamda.zip_file(path)):
+        if preview:
+            arn_lambda = 'arn:preview'
+        else:
+            aws.lamda.update_zip(path)
+            aws.lamda.include_in_zip(path, metadata['include'], False)
+            zipfile = aws.lamda.zip_bytes(path)
+            arn_lambda = retry(aws.client('lambda').update_function_code, silent=True)(FunctionName=name, ZipFile=zipfile)['FunctionArn']
+        stderr('\nupdated:')
+        stderr('', arn_lambda)
+    else:
+        timeout = metadata['conf'].get('timeout', 900)
+        memory = metadata['conf'].get('memory', 128)
+        concurrency = metadata['conf'].get('concurrency', 0)
+        for var in env_vars:
+            assert '=' in var, f'bad env-var, should be: KEY=VALUE, not: {var}'
+        if not yes and not preview:
+            stderr('\nproceed? y/n ')
+            assert sh.getch() == 'y'
+        aws.lamda.ensure_infra_log_group(name, preview)
+        aws.lamda.ensure_infra_s3(metadata['s3'], preview)
+        aws.lamda.ensure_infra_dynamodb(metadata['dynamodb'], preview)
+        aws.lamda.ensure_infra_sns(metadata['sns'], preview)
+        # aws.lamda.ensure_infra_sqs(metadata['sqs'], preview)
+        arn_role = aws.iam.ensure_role(name, 'lambda', preview)
+        aws.iam.ensure_policies(name, metadata['policy'], preview)
+        aws.iam.rm_extra_policies(name, metadata['policy'], preview)
+        aws.iam.ensure_allows(name, metadata['allow'], preview)
+        aws.iam.rm_extra_allows(name, metadata['allow'], preview)
+        aws.lamda.create_zip(path, metadata['require'], preview)
+        aws.lamda.include_in_zip(path, metadata['include'], preview)
+        zipfile = b'' if preview else aws.lamda.zip_bytes(path)
+        kw = {'FunctionName': name,
+              'Runtime': runtime,
+              'Role': arn_role,
+              'Timeout': timeout,
+              'MemorySize': memory,
+              'Environment': {'Variables': {k: v for var in env_vars for k, v in [var.split('=', 1)]}},
+              'Handler': os.path.basename(path).split('.py')[0] + '.main'}
+        if kms_key:
+            if not kms_key.startswith('arn:'):
+                assert not kms_key.startswith('/'), f'kms key alias should not start with /: {kms_key}'
+                assert 'alias' not in kms_key, f'kms key should not contain the word "alias": {kms_key}'
+                keys = [x for x in aws.kms.all_keys() if x['AliasArn'].endswith(f':alias/{kms_key}')]
+                assert len(keys) == 1, f'didnt find exactly 1 kms key for alias: {kms_key} => {keys}'
+                stderr(f'using kms key: {kms_key} => {keys[0]["AliasArn"]}')
+                kms_key = aws.kms.key_id(keys[0])
+            kw['KMSKeyArn'] = kms_key
+        elif kms:
+            kw['KMSKeyArn'] = aws.kms.ensure_key(name, arn_user, arn_role, preview)
+        if 'KMSKeyArn' in kw:
+            aws.kms.ensure_key_allows_role(kw['KMSKeyArn'], arn_role, preview)
+            if not no_encrypt:
+                kw['Environment']['Variables'] = {k: aws.kms.encrypt(kw['KMSKeyArn'], v) for k, v in kw['Environment']['Variables'].items()}
+        not_found = aws.client('lambda').exceptions.ResourceNotFoundException
+        if preview:
+            arn_lambda = 'arn:preview'
+        else:
+            try:
+                arn_lambda = retry(aws.client('lambda').get_function, not_found)(FunctionName=name)['Configuration']['FunctionArn']
+            except not_found:
+                arn_lambda = retry(aws.client('lambda').create_function, silent=True)(Code={'ZipFile': zipfile}, **kw)['FunctionArn']
+        aws.lamda.ensure_trigger_dynamodb(name, arn_lambda, metadata, preview)
+        aws.lamda.ensure_trigger_sns(name, arn_lambda, metadata, preview)
+        aws.lamda.ensure_trigger_cloudwatch(name, arn_lambda, metadata, preview)
+        aws.lamda.ensure_trigger_api(name, arn_lambda, metadata, preview)
+        aws.lamda.ensure_trigger_s3(name, arn_lambda, metadata, preview)
+        # aws.lamda.ensure_trigger_sqs(name, arn_lambda, metadata, preview)
+        aws.lamda.set_concurrency(name, concurrency, preview)
+        # always update function after trigger creation
+        if not preview:
+            retry(aws.client('lambda').update_function_code, silent=True)(FunctionName=name, ZipFile=zipfile)
+            retry(aws.client('lambda').update_function_configuration, silent=True)(**kw)
+        stderr('\ndeployed:')
+        stderr('', arn_lambda)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

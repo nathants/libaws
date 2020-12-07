@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+import sys
+import json
+import boto3
+import argh
+import util.cached
+import aws
+import pprint
+
+@util.cached.disk_memoize(max_age_seconds=60 * 60 * 24)
+def fetch(filters):
+    products = aws.client('pricing').get_paginator('get_products').paginate
+    return [price
+            for page in products(ServiceCode='AmazonEC2', Filters=filters)
+            for price in page['PriceList']]
+
+def main(instance_type=None, print_everything=False, ):
+    boto3.setup_default_session(region_name='us-east-1')
+    region = aws.region()
+    filters = [{"Type": "TERM_MATCH",
+                "Field": "location",
+                "Value": aws.region_names[region]},
+               {"Type": "TERM_MATCH",
+                "Field": "operatingSystem",
+                "Value": "Linux"},
+               {"Type": "TERM_MATCH",
+                "Field": "preInstalledSw",
+                "Value": "NA"},
+               {"Type": "TERM_MATCH",
+                "Field": "tenancy",
+                "Value": "Shared"}]
+    if instance_type:
+        filters.append({"Type": "TERM_MATCH",
+                        "Field": "instanceType",
+                        "Value": instance_type})
+    xs = fetch(filters)
+    res = set()
+    for x in xs:
+        x = json.loads(x)
+        if print_everything:
+            pprint.pprint(x['product'])
+        name = x['product']['attributes']['instanceType']
+        price = x['terms']['OnDemand']
+        price = list(price.values())[0]
+        price = list(price['priceDimensions'].values())[0]
+        price = price['pricePerUnit']['USD']
+        price = float(price)
+        if price != 0:
+            res.add((name, price))
+    fail = True
+    for name, price in res:
+        fail = False
+        if instance_type:
+            print(price)
+        else:
+            print(f'{name} {price}')
+    if fail:
+        sys.exit(1)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

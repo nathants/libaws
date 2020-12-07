@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import argh
+import aws
+from util.retry import retry
+
+def main():
+    for page in retry(aws.client('dynamodb').get_paginator('list_tables').paginate)():
+        for name in page['TableNames']:
+            print(name)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

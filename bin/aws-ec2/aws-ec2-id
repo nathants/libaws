@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+import argh
+import sys
+import aws
+import aws.ec2
+
+def main(*selectors, state='running'):
+    instances = aws.ec2.ls(selectors, state)
+    if not instances:
+        sys.exit(1)
+    else:
+        for instance in sorted(instances, key=lambda x: x.instance_id):
+            print(instance.instance_id)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

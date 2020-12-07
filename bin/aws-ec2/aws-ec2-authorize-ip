@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+import re
+import shell as sh
+import util.strings
+import argh
+import aws
+import aws.ec2
+
+def main(ip, *names, yes=False):
+    assert all(x == '.' or x.isdigit() for x in ip), 'bad ip: %s' % ip
+    names = [util.strings.rm_color(x) for x in names]
+    sgs = aws.ec2.sgs(names)
+    assert sgs, 'didnt find any security groups'
+    print('going to authorize your ip {util.colors.yellow(ip)} to these groups:')
+    for sg in sgs:
+        print(f' {sg.group_name} [{sg.group_id}]')
+    if not yes:
+        print(f'\nwould you like to authorize access to these groups for your ip {util.colors.yellow(ip)}? y/n\n')
+        assert sh.getch() == 'y', 'abort'
+    with open('/var/log/ec2_auth_ips.log', 'a') as f:
+        f.write(ip + ' ' + ','.join(names) + '\n')
+    for sg in sgs:
+        try:
+            sg.authorize_ingress(
+                IpProtocol='tcp',
+                FromPort=22,
+                ToPort=22,
+                CidrIp='%s/32' % ip
+            )
+            print(f'authorized: {sg.group_name} {sg.group_id}')
+        except Exception as e:
+            print(re.sub(r'.*\((.*)\).*', r'\1', str(e)) + ':', sg.group_name, sg.group_id)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

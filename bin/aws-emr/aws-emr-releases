@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+import requests
+import argh
+import aws
+
+def main(latest=False):
+    releases = sorted([
+        y.split()[-1].split('<')[0]
+        for y in requests.get('https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-components.html').text.splitlines()
+        if 'Amazon EMR Release' in y
+        and '-release">' in y
+    ], reverse=True)
+    if latest:
+        print('emr-' + releases[0])
+    else:
+        for release in releases:
+            print('emr-' + release)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

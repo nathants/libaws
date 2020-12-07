@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+
+import argh
+import aws
+import aws.dynamodb
+
+@argh.arg('attrs', nargs='*', help='columns and attributes')
+def main(name: 'table name', # type: ignore
+         *attrs,
+         preview=False,
+         yes=False):
+    aws.dynamodb.ensure_table(name, *attrs, preview=preview, yes=yes)
+
+main.__doc__ = """
+  ensure a table exists with some config, updating it if necessary.
+
+  describe columns like: $name:s|n|b:hash|range
+
+  describe attributes like: $key1.$key2.$index1.$name=$value
+
+  attribute documentation: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb.html#DynamoDB.Client.create_table
+
+  >> aws-dynamodb-ensure-table test-table user:s:hash date:s:range
+  ...
+
+  >> aws-dynamodb-ensure-table test-table user:s:hash ProvisionedThroughput.ReadCapacityUnits=5
+  ...
+
+  >> aws-dynamodb-ensure-table test-table user:s:hash Tags.0.Key=Foo Tags.0.Value=Bar
+  ...
+
+
+the following attribute shortcuts are available:
+""" + '\n'.join(f'  {k:<11} {v}' for k, v in aws.dynamodb.table_attr_shortcuts.items())
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

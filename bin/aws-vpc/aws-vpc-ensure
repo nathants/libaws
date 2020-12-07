@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+import copy
+import argh
+import aws
+import shell as sh
+from aws import retry, stderr
+
+def main(name, *tags, xx=0, description=None):
+    """
+    setup a default-like vpc, with cidr 10.xx.0.0/16 and a
+    subnet for each zone like 10.xx.yy.0/20. add a security
+    group with the same name. public ipv4 is turned on.
+    """
+    try:
+        return sh.run('aws-vpc-id', name)
+    except:
+        cidr = '10.xx.0.0/16'
+        for tag in tags:
+            assert '=' in tag, 'bad tag, should be key=value, not: %s' % tag
+        tags = [{"Key": "Name", "Value": name}] + [{'Key': k, 'Value': v}
+                                                   for tag in tags
+                                                   for k, v in [tag.split('=')]]
+        cidr = cidr.replace('xx', str(xx))
+        stderr('cidr:', cidr)
+
+        # create vpc
+        vpc = aws.resource('ec2').create_vpc(CidrBlock=cidr)
+        retry(vpc.create_tags)(Tags=tags)
+        vpc.wait_until_available()
+
+        # enable hostnames
+        retry(vpc.modify_attribute)(EnableDnsHostnames={'Value': True})
+
+        # create and attach internet gateway
+        gateway = aws.resource('ec2').create_internet_gateway()
+        retry(gateway.create_tags)(Tags=tags)
+        retry(vpc.attach_internet_gateway)(InternetGatewayId=gateway.id)
+
+        # add route for internet gateway
+        route_table = list(vpc.route_tables.all())[0]
+        route_table.create_route(DestinationCidrBlock='0.0.0.0/0', GatewayId=gateway.id)
+        retry(route_table.create_tags)(Tags=tags)
+
+        # create subnets for each zone
+        for i, zone in enumerate(aws.zones()):
+            block = '.'.join(cidr.split('/')[0].split('.')[:2] + [str(16 * i + 1), '0/20'])
+            stderr('zone:', zone, 'block:', block)
+            subnet = aws.resource('ec2').create_subnet(CidrBlock=block, VpcId=vpc.id, AvailabilityZone=zone)
+            _tags = copy.deepcopy(tags)
+            for tag in _tags:
+                if tag['Key'] == 'Name':
+                    tag['Value'] += '-subnet-' + zone[-1]
+            retry(aws.client('ec2').create_tags)(Resources=[subnet.id], Tags=_tags)
+            retry(aws.client('ec2').modify_subnet_attribute)(SubnetId=subnet.id, MapPublicIpOnLaunch={'Value': True})
+            retry(aws.client('ec2').associate_route_table)(RouteTableId=route_table.route_table_id, SubnetId=subnet.id)
+
+        # create security group
+        sg = aws.resource('ec2').create_security_group(GroupName=name, Description=description or name, VpcId=vpc.id)
+        retry(sg.create_tags)(Tags=tags)
+        return vpc.id
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)

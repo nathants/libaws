@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+import shell as sh
+import argh
+import util.exceptions
+
+from aws import client
+import aws
+import aws.lamda
+import aws.dynamodb
+import aws.sns
+import aws.api
+import aws.s3
+
+
+@argh.arg('-s', '--s3')
+@argh.arg('-n', '--sns')
+@argh.arg('-q', '--sqs')
+@argh.arg('-p', '--preview')
+def main(path,
+         preview=False,
+         everything: 'delete everything, otherwise specify entities to delete individually' = False, # type: ignore
+         code = False,
+         role = False,
+         trigger=False,
+         log=False,
+         s3=False,
+         dynamodb=False,
+         sns=False,
+         sqs=False,
+         yes=False):
+    """
+    previews everything by default.
+
+    specify some flags to delete components.
+    """
+
+    # preview everything by default
+    if not preview and not any([everything, code, role, trigger, log, s3, dynamodb, sns, sqs]):
+        preview = True
+        everything = True
+
+    name = aws.lamda.name(path)
+
+    if preview:
+        print('preview mode', end=' ')
+    print('rm assets of lambda:', name)
+
+    if not preview and not yes:
+        print('\nproceed? y/n ')
+        assert sh.getch() == 'y'
+
+    if everything or code:
+        with util.exceptions.ignore(client('lambda').exceptions.ResourceNotFoundException):
+            if preview:
+                print('preview:', end=' ')
+            else:
+                client('lambda').delete_function(FunctionName=name)
+            print('rm function:', name)
+
+    if everything or role:
+        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
+            for policy in client('iam').list_attached_role_policies(RoleName=name)['AttachedPolicies']:
+                if preview:
+                    print('preview:', end=' ')
+                else:
+                    client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
+                print('rm policy:', policy['PolicyArn'])
+
+        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
+            for policy in client('iam').list_role_policies(RoleName=name)['PolicyNames']:
+                if preview:
+                    print('preview:', end=' ')
+                else:
+                    client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
+                print('rm allow:', policy)
+
+        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
+            if preview:
+                print('preview:', end=' ')
+            else:
+                client('iam').delete_role(RoleName=name)
+            print('rm role:', name)
+
+    with open(path) as f:
+        metadata = aws.lamda.metadata(f.read().splitlines(), silent=True)
+
+    if everything or trigger:
+
+        if 'api' in metadata['trigger']:
+            try:
+                rest_api_id = aws.api.api_id(name)
+            except AssertionError:
+                pass
+            else:
+                if preview:
+                    print('preview:', end=' ')
+                else:
+                    client('apigateway').delete_rest_api(restApiId=rest_api_id)
+                print('rm api trigger:', name)
+
+        for trigger in metadata['trigger']:
+            kind = trigger.split()[0]
+            if kind == 's3':
+                with util.exceptions.ignore(client('lambda').exceptions.ResourceNotFoundException):
+                    _, bucket = trigger.split()
+                    bucket_notifications = aws.resource('s3').BucketNotification(bucket)
+                    confs = []
+                    arn_lambda = aws.lamda.arn(name)
+                    for conf in bucket_notifications.lambda_function_configurations:
+                        if conf['LambdaFunctionArn'] != arn_lambda:
+                            confs.append(conf)
+                        else:
+                            if preview:
+                                print('preview:', end=' ')
+                                confs.append(conf)
+                            else:
+                                print('rm s3 trigger:', bucket)
+                    bucket_notifications.put(NotificationConfiguration={'LambdaFunctionConfigurations': confs})
+
+            elif kind == 'cloudwatch':
+                _, schedule = trigger.split(None, 1)
+                if preview:
+                    print('preview:', end=' ')
+                else:
+                    with util.exceptions.ignore(client('events').exceptions.ResourceNotFoundException):
+                        client('events').remove_targets(Rule=name, Ids=['1'])
+                        client('events').delete_rule(Name=name)
+                        print('rm cloudwatch trigger:', schedule)
+
+            elif kind == 'sns':
+                _, sns_name = trigger.split()
+                arn_sns = aws.sns.arn(sns_name)
+                try:
+                    arn_lambda = aws.lamda.arn(name)
+                except client('lambda').exceptions.ResourceNotFoundException:
+                    pass
+                else:
+                    subs = (sub
+                            for page in client('sns').get_paginator('list_subscriptions_by_topic').paginate(TopicArn=arn_sns)
+                            for sub in page['Subscriptions'])
+                    for sub in subs:
+                        if sub['Endpoint'] == arn_lambda:
+                            if preview:
+                                print('preview:', end=' ')
+                            else:
+                                client('sns').unsubscribe(SubscriptionArn=sub['SubscriptionArn'])
+                            print('rm sns trigger:', sns_name)
+                            break
+
+            elif kind == 'dynamodb':
+                _, table_name, *_ = trigger.split()
+                try:
+                    stream_arn = aws.dynamodb.stream_arn(table_name)
+                except client('dynamodb').exceptions.ResourceNotFoundException:
+                    pass
+                else:
+                    for page in client('lambda').get_paginator('list_event_source_mappings').paginate(EventSourceArn=stream_arn, FunctionName=name):
+                        for esm in page['EventSourceMappings']:
+                            if preview:
+                                print('preview:', end=' ')
+                            else:
+                                client('lambda').delete_event_source_mapping(UUID=esm['UUID'])
+                            print('rm dynamodb trigger:', table_name, stream_arn, esm['UUID'])
+
+            # elif kind == 'sqs':
+                # assert False, 'TODO remove'
+
+    if everything or log:
+        with util.exceptions.ignore(client('logs').exceptions.ResourceNotFoundException):
+            log = f'/aws/lambda/{name}'
+            if preview:
+                print('preview:', end=' ')
+            else:
+                client('logs').delete_log_group(logGroupName=log)
+            print('rm log:', log)
+
+    if everything or s3:
+        for bucket in metadata['s3']:
+            if preview:
+                print('preview: rm bucket:', bucket)
+            else:
+                aws.s3.rm_bucket(bucket)
+
+    if everything or dynamodb:
+        for db in metadata['dynamodb']:
+            table, *_ = db.split()
+            if preview:
+                print('preview: rm dynamodb:', table)
+            else:
+                aws.dynamodb.rm_table(table)
+
+    if everything or sns:
+        for sns in metadata['sns']:
+            sns_arn = aws.sns.arn(sns)
+            if preview:
+                print('preview:', end=' ')
+            else:
+                try:
+                    client('sns').get_topic_attributes(TopicArn=sns_arn)
+                except client('sns').exceptions.NotFoundException:
+                    pass
+                else:
+                    client('sns').delete_topic(TopicArn=sns_arn)
+                    print('rm sns:', sns)
+
+    # if everything or sqs:
+        # for sqs in metadata['sqs']:
+            # assert False, 'TODO delete sqs infra'
+
+    keys = [alias for page in client('kms').get_paginator('list_aliases').paginate() for alias in page['Aliases']]
+    keys = [x['AliasName'] for x in keys if x['AliasArn'].endswith(f'/lambda/{name}')]
+    if keys:
+        print('not rm kms:', *keys)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)
