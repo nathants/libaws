@@ -14,6 +14,13 @@ composable, succinct scripts to complement the aws cli.
 python -m pip install -v git+https://github.com/nathants/cli-aws
 ```
 
+or for a root install
+
+```
+sudo python -m pip install -v git+https://github.com/nathants/cli-aws
+```
+
+
 ## setup
 
 define some environment variables in your bashrc for common default values.
