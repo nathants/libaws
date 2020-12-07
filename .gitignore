@@ -1,3 +1,4 @@
 test_pre_check.sh
 *.egg-info
 .tox
+lint.sh

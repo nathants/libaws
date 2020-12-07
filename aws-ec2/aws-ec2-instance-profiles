@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys
 import util.dicts
 import argh
 import boto3
@@ -7,8 +8,10 @@ import pprint
 import util.strings
 
 def main(print_policies=False, name=None):
+    fail = True
     for profile in boto3.client('iam').list_instance_profiles()['InstanceProfiles']:
         if not name or name == profile['InstanceProfileName']:
+            fail = False
             print(profile['InstanceProfileName'], profile['Arn'])
             if print_policies:
                 for role in profile['Roles']:
@@ -28,6 +31,8 @@ def main(print_policies=False, name=None):
                         inline.append(util.dicts.take(policy, ['PolicyDocument', 'PolicyName']))
                     print(util.strings.indent(pprint.pformat(role, width=120), len(role_name) + 1).lstrip())
                 print()
+    if fail:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
