@@ -11,10 +11,11 @@ def main(path, payload_file=None, payload_string='', event=False):
     resp = aws.client('lambda').invoke(
         FunctionName=aws.lamda.name(path),
         InvocationType='Event' if event else 'RequestResponse',
-        LogType=None if event else 'Tail',
+        LogType='None' if event else 'Tail',
         Payload=payload_string if payload_string else open(payload_file, 'rb') if payload_file else '',
     )
-    print(util.strings.b64_decode(resp['LogResult']), file=sys.stderr)
+    if not event:
+        print(util.strings.b64_decode(resp['LogResult']), file=sys.stderr)
     output = resp['Payload'].read().decode('utf-8')
     if 'FunctionError' in resp:
         print(output, file=sys.stderr)
