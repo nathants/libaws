@@ -146,13 +146,11 @@ def _blocks(gigs, naming='sda', kms_id=None, iops=None, throughput=None):
     assert naming in ['sda', 'xvda'] # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html
     blocks = [{'DeviceName': ('/dev/sda1' if naming == 'sda' else '/dev/xvda'),
                'Ebs': {'VolumeSize': int(gigs),
-                       'VolumeType': 'gp3' if iops else 'gp2',
+                       'VolumeType': 'gp3',
+                       'Iops': iops,
+                       'Throughput': throughput,
                        'Encrypted': True,
                        'DeleteOnTermination': True}}]
-    if iops:
-        assert throughput, 'if --iops specified you must also specify --throughput'
-        blocks[0]['Ebs']['Iops'] = int(iops)
-        blocks[0]['Ebs']['Throughput'] = int(throughput)
     if kms_id:
         blocks[0]['Ebs']['KmsKeyId'] = kms_id
     return blocks
@@ -277,9 +275,9 @@ def main(name: 'name of the instance', # type: ignore
          fleet_role: 'spot fleet iam role'             = 'aws-ec2-spot-fleet-tagging-role', # type: ignore
          zone: 'availability zone'                     = None, # type: ignore
          gigs: 'gb capacity of primary gp3 disk'       = 16, # type: ignore
-         iops: 'use gp3 disk with this many iops instead of gp2' = 0, # type: ignore
-         throughput: 'use gp3 disk with this much throughput MiB/s instead of gp2' = 0, # type: ignore
-         bytes_per_inode: 'bytes to inode ration for the nvme instances store' = 2048, # type: ignore
+         iops: 'gp3 disk iops'                         = 3000, # type: ignore
+         throughput: 'gp3 disk throughput'             = 125, # type: ignore
+         bytes_per_inode: 'instance store inode ratio' = 2048, # type: ignore
          init: 'run some bash via cloud init'          = _default_init, # type: ignore
          cmd: 'ssh command'                            = None, # type: ignore
          num: 'number of instances'                    = 1, # type: ignore
@@ -436,7 +434,7 @@ def main(name: 'name of the instance', # type: ignore
                     stderr('there is an error with the spot request, check the aws console')
                     sys.exit(1)
                 else:
-                    stderr(traceback.format_exc()
+                    stderr(traceback.format_exc())
                     stderr('failed to create spot instances, retrying...')
                     continue
         else:
