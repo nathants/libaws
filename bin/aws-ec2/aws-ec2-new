@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import traceback
 import sys
 import datetime
 import util.exceptions
@@ -43,7 +44,7 @@ disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sor
  echo w # Write changes
 ) | sudo fdisk $disk
 sleep 5
-yes | sudo mkfs -t ext4 -N 1000000000 ${disk}p1
+yes | sudo mkfs -t ext4 %(inodes)s ${disk}p1
 sudo mkdir -p /mnt
 sudo mount -o discard,noatime ${disk}p1 /mnt
 sudo chown -R $(whoami):$(whoami) /mnt
@@ -141,15 +142,17 @@ def _ami_deeplearning():
     stderr('using ubuntu ami', amis[-1].name, amis[-1].id)
     return amis[-1].id
 
-def _blocks(gigs, naming='sda', kms_id=None, iops=None):
+def _blocks(gigs, naming='sda', kms_id=None, iops=None, throughput=None):
     assert naming in ['sda', 'xvda'] # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/device_naming.html
     blocks = [{'DeviceName': ('/dev/sda1' if naming == 'sda' else '/dev/xvda'),
                'Ebs': {'VolumeSize': int(gigs),
-                       'VolumeType': 'io2' if iops else 'gp2',
+                       'VolumeType': 'gp3' if iops else 'gp2',
                        'Encrypted': True,
                        'DeleteOnTermination': True}}]
     if iops:
+        assert throughput, 'if --iops specified you must also specify --throughput'
         blocks[0]['Ebs']['Iops'] = int(iops)
+        blocks[0]['Ebs']['Throughput'] = int(throughput)
     if kms_id:
         blocks[0]['Ebs']['KmsKeyId'] = kms_id
     return blocks
@@ -256,6 +259,7 @@ def _create_spot_instances(**opts):
             time.sleep(5)
         raise Exception('failed to get the right number of instances')
 
+@argh.arg('-t', '--type')
 @argh.arg('-s', '--spot')
 @argh.arg('-i', '--init')
 @argh.arg('-k', '--key')
@@ -272,8 +276,10 @@ def main(name: 'name of the instance', # type: ignore
          profile: 'iam instance profile'               = None, # type: ignore
          fleet_role: 'spot fleet iam role'             = 'aws-ec2-spot-fleet-tagging-role', # type: ignore
          zone: 'availability zone'                     = None, # type: ignore
-         gigs: 'gb capacity of primary gp2 disk'       = 16, # type: ignore
-         iops: 'use io2 disk with this many iops instead of gp2' = 0, # type: ignore
+         gigs: 'gb capacity of primary gp3 disk'       = 16, # type: ignore
+         iops: 'use gp3 disk with this many iops instead of gp2' = 0, # type: ignore
+         throughput: 'use gp3 disk with this much throughput MiB/s instead of gp2' = 0, # type: ignore
+         bytes_per_inode: 'bytes to inode ration for the nvme instances store' = 2048, # type: ignore
          init: 'run some bash via cloud init'          = _default_init, # type: ignore
          cmd: 'ssh command'                            = None, # type: ignore
          num: 'number of instances'                    = 1, # type: ignore
@@ -365,7 +371,8 @@ def main(name: 'name of the instance', # type: ignore
         init = verbatim_init
     else:
         if type.split('.')[0] in ['i3', 'i3en', 'c5d', 'm5d', 'r5d', 'z1d']:
-            init = _nvme_init + init
+            inodes = {'inodes': '-i {bytes_per_inode}'}
+            init = _nvme_init % inodes + init
         if os.path.isfile(init):
             stderr('loading init script from file:', init)
             with open(init) as f:
@@ -386,7 +393,7 @@ def main(name: 'name of the instance', # type: ignore
     opts['KeyName'] = key
     opts['SecurityGroupIds'] = [x.id for x in _sgs(names=[sg])]
     opts['InstanceType'] = type
-    opts['BlockDeviceMappings'] = _blocks(gigs, 'xvda' if user == 'ec2-user' else 'sda', kms_key_id, iops)
+    opts['BlockDeviceMappings'] = _blocks(gigs, 'xvda' if user == 'ec2-user' else 'sda', kms_key_id, iops, throughput)
     opts['TagSpecifications'] = [{'ResourceType': resource,
                                   'Tags': [{'Key': 'Name', 'Value': name},
                                            {'Key': 'owner', 'Value': owner},
@@ -429,6 +436,7 @@ def main(name: 'name of the instance', # type: ignore
                     stderr('there is an error with the spot request, check the aws console')
                     sys.exit(1)
                 else:
+                    stderr(traceback.format_exc()
                     stderr('failed to create spot instances, retrying...')
                     continue
         else:
