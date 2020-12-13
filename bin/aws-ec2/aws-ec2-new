@@ -369,8 +369,7 @@ def main(name: 'name of the instance', # type: ignore
         init = verbatim_init
     else:
         if type.split('.')[0] in ['i3', 'i3en', 'c5d', 'm5d', 'r5d', 'z1d']:
-            inodes = {'inodes': '-i {bytes_per_inode}'}
-            init = _nvme_init % inodes + init
+            init = _nvme_init % {'inodes': f'-i {bytes_per_inode}'} + init
         if os.path.isfile(init):
             stderr('loading init script from file:', init)
             with open(init) as f:
