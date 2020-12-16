@@ -26,7 +26,7 @@ def main(*selectors, yes=False, no_wait=False, name=None, description=None, no_a
         sh.run('aws-ec2-stop -y', instance.instance_id)
         sh.run('aws-ec2-wait-for-state -y', instance.instance_id, '--end-state stopped', stream=True)
     image = instance.create_image(Name=name, Description=description)
-    tags = [{'Key': 'ssh-user', 'Value': aws.tags(instance)['ssh-user']}]
+    tags = [{'Key': 'ssh-user', 'Value': aws.ec2.tags(instance)['ssh-user']}]
     if tag:
         key, value = tag.split('=')
         tags += [{'Key': key, 'Value': value}]
