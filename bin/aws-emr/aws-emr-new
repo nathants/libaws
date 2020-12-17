@@ -52,7 +52,7 @@ def main(
         print(f'using zone: {zone}', file=sys.stderr)
         instances['Ec2SubnetId'] = aws.ec2.subnet(vpc, zone)
     set_tags = [
-        {'Key': 'ssh-user', 'Value': 'hadoop'},
+        {'Key': 'user', 'Value': 'hadoop'},
         {'Key': 'owner', 'Value': owner},
         {'Key': 'Name', 'Value': "emr-{}-cluster".format(name)},
         {'Key': 'group', 'Value': 'emr'}

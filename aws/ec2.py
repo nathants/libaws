@@ -29,7 +29,7 @@ def subnet(vpc, zone, print_fn=stderr):
 
 def ssh_user(*instances):
     try:
-        users = {tags(i)['ssh-user'] for i in instances}
+        users = {tags(i)['user'] for i in instances}
     except KeyError:
         assert False, 'instances should have a tag "user=<username>"'
     assert len(users), 'no user tag found: %s' % '\n '.join(format(i) for i in instances)

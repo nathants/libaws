@@ -356,15 +356,15 @@ def main(name: 'name of the instance', # type: ignore
         stderr('using most recent ami for name:', ami_name, ami)
     if ec2_ssh_user:
         user = ec2_ssh_user
-    elif 'ssh-user' in ami_tags:
-        user = ami_tags['ssh-user']
+    elif 'user' in ami_tags:
+        user = ami_tags['user']
     elif ami_name in {'lambda', 'amzn'}:
-        user = 'ec2-user'
+        user = 'user'
     elif ami_name == 'arch':
         user = 'arch'
     else:
         user = 'ubuntu'
-    stderr('ssh-user:', user)
+    stderr('user:', user)
     if verbatim_init:
         init = verbatim_init
     else:
@@ -394,7 +394,7 @@ def main(name: 'name of the instance', # type: ignore
     opts['TagSpecifications'] = [{'ResourceType': resource,
                                   'Tags': [{'Key': 'Name', 'Value': name},
                                            {'Key': 'owner', 'Value': owner},
-                                           {'Key': 'ssh-user', 'Value': user},
+                                           {'Key': 'user', 'Value': user},
                                            {'Key': 'creation-date', 'Value': aws.now()},
                                            {'Key': 'num', 'Value': str(num)}] + [{'Key': k, 'Value': v}
                                                                                  for tag in tags
