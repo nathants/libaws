@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+import argh
+import aws
+import aws.ec2
+
+def main(ami_id):
+    aws.client('ec2').deregister_image(ImageId=ami_id)
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)
