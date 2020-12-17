@@ -51,8 +51,7 @@ _hidden_tags = [
     'user',
     'creation-date',
     'owner',
-    'aws:ec2spot:fleet-request-id',
-    'aws:elasticmapreduce:job-flow-id',
+    'STAGE',
 ]
 
 def format_header(all_tags=False, placement=False):
@@ -69,7 +68,7 @@ def format_header(all_tags=False, placement=False):
         'tags...',
     ]))
 
-def format(i, all_tags=False, placement=False):
+def format(i, all_tags=False, placement=False, aws_tags=False):
     return ' '.join(filter(None, [
         (green if i.state['Name'] == 'running' else cyan if i.state['Name'] == 'pending' else red)(tag_name(i)),
         i.instance_type,
@@ -80,7 +79,11 @@ def format(i, all_tags=False, placement=False):
         ','.join(sorted([x['GroupName'] for x in i.security_groups]) or ['-']),
         tag_name(i.vpc or {}, '-') if placement else None,
         (i.subnet.availability_zone if i.subnet else '-') if placement else None,
-        ' '.join('%s=%s' % (k, v) for k, v in sorted(tags(i).items(), key=lambda x: x[0]) if (all_tags or k not in _hidden_tags) and v),
+        ' '.join('%s=%s' % (k, v)
+                 for k, v in sorted(tags(i).items(), key=lambda x: x[0])
+                 if (all_tags or k not in _hidden_tags)
+                 and (aws_tags or not k.startswith('aws:'))
+                 and v),
     ]))
 
 def ls(selectors, state):

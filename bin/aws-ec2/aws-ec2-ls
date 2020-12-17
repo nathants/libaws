@@ -5,14 +5,14 @@ import sys
 import aws
 import aws.ec2
 
-def main(*selectors, state=None, all_tags=False, placement=False):
+def main(*selectors, state=None, all_tags=False, aws_tags=False, placement=False):
     instances = aws.ec2.ls(selectors, state)
     if not instances:
         sys.exit(1)
     else:
         logging.info(aws.ec2.format_header(all_tags, placement))
         for instance in instances:
-            print(aws.ec2.format(instance, all_tags, placement))
+            print(aws.ec2.format(instance, all_tags, placement, aws_tags))
 
 if __name__ == '__main__':
     with aws.setup():
