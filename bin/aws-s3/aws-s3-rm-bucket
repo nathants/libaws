@@ -6,6 +6,7 @@ import shell as sh
 
 def main(name, yes=False):
     if not yes:
+        # TODO delete versions
         try:
             print(f'going to delete bucket: s3://{name}')
             resp = aws.client('s3').list_objects_v2(Bucket=name, MaxKeys=10)

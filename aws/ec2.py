@@ -101,6 +101,7 @@ def ls(selectors, state):
         kind = 'private-ip-address' if all(x.isdigit() or x == '.' for x in selectors[0]) and selectors[0].split('.')[0] in ['10', '172'] else kind
         kind = 'instance-id' if selectors[0].startswith('i-') else kind
         if kind == 'tags' and '=' not in selectors[0]:
+            # TODO allow passing multiple names, which are summed, and then tags, which are intersected
             selectors = f'Name={selectors[0]}', *selectors[1:] # auto add Name= to the first tag
         instances = []
         for chunk in util.iter.chunk(selectors, 195): # 200 boto api limit
