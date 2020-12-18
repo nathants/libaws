@@ -2,18 +2,38 @@ package lib
 
 import (
 	"fmt"
+	"time"
 	"os"
+	"github.com/avast/retry-go"
+	"log"
 )
 
-func panic1(err error) {
+var Logger = log.New(os.Stderr, "", log.Lshortfile) // log.Ldate|log.Ltime)
+
+func Retry(fn func() error) error {
+	return retry.Do(
+		fn,
+		retry.LastErrorOnly(true),
+		retry.Attempts(6),
+		retry.Delay(150*time.Millisecond),
+	)
+}
+
+func Assert(cond bool, format string, a ...interface{}) {
+	if !cond {
+		panic(fmt.Sprintf(format, a...))
+	}
+}
+
+func Panic1(err error) {
 	if err != nil {
 		panic(err)
 	}
 }
 
-func panic2(x interface{}, e error) interface{} {
+func Panic2(x interface{}, e error) interface{} {
 	if e != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %s\n", e)
+		Logger.Printf("fatal: %s\n", e)
 		os.Exit(1)
 	}
 	return x

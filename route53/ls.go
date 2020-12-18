@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	lib.Commands["route53-ls"] = ls
+	lib.Commands["route53-ls"] = route53Ls
 }
 
 type lsArgs struct {
@@ -19,11 +19,11 @@ func (lsArgs) Description() string {
 	return "\nlist route53 entries\n"
 }
 
-func ls() {
+func route53Ls() {
 	var args lsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	for zone := range lib.Route53ListZones() {
+	for zone := range lib.Route53ListZones(ctx) {
 		fmt.Println(*zone.Name)
 		for record := range lib.Route53ListRecords(ctx, zone.Id) {
 			if record.AliasTarget != nil {

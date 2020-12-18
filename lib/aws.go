@@ -1,27 +1,27 @@
 package lib
 
 import (
-	"context"
 	"sync"
+	"os"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 )
 
 var Commands = make(map[string]func())
 
-var ctx = context.Background()
+var sess *session.Session
+var sessLock sync.RWMutex
 
-var cfg *aws.Config
-var cfgLock sync.RWMutex
-
-func Config() aws.Config {
-	cfgLock.Lock()
-	defer cfgLock.Unlock()
-	if cfg == nil {
-		_cfg, err := config.LoadDefaultConfig()
-		panic1(err)
-		cfg = &_cfg
+func Session() *session.Session {
+	sessLock.Lock()
+	defer sessLock.Unlock()
+	if sess == nil {
+		err := os.Setenv("AWS_SDK_LOAD_CONFIG", "true")
+		if err != nil {
+		    panic(err)
+		}
+		sess = session.Must(session.NewSession(&aws.Config{}))
 	}
-	return *cfg
+	return sess
 }

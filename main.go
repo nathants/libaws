@@ -1,12 +1,12 @@
 package main
 
 import (
-"strings"
 	"sort"
 	"fmt"
 	"os"
 	"github.com/nathants/cli-aws/lib"
 	_ "github.com/nathants/cli-aws/route53"
+	_ "github.com/nathants/cli-aws/ec2"
 
 )
 
@@ -34,7 +34,7 @@ func main() {
 	}
 	var args []string
 	for _, a := range os.Args[1:] {
-		if strings.HasPrefix(a, "-") && len(a) > 2 {
+		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
 			for _, k := range a[1:] {
 				args = append(args, fmt.Sprintf("-%s", string(k)))
 			}

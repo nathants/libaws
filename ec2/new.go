@@ -3,81 +3,47 @@ package ec2
 import (
 	"context"
 	"fmt"
-	"github.com/nathants/cli-aws/lib"
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/iam"
-
+	"github.com/nathants/cli-aws/lib"
 )
 
 func init() {
-	lib.Commands["ec2-new"] = new
+	lib.Commands["ec2-new"] = ec2New
 }
 
-type lsArgs struct {
+type newArgs struct {
+	Name      string   `arg:"positional"`
+	Num       int      `arg:"-n,--num" default:"1"`
+	Type      string   `arg:"-t,--type""`
+	Ami       string   `arg:"-a,--ami"`
+	Key       string   `arg:"-k,--key"`
+	SgID      string   `arg:"--sg"`
+	SubnetIds []string `arg:"--subnets"`
 }
 
-func (lsArgs) Description() string {
+func (newArgs) Description() string {
 	return "\ncreate ec2 instances\n"
 }
 
-func new() {
-	var args lsArgs
+func ec2New() {
+	var args newArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	fmt.Println("yolo")
-
-	numInstances := 1
-	name := ""
-	sgID := ""
-	amiID := ""
-	keyName := ""
-	instanceTypes := []types.InstanceType{}
-	subnetIds := []string{}
-	role, err := IAMClient().GetRole(ctx, &iam.GetRoleInput{
-		RoleName: aws.String("aws-ec2-spot-fleet-tagging-role"),
+	fleet := lib.RequestSpotFleet(ctx, &lib.FleetConfig{
+		NumInstances:  args.Num,
+		AmiID:         args.Ami,
+		InstanceTypes: []string{args.Type},
+		Name:          args.Name,
+		Key:           args.Key,
+		SgID:          args.SgID,
+		SubnetIds:     args.SubnetIds,
 	})
-	panic1(err)
-	launchSpecs := []types.SpotFleetLaunchSpecification{}
-	for _, subnetId := range subnetIds {
-		for _, instanceType := range instanceTypes {
-			launchSpecs = append(launchSpecs, types.SpotFleetLaunchSpecification{
-				ImageId:        aws.String(amiID),
-				KeyName:        aws.String(keyName),
-				SubnetId:       aws.String(subnetId),
-				InstanceType:   instanceType,
-				SecurityGroups: []types.GroupIdentifier{{GroupId: aws.String(sgID)}},
-				BlockDeviceMappings: []types.BlockDeviceMapping{{
-					DeviceName: aws.String("/dev/sda1"),
-					Ebs: &types.EbsBlockDevice{
-						DeleteOnTermination: true,
-						Encrypted:           true,
-						VolumeType:          "gp3",
-					},
-				}},
-				TagSpecifications: []types.SpotFleetTagSpecification{{
-					ResourceType: types.ResourceTypeInstance,
-					Tags: []types.Tag{
-						{Key: aws.String("Name"), Value: aws.String(name)},
-					},
-				}},
-			})
-		}
+	var instanceIDs []string
+	for instance := range lib.RetryDescribeSpotFleetInstances(ctx, fleet.SpotFleetRequestId) {
+		instanceIDs = append(instanceIDs, *instance.InstanceId)
 	}
-	spotFleet, err := EC2Client().RequestSpotFleet(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &types.SpotFleetRequestConfigData{
-		IamFleetRole:                     role.Role.Arn,
-		AllocationStrategy:               types.AllocationStrategyLowestPrice,
-		InstanceInterruptionBehavior:     types.InstanceInterruptionBehaviorTerminate,
-		ReplaceUnhealthyInstances:        false,
-		LaunchSpecifications:             launchSpecs,
-		TargetCapacity:                   int32(numInstances),
-		Type:                             types.FleetTypeRequest,
-		TerminateInstancesWithExpiration: false,
-	}})
-	panic1(err)
-	_ = spotFleet
-
-
+	instances := lib.RetryDescribeInstances(ctx, instanceIDs)
+	for _, instance := range instances {
+		fmt.Println(*instance.InstanceId)
+	}
 }
