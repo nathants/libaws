@@ -165,7 +165,7 @@ def _sgs(names=None):
                or x.group_id in names]
     return sgs
 
-def _make_spot_opts(spot, opts, fleet_role, vpc):
+def _make_spot_opts(opts, fleet_role, vpc):
     if 'arn' not in fleet_role:
         err = aws.client('iam').exceptions.NoSuchEntityException
         try:
@@ -178,7 +178,6 @@ def _make_spot_opts(spot, opts, fleet_role, vpc):
     spot_opts['ReplaceUnhealthyInstances'] = False
     spot_opts['InstanceInterruptionBehavior'] = 'terminate'
     spot_opts['TerminateInstancesWithExpiration'] = False
-    spot_opts['SpotPrice'] = str(float(spot))
     spot_opts['IamFleetRole'] = fleet_role
     spot_opts['TargetCapacity'] = opts['MaxCount']
     opts['SecurityGroups'] = [{'GroupId': x} for x in opts['SecurityGroupIds']]
@@ -218,7 +217,6 @@ def _tear_down_spot_instances(request_id):
         sh.run('aws-ec2-rm -y', *xs, stream=True)
 
 def _spot_errors(request_id):
-    request_id = 'sfr-71797965-2d8c-4521-978e-7b0d82fe6228'
     date = aws.retry(aws.client('ec2').describe_spot_fleet_requests)(SpotFleetRequestIds=[request_id])['SpotFleetRequestConfigs'][0]['CreateTime']
     start = datetime.datetime(date.year, date.month, date.day)
     val = ''
@@ -292,15 +290,7 @@ def main(name: 'name of the instance', # type: ignore
          verbatim_init: ( # type: ignore
              'use this string verbatim as the '
              'cloud-init user data.')                  = None,
-         spot: ( # type: ignore
-             'spot bid as percentage of the '
-             'on-demand price for current type. '
-             'check prices with `ec2 prices -h`. '
-             'a value of 1.0, the default, bids '
-             'at the on-demand price, so only get '
-             'terminated if spot market rises above '
-             'on-demand market. set to 0 use '
-             'on-demand instead of spot.')             = float(os.environ.get('AWS_EC2_SPOT', 0.0)),
+         spot: 'use spot instances'                    = False, # type: ignore
          seconds_timeout: ( # type: ignore
              'will `sudo poweroff` after this many '
              'seconds. calls `bash /tmp/timeout.sh` '
@@ -319,11 +309,6 @@ def main(name: 'name of the instance', # type: ignore
     assert sg, '--sg must be provided'
     assert type, '--type must be provided'
     assert vpc, '--vpc must be provided'
-    if spot:
-        spot_percentage = spot
-        ondemand_price = sh.run('aws-ec2-prices -i', type)
-        spot = float(spot) * float(ondemand_price)
-        stderr(f'bidding spot at: (spot * on-demand) {spot_percentage} * {ondemand_price} = {spot}')
     num = int(num)
     assert not (spot and type == 't2.nano'), 'no spot pricing for t2.nano'
     assert not login or num == 1, util.colors.red('you asked to login, but you are starting more than one instance, so its not gonna happen')
@@ -420,7 +405,7 @@ def main(name: 'name of the instance', # type: ignore
             pass
         stderr('using vpc:', vpc)
         if spot:
-            spot_opts = _make_spot_opts(spot, opts, fleet_role, vpc)
+            spot_opts = _make_spot_opts(opts, fleet_role, vpc)
             try:
                 instances = _create_spot_instances(**spot_opts)
             except KeyboardInterrupt:

@@ -3,6 +3,7 @@ import argh
 import sys
 import aws
 import aws.ec2
+import util.colors
 
 def main(*selectors, state='running'):
     instances = aws.ec2.ls(selectors, state)
@@ -10,7 +11,7 @@ def main(*selectors, state='running'):
         sys.exit(1)
     else:
         for instance in instances:
-            print(aws.green(aws.ec2.tag_name(instance)),
+            print(util.colors.green(aws.ec2.tag_name(instance)),
                   instance.instance_id,
                   aws.ec2.tag_name(instance.subnet),
                   instance.subnet.id,
