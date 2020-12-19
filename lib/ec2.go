@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,14 +32,16 @@ type FleetConfig struct {
 	Key           string
 	InstanceTypes []string
 	SubnetIds     []string
+	Gigs          int
 }
 
-func RetryDescribeSpotFleet(ctx context.Context, input *ec2.RequestSpotFleetOutput) (*ec2.SpotFleetRequestConfig, error) {
+func RetryDescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
+	Logger.Println("describe spot fleet", *spotFleetRequestId)
 	var output *ec2.DescribeSpotFleetRequestsOutput
-	err := Retry(func() error {
+	err := Retry(ctx, func() error {
 		var err error
 		output, err = EC2Client().DescribeSpotFleetRequestsWithContext(ctx, &ec2.DescribeSpotFleetRequestsInput{
-			SpotFleetRequestIds: []*string{input.SpotFleetRequestId},
+			SpotFleetRequestIds: []*string{spotFleetRequestId},
 		})
 		if err != nil {
 			return err
@@ -46,20 +49,24 @@ func RetryDescribeSpotFleet(ctx context.Context, input *ec2.RequestSpotFleetOutp
 		return nil
 	})
 	if err != nil {
+		Logger.Println("error:", err)
 		return nil, err
 	}
 	if len(output.SpotFleetRequestConfigs) != 1 {
-		return nil, fmt.Errorf("not the right number of configs: %d", len(output.SpotFleetRequestConfigs))
+		err = fmt.Errorf("not the right number of configs: %d", len(output.SpotFleetRequestConfigs))
+		Logger.Println("error:", err)
+		return nil, err
 	}
 	return output.SpotFleetRequestConfigs[0], nil
 }
 
-func RetryDescribeSpotFleetInstances(ctx context.Context, spotFleetRequestId *string) ([]*ec2.ActiveInstance, error) {
+func RetryDescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequestId *string) ([]*ec2.ActiveInstance, error) {
+	Logger.Println("describe spot fleet instances", *spotFleetRequestId)
 	var instances []*ec2.ActiveInstance
 	var nextToken *string
 	for {
 		var output *ec2.DescribeSpotFleetInstancesOutput
-		err := Retry(func() error {
+		err := Retry(ctx, func() error {
 			var err error
 			output, err = EC2Client().DescribeSpotFleetInstancesWithContext(ctx, &ec2.DescribeSpotFleetInstancesInput{
 				NextToken:          nextToken,
@@ -71,6 +78,7 @@ func RetryDescribeSpotFleetInstances(ctx context.Context, spotFleetRequestId *st
 			return nil
 		})
 		if err != nil {
+			Logger.Println("error:", err)
 			return nil, err
 		}
 		instances = append(instances, output.ActiveInstances...)
@@ -83,9 +91,10 @@ func RetryDescribeSpotFleetInstances(ctx context.Context, spotFleetRequestId *st
 }
 
 func RetryDescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Instance, error) {
+	Logger.Println("describe instances for", len(instanceIDs), "instanceIDs")
 	Assert(len(instanceIDs) < 1000, "cannot list 1000 instances by id")
 	var output *ec2.DescribeInstancesOutput
-	err := Retry(func() error {
+	err := Retry(ctx, func() error {
 		var err error
 		output, err = EC2Client().DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
 			InstanceIds: aws.StringSlice(instanceIDs),
@@ -96,6 +105,7 @@ func RetryDescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.I
 		return nil
 	})
 	if err != nil {
+		Logger.Println("error:", err)
 		return nil, err
 	}
 	var instances []*ec2.Instance
@@ -113,9 +123,11 @@ var failedStates = []string{
 }
 
 func WaitForState(ctx context.Context, instanceIDs []string, state string) error {
+	Logger.Println("wait for state", state, "for", len(instanceIDs), "instanceIDs")
 	for i := 0; i < 300; i++ {
 		instances, err := RetryDescribeInstances(ctx, instanceIDs)
 		if err != nil {
+			Logger.Println("error:", err)
 			return err
 		}
 		ready := 0
@@ -128,21 +140,43 @@ func WaitForState(ctx context.Context, instanceIDs []string, state string) error
 		if ready == len(instanceIDs) {
 			return nil
 		}
-		time.Sleep(15 * time.Second)
+		select {
+		case <-time.After(15 * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	return fmt.Errorf("failed to wait for %s for instances %v", state, instanceIDs)
+	err := fmt.Errorf("failed to wait for %s for instances %v", state, instanceIDs)
+	Logger.Println("error:", err)
+	return err
+}
+
+func FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
+	Logger.Println("teardown spot fleet", *spotFleetRequestId)
+	_, err := EC2Client().CancelSpotFleetRequestsWithContext(ctx, &ec2.CancelSpotFleetRequestsInput{
+		SpotFleetRequestIds: []*string{spotFleetRequestId},
+		TerminateInstances:  aws.Bool(false),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	return nil
 }
 
 func TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
+	Logger.Println("teardown spot fleet", *spotFleetRequestId)
 	_, err := EC2Client().CancelSpotFleetRequestsWithContext(ctx, &ec2.CancelSpotFleetRequestsInput{
 		SpotFleetRequestIds: []*string{spotFleetRequestId},
 		TerminateInstances:  aws.Bool(true),
 	})
 	if err != nil {
+		Logger.Println("error:", err)
 		return err
 	}
-	instances, err := RetryDescribeSpotFleetInstances(ctx, spotFleetRequestId)
+	instances, err := RetryDescribeSpotFleetActiveInstances(ctx, spotFleetRequestId)
 	if err != nil {
+		Logger.Println("error:", err)
 		return err
 	}
 	var ids []string
@@ -154,34 +188,67 @@ func TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
 	}
 	err = WaitForState(ctx, ids, ec2.InstanceStateNameRunning)
 	if err != nil {
+		Logger.Println("error:", err)
 		return err
 	}
 	_, err = EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: aws.StringSlice(ids),
 	})
 	if err != nil {
+		Logger.Println("error:", err)
 		return err
 	}
 	return nil
 }
 
-func WaitForSpotFleet(ctx context.Context, input *ec2.RequestSpotFleetOutput, num int) error {
+func spotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) error {
+	t := time.Now().UTC().Add(-24 * time.Hour)
+	timestamp := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	output, err := EC2Client().DescribeSpotFleetRequestHistoryWithContext(ctx, &ec2.DescribeSpotFleetRequestHistoryInput{
+		EventType:          aws.String(ec2.EventTypeError),
+		SpotFleetRequestId: spotFleetRequestId,
+		StartTime:          aws.Time(timestamp),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	var errors []string
+	for _, record := range output.HistoryRecords {
+		errors = append(errors, *record.EventInformation.EventDescription)
+	}
+	if len(errors) != 0 {
+		err = fmt.Errorf(strings.Join(errors, "\n"))
+		Logger.Println("error:", err)
+		return err
+	}
+	return nil
+}
+
+func WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) error {
+	Logger.Println("wait for spot fleet", *spotFleetRequestId, "with", num, "instances")
 	for i := 0; i < 300; i++ {
-		config, err := RetryDescribeSpotFleet(ctx, input)
+		config, err := RetryDescribeSpotFleet(ctx, spotFleetRequestId)
 		if err != nil {
+			Logger.Println("error:", err)
 			return err
 		}
 		for _, state := range failedStates {
 			if state == *config.SpotFleetRequestState {
-				return fmt.Errorf("spot fleet request failed with state: %s", state)
+				err := fmt.Errorf("spot fleet request failed with state: %s", state)
+				Logger.Println("error:", err)
+				return err
 			}
 		}
-		if config.ActivityStatus != nil && *config.ActivityStatus == ec2.ActivityStatusError {
-			return fmt.Errorf("spot fleet request failed with errors: %s", *config.SpotFleetRequestId) // TODO aws-ec2-new:_spot_errors()
+		err = spotFleetHistoryErrors(ctx, spotFleetRequestId)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
 		}
 		num_ready := 0
-		instances, err := RetryDescribeSpotFleetInstances(ctx, input.SpotFleetRequestId)
+		instances, err := RetryDescribeSpotFleetActiveInstances(ctx, spotFleetRequestId)
 		if err != nil {
+			Logger.Println("error:", err)
 			return err
 		}
 		for range instances {
@@ -189,12 +256,18 @@ func WaitForSpotFleet(ctx context.Context, input *ec2.RequestSpotFleetOutput, nu
 		}
 		if num_ready < num {
 			Logger.Printf("waiting for instances: %d/%d\n", num_ready, num)
-			time.Sleep(5 * time.Second)
+			select {
+			case <-time.After(5 * time.Second):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			continue
 		}
 		return nil
 	}
-	return fmt.Errorf("failed to wait for instances")
+	err := fmt.Errorf("failed to wait for instances")
+	Logger.Println("error:", err)
+	return err
 }
 
 func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpotFleetOutput, error) {
@@ -202,6 +275,7 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpot
 		RoleName: aws.String("aws-ec2-spot-fleet-tagging-role"),
 	})
 	if err != nil {
+		Logger.Println("error:", err)
 		return nil, err
 	}
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
@@ -221,6 +295,7 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpot
 						VolumeType:          aws.String(ec2.VolumeTypeGp3),
 						Iops:                aws.Int64(3000),
 						Throughput:          aws.Int64(125),
+						VolumeSize:          aws.Int64(int64(input.Gigs)),
 					},
 				}},
 				TagSpecifications: []*ec2.SpotFleetTagSpecification{{
@@ -232,6 +307,9 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpot
 			})
 		}
 	}
+	Logger.Println("types:", input.InstanceTypes)
+	Logger.Println("subnets:", input.SubnetIds)
+	Logger.Println("requst spot fleet", DropLinesWithAny(Pformat(launchSpecs[0]), "null", "SubnetId", "InstanceType"))
 	spotFleet, err := EC2Client().RequestSpotFleetWithContext(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2.SpotFleetRequestConfigData{
 		IamFleetRole:                     role.Role.Arn,
 		AllocationStrategy:               aws.String(ec2.AllocationStrategyLowestPrice),
@@ -243,14 +321,21 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpot
 		TerminateInstancesWithExpiration: aws.Bool(false),
 	}})
 	if err != nil {
+		Logger.Println("error:", err)
 		return nil, err
 	}
-	err = WaitForSpotFleet(ctx, spotFleet, input.NumInstances)
+	err = WaitForSpotFleet(ctx, spotFleet.SpotFleetRequestId, input.NumInstances)
 	if err != nil {
-		err2 := TeardownSpotFleet(ctx, spotFleet.SpotFleetRequestId)
+		Logger.Println("error:", err)
+		err2 := TeardownSpotFleet(context.Background(), spotFleet.SpotFleetRequestId)
 		if err2 != nil {
+			Logger.Println("error:", err2)
 			return nil, err2
 		}
+		return nil, err
+	}
+	err = FinalizeSpotFleet(ctx, spotFleet.SpotFleetRequestId)
+	if err != nil {
 		return nil, err
 	}
 	return spotFleet, nil

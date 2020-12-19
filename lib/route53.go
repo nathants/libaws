@@ -20,6 +20,7 @@ func Route53Client() *route53.Route53 {
 }
 
 func Route53ListRecords(ctx context.Context, zoneId *string) ([]*route53.ResourceRecordSet, error) {
+	Logger.Println("list records", *zoneId)
 	var nextId *string
 	var nextName *string
 	var nextType *string
@@ -32,6 +33,7 @@ func Route53ListRecords(ctx context.Context, zoneId *string) ([]*route53.Resourc
 			StartRecordType:       nextType,
 		})
 		if err != nil {
+			Logger.Println("error:", err)
 			return nil, err
 		}
 		records = append(records, out.ResourceRecordSets...)
@@ -46,6 +48,7 @@ func Route53ListRecords(ctx context.Context, zoneId *string) ([]*route53.Resourc
 }
 
 func Route53ListZones(ctx context.Context) ([]*route53.HostedZone, error) {
+	Logger.Println("list zones")
 	var nextDns *string
 	var nextId *string
 	var zones []*route53.HostedZone
@@ -55,6 +58,7 @@ func Route53ListZones(ctx context.Context) ([]*route53.HostedZone, error) {
 			HostedZoneId: nextId,
 		})
 		if err != nil {
+			Logger.Println("error:", err)
 			return nil, err
 		}
 		zones = append(zones, out.HostedZones...)

@@ -1,22 +1,77 @@
 package lib
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
-	"github.com/avast/retry-go"
 	"log"
 	"os"
+	"os/signal"
 	"reflect"
 	"runtime"
+	"strings"
+	"syscall"
 	"time"
+	"bytes"
+
+	"github.com/avast/retry-go"
 )
 
-var Logger = log.New(os.Stderr, "", log.Llongfile) // log.Ldate|log.Ltime)
+type LogWriter struct {}
+
+func (LogWriter) Write(p []byte) (int, error) {
+	sep1 := []byte(".go:")
+	sep2 := []byte("/")
+	parts := bytes.SplitN(p, sep1, 2)
+	filepath := bytes.Split(parts[0], sep2)
+	keep := [][]byte{
+		filepath[len(filepath)-2],
+		filepath[len(filepath)-1],
+	}
+	parts[0] = bytes.Join(keep, sep2)
+	return os.Stderr.Write(bytes.Join(parts, sep1))
+}
+
+var Logger = log.New(LogWriter{}, "", log.Llongfile)
+
+func SignalHandler(cancel func()) {
+
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		Logger.Println("signal handler")
+		cancel()
+	}()
+}
 
 func functionName(i interface{}) string {
 	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
-func Retry(fn func() error) error {
+func DropLinesWithAny(s string, tokens ...string) string {
+	var lines []string
+outer:
+	for _, line := range strings.Split(s, "\n") {
+		for _, token := range tokens {
+			if strings.Contains(line, token) {
+				continue outer
+			}
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func Pformat(i interface{}) string {
+	val, err := json.MarshalIndent(i, "", "    ")
+	if err != nil {
+		panic(err)
+	}
+	return string(val)
+}
+
+func Retry(ctx context.Context, fn func() error) error {
 	count := 0
 	attempts := 6
 	return retry.Do(
@@ -31,6 +86,7 @@ func Retry(fn func() error) error {
 			}
 			return nil
 		},
+		retry.Context(ctx),
 		retry.LastErrorOnly(true),
 		retry.Attempts(uint(attempts)),
 		retry.Delay(150*time.Millisecond),
