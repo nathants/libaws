@@ -1,8 +1,8 @@
 package lib
 
 import (
-	"sync"
 	"github.com/aws/aws-sdk-go/service/iam"
+	"sync"
 )
 
 var iamClient *iam.IAM

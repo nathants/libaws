@@ -3,9 +3,9 @@ package route53
 import (
 	"context"
 	"fmt"
-	"strings"
-	"github.com/nathants/cli-aws/lib"
 	"github.com/alexflint/go-arg"
+	"github.com/nathants/cli-aws/lib"
+	"strings"
 )
 
 func init() {
@@ -23,9 +23,17 @@ func route53Ls() {
 	var args lsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	for zone := range lib.Route53ListZones(ctx) {
+	zones, err := lib.Route53ListZones(ctx)
+	if err != nil {
+		lib.Logger.Fatal(err)
+	}
+	for _, zone := range zones {
 		fmt.Println(*zone.Name)
-		for record := range lib.Route53ListRecords(ctx, zone.Id) {
+		records, err := lib.Route53ListRecords(ctx, zone.Id)
+		if err != nil {
+			lib.Logger.Fatal(err)
+		}
+		for _, record := range records {
 			if record.AliasTarget != nil {
 				fmt.Println("-", *record.Name, "Alias =>", *record.AliasTarget.DNSName)
 			} else {

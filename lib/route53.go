@@ -19,59 +19,50 @@ func Route53Client() *route53.Route53 {
 	return r53Client
 }
 
-func Route53ListRecords(ctx context.Context, zoneId *string) <-chan *route53.ResourceRecordSet {
+func Route53ListRecords(ctx context.Context, zoneId *string) ([]*route53.ResourceRecordSet, error) {
 	var nextId *string
 	var nextName *string
 	var nextType *string
-	records := make(chan *route53.ResourceRecordSet)
-	go func() {
+	var records []*route53.ResourceRecordSet
+	for {
 		out, err := Route53Client().ListResourceRecordSetsWithContext(ctx, &route53.ListResourceRecordSetsInput{
 			HostedZoneId:          zoneId,
 			StartRecordIdentifier: nextId,
 			StartRecordName:       nextName,
 			StartRecordType:       nextType,
 		})
-		Panic1(err)
-		for _, record := range out.ResourceRecordSets {
-			select {
-			case <-ctx.Done():
-				close(records)
-				return
-			case records <- record:
-			}
+		if err != nil {
+			return nil, err
 		}
+		records = append(records, out.ResourceRecordSets...)
 		if !*out.IsTruncated {
-			close(records)
-			return
+			break
 		}
 		nextId = out.NextRecordIdentifier
 		nextName = out.NextRecordName
 		nextType = out.NextRecordType
-	}()
-	return records
+	}
+	return records, nil
 }
 
-func Route53ListZones(ctx context.Context) <-chan *route53.HostedZone {
+func Route53ListZones(ctx context.Context) ([]*route53.HostedZone, error) {
 	var nextDns *string
 	var nextId *string
-	zones := make(chan *route53.HostedZone)
-	go func() {
-		for {
-			out, err := Route53Client().ListHostedZonesByNameWithContext(ctx, &route53.ListHostedZonesByNameInput{
-				DNSName:      nextDns,
-				HostedZoneId: nextId,
-			})
-			Panic1(err)
-			for _, zone := range out.HostedZones {
-				zones <- zone
-			}
-			if !*out.IsTruncated {
-				close(zones)
-				return
-			}
-			nextDns = out.NextDNSName
-			nextId = out.NextHostedZoneId
+	var zones []*route53.HostedZone
+	for {
+		out, err := Route53Client().ListHostedZonesByNameWithContext(ctx, &route53.ListHostedZonesByNameInput{
+			DNSName:      nextDns,
+			HostedZoneId: nextId,
+		})
+		if err != nil {
+			return nil, err
 		}
-	}()
-	return zones
+		zones = append(zones, out.HostedZones...)
+		if !*out.IsTruncated {
+			break
+		}
+		nextDns = out.NextDNSName
+		nextId = out.NextHostedZoneId
+	}
+	return zones, nil
 }

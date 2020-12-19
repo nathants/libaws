@@ -1,11 +1,10 @@
 package lib
 
 import (
-	"sync"
-	"os"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-
+	"os"
+	"sync"
 )
 
 var Commands = make(map[string]func())
@@ -19,7 +18,7 @@ func Session() *session.Session {
 	if sess == nil {
 		err := os.Setenv("AWS_SDK_LOAD_CONFIG", "true")
 		if err != nil {
-		    panic(err)
+			panic(err)
 		}
 		sess = session.Must(session.NewSession(&aws.Config{}))
 	}

@@ -14,7 +14,7 @@ func init() {
 type newArgs struct {
 	Name      string   `arg:"positional"`
 	Num       int      `arg:"-n,--num" default:"1"`
-	Type      string   `arg:"-t,--type""`
+	Type      string   `arg:"-t,--type"`
 	Ami       string   `arg:"-a,--ami"`
 	Key       string   `arg:"-k,--key"`
 	SgID      string   `arg:"--sg"`
@@ -29,7 +29,7 @@ func ec2New() {
 	var args newArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	fleet := lib.RequestSpotFleet(ctx, &lib.FleetConfig{
+	fleet, err := lib.RequestSpotFleet(ctx, &lib.FleetConfig{
 		NumInstances:  args.Num,
 		AmiID:         args.Ami,
 		InstanceTypes: []string{args.Type},
@@ -38,11 +38,21 @@ func ec2New() {
 		SgID:          args.SgID,
 		SubnetIds:     args.SubnetIds,
 	})
+	if err != nil {
+		lib.Logger.Fatal(err)
+	}
 	var instanceIDs []string
-	for instance := range lib.RetryDescribeSpotFleetInstances(ctx, fleet.SpotFleetRequestId) {
+	fleetInstances, err := lib.RetryDescribeSpotFleetInstances(ctx, fleet.SpotFleetRequestId)
+	if err != nil {
+		lib.Logger.Fatal(err)
+	}
+	for _, instance := range fleetInstances {
 		instanceIDs = append(instanceIDs, *instance.InstanceId)
 	}
-	instances := lib.RetryDescribeInstances(ctx, instanceIDs)
+	instances, err := lib.RetryDescribeInstances(ctx, instanceIDs)
+	if err != nil {
+		lib.Logger.Fatal(err)
+	}
 	for _, instance := range instances {
 		fmt.Println(*instance.InstanceId)
 	}

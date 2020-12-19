@@ -1,13 +1,12 @@
 package main
 
 import (
-	"sort"
 	"fmt"
-	"os"
+	_ "github.com/nathants/cli-aws/ec2"
 	"github.com/nathants/cli-aws/lib"
 	_ "github.com/nathants/cli-aws/route53"
-	_ "github.com/nathants/cli-aws/ec2"
-
+	"os"
+	"sort"
 )
 
 func usage() {
