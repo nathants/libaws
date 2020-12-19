@@ -217,8 +217,8 @@ def _tear_down_spot_instances(request_id):
         sh.run('aws-ec2-rm -y', *xs, stream=True)
 
 def _spot_errors(request_id):
-    date = aws.retry(aws.client('ec2').describe_spot_fleet_requests)(SpotFleetRequestIds=[request_id])['SpotFleetRequestConfigs'][0]['CreateTime']
-    start = datetime.datetime(date.year, date.month, date.day)
+    now = datetime.datetime.utcnow() - datetime.timedelta(days=1)
+    start = datetime.datetime(now.year, now.month, now.day)
     val = ''
     for record in aws.retry(aws.client('ec2').describe_spot_fleet_request_history)(SpotFleetRequestId=request_id, EventType='error', StartTime=start)['HistoryRecords']:
         val += record['EventInformation']['EventDescription'] + '\n\n'
@@ -233,7 +233,8 @@ def _create_spot_instances(**opts):
             state = resp['SpotFleetRequestState']
             failed_states = ['cancelled', 'failed', 'cancelled_running', 'cancelled_terminating']
             assert state not in failed_states, 'spot fleet failed with: %s' % state
-            assert resp.get('ActivityStatus') != 'error', f'spot fleet failed with errors:\n\n{_spot_errors(request_id)}'
+            history_errors = _spot_errors(request_id)
+            assert not history_errors, history_errors
             xs = aws.retry(aws.client('ec2').describe_spot_fleet_instances)(SpotFleetRequestId=request_id)['ActiveInstances']
             if len(xs) == opts['TargetCapacity']:
                 break
@@ -410,8 +411,8 @@ def main(name: 'name of the instance', # type: ignore
                 instances = _create_spot_instances(**spot_opts)
             except KeyboardInterrupt:
                 raise
-            except AssertionError:
-                stderr()
+            except AssertionError as e:
+                stderr(e)
                 sys.exit(1)
             except Exception as e:
                 if isinstance(e, aws.client('ec2').exceptions.ClientError) and e.response.get('Error', {}).get('Code') == 'InvalidSpotFleetRequestId.NotFound':
