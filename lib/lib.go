@@ -2,19 +2,37 @@ package lib
 
 import (
 	"fmt"
-	"time"
-	"os"
 	"github.com/avast/retry-go"
 	"log"
+	"os"
+	"reflect"
+	"runtime"
+	"time"
 )
 
-var Logger = log.New(os.Stderr, "", log.Lshortfile) // log.Ldate|log.Ltime)
+var Logger = log.New(os.Stderr, "", log.Llongfile) // log.Ldate|log.Ltime)
+
+func functionName(i interface{}) string {
+	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+}
 
 func Retry(fn func() error) error {
+	count := 0
+	attempts := 6
 	return retry.Do(
-		fn,
+		func() error {
+			if count != 0 {
+				Logger.Printf("retry %d/%d for %v\n", count, attempts-1, functionName(fn))
+			}
+			count++
+			err := fn()
+			if err != nil {
+				return err
+			}
+			return nil
+		},
 		retry.LastErrorOnly(true),
-		retry.Attempts(6),
+		retry.Attempts(uint(attempts)),
 		retry.Delay(150*time.Millisecond),
 	)
 }
