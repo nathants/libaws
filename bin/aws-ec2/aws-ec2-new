@@ -397,7 +397,7 @@ def main(name: 'name of the instance', # type: ignore
         # explicit zone
         elif zone:
             opts['SubnetId'] = aws.ec2.subnet(vpc, zone)
-        # random subnet for on-deman
+        # random subnet for on-demand
         elif not spot:
             zone = sh.run('aws-ec2-cheapest-zone', type, '-d', spot_days)
             opts['SubnetId'] = aws.ec2.subnet(vpc, zone)

@@ -270,7 +270,7 @@ func WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) 
 	return err
 }
 
-func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpotFleetOutput, error) {
+func RequestSpotFleet(ctx context.Context, input *FleetConfig) ([]*ec2.Instance, error) {
 	role, err := IAMClient().GetRoleWithContext(ctx, &iam.GetRoleInput{
 		RoleName: aws.String("aws-ec2-spot-fleet-tagging-role"),
 	})
@@ -278,9 +278,11 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpot
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	var poolSize int64
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
 	for _, subnetId := range input.SubnetIds {
 		for _, instanceType := range input.InstanceTypes {
+			poolSize++
 			launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
 				ImageId:        aws.String(input.AmiID),
 				KeyName:        aws.String(input.Key),
@@ -319,6 +321,7 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpot
 		TargetCapacity:                   aws.Int64(int64(input.NumInstances)),
 		Type:                             aws.String(ec2.FleetTypeRequest),
 		TerminateInstancesWithExpiration: aws.Bool(false),
+		InstancePoolsToUseCount: aws.Int64(poolSize),
 	}})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -338,5 +341,19 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) (*ec2.RequestSpot
 	if err != nil {
 		return nil, err
 	}
-	return spotFleet, nil
+	var instanceIDs []string
+	fleetInstances, err := RetryDescribeSpotFleetActiveInstances(ctx, spotFleet.SpotFleetRequestId)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	for _, instance := range fleetInstances {
+		instanceIDs = append(instanceIDs, *instance.InstanceId)
+	}
+	instances, err := RetryDescribeInstances(ctx, instanceIDs)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	return instances, nil
 }

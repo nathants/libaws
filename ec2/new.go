@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
+	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 func init() {
@@ -17,6 +18,7 @@ type newArgs struct {
 	Type      string   `arg:"-t,--type"`
 	Ami       string   `arg:"-a,--ami"`
 	Key       string   `arg:"-k,--key"`
+	Spot      bool     `arg:"-s,--spot" default:"false"`
 	SgID      string   `arg:"--sg"`
 	SubnetIds []string `arg:"--subnets"`
 	Gigs      int      `arg:"-g,--gigs" default:"16"`
@@ -31,32 +33,27 @@ func ec2New() {
 	arg.MustParse(&args)
 	ctx, cancel := context.WithCancel(context.Background())
 	lib.SignalHandler(cancel)
-	fleet, err := lib.RequestSpotFleet(ctx, &lib.FleetConfig{
-		NumInstances:  args.Num,
-		AmiID:         args.Ami,
-		InstanceTypes: []string{args.Type},
-		Name:          args.Name,
-		Key:           args.Key,
-		SgID:          args.SgID,
-		SubnetIds:     args.SubnetIds,
-		Gigs:          args.Gigs,
-	})
-	if err != nil {
-		lib.Logger.Fatalf("error: %s\n", err)
+	var instances []*ec2.Instance
+	var err error
+	if args.Spot {
+		instances, err = lib.RequestSpotFleet(ctx, &lib.FleetConfig{
+			NumInstances:  args.Num,
+			AmiID:         args.Ami,
+			InstanceTypes: []string{args.Type},
+			Name:          args.Name,
+			Key:           args.Key,
+			SgID:          args.SgID,
+			SubnetIds:     args.SubnetIds,
+			Gigs:          args.Gigs,
+		})
+	} else {
+		panic("todo")
 	}
-	var instanceIDs []string
-	fleetInstances, err := lib.RetryDescribeSpotFleetActiveInstances(ctx, fleet.SpotFleetRequestId)
-	if err != nil {
-		lib.Logger.Fatalf("error: %s\n", err)
-	}
-	for _, instance := range fleetInstances {
-		instanceIDs = append(instanceIDs, *instance.InstanceId)
-	}
-	instances, err := lib.RetryDescribeInstances(ctx, instanceIDs)
 	if err != nil {
 		lib.Logger.Fatalf("error: %s\n", err)
 	}
 	for _, instance := range instances {
 		fmt.Println(*instance.InstanceId)
 	}
+
 }
