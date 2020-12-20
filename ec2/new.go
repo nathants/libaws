@@ -37,7 +37,7 @@ func ec2New() {
 	var instances []*ec2.Instance
 	var err error
 	if args.SpotStrategy != "" {
-		instances, err = lib.RequestSpotFleet(ctx, args.SpotStrategy, &lib.FleetConfig{
+		instances, err = lib.EC2RequestSpotFleet(ctx, args.SpotStrategy, &lib.FleetConfig{
 			NumInstances:  args.Num,
 			AmiID:         args.Ami,
 			InstanceTypes: []string{args.Type},
