@@ -3,7 +3,7 @@
 all: cli-aws
 
 cli-aws:
-	go build -o cli-aws main.go
+	go build -o cli-aws cmd/main.go
 
 check: check-deps check-static check-ineff check-err check-vet check-lint check-bodyclose check-nargs check-fmt check-shadow
 
