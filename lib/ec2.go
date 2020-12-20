@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ type FleetConfig struct {
 	InstanceTypes []string
 	SubnetIds     []string
 	Gigs          int
+	Init          string
 }
 
 func RetryDescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
@@ -281,6 +283,12 @@ func RequestSpotFleet(ctx context.Context, spotStrategy string, input *FleetConf
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	if input.Init != "" {
+		user := "ubuntu" // TODO pick ami-id and user automatically like aws-ec2-new
+		input.Init = base64.StdEncoding.EncodeToString([]byte(input.Init))
+		input.Init = fmt.Sprintf("#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", input.Init, user)
+		input.Init = base64.StdEncoding.EncodeToString([]byte(input.Init))
+	}
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
 	for _, subnetId := range input.SubnetIds {
 		for _, instanceType := range input.InstanceTypes {
@@ -289,6 +297,7 @@ func RequestSpotFleet(ctx context.Context, spotStrategy string, input *FleetConf
 				KeyName:        aws.String(input.Key),
 				SubnetId:       aws.String(subnetId),
 				InstanceType:   aws.String(instanceType),
+				UserData:       aws.String(input.Init),
 				SecurityGroups: []*ec2.GroupIdentifier{{GroupId: aws.String(input.SgID)}},
 				BlockDeviceMappings: []*ec2.BlockDeviceMapping{{
 					DeviceName: aws.String("/dev/sda1"),

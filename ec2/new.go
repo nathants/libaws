@@ -22,6 +22,7 @@ type newArgs struct {
 	SgID         string   `arg:"--sg"`
 	SubnetIds    []string `arg:"--subnets"`
 	Gigs         int      `arg:"-g,--gigs" default:"16"`
+	Init         string   `arg:"-i,--init" default:"" help:"cloud init bash script"`
 }
 
 func (newArgs) Description() string {
@@ -45,6 +46,7 @@ func ec2New() {
 			SgID:          args.SgID,
 			SubnetIds:     args.SubnetIds,
 			Gigs:          args.Gigs,
+			Init:          args.Init,
 		})
 	} else {
 		panic("todo")
