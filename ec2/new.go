@@ -52,7 +52,7 @@ func ec2New() {
 		panic("todo")
 	}
 	if err != nil {
-		lib.Logger.Fatalf("error: %s\n", err)
+		lib.Logger.Fatal("error:", err)
 	}
 	for _, instance := range instances {
 		fmt.Println(*instance.InstanceId)

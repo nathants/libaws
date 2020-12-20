@@ -92,6 +92,37 @@ func EC2RetryDescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequ
 	return instances, nil
 }
 
+func EC2RetryListInstances(ctx context.Context) ([]*ec2.Instance, error) {
+	Logger.Println("list instances")
+	var instances []*ec2.Instance
+	var nextToken *string
+	for {
+		var output *ec2.DescribeInstancesOutput
+		err := Retry(ctx, func() error {
+			var err error
+			output, err = EC2Client().DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
+				NextToken: nextToken,
+			})
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		for _, reservation := range output.Reservations {
+			instances = append(instances, reservation.Instances...)
+		}
+		if output.NextToken == nil {
+			break
+		}
+		nextToken = output.NextToken
+	}
+	return instances, nil
+}
+
 func EC2RetryDescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Instance, error) {
 	Logger.Println("describe instances for", len(instanceIDs), "instanceIDs")
 	Assert(len(instanceIDs) < 1000, "cannot list 1000 instances by id")

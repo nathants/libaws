@@ -2,6 +2,7 @@ package ec2
 
 import (
 	"context"
+	"fmt"
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
@@ -21,5 +22,11 @@ func ec2Ls() {
 	var args lsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	_ = ctx
+	instances, err := lib.EC2RetryListInstances(ctx)
+	if err != nil {
+		lib.Logger.Fatal("error:", err)
+	}
+	for _, instance := range instances {
+		fmt.Println(*instance.InstanceId, *instance.State.Name, *instance.InstanceType)
+	}
 }
