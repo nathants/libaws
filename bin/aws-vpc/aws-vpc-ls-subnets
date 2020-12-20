@@ -9,7 +9,7 @@ def main(vpc_id, yes=False):
         vpc_id = vpcs[0].id
     vpc = aws.resource('ec2').Vpc(vpc_id)
     for subnet in vpc.subnets.all():
-        print(subnet.id)
+        print(subnet.availability_zone, subnet.id)
 
 if __name__ == '__main__':
     with aws.setup():
