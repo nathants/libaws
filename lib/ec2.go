@@ -219,7 +219,7 @@ func spotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) err
 	}
 	if len(errors) != 0 {
 		err = fmt.Errorf(strings.Join(errors, "\n"))
-		Logger.Println("error:", err)
+		Logger.Println("error: spot fleet history error:", err)
 		return err
 	}
 	return nil
@@ -270,7 +270,10 @@ func WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) 
 	return err
 }
 
-func RequestSpotFleet(ctx context.Context, input *FleetConfig) ([]*ec2.Instance, error) {
+func RequestSpotFleet(ctx context.Context, spotStrategy string, input *FleetConfig) ([]*ec2.Instance, error) {
+	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
+		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
+	}
 	role, err := IAMClient().GetRoleWithContext(ctx, &iam.GetRoleInput{
 		RoleName: aws.String("aws-ec2-spot-fleet-tagging-role"),
 	})
@@ -278,11 +281,9 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) ([]*ec2.Instance,
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	var poolSize int64
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
 	for _, subnetId := range input.SubnetIds {
 		for _, instanceType := range input.InstanceTypes {
-			poolSize++
 			launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
 				ImageId:        aws.String(input.AmiID),
 				KeyName:        aws.String(input.Key),
@@ -314,14 +315,13 @@ func RequestSpotFleet(ctx context.Context, input *FleetConfig) ([]*ec2.Instance,
 	Logger.Println("requst spot fleet", DropLinesWithAny(Pformat(launchSpecs[0]), "null", "SubnetId", "InstanceType"))
 	spotFleet, err := EC2Client().RequestSpotFleetWithContext(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2.SpotFleetRequestConfigData{
 		IamFleetRole:                     role.Role.Arn,
-		AllocationStrategy:               aws.String(ec2.AllocationStrategyLowestPrice),
-		InstanceInterruptionBehavior:     aws.String(ec2.InstanceInterruptionBehaviorTerminate),
-		ReplaceUnhealthyInstances:        aws.Bool(false),
 		LaunchSpecifications:             launchSpecs,
-		TargetCapacity:                   aws.Int64(int64(input.NumInstances)),
+		AllocationStrategy:               aws.String(spotStrategy),
+		InstanceInterruptionBehavior:     aws.String(ec2.InstanceInterruptionBehaviorTerminate),
 		Type:                             aws.String(ec2.FleetTypeRequest),
+		TargetCapacity:                   aws.Int64(int64(input.NumInstances)),
+		ReplaceUnhealthyInstances:        aws.Bool(false),
 		TerminateInstancesWithExpiration: aws.Bool(false),
-		InstancePoolsToUseCount: aws.Int64(poolSize),
 	}})
 	if err != nil {
 		Logger.Println("error:", err)

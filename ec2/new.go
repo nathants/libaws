@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/nathants/cli-aws/lib"
 )
 
 func init() {
@@ -13,15 +13,15 @@ func init() {
 }
 
 type newArgs struct {
-	Name      string   `arg:"positional"`
-	Num       int      `arg:"-n,--num" default:"1"`
-	Type      string   `arg:"-t,--type"`
-	Ami       string   `arg:"-a,--ami"`
-	Key       string   `arg:"-k,--key"`
-	Spot      bool     `arg:"-s,--spot" default:"false"`
-	SgID      string   `arg:"--sg"`
-	SubnetIds []string `arg:"--subnets"`
-	Gigs      int      `arg:"-g,--gigs" default:"16"`
+	Name         string   `arg:"positional"`
+	Num          int      `arg:"-n,--num" default:"1"`
+	Type         string   `arg:"-t,--type"`
+	Ami          string   `arg:"-a,--ami"`
+	Key          string   `arg:"-k,--key"`
+	SpotStrategy string   `arg:"-s,--spot" default:"" help:"lowestPrice|diversified|capacityOptimized"`
+	SgID         string   `arg:"--sg"`
+	SubnetIds    []string `arg:"--subnets"`
+	Gigs         int      `arg:"-g,--gigs" default:"16"`
 }
 
 func (newArgs) Description() string {
@@ -35,8 +35,8 @@ func ec2New() {
 	lib.SignalHandler(cancel)
 	var instances []*ec2.Instance
 	var err error
-	if args.Spot {
-		instances, err = lib.RequestSpotFleet(ctx, &lib.FleetConfig{
+	if args.SpotStrategy != "" {
+		instances, err = lib.RequestSpotFleet(ctx, args.SpotStrategy, &lib.FleetConfig{
 			NumInstances:  args.Num,
 			AmiID:         args.Ami,
 			InstanceTypes: []string{args.Type},
