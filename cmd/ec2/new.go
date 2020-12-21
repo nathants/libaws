@@ -1,4 +1,4 @@
-package ec2
+package cliaws
 
 import (
 	"context"

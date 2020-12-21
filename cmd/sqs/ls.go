@@ -1,6 +1,7 @@
 package cliaws
 
 import (
+	"strings"
 	"context"
 	"fmt"
 	"github.com/alexflint/go-arg"
@@ -8,25 +9,26 @@ import (
 )
 
 func init() {
-	lib.Commands["ec2-ls"] = ec2Ls
+	lib.Commands["sqs-ls"] = sqsLs
 }
 
 type lsArgs struct {
 }
 
 func (lsArgs) Description() string {
-	return "\nlist ec2 instances\n"
+	return "\nlist sqs queues\n"
 }
 
-func ec2Ls() {
+func sqsLs() {
 	var args lsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	instances, err := lib.EC2RetryListInstances(ctx)
+	queues, err := lib.SqsListQueues(ctx)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+	    lib.Logger.Fatal("error:", err)
 	}
-	for _, instance := range instances {
-		fmt.Println(*instance.InstanceId, *instance.State.Name, *instance.InstanceType)
+	for _, queue := range queues {
+		parts := strings.Split(*queue, "/")
+		fmt.Println(parts[len(parts)-1])
 	}
 }

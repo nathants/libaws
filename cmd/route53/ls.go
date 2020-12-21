@@ -1,4 +1,4 @@
-package route53
+package cliaws
 
 import (
 	"context"

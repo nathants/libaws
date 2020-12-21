@@ -5,6 +5,7 @@ import (
 	"github.com/nathants/cli-aws/lib"
 	_ "github.com/nathants/cli-aws/cmd/ec2"
 	_ "github.com/nathants/cli-aws/cmd/route53"
+	_ "github.com/nathants/cli-aws/cmd/sqs"
 	"os"
 	"sort"
 )
