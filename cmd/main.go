@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	_ "github.com/nathants/cli-aws/ec2"
 	"github.com/nathants/cli-aws/lib"
-	_ "github.com/nathants/cli-aws/route53"
+	_ "github.com/nathants/cli-aws/cmd/ec2"
+	_ "github.com/nathants/cli-aws/cmd/route53"
 	"os"
 	"sort"
 )
