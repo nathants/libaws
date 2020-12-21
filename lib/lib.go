@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,12 +13,11 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"bytes"
 
 	"github.com/avast/retry-go"
 )
 
-type LogWriter struct {}
+type LogWriter struct{}
 
 func (LogWriter) Write(p []byte) (int, error) {
 	sep1 := []byte(".go:")

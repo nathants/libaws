@@ -1,10 +1,11 @@
 package lib
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"os"
 	"sync"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 var Commands = make(map[string]func())
@@ -23,4 +24,9 @@ func Session() *session.Session {
 		sess = session.Must(session.NewSession(&aws.Config{}))
 	}
 	return sess
+}
+
+func Region() string {
+	sess := Session()
+	return *sess.Config.Region
 }

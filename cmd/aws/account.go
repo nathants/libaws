@@ -3,33 +3,29 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
 
 func init() {
-	lib.Commands["sqs-ls"] = sqsLs
+	lib.Commands["account"] = account
 }
 
 type lsArgs struct {
 }
 
 func (lsArgs) Description() string {
-	return "\nlist sqs queues\n"
+	return "\ncurrent account id\n"
 }
 
-func sqsLs() {
+func account() {
 	var args lsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	queues, err := lib.SQSListQueues(ctx)
+	account, err := lib.Account(ctx)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		panic(err)
 	}
-	for _, queue := range queues {
-		parts := strings.Split(*queue, "/")
-		fmt.Println(parts[len(parts)-1])
-	}
+	fmt.Println(account)
 }

@@ -1,0 +1,25 @@
+package cliaws
+
+import (
+	"fmt"
+
+	"github.com/alexflint/go-arg"
+	"github.com/nathants/cli-aws/lib"
+)
+
+func init() {
+	lib.Commands["region"] = region
+}
+
+type regionArgs struct {
+}
+
+func (regionArgs) Description() string {
+	return "\ncurrent region id\n"
+}
+
+func region() {
+	var args regionArgs
+	arg.MustParse(&args)
+	fmt.Println(lib.Region())
+}

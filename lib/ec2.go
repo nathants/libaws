@@ -268,7 +268,7 @@ func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num in
 		}
 		for _, state := range ec2FailedStates {
 			if state == *config.SpotFleetRequestState {
-				err := fmt.Errorf("spot fleet request failed with state: %s", state)
+				err = fmt.Errorf("spot fleet request failed with state: %s", state)
 				Logger.Println("error:", err)
 				return err
 			}
