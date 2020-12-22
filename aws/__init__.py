@@ -49,7 +49,10 @@ def setup():
     try:
         yield
     except AssertionError as e:
-        print(red('error: ' + e.args[0] if e.args else traceback.format_exc().splitlines()[-2].strip()))
+        try:
+            print(red('error: ' + e.args[0] if e.args else traceback.format_exc().splitlines()[-2].strip()))
+        except TypeError:
+            raise e from None
         sys.exit(1)
     except:
         raise
