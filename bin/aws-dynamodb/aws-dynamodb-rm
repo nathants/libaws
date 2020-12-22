@@ -14,7 +14,7 @@ def main(table, *keys):
         TableName=table,
         Key={name: {type.upper(): value}
              for key in keys
-             for name, type, value in [key.split(':')]}
+             for name, type, value in [key.split(':', 2)]}
     )
 
 if __name__ == '__main__':

@@ -23,7 +23,7 @@ def main(table, *keys, inconsistent=False, verbose=False):
         ConsistentRead=not inconsistent,
         Key={name: {type.upper(): value}
              for key in keys
-             for name, type, value in [key.split(':')]}
+             for name, type, value in [key.split(':', 2)]}
     )
     try:
         item = item['Item']
