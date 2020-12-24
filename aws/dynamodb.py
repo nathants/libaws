@@ -3,6 +3,16 @@ import shell as sh
 from util import dicts
 from aws import retry, stderr, client
 
+def unverbose(v):
+    if isinstance(v, dict):
+        if len(v) == 1 and list(v)[0] in ['S', 'N', 'B', 'L', 'M', 'BOOL']:
+            v = list(v.values())[0]
+        else:
+            for k2, v2 in list(v.items()):
+                if v2 == {'NULL': True}:
+                    v.pop(k2)
+    return v
+
 def arn(name):
     return f'arn:aws:dynamodb:{aws.region()}:{aws.account()}:table/{name}'
 

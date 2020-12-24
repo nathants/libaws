@@ -3,13 +3,9 @@ import json
 import sys
 import argh
 import aws
+import aws.dynamodb
 import util.iter
 from util.retry import retry
-
-def f(v):
-    if isinstance(v, dict) and len(v) == 1 and list(v)[0] in ['S', 'N', 'B', 'L', 'M', 'BOOL']:
-        v = list(v.values())[0]
-    return v
 
 def main(table, *keys, inconsistent=False, verbose=False):
     """
@@ -33,8 +29,7 @@ def main(table, *keys, inconsistent=False, verbose=False):
         if verbose:
             print(json.dumps(item))
         else:
-            print(json.dumps(util.iter.walk(f, item)))
-
+            print(json.dumps(util.iter.walk(aws.dynamodb.unverbose, item)))
 
 if __name__ == '__main__':
     with aws.setup():
