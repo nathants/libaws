@@ -48,16 +48,16 @@ func ec2New() {
 	var err error
 	if args.SpotStrategy != "" {
 		instances, err = lib.EC2RequestSpotFleet(ctx, args.SpotStrategy, &lib.EC2FleetConfig{
-			NumInstances:  args.Num,
-			AmiID:         args.Ami,
-			InstanceTypes: []string{args.Type},
-			Name:          args.Name,
-			Key:           args.Key,
-			SgID:          args.SgID,
-			SubnetIds:     args.SubnetIds,
-			Gigs:          args.Gigs,
-			Init:          args.Init,
-			Tags:          tags,
+			NumInstances: args.Num,
+			AmiID:        args.Ami,
+			InstanceType: args.Type,
+			Name:         args.Name,
+			Key:          args.Key,
+			SgID:         args.SgID,
+			SubnetIds:    args.SubnetIds,
+			Gigs:         args.Gigs,
+			Init:         args.Init,
+			Tags:         tags,
 		})
 	} else {
 		panic("todo")

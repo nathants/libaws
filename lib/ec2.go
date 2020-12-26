@@ -31,16 +31,16 @@ type EC2Tag struct {
 }
 
 type EC2FleetConfig struct {
-	NumInstances  int
-	Name          string
-	SgID          string
-	AmiID         string
-	Key           string
-	InstanceTypes []string
-	SubnetIds     []string
-	Gigs          int
-	Init          string
-	Tags          []EC2Tag
+	NumInstances int
+	Name         string
+	SgID         string
+	AmiID        string
+	Key          string
+	InstanceType string
+	SubnetIds    []string
+	Gigs         int
+	Init         string
+	Tags         []EC2Tag
 }
 
 func EC2RetryDescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
@@ -337,33 +337,31 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Fle
 		})
 	}
 	for _, subnetId := range input.SubnetIds {
-		for _, instanceType := range input.InstanceTypes {
-			launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
-				ImageId:        aws.String(input.AmiID),
-				KeyName:        aws.String(input.Key),
-				SubnetId:       aws.String(subnetId),
-				InstanceType:   aws.String(instanceType),
-				UserData:       aws.String(input.Init),
-				SecurityGroups: []*ec2.GroupIdentifier{{GroupId: aws.String(input.SgID)}},
-				BlockDeviceMappings: []*ec2.BlockDeviceMapping{{
-					DeviceName: aws.String("/dev/sda1"),
-					Ebs: &ec2.EbsBlockDevice{
-						DeleteOnTermination: aws.Bool(true),
-						Encrypted:           aws.Bool(true),
-						VolumeType:          aws.String(ec2.VolumeTypeGp3),
-						Iops:                aws.Int64(3000),
-						Throughput:          aws.Int64(125),
-						VolumeSize:          aws.Int64(int64(input.Gigs)),
-					},
-				}},
-				TagSpecifications: []*ec2.SpotFleetTagSpecification{{
-					ResourceType: aws.String(ec2.ResourceTypeInstance),
-					Tags:         tags,
-				}},
-			})
-		}
+		launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
+			ImageId:        aws.String(input.AmiID),
+			KeyName:        aws.String(input.Key),
+			SubnetId:       aws.String(subnetId),
+			InstanceType:   aws.String(input.InstanceType),
+			UserData:       aws.String(input.Init),
+			SecurityGroups: []*ec2.GroupIdentifier{{GroupId: aws.String(input.SgID)}},
+			BlockDeviceMappings: []*ec2.BlockDeviceMapping{{
+				DeviceName: aws.String("/dev/sda1"),
+				Ebs: &ec2.EbsBlockDevice{
+					DeleteOnTermination: aws.Bool(true),
+					Encrypted:           aws.Bool(true),
+					VolumeType:          aws.String(ec2.VolumeTypeGp3),
+					Iops:                aws.Int64(3000),
+					Throughput:          aws.Int64(125),
+					VolumeSize:          aws.Int64(int64(input.Gigs)),
+				},
+			}},
+			TagSpecifications: []*ec2.SpotFleetTagSpecification{{
+				ResourceType: aws.String(ec2.ResourceTypeInstance),
+				Tags:         tags,
+			}},
+		})
 	}
-	Logger.Println("types:", input.InstanceTypes)
+	Logger.Println("type:", input.InstanceType)
 	Logger.Println("subnets:", input.SubnetIds)
 	Logger.Println("requst spot fleet", DropLinesWithAny(Pformat(launchSpecs[0]), "null", "SubnetId", "InstanceType"))
 	spotFleet, err := EC2Client().RequestSpotFleetWithContext(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2.SpotFleetRequestConfigData{
