@@ -25,7 +25,12 @@ func EC2Client() *ec2.EC2 {
 	return ec2Client
 }
 
-type FleetConfig struct {
+type EC2Tag struct {
+	Name  string
+	Value string
+}
+
+type EC2FleetConfig struct {
 	NumInstances  int
 	Name          string
 	SgID          string
@@ -35,6 +40,7 @@ type FleetConfig struct {
 	SubnetIds     []string
 	Gigs          int
 	Init          string
+	Tags          []EC2Tag
 }
 
 func EC2RetryDescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
@@ -303,7 +309,7 @@ func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num in
 	return err
 }
 
-func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *FleetConfig) ([]*ec2.Instance, error) {
+func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2FleetConfig) ([]*ec2.Instance, error) {
 	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
 	}
@@ -321,6 +327,15 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *FleetC
 		input.Init = base64.StdEncoding.EncodeToString([]byte(input.Init))
 	}
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
+	tags := []*ec2.Tag{
+		{Key: aws.String("Name"), Value: aws.String(input.Name)},
+	}
+	for _, tag := range input.Tags {
+		tags = append(tags, &ec2.Tag{
+			Key:   aws.String(tag.Name),
+			Value: aws.String(tag.Value),
+		})
+	}
 	for _, subnetId := range input.SubnetIds {
 		for _, instanceType := range input.InstanceTypes {
 			launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
@@ -343,9 +358,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *FleetC
 				}},
 				TagSpecifications: []*ec2.SpotFleetTagSpecification{{
 					ResourceType: aws.String(ec2.ResourceTypeInstance),
-					Tags: []*ec2.Tag{
-						{Key: aws.String("Name"), Value: aws.String(input.Name)},
-					},
+					Tags:         tags,
 				}},
 			})
 		}

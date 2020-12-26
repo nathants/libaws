@@ -6,6 +6,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/cli-aws/lib"
+	"strings"
 )
 
 func init() {
@@ -23,6 +24,7 @@ type newArgs struct {
 	SubnetIds    []string `arg:"--subnets"`
 	Gigs         int      `arg:"-g,--gigs" default:"16"`
 	Init         string   `arg:"-i,--init" default:"" help:"cloud init bash script"`
+	Tags         []string `arg:"--tags" help:"key=value"`
 }
 
 func (newArgs) Description() string {
@@ -35,9 +37,17 @@ func ec2New() {
 	ctx, cancel := context.WithCancel(context.Background())
 	lib.SignalHandler(cancel)
 	var instances []*ec2.Instance
+	var tags []lib.EC2Tag
+	for _, tag := range args.Tags {
+		parts := strings.Split(tag, "=")
+		tags = append(tags, lib.EC2Tag{
+			Name:  parts[0],
+			Value: parts[1],
+		})
+	}
 	var err error
 	if args.SpotStrategy != "" {
-		instances, err = lib.EC2RequestSpotFleet(ctx, args.SpotStrategy, &lib.FleetConfig{
+		instances, err = lib.EC2RequestSpotFleet(ctx, args.SpotStrategy, &lib.EC2FleetConfig{
 			NumInstances:  args.Num,
 			AmiID:         args.Ami,
 			InstanceTypes: []string{args.Type},
@@ -47,6 +57,7 @@ func ec2New() {
 			SubnetIds:     args.SubnetIds,
 			Gigs:          args.Gigs,
 			Init:          args.Init,
+			Tags:          tags,
 		})
 	} else {
 		panic("todo")
@@ -57,5 +68,4 @@ func ec2New() {
 	for _, instance := range instances {
 		fmt.Println(*instance.InstanceId)
 	}
-
 }
