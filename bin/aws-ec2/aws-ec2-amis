@@ -2,6 +2,7 @@
 import argh
 import sys
 import aws
+from aws import stderr
 
 def main(name, *tags, id_only=False, most_recent=False):
     assert len(tags) in [0, 1], 'only one tag currently supported'
@@ -29,7 +30,7 @@ def main(name, *tags, id_only=False, most_recent=False):
             description = ami.description if ami.description != name else '-'
             tag = '%(Key)s=%(Value)s' % ami.tags[0] if ami.tags else '-'
             return ' '.join([ami.image_id, date, description, tag])
-        print('id date description tag')
+        stderr('id date description tag')
         return [f(ami) for ami in amis]
 
 if __name__ == '__main__':
