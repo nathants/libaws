@@ -60,6 +60,8 @@ def main(*selectors,
     assert instances, 'didnt find any instances'
     if cmd == '-':
         cmd = sys.stdin.read()
+    elif stdin == '-':
+        stdin = sys.stdin.read()
     if os.path.isfile(cmd):
         with open(cmd) as f:
             cmd = f.read()
