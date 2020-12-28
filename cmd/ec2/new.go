@@ -19,12 +19,13 @@ type newArgs struct {
 	Type         string   `arg:"-t,--type"`
 	Ami          string   `arg:"-a,--ami"`
 	Key          string   `arg:"-k,--key"`
-	SpotStrategy string   `arg:"-s,--spot" default:"" help:"lowestPrice|diversified|capacityOptimized"`
+	SpotStrategy string   `arg:"-s,--spot" help:"lowestPrice|diversified|capacityOptimized"`
 	SgID         string   `arg:"--sg"`
 	SubnetIds    []string `arg:"--subnets"`
 	Gigs         int      `arg:"-g,--gigs" default:"16"`
-	Init         string   `arg:"-i,--init" default:"" help:"cloud init bash script"`
+	Init         string   `arg:"-i,--init" help:"cloud init bash script"`
 	Tags         []string `arg:"--tags" help:"key=value"`
+	Profile      string   `arg:"-p,--profile" help:"iam instance profile name"`
 }
 
 func (newArgs) Description() string {
@@ -58,6 +59,7 @@ func ec2New() {
 			Gigs:         args.Gigs,
 			Init:         args.Init,
 			Tags:         tags,
+			Profile:      args.Profile,
 		})
 	} else {
 		panic("todo")

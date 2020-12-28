@@ -41,6 +41,7 @@ type EC2FleetConfig struct {
 	Gigs         int
 	Init         string
 	Tags         []EC2Tag
+	Profile      string
 }
 
 func EC2RetryDescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
@@ -338,12 +339,13 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Fle
 	}
 	for _, subnetId := range input.SubnetIds {
 		launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
-			ImageId:        aws.String(input.AmiID),
-			KeyName:        aws.String(input.Key),
-			SubnetId:       aws.String(subnetId),
-			InstanceType:   aws.String(input.InstanceType),
-			UserData:       aws.String(input.Init),
-			SecurityGroups: []*ec2.GroupIdentifier{{GroupId: aws.String(input.SgID)}},
+			ImageId:            aws.String(input.AmiID),
+			KeyName:            aws.String(input.Key),
+			SubnetId:           aws.String(subnetId),
+			InstanceType:       aws.String(input.InstanceType),
+			UserData:           aws.String(input.Init),
+			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{Name: aws.String(input.Profile)},
+			SecurityGroups:     []*ec2.GroupIdentifier{{GroupId: aws.String(input.SgID)}},
 			BlockDeviceMappings: []*ec2.BlockDeviceMapping{{
 				DeviceName: aws.String("/dev/sda1"),
 				Ebs: &ec2.EbsBlockDevice{
