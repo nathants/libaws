@@ -53,26 +53,38 @@ set +x
 """
 
 _timeout_init = """
-echo '# timeout will call this script before it `sudo poweroff`s, and wait 60 seconds for this script to complete' >> /tmp/timeout.sh
-echo '
-    warning="seconds remaining until timeout poweroff. tail -f /var/log/timeout.log to follow, increase /tmp/timeout.seconds to delay, or kill timeout.poweroff.sh to cancel."
-    echo {} > /tmp/timeout.seconds
+echo '# timeout will call this script before it `sudo poweroff`s, and wait 60 seconds for this script to complete' | sudo tee -a /etc/timeout.sh
+echo '#!/bin/bash
+    warning="seconds remaining until timeout poweroff. [sudo journalctl -u timeout.service -f] to follow. increase /etc/timeout.seconds to delay. [date +%s | sudo tee /etc/timeout.start.seconds] to reset, or [sudo systemctl {{stop,disable}} timeout.service] to cancel."
+    echo {} | sudo tee /etc/timeout.seconds
     # count down until timeout
-    start=$(date +%s)
+    if [ ! -f /etc/timeout.true_start.seconds ]; then
+        date +%s | sudo tee /etc/timeout.true_start.seconds
+    fi
+    if [ ! -f /etc/timeout.start.seconds ]; then
+        date +%s | sudo tee /etc/timeout.start.seconds
+    fi
     while true; do
+        start=$(cat /etc/timeout.start.seconds)
+        true_start=$(cat /etc/timeout.true_start.seconds)
         now=$(date +%s)
         duration=$(($now - $start))
-        timeout=$(cat /tmp/timeout.seconds)
-        (($duration > $timeout)) && break
+        true_duration=$(($now - $true_start))
+        timeout=$(cat /etc/timeout.seconds)
+        if (($duration > $timeout)); then
+            break
+        fi
         remaining=$(($timeout - $duration))
-        (($remaining <= 300)) && (($remaining % 60 == 0)) && wall "$remaining $warning"
-        echo uptime seconds: $duration | sudo tee /var/log/timeout.log
-        echo poweroff in seconds: $remaining | sudo tee -a /var/log/timeout.log
+        if (($remaining <= 300)) && (($remaining % 60 == 0)); then
+            wall "$remaining $warning"
+        fi
+        echo uptime seconds: $true_duration
+        echo poweroff in seconds: $remaining
         sleep 5
     done
     # run timeout script and wait 60 seconds
-    echo run: bash /tmp/timeout.sh > /var/log/timeout.log
-    bash /tmp/timeout.sh &
+    echo run: bash /etc/timeout.sh
+    bash /etc/timeout.sh &
     pid=$!
     start=$(date +%s)
     overtime=60
@@ -82,13 +94,29 @@ echo '
         duration=$(($now - $start))
         (($duration > $overtime)) && break
         remaining=$(($overtime - $duration))
-        echo seconds until poweroff: $remaining > /var/log/timeout.log
+        echo seconds until poweroff: $remaining
         sleep 1
     done
-    sudo poweroff
-' > /tmp/timeout.poweroff.sh
-bash /tmp/timeout.poweroff.sh &> /dev/null </dev/null &
-disown %1
+    sudo poweroff # sudo poweroff terminates spot instances by default
+' |  sudo tee /usr/local/bin/timeout
+sudo chmod +x /usr/local/bin/timeout
+
+echo '[Unit]
+Description=timeout
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/timeout
+User=root
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+' | sudo tee /etc/systemd/system/timeout.service
+
+sudo systemctl daemon-reload
+sudo systemctl start timeout.service
+sudo systemctl enable timeout.service
 """
 
 ubuntus = {'bionic', 'xenial', 'trusty', 'eoan', 'focal'}
@@ -294,7 +322,7 @@ def main(name: 'name of the instance', # type: ignore
          spot: 'use spot instances'                    = False, # type: ignore
          seconds_timeout: ( # type: ignore
              'will `sudo poweroff` after this many '
-             'seconds. calls `bash /tmp/timeout.sh` '
+             'seconds. calls `bash /etc/timeout.sh` '
              'if it exists and waits 60 seconds for '
              'it to exit before calling `sudo poweroff`. '
              'set to 0 to disable. note: instance '
