@@ -44,11 +44,11 @@ disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sor
  echo w # Write changes
 ) | sudo fdisk $disk
 sleep 5
-yes | sudo mkfs -t ext4 %(inodes)s ${disk}p1
+yes | sudo mkfs -t ext4 -E nodiscard %(inodes)s ${disk}p1
 sudo mkdir -p /mnt
-sudo mount -o discard,noatime ${disk}p1 /mnt
+sudo mount -o nodiscard,noatime ${disk}p1 /mnt
 sudo chown -R $(whoami):$(whoami) /mnt
-echo ${disk}p1 /mnt ext4 discard,noatime 0 1 | sudo tee -a /etc/fstab
+echo ${disk}p1 /mnt ext4 nodiscard,noatime 0 1 | sudo tee -a /etc/fstab
 set +x
 """
 
