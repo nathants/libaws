@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argh
 import aws
+from aws import stderr
 
 def main(id_only=False):
     amis = aws.resource('ec2').images.filter(
@@ -21,7 +22,7 @@ def main(id_only=False):
                 description = ami.description or '-' if ami.description != name else '-'
                 tags = ','.join('%(Key)s=%(Value)s' % tag for tag in ami.tags) if ami.tags else '-'
                 return ' '.join([name, ami.image_id, date, description, tags])
-        print('id date description tags...')
+        stderr('id date description tags...')
         xs = [f(ami) for ami in amis]
         return [x for x in xs if x]
 
