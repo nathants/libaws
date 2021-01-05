@@ -35,6 +35,7 @@ type EC2FleetConfig struct {
 	Name         string
 	SgID         string
 	AmiID        string
+	UserName     string // instance ssh username
 	Key          string
 	InstanceType string
 	SubnetIds    []string
@@ -310,6 +311,34 @@ func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num in
 	return err
 }
 
+const nvmeInit = `
+# pick the first nvme drive which is NOT mounted as / and prepare that as /mnt
+set -x
+while true; do
+    echo 'wait for /dev/nvme*'
+    if sudo fdisk -l | grep /dev/nvme &>/dev/null; then
+        break
+    fi
+    sleep 1
+done
+disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
+(
+ echo g # Create a new empty GPT partition table
+ echo n # Add a new partition
+ echo 1 # Partition number
+ echo   # First sector (Accept default: 1)
+ echo   # Last sector (Accept default: varies)
+ echo w # Write changes
+) | sudo fdisk $disk
+sleep 5
+yes | sudo mkfs -t ext4 -E nodiscard ${disk}p1
+sudo mkdir -p /mnt
+sudo mount -o nodiscard,noatime ${disk}p1 /mnt
+sudo chown -R $(whoami):$(whoami) /mnt
+echo ${disk}p1 /mnt ext4 nodiscard,noatime 0 1 | sudo tee -a /etc/fstab
+set +x
+`
+
 func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2FleetConfig) ([]*ec2.Instance, error) {
 	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
@@ -321,15 +350,23 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Fle
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d"} {
+		if instanceType == strings.Split(input.InstanceType, ".")[0] {
+			Logger.Println("add nvme instance store setup to init script")
+			input.Init = nvmeInit + input.Init
+			break
+		}
+	}
 	if input.Init != "" {
-		user := "ubuntu" // TODO pick ami-id and user automatically like aws-ec2-new
 		input.Init = base64.StdEncoding.EncodeToString([]byte(input.Init))
-		input.Init = fmt.Sprintf("#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", input.Init, user)
+		input.Init = fmt.Sprintf("#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", input.Init, input.UserName)
 		input.Init = base64.StdEncoding.EncodeToString([]byte(input.Init))
 	}
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
 	tags := []*ec2.Tag{
 		{Key: aws.String("Name"), Value: aws.String(input.Name)},
+		{Key: aws.String("user"), Value: aws.String(input.UserName)},
+		{Key: aws.String("creation-date"), Value: aws.String(time.Now().UTC().Format(time.RFC3339))},
 	}
 	for _, tag := range input.Tags {
 		tags = append(tags, &ec2.Tag{

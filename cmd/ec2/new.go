@@ -14,18 +14,19 @@ func init() {
 }
 
 type newArgs struct {
-	Name         string   `arg:"positional"`
+	Name         string   `arg:"positional,required"`
 	Num          int      `arg:"-n,--num" default:"1"`
-	Type         string   `arg:"-t,--type"`
-	Ami          string   `arg:"-a,--ami"`
-	Key          string   `arg:"-k,--key"`
-	SpotStrategy string   `arg:"-s,--spot" help:"lowestPrice|diversified|capacityOptimized"`
-	SgID         string   `arg:"--sg"`
-	SubnetIds    []string `arg:"--subnets"`
+	Type         string   `arg:"-t,--type,required"`
+	Ami          string   `arg:"-a,--ami,required"`
+	UserName     string   `arg:"-u,--user,required" help:"ssh user name"`
+	Key          string   `arg:"-k,--key,required"`
+	SpotStrategy string   `arg:"-s,--spot,required" help:"lowestPrice|diversified|capacityOptimized"`
+	SgID         string   `arg:"--sg,required"`
+	SubnetIds    []string `arg:"--subnets,required"`
 	Gigs         int      `arg:"-g,--gigs" default:"16"`
-	Init         string   `arg:"-i,--init" help:"cloud init bash script"`
+	Init         string   `arg:"-i,--init,required" help:"cloud init bash script"`
 	Tags         []string `arg:"--tags" help:"key=value"`
-	Profile      string   `arg:"-p,--profile" help:"iam instance profile name"`
+	Profile      string   `arg:"-p,--profile,required" help:"iam instance profile name"`
 }
 
 func (newArgs) Description() string {
@@ -51,6 +52,7 @@ func ec2New() {
 		instances, err = lib.EC2RequestSpotFleet(ctx, args.SpotStrategy, &lib.EC2FleetConfig{
 			NumInstances: args.Num,
 			AmiID:        args.Ami,
+			UserName:     args.UserName,
 			InstanceType: args.Type,
 			Name:         args.Name,
 			Key:          args.Key,
