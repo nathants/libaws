@@ -34,6 +34,7 @@ def ssh_user(*instances):
         assert False, 'instances should have a tag "user=<username>"'
     assert len(users), 'no user tag found: %s' % '\n '.join(format(i) for i in instances)
     assert len(users) == 1, 'cannot operate on instances with heterogeneous users: %s' % users
+    assert list(users)[0] != '', 'no user tag found: %s' % '\n '.join(format(i) for i in instances)
     return users.pop()
 
 def tags(obj):
