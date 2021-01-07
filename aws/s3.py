@@ -1,20 +1,26 @@
 from aws import client, stderr
 import aws
-import util.iter
-
 
 def rm_bucket(name, print_fn=stderr):
     try:
-        keys = (
-            key['Key']
-            for page in client('s3').get_paginator('list_objects_v2').paginate(Bucket=name)
-            for key in page.get('Contents', [])
-        )
-        for chunk in util.iter.ichunk(keys, 1000):
-            chunk = list(chunk)
-            client('s3').delete_objects(Bucket=name, Delete={'Objects': [{'Key': key} for key in chunk]})
-            for key in chunk:
-                print_fn(f'deleted object: s3://{name}/{key}')
+        for page in client('s3').get_paginator('list_objects_v2').paginate(Bucket=name):
+            keys = [key['Key'] for key in page.get('Contents', [])]
+            if keys:
+                client('s3').delete_objects(Bucket=name, Delete={'Objects': [{'Key': key} for key in keys]})
+                for key in keys:
+                    print_fn(f'deleted object: s3://{name}/{key}')
+        for page in client('s3').get_paginator('list_object_versions').paginate(Bucket=name):
+            keys = page.get('Versions', [])
+            if keys:
+                client('s3').delete_objects(Bucket=name, Delete={'Objects': [{'Key': key['Key'], 'VersionId': key['VersionId']} for key in keys]})
+                for key in keys:
+                    print_fn(f'deleted version: s3://{name}/{key["Key"]} {key["VersionId"]}')
+            keys = page.get('DeleteMarkers', [])
+            if keys:
+                client('s3').delete_objects(Bucket=name, Delete={'Objects': [{'Key': key['Key'], 'VersionId': key['VersionId']} for key in keys]})
+                for key in keys:
+                    print_fn(f'deleted version: s3://{name}/{key["Key"]} {key["VersionId"]}')
+
         client('s3').delete_bucket(Bucket=name)
         print_fn(f'deleted bucket: s3://{name}')
     except client('s3').exceptions.NoSuchBucket:

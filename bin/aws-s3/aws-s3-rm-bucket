@@ -6,16 +6,25 @@ import shell as sh
 
 def main(name, yes=False):
     if not yes:
-        # TODO delete versions
         try:
             print(f'going to delete bucket: s3://{name}')
             resp = aws.client('s3').list_objects_v2(Bucket=name, MaxKeys=10)
+            resp_versions = aws.client('s3').list_object_versions(Bucket=name, MaxKeys=10)
         except aws.client('s3').exceptions.NoSuchBucket:
             print(f'bucket already deleted: s3://{name}')
             return
         else:
+            print('objects:')
             for key in resp.get('Contents', []):
                 print(f' s3://{name}/{key["Key"]}')
+            if resp['IsTruncated']:
+                print(' ...')
+            print()
+            print('versions:')
+            for key in resp_versions.get('Versions', []):
+                print(f' s3://{name}/{key["Key"]} {key["VersionId"]}')
+            for key in resp_versions.get('DeleteMarkers', []):
+                print(f' s3://{name}/{key["Key"]} {key["VersionId"]}')
             if resp['IsTruncated']:
                 print(' ...')
             print('\nwould you like to proceed? y/n\n')
