@@ -2,6 +2,7 @@
 import shell as sh
 import argh
 import aws
+import aws.ec2
 import sys
 
 def main(vpc_id, yes=False):
@@ -10,7 +11,7 @@ def main(vpc_id, yes=False):
         assert len(vpcs) == 1, vpcs
         vpc_id = vpcs[0].id
     vpc = aws.resource('ec2').Vpc(vpc_id)
-    print('going to delete:', aws.tags(vpc).get('Name', '<no-name>'), vpc_id)
+    print('going to delete:', aws.ec2.tags(vpc).get('Name', '<no-name>'), vpc_id)
     if not yes:
         print('\nwould you like to proceed? y/n\n')
         assert sh.getch() == 'y', 'abort'
