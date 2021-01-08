@@ -222,10 +222,11 @@ def ensure_trigger_dynamodb(name, arn_lambda, metadata, preview):
                 stderr(' preview:', table_name)
             else:
                 stream_arn = aws.dynamodb.stream_arn(table_name)
+                conflict = client('lambda').exceptions.ResourceConflictException
                 try:
-                    client('lambda').create_event_source_mapping(EventSourceArn=stream_arn, FunctionName=name, Enabled=True, **ensure_attrs)
+                    retry(client('lambda').create_event_source_mapping, conflict)(EventSourceArn=stream_arn, FunctionName=name, Enabled=True, **ensure_attrs)
                     stderr('', table_name)
-                except client('lambda').exceptions.ResourceConflictException as e:
+                except conflict as e:
                     *_, kind, uuid = e.args[0].split()
                     resp = client('lambda').get_event_source_mapping(UUID=uuid)
                     for k, v in ensure_attrs.items():

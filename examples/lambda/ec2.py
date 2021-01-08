@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # conf: concurrency 0
-# conf: memory 128
+# conf: memory 1024
 # conf: timeout 900
 # require: git+https://github.com/nathants/py-util
 # require: git+https://github.com/nathants/py-pool
@@ -34,7 +34,7 @@ def main(event, context):
 
     >>> assert uid == run(f'aws-ec2-ssh {uid} -yc "cat /tmp/name.txt"')
 
-    >>> _ = shell.run('aws-ec2-rm -y', instance_id)
+    >>> _ = shell.run('aws-ec2-rm -y', uid)
 
     >>> _ = run('aws-lambda-rm -ey', path)
     """
@@ -45,7 +45,7 @@ def main(event, context):
                          name,
                          '--ami arch',
                          '--type t3.nano',
-                         '--seconds-timeout 900',
+                         '--seconds-timeout 300',
                          '--no-wait',
                          '--init', f'"echo {name} > /tmp/name.txt"',
                          '2>&1',

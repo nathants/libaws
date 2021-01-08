@@ -51,4 +51,4 @@ for src in scripts:
     else:
         shutil.copyfile(src, dst)
         os.chmod(dst, 0o775)
-        print('copy:', dst, '=>', src, file=sys.stderr)
+        print('copy:', src, '=>', dst, file=sys.stderr)

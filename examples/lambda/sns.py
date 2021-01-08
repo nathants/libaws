@@ -14,7 +14,9 @@ def main(event, context):
     >>> path = __file__
     >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'aws-lambda-deploy {path} -y')
+    >>> _ = run(f'aws-lambda-rm -ey {path}')
+
+    >>> _ = run(f'aws-lambda-deploy {path} -y && sleep 5 # iam is slow')
 
     >>> _ = run(f"aws-sns-publish test-sns {uid}")
 

@@ -11,7 +11,10 @@ def main(short=False, name=None):
             fail = False
             print(role['RoleName'])
             if not short:
-                print(' principal:', role['AssumeRolePolicyDocument']['Statement'][0]['Principal']['Service'])
+                try:
+                    print(' principal:', role['AssumeRolePolicyDocument']['Statement'][0]['Principal']['Service'])
+                except KeyError:
+                    print(' principal:', role['AssumeRolePolicyDocument']['Statement'][0]['Principal']['AWS'])
                 policies = [policy for page in aws.client('iam').get_paginator('list_attached_role_policies').paginate(RoleName=role['RoleName']) for policy in page['AttachedPolicies']]
                 for policy in policies:
                     print(' policy:', policy["PolicyName"])

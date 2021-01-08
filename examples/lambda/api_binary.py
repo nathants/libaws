@@ -19,7 +19,9 @@ def main(event, context):
 
     >>> _ = run("head -c 64 /dev/urandom >", infile)
 
-    >>> _ = run(f'aws-lambda-deploy {path} -y')
+    >>> _ = run(f'aws-lambda-rm -ey {path}')
+
+    >>> _ = run(f'aws-lambda-deploy {path} -y && sleep 5 # iam is slow')
 
     >>> api = run('aws-lambda-api', path)
 

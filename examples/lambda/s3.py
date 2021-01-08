@@ -19,7 +19,9 @@ def main(event, context):
     >>> bucket = f'cli-aws-{str(uuid.uuid4())[-12:]}'
     >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'bucket={bucket} aws-lambda-deploy -y {path}')
+    >>> _ = run(f'aws-lambda-rm -ey {path}')
+
+    >>> _ = run(f'bucket={bucket} aws-lambda-deploy -y {path} && sleep 5 # iam is slow')
 
     >>> _ = run(f'echo | aws s3 cp - s3://{bucket}/{uid}')
 

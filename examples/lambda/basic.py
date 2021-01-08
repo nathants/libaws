@@ -18,7 +18,9 @@ def main(event, context):
     >>> path = __file__
     >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'aws-lambda-deploy {path} UUID={uid} -y')
+    >>> _ = run(f'aws-lambda-rm -ey {path}')
+
+    >>> _ = run(f'aws-lambda-deploy {path} UUID={uid} -y && sleep 5 # iam is slow')
 
     >>> _ = run('cat - > /tmp/input', stdin='{"foo": "bar"}')
 

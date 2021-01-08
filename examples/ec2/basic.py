@@ -22,7 +22,7 @@ def ec2_name():
                 run('aws-ec2-rm -y', *ids)
 
 def test_new_instance():
-    args = '--ami bionic --type t3.nano --spot 0'
+    args = '--ami bionic --type t3.nano'
     with ec2_name() as name:
         assert 1 == run('aws-ec2-ls --state running', name, warn=True)['exitcode'] # nothing exists
         instance_id = run('aws-ec2-new', args, name)                               # make 1 instance and keep the id
@@ -33,7 +33,7 @@ def test_new_instance():
         assert 1 == run('aws-ec2-ls --state running', name, warn=True)['exitcode'] # nothing exists
 
 def test_new_instances():
-    args = '--ami bionic --type t3.nano --spot 0 --num 3'
+    args = '--ami bionic --type t3.nano --num 3'
     with ec2_name() as name:
         assert 1 == run('aws-ec2-ls --state running', name, warn=True)['exitcode']    # nothing exists
         instance_ids = run('aws-ec2-new', args, name).splitlines()                    # make 3 instances and keep the ids
@@ -44,7 +44,7 @@ def test_new_instances():
         assert 1 == run('aws-ec2-ls --state running', name, warn=True)['exitcode']    # nothing exists
 
 def test_new_spot_instances():
-    args = '--ami bionic --type t3.nano --spot 1.0 --num 3'
+    args = '--ami bionic --type t3.nano --spot --num 3'
     with ec2_name() as name:
         assert 1 == run('aws-ec2-ls --state running', name, warn=True)['exitcode']    # nothing exists
         instance_ids = run('aws-ec2-new', args, name).splitlines()                    # make 3 instances and keep the ids

@@ -2,14 +2,20 @@
 import argh
 import aws
 
-def main(vpc_id, yes=False):
-    if not vpc_id.startswith('vpc-'):
-        vpcs = list(aws.resource('ec2').vpcs.filter(Filters=[{'Name': 'tag:Name', 'Values': [vpc_id]}]))
-        assert len(vpcs) == 1, vpcs
-        vpc_id = vpcs[0].id
-    vpc = aws.resource('ec2').Vpc(vpc_id)
-    for subnet in vpc.subnets.all():
-        print(subnet.availability_zone, subnet.id)
+def main(name):
+    if name.startswith('vpc-'):
+        vpc_id = name
+    else:
+        ids = []
+        for vpc in aws.resource('ec2').vpcs.filter():
+            if vpc.tags:
+                for tag in vpc.tags:
+                    if tag['Key'] == 'Name' and tag['Value'] == name:
+                        ids.append(vpc.id)
+        assert len(ids) == 1, f'didnt find exactly 1 vpc: {ids}'
+        vpc_id = ids[0]
+    for subnet in aws.client('ec2').describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['Subnets']:
+        print(subnet['AvailabilityZone'], subnet['SubnetId'])
 
 if __name__ == '__main__':
     with aws.setup():
