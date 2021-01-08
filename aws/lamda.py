@@ -119,7 +119,9 @@ def ensure_trigger_api(name, arn_lambda, metadata, preview):
                 try:
                     rest_api_id = aws.api.api_id(name)
                 except AssertionError:
-                    rest_api_id = client('apigateway').create_rest_api(name=name, endpointConfiguration={'types': ['REGIONAL']})['id']
+                    rest_api_id = client('apigateway').create_rest_api(name=name,
+                                                                       binaryMediaTypes=['*/*'],
+                                                                       endpointConfiguration={'types': ['REGIONAL']})['id']
                 parent_id = aws.api.resource_id(rest_api_id, '/')
                 resource_id = aws.api.resource_id(rest_api_id, '/{proxy+}')
                 if not resource_id:

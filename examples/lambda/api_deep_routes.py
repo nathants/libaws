@@ -25,7 +25,7 @@ def main(event, context):
 
     >>> assert '["GET", "/", null]' == run(f'curl {api} 2>/dev/null')
 
-    >>> assert '["POST", "/foo", "%s"]' % uid == run(f'curl {api}/foo -d {uid} 2>/dev/null')
+    >>> assert '["POST", "/a/b/c/d/e/f/g", "%s"]' % uid == run(f'curl {api}/a/b/c/d/e/f/g -d {uid} 2>/dev/null')
 
     >>> _ = run('aws-lambda-rm -ey', path)
 
