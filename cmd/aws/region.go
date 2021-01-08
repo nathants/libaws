@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	lib.Commands["region"] = region
+	lib.Commands["aws-region"] = region
 }
 
 type regionArgs struct {

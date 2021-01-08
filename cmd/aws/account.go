@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	lib.Commands["account"] = account
+	lib.Commands["aws-account"] = account
 }
 
 type lsArgs struct {
