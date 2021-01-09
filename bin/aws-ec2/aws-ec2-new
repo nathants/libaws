@@ -382,8 +382,6 @@ def main(name: 'name of the instance', # type: ignore
     if verbatim_init:
         init = verbatim_init
     else:
-        if type.split('.')[0] in ['i3', 'i3en', 'c5d', 'm5d', 'r5d', 'z1d']:
-            init = _nvme_init % {'inodes': f'-i {bytes_per_inode}'} + init
         if os.path.isfile(init):
             stderr('loading init script from file:', init)
             with open(init) as f:
@@ -391,6 +389,8 @@ def main(name: 'name of the instance', # type: ignore
             if init.startswith('#!'):
                 assert init.startswith('#!/bin/bash'), f'bad init script: {init[:50]}...'
                 init = '\n'.join(init.split('\n')[1:])
+        if type.split('.')[0] in ['i3', 'i3en', 'c5d', 'm5d', 'r5d', 'z1d']:
+            init = _nvme_init % {'inodes': f'-i {bytes_per_inode}'} + init
         if seconds_timeout:
             stderr(f'this instance will `sudo poweroff` after {seconds_timeout} seconds, or {round(int(seconds_timeout) / 60. / 60., 1)} hours, because of --seconds-timeout')
             init = _timeout_init.format(seconds_timeout) + init
