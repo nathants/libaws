@@ -3,8 +3,8 @@ import argh
 import aws
 import aws.s3
 
-def main(name, acl='private', versioning=False):
-    aws.s3.ensure_bucket(name, acl, versioning)
+def main(name, acl='private', versioning=False, noencrypt=False):
+    aws.s3.ensure_bucket(name, acl, versioning, noencrypt)
 
 if __name__ == '__main__':
     with aws.setup():

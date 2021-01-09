@@ -26,10 +26,11 @@ def rm_bucket(name, print_fn=stderr):
     except client('s3').exceptions.NoSuchBucket:
         pass
 
-def ensure_bucket(name, acl='private', versioning=False, print_fn=stderr, preview=False):
+def ensure_bucket(name, acl='private', versioning=False, noencrypt=False, print_fn=stderr, preview=False):
     if preview:
         print_fn(' preview:', name)
     else:
+
         try:
             client('s3').create_bucket(
                 ACL=acl,
@@ -40,6 +41,7 @@ def ensure_bucket(name, acl='private', versioning=False, print_fn=stderr, previe
             print_fn('', name)
         else:
             print_fn('', name)
+
         if acl == 'private':
             client('s3control').put_public_access_block(
                 PublicAccessBlockConfiguration={
@@ -50,7 +52,16 @@ def ensure_bucket(name, acl='private', versioning=False, print_fn=stderr, previe
                 },
                 AccountId=aws.account(),
             )
+
         if versioning:
             resource('s3').BucketVersioning(name).enable()
         else:
             resource('s3').BucketVersioning(name).suspend()
+
+        if noencrypt:
+            client('s3').delete_bucket_encryption(Bucket=name)
+        else:
+            client('s3').put_bucket_encryption(
+                Bucket=name,
+                ServerSideEncryptionConfiguration={'Rules': [{'ApplyServerSideEncryptionByDefault': {'SSEAlgorithm': 'AES256'}}]},
+            )
