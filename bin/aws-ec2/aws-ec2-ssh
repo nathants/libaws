@@ -132,6 +132,7 @@ def main(*selectors,
                      raw_cmd=True,
                      callback=_make_callback(instances[0], quiet, None, no_stream) if prefixed else None,
                      warn=True)
+        assert ': Permission denied (publickey).' not in res['stdout'] + res['stderr'], 'Permission denied (publickey)'
         if res['exitcode'] != 0:
             sys.exit(res['exitcode'])
         return res['stdout']

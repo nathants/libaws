@@ -3,7 +3,7 @@ from util.colors import red, green, cyan
 import pprint
 import util.iter
 
-ssh_args = ' -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
+ssh_args = ' -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '
 
 @retry
 def sgs(names=None):

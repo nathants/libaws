@@ -36,6 +36,7 @@ def main(*selectors,
         local_start = time.time()
         try:
             res = sh.run(f'aws-ec2-ssh {running_ids} --batch-mode -t 10 -yc "whoami >/dev/null" 2>&1', warn=True, stream=i > 30)
+            assert ': Permission denied (publickey).' not in res['stdout'], 'Permission denied (publickey)'
             ready_ids = [x.split()[-1]
                          for x in res['stdout'].splitlines()
                          if x.startswith('success: ')]
