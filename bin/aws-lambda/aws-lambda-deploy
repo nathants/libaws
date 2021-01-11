@@ -39,7 +39,8 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
             aws.lamda.update_zip(path)
             aws.lamda.include_in_zip(path, metadata['include'], False)
             zipfile = aws.lamda.zip_bytes(path)
-            arn_lambda = retry(aws.client('lambda').update_function_code, silent=True)(FunctionName=name, ZipFile=zipfile)['FunctionArn']
+            not_found = aws.client('lambda').exceptions.ResourceNotFoundException
+            arn_lambda = retry(aws.client('lambda').update_function_code, not_found, silent=True)(FunctionName=name, ZipFile=zipfile)['FunctionArn']
         stderr('\nupdated:')
         stderr('', arn_lambda)
     else:
