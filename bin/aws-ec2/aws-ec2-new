@@ -193,7 +193,7 @@ def _sgs(names=None):
                or x.group_id in names]
     return sgs
 
-def _make_spot_opts(opts, fleet_role, vpc):
+def _make_spot_opts(opts, fleet_role, vpc, spot_strategy):
     if 'arn' not in fleet_role:
         err = aws.client('iam').exceptions.NoSuchEntityException
         try:
@@ -201,7 +201,7 @@ def _make_spot_opts(opts, fleet_role, vpc):
         except err:
             assert False, util.colors.red(f'no such iam role {fleet_role}. specify a different one with `--fleet-role` or create defaults with `aws-iam-ensure-common-roles`')
     spot_opts = {}
-    spot_opts['AllocationStrategy'] = 'lowestPrice'
+    spot_opts['AllocationStrategy'] = spot_strategy
     spot_opts['Type'] = 'request'
     spot_opts['ReplaceUnhealthyInstances'] = False
     spot_opts['InstanceInterruptionBehavior'] = 'terminate'
@@ -308,7 +308,6 @@ def main(name: 'name of the instance', # type: ignore
          init: 'run some bash via cloud init'          = _default_init, # type: ignore
          cmd: 'ssh command'                            = None, # type: ignore
          num: 'number of instances'                    = 1, # type: ignore
-         spot_days: 'num days for spot price check'    = 2, # type: ignore
          no_wait: 'do not wait for ssh'                = False, # type: ignore
          login: 'login in to the instance'             = False, # type: ignore
          ec2_ssh_user: ( # type: ignore
@@ -320,6 +319,7 @@ def main(name: 'name of the instance', # type: ignore
              'use this string verbatim as the '
              'cloud-init user data.')                  = None,
          spot: 'use spot instances'                    = False, # type: ignore
+         spot_strategy: 'lowestPrice | capacityOptimized | diversified' = 'lowestPrice', # type: ignore # noqa
          seconds_timeout: ( # type: ignore
              'will `sudo poweroff` after this many '
              'seconds. calls `bash /etc/timeout.sh` '
@@ -427,14 +427,14 @@ def main(name: 'name of the instance', # type: ignore
             opts['SubnetId'] = aws.ec2.subnet(vpc, zone)
         # random subnet for on-demand
         elif not spot:
-            zone = sh.run('aws-ec2-cheapest-zone', type, '-d', spot_days)
+            zone = random.choice(aws.zones())
             opts['SubnetId'] = aws.ec2.subnet(vpc, zone)
         # spot fleets will place in all zones by default, see _make_spot_opts()
         else:
             pass
         stderr('using vpc:', vpc)
         if spot:
-            spot_opts = _make_spot_opts(opts, fleet_role, vpc)
+            spot_opts = _make_spot_opts(opts, fleet_role, vpc, spot_strategy)
             try:
                 instances = _create_spot_instances(**spot_opts)
             except KeyboardInterrupt:
