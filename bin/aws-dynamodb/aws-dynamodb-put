@@ -41,9 +41,10 @@ def main(table, *vals,
     }
 
     condition_failed = aws.client('dynamodb').exceptions.ConditionalCheckFailedException
+    not_found = aws.client('dynamodb').exceptions.ResourceNotFoundException
     try:
-        retry(aws.client('dynamodb').put_item, condition_failed)(**kw)
-    except condition_failed as e:
+        retry(aws.client('dynamodb').put_item, condition_failed, not_found)(**kw)
+    except (condition_failed, not_found) as e:
         print(e)
         sys.exit(1)
 

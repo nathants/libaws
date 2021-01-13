@@ -6,21 +6,27 @@ import argh
 import aws
 import aws.dynamodb
 from util.retry import retry
+import sys
 
 def main(table, max=1000, page_size=100, verbose=False):
-    resp = retry(aws.client('dynamodb').get_paginator('scan').paginate)(
-        TableName=table,
-        PaginationConfig={
-            'MaxItems': max,
-            'PageSize': page_size,
-        }
-    )
-    for items in resp:
-        for item in items['Items']:
-            if verbose:
-                print(json.dumps(item))
-            else:
-                print(json.dumps(util.iter.walk(aws.dynamodb.unverbose, item)))
+    not_found = aws.client('dynamodb').exceptions.ResourceNotFoundException
+    try:
+        resp = retry(aws.client('dynamodb').get_paginator('scan').paginate, not_found)(
+            TableName=table,
+            PaginationConfig={
+                'MaxItems': max,
+                'PageSize': page_size,
+            }
+        )
+        for items in resp:
+            for item in items['Items']:
+                if verbose:
+                    print(json.dumps(item))
+                else:
+                    print(json.dumps(util.iter.walk(aws.dynamodb.unverbose, item)))
+    except not_found as e:
+        print(e)
+        sys.exit(1)
 
 if __name__ == '__main__':
     with aws.setup():

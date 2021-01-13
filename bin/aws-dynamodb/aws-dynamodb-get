@@ -14,22 +14,28 @@ def main(table, *keys, inconsistent=False, verbose=False):
 
     >> aws-dynamodb-get test-table user_name:s:john
     """
-    item = retry(aws.client('dynamodb').get_item)(
-        TableName=table,
-        ConsistentRead=not inconsistent,
-        Key={name: {type.upper(): value}
-             for key in keys
-             for name, type, value in [key.split(':', 2)]}
-    )
+    not_found = aws.client('dynamodb').exceptions.ResourceNotFoundException
     try:
-        item = item['Item']
-    except KeyError:
+        item = retry(aws.client('dynamodb').get_item, not_found)(
+            TableName=table,
+            ConsistentRead=not inconsistent,
+            Key={name: {type.upper(): value}
+                 for key in keys
+                 for name, type, value in [key.split(':', 2)]}
+        )
+    except not_found as e:
+        print(e)
         sys.exit(1)
     else:
-        if verbose:
-            print(json.dumps(item))
+        try:
+            item = item['Item']
+        except KeyError:
+            sys.exit(1)
         else:
-            print(json.dumps(util.iter.walk(aws.dynamodb.unverbose, item)))
+            if verbose:
+                print(json.dumps(item))
+            else:
+                print(json.dumps(util.iter.walk(aws.dynamodb.unverbose, item)))
 
 if __name__ == '__main__':
     with aws.setup():
