@@ -427,7 +427,7 @@ def main(name: 'name of the instance', # type: ignore
             opts['SubnetId'] = aws.ec2.subnet(vpc, zone)
         # random subnet for on-demand
         elif not spot:
-            zone = sh.run('aws-ec2-cheapest-zone', type, '-d', spot_days)
+            zone = sh.run('aws-ec2-cheapest-zone', type, '-d', 2)
             opts['SubnetId'] = aws.ec2.subnet(vpc, zone)
         # spot fleets will place in all zones by default, see _make_spot_opts()
         else:
