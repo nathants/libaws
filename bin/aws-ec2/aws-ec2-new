@@ -219,7 +219,9 @@ def _make_spot_opts(opts, fleet_role, vpc, spot_strategy):
         spot_opts['LaunchSpecifications'] = [opts]
     else:
         spot_opts['LaunchSpecifications'] = []
-        for zone in aws.zones():
+        # only use zones which have a spot price. not all zones have all instance types.
+        for line in sh.run('aws-ec2-max-spot-price', opts['InstanceType']).splitlines():
+            zone, _ = line.split()
             _opts = copy.deepcopy(opts)
             _opts['SubnetId'] = aws.ec2.subnet(vpc, zone)
             spot_opts['LaunchSpecifications'].append(_opts)
@@ -333,6 +335,7 @@ def main(name: 'name of the instance', # type: ignore
              'many instances became available '
              'and terminating the rest. set to 0 '
              ' to disable.           ')               = 0):
+    assert spot_strategy in ['lowestPrice', 'capacityOptimized', 'diversified'], f'bad spot strategy, should be one of "lowestPrice | capacityOptimized | diversified", got: {spot_strategy}'
     assert key, '--key must be provided'
     assert ami, '--ami must be provided'
     assert sg, '--sg must be provided'
