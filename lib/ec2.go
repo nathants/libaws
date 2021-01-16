@@ -32,21 +32,22 @@ type EC2Tag struct {
 	Value string
 }
 
-type EC2FleetConfig struct {
-	NumInstances int
-	Name         string
-	SgID         string
-	AmiID        string
-	UserName     string // instance ssh username
-	Key          string
-	InstanceType string
-	SubnetIds    []string
-	Gigs         int
-	Throughput   int
-	Iops         int
-	Init         string
-	Tags         []EC2Tag
-	Profile      string
+type EC2Config struct {
+	NumInstances   int
+	Name           string
+	SgID           string
+	AmiID          string
+	UserName       string // instance ssh username
+	Key            string
+	InstanceType   string
+	SubnetIds      []string
+	Gigs           int
+	Throughput     int
+	Iops           int
+	Init           string
+	Tags           []EC2Tag
+	Profile        string
+	SecondsTimeout int
 }
 
 func EC2RetryDescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
@@ -414,6 +415,73 @@ func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num in
 	return err
 }
 
+const timeoutInit = `
+echo '# timeout will call this script before it $(sudo poweroff)s, and wait 60 seconds for this script to complete' | sudo tee -a /etc/timeout.sh
+echo '#!/bin/bash
+    warning="seconds remaining until timeout poweroff. [sudo journalctl -u timeout.service -f] to follow. increase /etc/timeout.seconds to delay. [date +%s | sudo tee /etc/timeout.start.seconds] to reset, or [sudo systemctl {{stop,disable}} timeout.service] to cancel."
+    echo TIMEOUT_SECONDS | sudo tee /etc/timeout.seconds
+    # count down until timeout
+    if [ ! -f /etc/timeout.true_start.seconds ]; then
+        date +%s | sudo tee /etc/timeout.true_start.seconds
+    fi
+    if [ ! -f /etc/timeout.start.seconds ]; then
+        date +%s | sudo tee /etc/timeout.start.seconds
+    fi
+    while true; do
+        start=$(cat /etc/timeout.start.seconds)
+        true_start=$(cat /etc/timeout.true_start.seconds)
+        now=$(date +%s)
+        duration=$(($now - $start))
+        true_duration=$(($now - $true_start))
+        timeout=$(cat /etc/timeout.seconds)
+        if (($duration > $timeout)); then
+            break
+        fi
+        remaining=$(($timeout - $duration))
+        if (($remaining <= 300)) && (($remaining % 60 == 0)); then
+            wall "$remaining $warning"
+        fi
+        echo uptime seconds: $true_duration
+        echo poweroff in seconds: $remaining
+        sleep 5
+    done
+    # run timeout script and wait 60 seconds
+    echo run: bash /etc/timeout.sh
+    bash /etc/timeout.sh &
+    pid=$!
+    start=$(date +%s)
+    overtime=60
+    while true; do
+        ps $pid || break
+        now=$(date +%s)
+        duration=$(($now - $start))
+        (($duration > $overtime)) && break
+        remaining=$(($overtime - $duration))
+        echo seconds until poweroff: $remaining
+        sleep 1
+    done
+    sudo poweroff # sudo poweroff terminates spot instances by default
+' |  sudo tee /usr/local/bin/timeout
+sudo chmod +x /usr/local/bin/timeout
+
+echo '[Unit]
+Description=timeout
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/timeout
+User=root
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+' | sudo tee /etc/systemd/system/timeout.service
+
+sudo systemctl daemon-reload
+sudo systemctl start timeout.service
+sudo systemctl enable timeout.service
+`
+
 const nvmeInit = `
 # pick the first nvme drive which is NOT mounted as / and prepare that as /mnt
 set -x
@@ -442,7 +510,7 @@ echo ${disk}p1 /mnt ext4 nodiscard,noatime 0 1 | sudo tee -a /etc/fstab
 set +x
 `
 
-func makeBlockDeviceMapping(input *EC2FleetConfig) []*ec2.BlockDeviceMapping {
+func makeBlockDeviceMapping(input *EC2Config) []*ec2.BlockDeviceMapping {
 	return []*ec2.BlockDeviceMapping{{
 		DeviceName: aws.String("/dev/sda1"),
 		Ebs: &ec2.EbsBlockDevice{
@@ -456,7 +524,7 @@ func makeBlockDeviceMapping(input *EC2FleetConfig) []*ec2.BlockDeviceMapping {
 	}}
 }
 
-func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2FleetConfig) ([]*ec2.Instance, error) {
+func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Config) ([]*ec2.Instance, error) {
 	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
 	}
@@ -532,7 +600,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Fle
 	return instances, nil
 }
 
-func makeInit(input *EC2FleetConfig) string {
+func makeInit(input *EC2Config) string {
 	init := input.Init
 	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d"} {
 		if instanceType == strings.Split(input.InstanceType, ".")[0] {
@@ -540,6 +608,9 @@ func makeInit(input *EC2FleetConfig) string {
 			init = nvmeInit + init
 			break
 		}
+	}
+	if input.SecondsTimeout != 0 {
+		init = strings.Replace(timeoutInit, "TIMEOUT_SECONDS", fmt.Sprint(input.SecondsTimeout), 1) + init
 	}
 	if init != "" {
 		init = base64.StdEncoding.EncodeToString([]byte(init))
@@ -549,7 +620,7 @@ func makeInit(input *EC2FleetConfig) string {
 	return init
 }
 
-func makeTags(input *EC2FleetConfig) []*ec2.Tag {
+func makeTags(input *EC2Config) []*ec2.Tag {
 	tags := []*ec2.Tag{
 		{Key: aws.String("Name"), Value: aws.String(input.Name)},
 		{Key: aws.String("user"), Value: aws.String(input.UserName)},
@@ -564,7 +635,7 @@ func makeTags(input *EC2FleetConfig) []*ec2.Tag {
 	return tags
 }
 
-func EC2NewInstances(ctx context.Context, input *EC2FleetConfig) ([]*ec2.Instance, error) {
+func EC2NewInstances(ctx context.Context, input *EC2Config) ([]*ec2.Instance, error) {
 	if len(input.SubnetIds) != 1 {
 		err := fmt.Errorf("must specify exactly one subnet, got: %v", input.SubnetIds)
 		Logger.Println("error:", err)

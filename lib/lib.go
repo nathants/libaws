@@ -133,13 +133,3 @@ func Chunk(xs []string, chunkSize int) [][]string {
 	}
 	return xss
 }
-
-// def chunk(val, chunk_size):
-//     res = []
-//     for x in val:
-//         res.append(x)
-//         if len(res) == chunk_size:
-//             yield res
-//             res = []
-//     if res:
-//         yield res
