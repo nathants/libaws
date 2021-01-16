@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -211,7 +212,26 @@ func EC2RetryListInstances(ctx context.Context, selectors []string, state string
 			nextToken = output.NextToken
 		}
 	}
+	sort.SliceStable(instances, func(i, j int) bool { return *instances[i].InstanceId < *instances[j].InstanceId })
+	sort.SliceStable(instances, func(i, j int) bool { return tag(instances[i], "Name", "") < tag(instances[j], "Name", "") })
+	sort.SliceStable(instances, func(i, j int) bool { return instances[i].LaunchTime.UnixNano() > instances[j].LaunchTime.UnixNano() })
 	return instances, nil
+}
+
+func tags(instance *ec2.Instance) map[string]string {
+	val := make(map[string]string)
+	for _, tag := range instance.Tags {
+		val[*tag.Key] = *tag.Value
+	}
+	return val
+}
+
+func tag(instance *ec2.Instance, key string, defaultValue string) string {
+	val, ok := tags(instance)[key]
+	if !ok {
+		val = defaultValue
+	}
+	return val
 }
 
 func EC2RetryDescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Instance, error) {
