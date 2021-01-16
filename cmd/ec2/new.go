@@ -20,10 +20,12 @@ type newArgs struct {
 	Ami          string   `arg:"-a,--ami,required"`
 	UserName     string   `arg:"-u,--user,required" help:"ssh user name"`
 	Key          string   `arg:"-k,--key,required"`
-	SpotStrategy string   `arg:"-s,--spot,required" help:"lowestPrice|diversified|capacityOptimized"`
+	SpotStrategy string   `arg:"-s,--spot" help:"if unspecified create onDemand instances, otherwise choose spotStrategy: lowestPrice|diversified|capacityOptimized"`
 	SgID         string   `arg:"--sg,required"`
 	SubnetIds    []string `arg:"--subnets,required"`
 	Gigs         int      `arg:"-g,--gigs" default:"16"`
+	Iops         int      `arg:"--iops" help:"gp3 iops" default:"3000"`
+	Throughput   int      `arg:"--throughput" help:"gp3 throughput mb/s" default:"125"`
 	Init         string   `arg:"-i,--init,required" help:"cloud init bash script"`
 	Tags         []string `arg:"--tags" help:"key=value"`
 	Profile      string   `arg:"-p,--profile,required" help:"iam instance profile name"`
@@ -47,24 +49,27 @@ func ec2New() {
 			Value: parts[1],
 		})
 	}
+	fleetConfig := &lib.EC2FleetConfig{
+		NumInstances: args.Num,
+		AmiID:        args.Ami,
+		UserName:     args.UserName,
+		InstanceType: args.Type,
+		Name:         args.Name,
+		Key:          args.Key,
+		SgID:         args.SgID,
+		SubnetIds:    args.SubnetIds,
+		Gigs:         args.Gigs,
+		Iops:         args.Iops,
+		Throughput:   args.Throughput,
+		Init:         args.Init,
+		Tags:         tags,
+		Profile:      args.Profile,
+	}
 	var err error
 	if args.SpotStrategy != "" {
-		instances, err = lib.EC2RequestSpotFleet(ctx, args.SpotStrategy, &lib.EC2FleetConfig{
-			NumInstances: args.Num,
-			AmiID:        args.Ami,
-			UserName:     args.UserName,
-			InstanceType: args.Type,
-			Name:         args.Name,
-			Key:          args.Key,
-			SgID:         args.SgID,
-			SubnetIds:    args.SubnetIds,
-			Gigs:         args.Gigs,
-			Init:         args.Init,
-			Tags:         tags,
-			Profile:      args.Profile,
-		})
+		instances, err = lib.EC2RequestSpotFleet(ctx, args.SpotStrategy, fleetConfig)
 	} else {
-		panic("todo")
+		instances, err = lib.EC2NewInstances(ctx, fleetConfig)
 	}
 	if err != nil {
 		lib.Logger.Fatal("error:", err)

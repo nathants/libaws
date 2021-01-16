@@ -40,6 +40,8 @@ type EC2FleetConfig struct {
 	InstanceType string
 	SubnetIds    []string
 	Gigs         int
+	Throughput   int
+	Iops         int
 	Init         string
 	Tags         []EC2Tag
 	Profile      string
@@ -339,6 +341,20 @@ echo ${disk}p1 /mnt ext4 nodiscard,noatime 0 1 | sudo tee -a /etc/fstab
 set +x
 `
 
+func makeBlockDeviceMapping(input *EC2FleetConfig) []*ec2.BlockDeviceMapping {
+	return []*ec2.BlockDeviceMapping{{
+		DeviceName: aws.String("/dev/sda1"),
+		Ebs: &ec2.EbsBlockDevice{
+			DeleteOnTermination: aws.Bool(true),
+			Encrypted:           aws.Bool(true),
+			VolumeType:          aws.String(ec2.VolumeTypeGp3),
+			Iops:                aws.Int64(int64(input.Iops)),
+			Throughput:          aws.Int64(int64(input.Throughput)),
+			VolumeSize:          aws.Int64(int64(input.Gigs)),
+		},
+	}}
+}
+
 func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2FleetConfig) ([]*ec2.Instance, error) {
 	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
@@ -350,53 +366,20 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Fle
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d"} {
-		if instanceType == strings.Split(input.InstanceType, ".")[0] {
-			Logger.Println("add nvme instance store setup to init script")
-			input.Init = nvmeInit + input.Init
-			break
-		}
-	}
-	if input.Init != "" {
-		input.Init = base64.StdEncoding.EncodeToString([]byte(input.Init))
-		input.Init = fmt.Sprintf("#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", input.Init, input.UserName)
-		input.Init = base64.StdEncoding.EncodeToString([]byte(input.Init))
-	}
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
-	tags := []*ec2.Tag{
-		{Key: aws.String("Name"), Value: aws.String(input.Name)},
-		{Key: aws.String("user"), Value: aws.String(input.UserName)},
-		{Key: aws.String("creation-date"), Value: aws.String(time.Now().UTC().Format(time.RFC3339))},
-	}
-	for _, tag := range input.Tags {
-		tags = append(tags, &ec2.Tag{
-			Key:   aws.String(tag.Name),
-			Value: aws.String(tag.Value),
-		})
-	}
 	for _, subnetId := range input.SubnetIds {
 		launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
-			ImageId:            aws.String(input.AmiID),
-			KeyName:            aws.String(input.Key),
-			SubnetId:           aws.String(subnetId),
-			InstanceType:       aws.String(input.InstanceType),
-			UserData:           aws.String(input.Init),
-			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{Name: aws.String(input.Profile)},
-			SecurityGroups:     []*ec2.GroupIdentifier{{GroupId: aws.String(input.SgID)}},
-			BlockDeviceMappings: []*ec2.BlockDeviceMapping{{
-				DeviceName: aws.String("/dev/sda1"),
-				Ebs: &ec2.EbsBlockDevice{
-					DeleteOnTermination: aws.Bool(true),
-					Encrypted:           aws.Bool(true),
-					VolumeType:          aws.String(ec2.VolumeTypeGp3),
-					Iops:                aws.Int64(3000),
-					Throughput:          aws.Int64(125),
-					VolumeSize:          aws.Int64(int64(input.Gigs)),
-				},
-			}},
+			ImageId:             aws.String(input.AmiID),
+			KeyName:             aws.String(input.Key),
+			SubnetId:            aws.String(subnetId),
+			InstanceType:        aws.String(input.InstanceType),
+			UserData:            aws.String(makeInit(input)),
+			IamInstanceProfile:  &ec2.IamInstanceProfileSpecification{Name: aws.String(input.Profile)},
+			SecurityGroups:      []*ec2.GroupIdentifier{{GroupId: aws.String(input.SgID)}},
+			BlockDeviceMappings: makeBlockDeviceMapping(input),
 			TagSpecifications: []*ec2.SpotFleetTagSpecification{{
 				ResourceType: aws.String(ec2.ResourceTypeInstance),
-				Tags:         tags,
+				Tags:         makeTags(input),
 			}},
 		})
 	}
@@ -446,4 +429,65 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Fle
 		return nil, err
 	}
 	return instances, nil
+}
+
+func makeInit(input *EC2FleetConfig) string {
+	init := input.Init
+	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d"} {
+		if instanceType == strings.Split(input.InstanceType, ".")[0] {
+			Logger.Println("add nvme instance store setup to init script")
+			init = nvmeInit + init
+			break
+		}
+	}
+	if init != "" {
+		init = base64.StdEncoding.EncodeToString([]byte(init))
+		init = fmt.Sprintf("#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", init, input.UserName)
+		init = base64.StdEncoding.EncodeToString([]byte(init))
+	}
+	return init
+}
+
+func makeTags(input *EC2FleetConfig) []*ec2.Tag {
+	tags := []*ec2.Tag{
+		{Key: aws.String("Name"), Value: aws.String(input.Name)},
+		{Key: aws.String("user"), Value: aws.String(input.UserName)},
+		{Key: aws.String("creation-date"), Value: aws.String(time.Now().UTC().Format(time.RFC3339))},
+	}
+	for _, tag := range input.Tags {
+		tags = append(tags, &ec2.Tag{
+			Key:   aws.String(tag.Name),
+			Value: aws.String(tag.Value),
+		})
+	}
+	return tags
+}
+
+func EC2NewInstances(ctx context.Context, input *EC2FleetConfig) ([]*ec2.Instance, error) {
+	if len(input.SubnetIds) != 1 {
+		err := fmt.Errorf("must specify exactly one subnet, got: %v", input.SubnetIds)
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	reservation, err := EC2Client().RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
+		ImageId:             aws.String(input.AmiID),
+		KeyName:             aws.String(input.Key),
+		SubnetId:            aws.String(input.SubnetIds[0]),
+		InstanceType:        aws.String(input.InstanceType),
+		UserData:            aws.String(makeInit(input)),
+		IamInstanceProfile:  &ec2.IamInstanceProfileSpecification{Name: aws.String(input.Profile)},
+		SecurityGroupIds:    []*string{&input.SgID},
+		BlockDeviceMappings: makeBlockDeviceMapping(input),
+		MinCount:            aws.Int64(int64(input.NumInstances)),
+		MaxCount:            aws.Int64(int64(input.NumInstances)),
+		TagSpecifications: []*ec2.TagSpecification{{
+			ResourceType: aws.String(ec2.ResourceTypeInstance),
+			Tags:         makeTags(input),
+		}},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	return reservation.Instances, nil
 }
