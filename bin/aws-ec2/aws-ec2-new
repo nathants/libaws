@@ -327,7 +327,7 @@ def main(name: 'name of the instance', # type: ignore
              'seconds. calls `bash /etc/timeout.sh` '
              'and waits 60 seconds for it to exit '
              'before calling `sudo poweroff`. '
-             'set to 0 to disable.')                   = 60 * 60,
+             'set to 0 to disable. `sudo journalctl -f -u timeout.service` to follow logs.') = 60 * 60,
          seconds_wait: ( # type: ignore
              'how many seconds to wait for ssh '
              'before continuing with however '

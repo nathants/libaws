@@ -20,7 +20,7 @@ type newArgs struct {
 	Ami            string   `arg:"-a,--ami,required"`
 	UserName       string   `arg:"-u,--user,required" help:"ssh user name"`
 	Key            string   `arg:"-k,--key,required"`
-	SpotStrategy   string   `arg:"-s,--spot" help:"if unspecified create onDemand instances, otherwise choose spotStrategy: lowestPrice|diversified|capacityOptimized"`
+	SpotStrategy   string   `arg:"-s,--spot" help:"if unspecified create onDemand instances, otherwise choose spotStrategy: lowestPrice | diversified | capacityOptimized"`
 	SgID           string   `arg:"--sg,required"`
 	SubnetIds      []string `arg:"--subnets,required"`
 	Gigs           int      `arg:"-g,--gigs" default:"16"`
@@ -29,7 +29,7 @@ type newArgs struct {
 	Init           string   `arg:"-i,--init,required" help:"cloud init bash script"`
 	Tags           []string `arg:"--tags" help:"key=value"`
 	Profile        string   `arg:"-p,--profile,required" help:"iam instance profile name"`
-	SecondsTimeout int      `arg:"--seconds-timeout" default:"3600" help:"will $(sudo poweroff) after this many seconds. calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff). set to 0 to disable."`
+	SecondsTimeout int      `arg:"--seconds-timeout" default:"3600" help:"will $(sudo poweroff) after this many seconds. calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff). set to 0 to disable. $(sudo journalctl -f -u timeout.service) to follow logs."`
 }
 
 func (newArgs) Description() string {
