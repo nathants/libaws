@@ -121,3 +121,25 @@ func Contains(parts []string, part string) bool {
 	}
 	return false
 }
+
+func Chunk(xs []string, chunkSize int) [][]string {
+	var xss [][]string
+	xss = append(xss, []string{})
+	for _, x := range xs {
+		xss[len(xss)-1] = append(xss[len(xss)-1], x)
+		if len(xss[len(xss)-1]) == chunkSize {
+			xss = append(xss, []string{})
+		}
+	}
+	return xss
+}
+
+// def chunk(val, chunk_size):
+//     res = []
+//     for x in val:
+//         res.append(x)
+//         if len(res) == chunk_size:
+//             yield res
+//             res = []
+//     if res:
+//         yield res

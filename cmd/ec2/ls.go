@@ -12,6 +12,8 @@ func init() {
 }
 
 type lsArgs struct {
+	Selectors []string `arg:"positional" help:"names, tags, vpcs, subnets, ips, dns names, and more"`
+	State string `arg:"-s,--state" default:"" help:"running | pending | terminated | stopped"`
 }
 
 func (lsArgs) Description() string {
@@ -22,7 +24,7 @@ func ec2Ls() {
 	var args lsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	instances, err := lib.EC2RetryListInstances(ctx)
+	instances, err := lib.EC2RetryListInstances(ctx, args.Selectors, args.State)
 	if err != nil {
 		lib.Logger.Fatal("error:", err)
 	}

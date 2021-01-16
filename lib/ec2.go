@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -102,33 +103,113 @@ func EC2RetryDescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequ
 	return instances, nil
 }
 
-func EC2RetryListInstances(ctx context.Context) ([]*ec2.Instance, error) {
-	Logger.Println("list instances")
+type Kind string
+
+const (
+	KindTags             Kind = "tags"
+	KindDnsName          Kind = "dns-name"
+	KindVpcId            Kind = "vpc-id"
+	KindSubnetID         Kind = "subnet-id"
+	KindSecurityGroupID  Kind = "instance.group-id"
+	KindPrivateDnsName   Kind = "private-dns-name"
+	KindIPAddress        Kind = "ip-address"
+	KindPrivateIPAddress Kind = "private-ip-address"
+	KindInstanceID       Kind = "instance-id"
+)
+
+func isIPAddress(s string) bool {
+	for _, c := range s {
+		if c != '.' {
+			_, err := strconv.Atoi(string(c))
+			if err != nil {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func EC2RetryListInstances(ctx context.Context, selectors []string, state string) ([]*ec2.Instance, error) {
+	Logger.Println("list instances", selectors, state)
+	var filterss [][]*ec2.Filter
+	if len(selectors) == 0 {
+		if state != "" {
+			filterss = append(filterss, []*ec2.Filter{&ec2.Filter{Name: aws.String("instance-state-name"), Values: []*string{aws.String(state)}}})
+		} else {
+			filterss = append(filterss, []*ec2.Filter{&ec2.Filter{}})
+		}
+	} else {
+		kind := KindTags
+		if strings.HasSuffix(selectors[0], ".amazonaws.com") {
+			kind = KindDnsName
+		} else if strings.HasPrefix(selectors[0], "vpc-") {
+			kind = KindVpcId
+		} else if strings.HasPrefix(selectors[0], "subnet-") {
+			kind = KindSubnetID
+		} else if strings.HasPrefix(selectors[0], "sg-") {
+			kind = KindSecurityGroupID
+		} else if strings.HasSuffix(selectors[0], ".ec2.internal") {
+			kind = KindPrivateDnsName
+		} else if isIPAddress(selectors[0]) {
+			part := strings.Split(selectors[0], ".")[0]
+			if part == "10" || part == "172" {
+				kind = KindPrivateIPAddress
+			} else {
+				kind = KindIPAddress
+			}
+		} else if strings.HasPrefix(selectors[0], "i-") {
+			kind = KindInstanceID
+		}
+		if kind == KindTags && !strings.Contains(selectors[0], "=") {
+			selectors[0] = fmt.Sprintf("Name=%s", selectors[0])
+		}
+		for _, chunk := range Chunk(selectors, 195) { // max aws api params per query is 200
+			var filters []*ec2.Filter
+			if state != "" {
+				filters = append(filters, &ec2.Filter{Name: aws.String("instance-state-name"), Values: []*string{aws.String(state)}})
+			}
+			for _, selector := range chunk {
+				if kind == KindTags {
+					parts := strings.Split(selector, "=")
+					k := parts[0]
+					v := parts[1]
+					filters = append(filters, &ec2.Filter{Name: aws.String(fmt.Sprintf("tag:%s", k)), Values: []*string{aws.String(v)}})
+				} else {
+					filters = append(filters, &ec2.Filter{Name: aws.String(string(kind)), Values: aws.StringSlice(chunk)})
+				}
+			}
+			filterss = append(filterss, filters)
+		}
+
+	}
 	var instances []*ec2.Instance
 	var nextToken *string
-	for {
-		var output *ec2.DescribeInstancesOutput
-		err := Retry(ctx, func() error {
-			var err error
-			output, err = EC2Client().DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-				NextToken: nextToken,
+	for _, filters := range filterss {
+		for {
+			var output *ec2.DescribeInstancesOutput
+			err := Retry(ctx, func() error {
+				var err error
+				output, err = EC2Client().DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
+					Filters:   filters,
+					NextToken: nextToken,
+				})
+				if err != nil {
+					return err
+				}
+				return nil
 			})
 			if err != nil {
-				return err
+				Logger.Println("error:", err)
+				return nil, err
 			}
-			return nil
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
+			for _, reservation := range output.Reservations {
+				instances = append(instances, reservation.Instances...)
+			}
+			if output.NextToken == nil {
+				break
+			}
+			nextToken = output.NextToken
 		}
-		for _, reservation := range output.Reservations {
-			instances = append(instances, reservation.Instances...)
-		}
-		if output.NextToken == nil {
-			break
-		}
-		nextToken = output.NextToken
 	}
 	return instances, nil
 }
