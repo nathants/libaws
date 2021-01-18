@@ -225,6 +225,8 @@ def _make_spot_opts(opts, fleet_role, vpc, spot_strategy):
             _opts = copy.deepcopy(opts)
             _opts['SubnetId'] = aws.ec2.subnet(vpc, zone)
             spot_opts['LaunchSpecifications'].append(_opts)
+        assert spot_opts['LaunchSpecifications'], f'instance {opts["InstanceType"]} not available in region {aws.region()}'
+
     # log the spot opts minus userdata and after combining subnets
     _spot_opts = copy.deepcopy(spot_opts)
     subnets = [opt['SubnetId'] for opt in _spot_opts['LaunchSpecifications']]
