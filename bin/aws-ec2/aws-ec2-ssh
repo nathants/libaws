@@ -30,9 +30,9 @@ def _remote_cmd(cmd, stdin, instance_id):
 
 def _make_callback(instance, quiet, append=None, no_stream=False):
     name = instance.id + ': '
-    def f(_, line):
+    def f(kind, line):
         val = (line if quiet else name + line).replace('\r', '')
-        if append is not None:
+        if append is not None and kind == 'stdout':
             append.append(val)
         if not no_stream:
             stderr(val)
@@ -45,9 +45,9 @@ def main(*selectors,
          cmd: 'cmd to run on remote host, - to read from stdin, or script file path' = '', # type: ignore
          yes: 'no prompt to proceed' = False, # type: ignore
          max_threads: 'max ssh connections' = 32, # type: ignore
-         timeout: 'seconds before ssh cmd considered failed' = None, # type: ignore
+         timeout: 'seconds before ssh cmd is considered failed' = None, # type: ignore
          no_tty: 'when backgrounding a process, you dont want a tty' = False, # type: ignore
-         key: 'speficy ssh key' = None, # type: ignore
+         key: 'specify ssh key' = None, # type: ignore
          echo: 'echo some info about what was run on which hosts' = False, # type: ignore
          batch_mode: 'operate like there are many instances, even if only one' = False, # type: ignore
          prefixed: 'when running against a single host, should streaming output be prefixed with name and ip' = False, # type: ignore

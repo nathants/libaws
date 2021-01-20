@@ -12,7 +12,7 @@ func init() {
 }
 
 type lsArgs struct {
-	Selectors []string `arg:"positional" help:"names, tags, vpcs, subnets, ips, dns names, and more"`
+	Selectors []string `arg:"positional" help:"instance-ids | dns-names | private-dns-names | tags | vpc-id | subnet-id | security-group-id | ip-addresses | private-ip-addresses"`
 	State string `arg:"-s,--state" default:"" help:"running | pending | terminated | stopped"`
 }
 

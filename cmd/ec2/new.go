@@ -18,18 +18,18 @@ type newArgs struct {
 	Num            int      `arg:"-n,--num" default:"1"`
 	Type           string   `arg:"-t,--type,required"`
 	Ami            string   `arg:"-a,--ami,required"`
-	UserName       string   `arg:"-u,--user,required" help:"ssh user name"`
+	UserName       string   `arg:"-u,--user,required" help:"ssh user name, otherwise look for 'user' tag on instance"`
 	Key            string   `arg:"-k,--key,required"`
-	SpotStrategy   string   `arg:"-s,--spot" help:"if unspecified create onDemand instances, otherwise choose spotStrategy: lowestPrice | diversified | capacityOptimized"`
+	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create onDemand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized"`
 	SgID           string   `arg:"--sg,required"`
-	SubnetIds      []string `arg:"--subnets,required"`
-	Gigs           int      `arg:"-g,--gigs" default:"16"`
-	Iops           int      `arg:"--iops" help:"gp3 iops" default:"3000"`
-	Throughput     int      `arg:"--throughput" help:"gp3 throughput mb/s" default:"125"`
+	SubnetIds      []string `arg:"--subnets,required" help:"space separated values"`
+	Gigs           int      `arg:"-g,--gigs" help:"ebs gigabytes\n                        " default:"16"`
+	Iops           int      `arg:"--iops" help:"gp3 iops\n                        " default:"3000"`
+	Throughput     int      `arg:"--throughput" help:"gp3 throughput mb/s\n                        " default:"125"`
 	Init           string   `arg:"-i,--init,required" help:"cloud init bash script"`
-	Tags           []string `arg:"--tags" help:"key=value"`
+	Tags           []string `arg:"--tags" help:"space separated values like: key=value"`
 	Profile        string   `arg:"-p,--profile,required" help:"iam instance profile name"`
-	SecondsTimeout int      `arg:"--seconds-timeout" default:"3600" help:"will $(sudo poweroff) after this many seconds. calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff). set to 0 to disable. $(sudo journalctl -f -u timeout.service) to follow logs."`
+	SecondsTimeout int      `arg:"--seconds-timeout" default:"3600" help:"will $(sudo poweroff) after this many seconds.\n                         calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff).\n                         set to 0 to disable.\n                         $(sudo journalctl -f -u timeout.service) to follow logs.\n                        "`
 }
 
 func (newArgs) Description() string {

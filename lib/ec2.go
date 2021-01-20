@@ -4,11 +4,20 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"golang.org/x/sync/semaphore"
+	"io"
+	"io/ioutil"
+	"net"
+	"os"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -132,13 +141,13 @@ func isIPAddress(s string) bool {
 }
 
 func EC2RetryListInstances(ctx context.Context, selectors []string, state string) ([]*ec2.Instance, error) {
-	Logger.Println("list instances", selectors, state)
+	Logger.Println("list instances")
 	var filterss [][]*ec2.Filter
 	if len(selectors) == 0 {
 		if state != "" {
-			filterss = append(filterss, []*ec2.Filter{&ec2.Filter{Name: aws.String("instance-state-name"), Values: []*string{aws.String(state)}}})
+			filterss = append(filterss, []*ec2.Filter{{Name: aws.String("instance-state-name"), Values: []*string{aws.String(state)}}})
 		} else {
-			filterss = append(filterss, []*ec2.Filter{&ec2.Filter{}})
+			filterss = append(filterss, []*ec2.Filter{{}})
 		}
 	} else {
 		kind := KindTags
@@ -554,7 +563,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Con
 	}
 	Logger.Println("type:", input.InstanceType)
 	Logger.Println("subnets:", input.SubnetIds)
-	Logger.Println("requst spot fleet", DropLinesWithAny(Pformat(launchSpecs[0]), "null", "SubnetId", "InstanceType"))
+	Logger.Println("requst spot fleet", DropLinesWithAny(Pformat(launchSpecs[0]), "null", "SubnetId", "UserData"))
 	spotFleet, err := EC2Client().RequestSpotFleetWithContext(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2.SpotFleetRequestConfigData{
 		IamFleetRole:                     role.Role.Arn,
 		LaunchSpecifications:             launchSpecs,
@@ -641,7 +650,7 @@ func EC2NewInstances(ctx context.Context, input *EC2Config) ([]*ec2.Instance, er
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	reservation, err := EC2Client().RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
+	runInstancesInput := &ec2.RunInstancesInput{
 		ImageId:             aws.String(input.AmiID),
 		KeyName:             aws.String(input.Key),
 		SubnetId:            aws.String(input.SubnetIds[0]),
@@ -656,10 +665,243 @@ func EC2NewInstances(ctx context.Context, input *EC2Config) ([]*ec2.Instance, er
 			ResourceType: aws.String(ec2.ResourceTypeInstance),
 			Tags:         makeTags(input),
 		}},
-	})
+	}
+	Logger.Println("run instances", DropLinesWithAny(Pformat(runInstancesInput), "null", "UserData"))
+	reservation, err := EC2Client().RunInstancesWithContext(ctx, runInstancesInput)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
 	return reservation.Instances, nil
+}
+
+type EC2SshInput struct {
+	NoTTY          bool
+	Instances      []*ec2.Instance
+	Cmd            string
+	TimeoutSeconds int
+	MaxConcurrency int
+	User           string
+	Stdout         io.WriteCloser
+	Stderr         io.WriteCloser
+	Stdin          string
+}
+
+func publicKey(path string) (ssh.AuthMethod, error) {
+	key, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.PublicKeys(signer), nil
+}
+
+const remoteCmdTemplate = `
+fail_msg="failed to run cmd on instance: %s"
+mkdir -p ~/.cmds || echo $fail_msg
+path=~/.cmds/$(uuidgen)
+input=$path.input
+echo %s | base64 -d > $path  || echo $fail_msg
+echo %s | base64 -d > $input || echo $fail_msg
+cat $input | bash $path
+code=$?
+if [ $code != 0 ]; then
+    echo $fail_msg
+    exit $code
+fi
+`
+
+func remoteCmd(cmd, stdin, instanceID string) string {
+	return fmt.Sprintf(
+		remoteCmdTemplate,
+		instanceID,
+		base64.StdEncoding.EncodeToString([]byte(cmd)),
+		base64.StdEncoding.EncodeToString([]byte(stdin)),
+	)
+}
+
+func EC2Ssh(ctx context.Context, input *EC2SshInput) error {
+	if len(input.Instances) == 0 {
+		err := fmt.Errorf("no instances")
+		Logger.Println("error:", err)
+		return err
+	}
+	if input.User == "" {
+		input.User = tag(input.Instances[0], "user", "")
+		for _, instance := range input.Instances[1:] {
+			user := tag(instance, "user", "")
+			if input.User != user {
+				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		input.User = tag(input.Instances[0], "user", "")
+		if input.User == "" {
+			err := fmt.Errorf("no user provied and no user tag available")
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	//
+	auth := []ssh.AuthMethod{}
+	//
+	socket := os.Getenv("SSH_AUTH_SOCK")
+	agentConn, err := net.Dial("unix", socket)
+	if err == nil {
+		defer func() { _ = agentConn.Close() }()
+		agentClient := agent.NewClient(agentConn)
+		auth = append(auth, ssh.PublicKeysCallback(agentClient.Signers))
+	}
+	//
+	id_rsa := fmt.Sprintf("%s/.ssh/id_rsa", os.Getenv("HOME"))
+	if Exists(id_rsa) {
+		key, err := publicKey(id_rsa)
+		if err == nil {
+			auth = append(auth, key)
+		}
+	}
+	//
+	id_ed25519 := fmt.Sprintf("%s/.ssh/id_ed25519", os.Getenv("HOME"))
+	if Exists(id_rsa) {
+		key, err := publicKey(id_ed25519)
+		if err == nil {
+			auth = append(auth, key)
+		}
+	}
+	if len(auth) == 0 {
+		err := fmt.Errorf("ssh agent not running and no keys found in ~/.ssh")
+		Logger.Println("error:", err)
+		return err
+	}
+	//
+	config := &ssh.ClientConfig{
+		User:            input.User,
+		Auth:            auth,
+		Timeout:         5 * time.Second,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+	//
+	if input.MaxConcurrency == 0 {
+		input.MaxConcurrency = 32
+	}
+	if input.TimeoutSeconds != 0 {
+		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, time.Duration(input.TimeoutSeconds)*time.Second)
+		defer timeoutCancel()
+		ctx = timeoutCtx
+	}
+	done := make(chan error, len(input.Instances))
+	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for _, instance := range input.Instances {
+		go func(instance *ec2.Instance) {
+			err := concurrency.Acquire(cancelCtx, 1)
+			if err != nil {
+				done <- err
+				return
+			}
+			defer concurrency.Release(1)
+			done <- ec2Ssh(cancelCtx, config, instance, input)
+		}(instance)
+	}
+	var errLast error
+	for range input.Instances {
+		err := <-done
+		if err != nil {
+			cancel()
+			errLast = err
+		}
+	}
+	//
+	return errLast
+}
+
+func sshDialContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	var d net.Dialer
+	dialContext, dialCancel := context.WithTimeout(ctx, config.Timeout)
+	defer dialCancel()
+	conn, err := d.DialContext(dialContext, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewClient(c, chans, reqs), nil
+}
+
+func ec2Ssh(ctx context.Context, config *ssh.ClientConfig, instance *ec2.Instance, input *EC2SshInput) error {
+	sshConn, err := sshDialContext(ctx, "tcp", fmt.Sprintf("%s:22", *instance.PublicDnsName), config)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	defer func() { _ = sshConn.Close() }()
+	//
+	sshSession, err := sshConn.NewSession()
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	defer func() { _ = sshSession.Close() }()
+	//
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	sshSession.Stdout = input.Stdout
+	sshSession.Stderr = input.Stderr
+	//
+	if !input.NoTTY {
+		err = sshSession.RequestPty("xterm", 80, 24, ssh.TerminalModes{})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	cmd := remoteCmd(input.Cmd, input.Stdin, *instance.InstanceId)
+	runContext, runCancel := context.WithCancel(ctx)
+	defer runCancel()
+	go func() {
+		<-runContext.Done()
+		_ = sshSession.Close()
+		_ = sshConn.Close()
+	}()
+	err = sshSession.Run(cmd)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	return nil
+}
+
+func EC2SshLogin(instance *ec2.Instance, user string) error {
+	if user == "" {
+		user = tag(instance, "user", "")
+		if user == "" {
+			err := fmt.Errorf("no user provied and no user tag available")
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	cmd := exec.Command(
+		"ssh",
+		user+"@"+*instance.PublicDnsName,
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=no",
+	)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	return nil
 }
