@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import traceback
 import sys
 import datetime
@@ -365,6 +366,7 @@ def main(name: 'name of the instance', # type: ignore
         ami = _ami_ubuntu(images[distro])
     elif ami.startswith('ami-'):
         ami = ami.strip()
+        ami_tags = json.loads(sh.run('aws-ec2-ami-tags', ami))
         stderr('using ami:', ami)
     else:
         ami, date, description, ami_tags_text = sh.run('aws-ec2-amis -m', ami_name).split()
@@ -381,7 +383,7 @@ def main(name: 'name of the instance', # type: ignore
     elif ami_name == 'arch':
         user = 'arch'
     else:
-        user = 'ubuntu'
+        assert False, 'no ssh-user provided, and ami does not have "user" tag'
     stderr('user:', user)
     if verbatim_init:
         init = verbatim_init
