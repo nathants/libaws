@@ -519,21 +519,22 @@ echo ${disk}p1 /mnt ext4 nodiscard,noatime 0 1 | sudo tee -a /etc/fstab
 set +x
 `
 
-func makeBlockDeviceMapping(input *EC2Config) []*ec2.BlockDeviceMapping {
+func makeBlockDeviceMapping(config *EC2Config) []*ec2.BlockDeviceMapping {
 	return []*ec2.BlockDeviceMapping{{
 		DeviceName: aws.String("/dev/sda1"),
 		Ebs: &ec2.EbsBlockDevice{
 			DeleteOnTermination: aws.Bool(true),
 			Encrypted:           aws.Bool(true),
 			VolumeType:          aws.String(ec2.VolumeTypeGp3),
-			Iops:                aws.Int64(int64(input.Iops)),
-			Throughput:          aws.Int64(int64(input.Throughput)),
-			VolumeSize:          aws.Int64(int64(input.Gigs)),
+			Iops:                aws.Int64(int64(config.Iops)),
+			Throughput:          aws.Int64(int64(config.Throughput)),
+			VolumeSize:          aws.Int64(int64(config.Gigs)),
 		},
 	}}
 }
 
-func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Config) ([]*ec2.Instance, error) {
+func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Config) ([]*ec2.Instance, error) {
+	config = ec2ConfigDefaults(config)
 	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
 	}
@@ -545,24 +546,24 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Con
 		return nil, err
 	}
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
-	for _, subnetId := range input.SubnetIds {
+	for _, subnetId := range config.SubnetIds {
 		launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
-			ImageId:             aws.String(input.AmiID),
-			KeyName:             aws.String(input.Key),
+			ImageId:             aws.String(config.AmiID),
+			KeyName:             aws.String(config.Key),
 			SubnetId:            aws.String(subnetId),
-			InstanceType:        aws.String(input.InstanceType),
-			UserData:            aws.String(makeInit(input)),
-			IamInstanceProfile:  &ec2.IamInstanceProfileSpecification{Name: aws.String(input.Profile)},
-			SecurityGroups:      []*ec2.GroupIdentifier{{GroupId: aws.String(input.SgID)}},
-			BlockDeviceMappings: makeBlockDeviceMapping(input),
+			InstanceType:        aws.String(config.InstanceType),
+			UserData:            aws.String(makeInit(config)),
+			IamInstanceProfile:  &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)},
+			SecurityGroups:      []*ec2.GroupIdentifier{{GroupId: aws.String(config.SgID)}},
+			BlockDeviceMappings: makeBlockDeviceMapping(config),
 			TagSpecifications: []*ec2.SpotFleetTagSpecification{{
 				ResourceType: aws.String(ec2.ResourceTypeInstance),
-				Tags:         makeTags(input),
+				Tags:         makeTags(config),
 			}},
 		})
 	}
-	Logger.Println("type:", input.InstanceType)
-	Logger.Println("subnets:", input.SubnetIds)
+	Logger.Println("type:", config.InstanceType)
+	Logger.Println("subnets:", config.SubnetIds)
 	Logger.Println("requst spot fleet", DropLinesWithAny(Pformat(launchSpecs[0]), "null", "SubnetId", "UserData"))
 	spotFleet, err := EC2Client().RequestSpotFleetWithContext(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2.SpotFleetRequestConfigData{
 		IamFleetRole:                     role.Role.Arn,
@@ -570,7 +571,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Con
 		AllocationStrategy:               aws.String(spotStrategy),
 		InstanceInterruptionBehavior:     aws.String(ec2.InstanceInterruptionBehaviorTerminate),
 		Type:                             aws.String(ec2.FleetTypeRequest),
-		TargetCapacity:                   aws.Int64(int64(input.NumInstances)),
+		TargetCapacity:                   aws.Int64(int64(config.NumInstances)),
 		ReplaceUnhealthyInstances:        aws.Bool(false),
 		TerminateInstancesWithExpiration: aws.Bool(false),
 	}})
@@ -578,7 +579,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Con
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	err = EC2WaitForSpotFleet(ctx, spotFleet.SpotFleetRequestId, input.NumInstances)
+	err = EC2WaitForSpotFleet(ctx, spotFleet.SpotFleetRequestId, config.NumInstances)
 	if err != nil {
 		Logger.Println("error:", err)
 		err2 := EC2TeardownSpotFleet(context.Background(), spotFleet.SpotFleetRequestId)
@@ -609,33 +610,33 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, input *EC2Con
 	return instances, nil
 }
 
-func makeInit(input *EC2Config) string {
-	init := input.Init
+func makeInit(config *EC2Config) string {
+	init := config.Init
 	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d"} {
-		if instanceType == strings.Split(input.InstanceType, ".")[0] {
+		if instanceType == strings.Split(config.InstanceType, ".")[0] {
 			Logger.Println("add nvme instance store setup to init script")
 			init = nvmeInit + init
 			break
 		}
 	}
-	if input.SecondsTimeout != 0 {
-		init = strings.Replace(timeoutInit, "TIMEOUT_SECONDS", fmt.Sprint(input.SecondsTimeout), 1) + init
+	if config.SecondsTimeout != 0 {
+		init = strings.Replace(timeoutInit, "TIMEOUT_SECONDS", fmt.Sprint(config.SecondsTimeout), 1) + init
 	}
 	if init != "" {
 		init = base64.StdEncoding.EncodeToString([]byte(init))
-		init = fmt.Sprintf("#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", init, input.UserName)
+		init = fmt.Sprintf("#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", init, config.UserName)
 		init = base64.StdEncoding.EncodeToString([]byte(init))
 	}
 	return init
 }
 
-func makeTags(input *EC2Config) []*ec2.Tag {
+func makeTags(config *EC2Config) []*ec2.Tag {
 	tags := []*ec2.Tag{
-		{Key: aws.String("Name"), Value: aws.String(input.Name)},
-		{Key: aws.String("user"), Value: aws.String(input.UserName)},
+		{Key: aws.String("Name"), Value: aws.String(config.Name)},
+		{Key: aws.String("user"), Value: aws.String(config.UserName)},
 		{Key: aws.String("creation-date"), Value: aws.String(time.Now().UTC().Format(time.RFC3339))},
 	}
-	for _, tag := range input.Tags {
+	for _, tag := range config.Tags {
 		tags = append(tags, &ec2.Tag{
 			Key:   aws.String(tag.Name),
 			Value: aws.String(tag.Value),
@@ -644,26 +645,40 @@ func makeTags(input *EC2Config) []*ec2.Tag {
 	return tags
 }
 
-func EC2NewInstances(ctx context.Context, input *EC2Config) ([]*ec2.Instance, error) {
-	if len(input.SubnetIds) != 1 {
-		err := fmt.Errorf("must specify exactly one subnet, got: %v", input.SubnetIds)
+func ec2ConfigDefaults(config *EC2Config) *EC2Config {
+	if config.Iops == 0 {
+		config.Iops = 3000
+	}
+	if config.Throughput == 0 {
+		config.Throughput = 125
+	}
+	if config.Gigs == 0 {
+		config.Gigs = 16
+	}
+	return config
+}
+
+func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, error) {
+	config = ec2ConfigDefaults(config)
+	if len(config.SubnetIds) != 1 {
+		err := fmt.Errorf("must specify exactly one subnet, got: %v", config.SubnetIds)
 		Logger.Println("error:", err)
 		return nil, err
 	}
 	runInstancesInput := &ec2.RunInstancesInput{
-		ImageId:             aws.String(input.AmiID),
-		KeyName:             aws.String(input.Key),
-		SubnetId:            aws.String(input.SubnetIds[0]),
-		InstanceType:        aws.String(input.InstanceType),
-		UserData:            aws.String(makeInit(input)),
-		IamInstanceProfile:  &ec2.IamInstanceProfileSpecification{Name: aws.String(input.Profile)},
-		SecurityGroupIds:    []*string{&input.SgID},
-		BlockDeviceMappings: makeBlockDeviceMapping(input),
-		MinCount:            aws.Int64(int64(input.NumInstances)),
-		MaxCount:            aws.Int64(int64(input.NumInstances)),
+		ImageId:             aws.String(config.AmiID),
+		KeyName:             aws.String(config.Key),
+		SubnetId:            aws.String(config.SubnetIds[0]),
+		InstanceType:        aws.String(config.InstanceType),
+		UserData:            aws.String(makeInit(config)),
+		IamInstanceProfile:  &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)},
+		SecurityGroupIds:    []*string{&config.SgID},
+		BlockDeviceMappings: makeBlockDeviceMapping(config),
+		MinCount:            aws.Int64(int64(config.NumInstances)),
+		MaxCount:            aws.Int64(int64(config.NumInstances)),
 		TagSpecifications: []*ec2.TagSpecification{{
 			ResourceType: aws.String(ec2.ResourceTypeInstance),
-			Tags:         makeTags(input),
+			Tags:         makeTags(config),
 		}},
 	}
 	Logger.Println("run instances", DropLinesWithAny(Pformat(runInstancesInput), "null", "UserData"))
