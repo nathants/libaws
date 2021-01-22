@@ -47,12 +47,11 @@ func ec2Ssh() {
 		}
 		stdin = string(bytes)
 	}
-	switch len(instances) {
-	case 0:
+	if len(instances) == 0 {
 		err = fmt.Errorf("no instances found for those selectors")
-	case 1:
+	} else if len(instances) == 1 && args.Cmd != "" {
 		err = lib.EC2SshLogin(instances[0], args.User)
-	default:
+	} else {
 		err = lib.EC2Ssh(context.Background(), &lib.EC2SshInput{
 			User:           args.User,
 			TimeoutSeconds: args.Timeout,

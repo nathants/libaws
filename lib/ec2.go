@@ -8,8 +8,10 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -919,4 +921,123 @@ func EC2SshLogin(instance *ec2.Instance, user string) error {
 		return err
 	}
 	return nil
+}
+
+func ec2AmiLambda(ctx context.Context) (string, error) {
+	resp, err := http.Get("https://docs.aws.amazon.com/lambda/latest/dg/current-supported-versions.html")
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		err := fmt.Errorf("bad http status code: %d", resp.StatusCode)
+		Logger.Println("error:", err)
+		return "", err
+	}
+	r := regexp.MustCompile("(amzn-ami-hvm[^\" ]+)")
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	ami := r.FindAllString(string(body), -1)[0]
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Owners: []*string{aws.String("137112412989")},
+		Filters: []*ec2.Filter{{Name: aws.String("name"), Values: []*string{aws.String(ami)}}},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	if len(out.Images) != 1 {
+		err := fmt.Errorf("didn't find ami for: %s [%d]", ami, len(out.Images))
+		Logger.Println("error:", err)
+		return "", err
+	}
+	fmt.Println(*out.Images[0].OwnerId)
+	return *out.Images[0].ImageId, nil
+}
+
+var ubuntus = map[string]string{
+	"focal":  "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server",
+	"bionic": "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server",
+	"xenial": "ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server",
+	"trusty": "ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-amd64-server",
+}
+
+func keys(m map[string]string) []string {
+	var ks []string
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
+}
+
+func ec2AmiUbuntu(ctx context.Context, name string) (string, error) {
+	fragment, ok := ubuntus[name]
+	if !ok {
+		err := fmt.Errorf("bad ubuntu name %s, should be one of: %v", name, keys(ubuntus))
+		Logger.Println("error:", err)
+		return "", err
+	}
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Owners: []*string{aws.String("099720109477")},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("name"), Values: []*string{aws.String(fmt.Sprintf("*%s*", fragment))}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String("x86_64")}},
+		},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
+	return *out.Images[0].ImageId, nil
+}
+
+func ec2AmiAmzn(ctx context.Context) (string, error) {
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Owners: []*string{aws.String("137112412989")},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("name"), Values: []*string{aws.String("amzn2-ami-hvm-2.0*-ebs")}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String("x86_64")}},
+		},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
+	return *out.Images[0].ImageId, nil
+}
+
+func ec2AmiArch(ctx context.Context) (string, error) {
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Owners: []*string{aws.String("093273469852")},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("name"), Values: []*string{aws.String("arch-linux-hvm-*-ebs")}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String("x86_64")}},
+		},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
+	return *out.Images[0].ImageId, nil
+}
+
+func EC2Ami(ctx context.Context, name string) (amiID string, err error) {
+	switch (name) {
+	case "lambda":
+		amiID, err = ec2AmiLambda(ctx)
+	case "amzn":
+		amiID, err = ec2AmiAmzn(ctx)
+	case "arch":
+		amiID, err = ec2AmiArch(ctx)
+	default:
+		amiID, err = ec2AmiUbuntu(ctx, name)
+	}
+	return amiID, err
 }
