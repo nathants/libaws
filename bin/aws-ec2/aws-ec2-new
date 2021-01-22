@@ -482,7 +482,7 @@ def main(name: 'name of the instance', # type: ignore
     ready_instances = aws.ec2.ls(ready_ids, 'running')
     if login:
         stderr('logging in...')
-        sh.call('aws-ec2-ssh -yq', ready_instances[0].instance_id)
+        sh.call('aws-ec2-ssh -y', ready_instances[0].instance_id)
     elif cmd:
         if os.path.exists(cmd):
             stderr('reading cmd from:', os.path.abspath(cmd))
