@@ -90,8 +90,6 @@ now when you tab complete any cli that takes *selectors, you will see the result
 
 - [lambda-sns](https://github.com/nathants/cli-aws/blob/master/examples/lambda/sns.py)
 
-- [lambda-sqs](https://github.com/nathants/cli-aws/blob/master/examples/lambda/sqs.py)
-
 ## test
 
 ```
