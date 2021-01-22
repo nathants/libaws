@@ -351,6 +351,7 @@ def main(name: 'name of the instance', # type: ignore
         assert '=' in tag, 'bad tag, should be key=value, not: %s' % tag
     ami_tags = {}
     ami_name = ami
+    user = ''
     if ami_name == 'lambda':
         ami = _ami_lambda()
     elif ami_name == 'deeplearning':
@@ -364,6 +365,7 @@ def main(name: 'name of the instance', # type: ignore
         distro = ami
         images = ubuntus_pv if type.split('.')[0] in ['t1', 'm1'] else ubuntus_hvm_ssd
         ami = _ami_ubuntu(images[distro])
+        user = 'ubuntu'
     elif ami.startswith('ami-'):
         ami = ami.strip()
         ami_tags = json.loads(sh.run('aws-ec2-ami-tags', ami))
@@ -383,7 +385,7 @@ def main(name: 'name of the instance', # type: ignore
     elif ami_name == 'arch':
         user = 'arch'
     else:
-        assert False, 'no ssh-user provided, and ami does not have "user" tag'
+        assert user, 'no ssh-user provided, and ami does not have "user" tag'
     stderr('user:', user)
     if verbatim_init:
         init = verbatim_init
