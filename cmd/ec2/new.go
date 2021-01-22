@@ -21,7 +21,7 @@ type newArgs struct {
 	UserName       string   `arg:"-u,--user,required" help:"ssh user name, otherwise look for 'user' tag on instance"`
 	Key            string   `arg:"-k,--key,required"`
 	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create onDemand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized"`
-	SgID           string   `arg:"--sg,required"`
+	SgID           string   `arg:"--sg,required" help:"security group id"`
 	SubnetIds      []string `arg:"--subnets,required" help:"space separated values"`
 	Gigs           int      `arg:"-g,--gigs" help:"ebs gigabytes\n                        " default:"16"`
 	Iops           int      `arg:"--iops" help:"gp3 iops\n                        " default:"3000"`

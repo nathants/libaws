@@ -3,9 +3,9 @@ package cliaws
 import (
 	"context"
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/nathants/cli-aws/lib"
 )
 
 func init() {
@@ -32,6 +32,6 @@ func sqsPurge() {
 		QueueUrl: aws.String(queueUrl),
 	})
 	if err != nil {
-	    lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error:", err)
 	}
 }

@@ -1,4 +1,5 @@
-cli-aws
+cli_aws
+!cli_aws/
 eagerload.py
 test_pre_check.sh
 *.egg-info

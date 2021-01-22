@@ -26,7 +26,7 @@ func TestDropLinesWithAny(t *testing.T) {
 
 func TestChunk(t *testing.T) {
 	type test struct {
-		input []string
+		input  []string
 		output [][]string
 	}
 	tests := []test{
