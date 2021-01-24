@@ -1028,16 +1028,35 @@ func ec2AmiArch(ctx context.Context) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
-func EC2Ami(ctx context.Context, name string) (amiID string, err error) {
+func EC2Ami(ctx context.Context, name string) (amiID string, sshUser string, err error) {
 	switch (name) {
 	case "lambda":
 		amiID, err = ec2AmiLambda(ctx)
+		sshUser = "user"
 	case "amzn":
 		amiID, err = ec2AmiAmzn(ctx)
+		sshUser = "user"
 	case "arch":
 		amiID, err = ec2AmiArch(ctx)
+		sshUser = "arch"
 	default:
 		amiID, err = ec2AmiUbuntu(ctx, name)
+		sshUser = "ubuntu"
 	}
-	return amiID, err
+	return amiID, sshUser, err
+}
+
+func EC2ZonesWithInstance(ctx context.Context, instanceType string) (zones []string, err error) {
+	out, err := EC2Client().DescribeInstanceTypeOfferingsWithContext(ctx, &ec2.DescribeInstanceTypeOfferingsInput{
+		LocationType: aws.String("availability-zone"),
+		Filters: []*ec2.Filter{{Name: aws.String("instance-type"), Values: []*string{aws.String(instanceType)}}},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+	    return nil, err
+	}
+	for _, offer := range out.InstanceTypeOfferings {
+		zones = append(zones, *offer.Location)
+	}
+	return zones, nil
 }

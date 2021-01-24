@@ -23,7 +23,7 @@ func ec2AmiBase() {
 	var args amiBaseArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	amiID, err := lib.EC2Ami(ctx, args.Name)
+	amiID, _, err := lib.EC2Ami(ctx, args.Name)
 	if err != nil {
 	    lib.Logger.Fatal("error:", err)
 	}

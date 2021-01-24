@@ -35,7 +35,6 @@ func (LogWriter) Write(p []byte) (int, error) {
 var Logger = log.New(LogWriter{}, "", log.Llongfile)
 
 func SignalHandler(cancel func()) {
-
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
