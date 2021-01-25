@@ -5,9 +5,9 @@ import aws
 import shell as sh
 
 def main(vpc_name, sg_name, *rules, quiet=False):
-    vpc_id = sh.run('aws-vpc-ensure', vpc_name, stream=False)
+    vpc_id = sh.run(f'aws-vpc-ensure "{vpc_name}"', stream=False)
     try:
-        sg_id = sh.run('aws-ec2-sg-id', sg_name, stream=False)
+        sg_id = sh.run(f'aws-ec2-sg-id "{sg_name}"', stream=False)
     except:
         sg = aws.resource('ec2').create_security_group(Description=sg_name, GroupName=sg_name, VpcId=vpc_id)
     else:
