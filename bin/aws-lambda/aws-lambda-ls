@@ -11,6 +11,7 @@ def main():
             fn['LastModified'] = ':'.join(fn['LastModified'].split(':')[:2]) + 'Z'
             fns.append(fn)
     for fn in sorted(fns, key=lambda x: x['LastModified'], reverse=True):
+        fn['Runtime'] = fn.get('Runtime', '-')
         print('{FunctionName} {Runtime} {Timeout}s {MemorySize}mb {LastModified}'.format(**fn))
 
 if __name__ == '__main__':
