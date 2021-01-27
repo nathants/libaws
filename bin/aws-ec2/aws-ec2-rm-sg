@@ -4,8 +4,8 @@ import aws
 import shell as sh
 
 def main(vpc_name, sg_name):
-    vpc_id = sh.run('aws-vpc-id', vpc_name, stream=False)
-    sg_id = sh.run('aws-ec2-sg-id', sg_name, stream=False)
+    vpc_id = sh.run(f'aws-vpc-id "{vpc_name}"', stream=False)
+    sg_id = sh.run(f'aws-ec2-sg-id "{sg_name}"', stream=False)
     [sg] = list(aws.resource('ec2').security_groups.filter(GroupIds=[sg_id], Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]))
     sg.delete()
 

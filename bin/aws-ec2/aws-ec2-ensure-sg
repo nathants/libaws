@@ -5,7 +5,7 @@ import aws
 import shell as sh
 
 def main(vpc_name, sg_name, *rules, quiet=False):
-    vpc_id = sh.run(f'aws-vpc-ensure "{vpc_name}"', stream=False)
+    vpc_id = sh.run(f'aws-vpc-ensure "{vpc_name}"', stream=True)
     try:
         sg_id = sh.run(f'aws-ec2-sg-id "{sg_name}"', stream=False)
     except:

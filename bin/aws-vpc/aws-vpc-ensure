@@ -12,7 +12,7 @@ def main(name, *tags, xx=0, description=None):
     group with the same name. public ipv4 is turned on.
     """
     try:
-        return sh.run('aws-vpc-id', name)
+        return sh.run(f'aws-vpc-id "{name}"')
     except:
         cidr = '10.xx.0.0/16'
         for tag in tags:
