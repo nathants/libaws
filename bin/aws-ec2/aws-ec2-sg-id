@@ -4,9 +4,12 @@ import aws
 import aws.ec2
 
 def main(name):
-    xs = [x for x in aws.ec2.sgs() if x.group_name == name]
-    assert len(xs) == 1, 'didnt find exactly one match: %s' % xs
-    return xs[0].group_id
+    if name.startswith('sg-'):
+        return name
+    else:
+        xs = [x for x in aws.ec2.sgs() if x.group_name == name]
+        assert len(xs) == 1, 'didnt find exactly one match: %s' % xs
+        return xs[0].group_id
 
 if __name__ == '__main__':
     with aws.setup():
