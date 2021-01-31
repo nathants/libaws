@@ -97,7 +97,7 @@ func ec2New() {
 	if !strings.HasPrefix(args.Sg, "sg-") {
 		sgID, err := lib.EC2SgID(ctx, args.Sg)
 		if err != nil {
-		    lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error:", err)
 		}
 		args.Sg = sgID
 	}

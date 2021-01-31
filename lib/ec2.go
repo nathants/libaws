@@ -1067,7 +1067,7 @@ func EC2SgID(ctx context.Context, name string) (string, error) {
 	})
 	if err != nil {
 		Logger.Println("error:", err)
-	    return "", err
+		return "", err
 	}
 	if len(out.SecurityGroups) != 1 {
 		err = fmt.Errorf("didn't find exactly 1 security group for name: %s", name)
