@@ -1,8 +1,8 @@
 package cliaws
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
@@ -25,7 +25,7 @@ func ec2LsInstanceZones() {
 	ctx := context.Background()
 	zones, err := lib.EC2ZonesWithInstance(ctx, args.Type)
 	if err != nil {
-	    lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error:", err)
 	}
 	for _, zone := range zones {
 		fmt.Println(zone)

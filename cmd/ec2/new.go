@@ -6,6 +6,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/cli-aws/lib"
+	"math/rand"
 	"strings"
 )
 
@@ -17,13 +18,13 @@ type newArgs struct {
 	Name           string   `arg:"positional,required"`
 	Num            int      `arg:"-n,--num" default:"1"`
 	Type           string   `arg:"-t,--type,required"`
-	Ami            string   `arg:"-a,--ami,required"`
+	Ami            string   `arg:"-a,--ami,required" help:"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | eoan | focal"`
 	UserName       string   `arg:"-u,--user" help:"ssh user name, otherwise look for 'user' tag on instance or find via ami name lookup"`
 	Key            string   `arg:"-k,--key,required"`
 	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create onDemand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized"`
-	SgID           string   `arg:"--sg,required" help:"security group id"`
-	SubnetIds      []string `arg:"--subnets" help:"subnet-ids as space separated values. specify instead of vpc-id"`
-	VpcId          string   `arg:"-v,--vpc" help:"specify instead of subnet-ids"`
+	Sg             string   `arg:"--sg,required" help:"security group name or id"`
+	SubnetIds      []string `arg:"--subnets" help:"subnet-ids as space separated values. specify instead of --vpc"`
+	Vpc            string   `arg:"-v,--vpc" help:"vpc name or id. specify instead of --subnet-ids"`
 	Gigs           int      `arg:"-g,--gigs" help:"ebs gigabytes\n                        " default:"16"`
 	Iops           int      `arg:"--iops" help:"gp3 iops\n                        " default:"3000"`
 	Throughput     int      `arg:"--throughput" help:"gp3 throughput mb/s\n                        " default:"125"`
@@ -37,21 +38,68 @@ func (newArgs) Description() string {
 	return "\ncreate ec2 instances\n"
 }
 
+func useSubnetsFromVpc(ctx context.Context, args *newArgs) {
+	if args.Vpc != "" {
+		zones, err := lib.EC2ZonesWithInstance(ctx, args.Type)
+		if err != nil {
+			lib.Logger.Fatal("error:", err)
+		}
+		vpcID := args.Vpc
+		if !strings.HasPrefix("vpc-", args.Vpc) {
+			vpcID, err = lib.VpcID(ctx, args.Vpc)
+			if err != nil {
+				lib.Logger.Fatal("error:", err)
+			}
+		}
+		subnets, err := lib.VpcSubnets(ctx, vpcID)
+		if err != nil {
+			lib.Logger.Fatal("error:", err)
+		}
+		if args.SpotStrategy == "" {
+			zone := zones[rand.Intn(len(zones))]
+			for _, subnet := range subnets {
+				if *subnet.AvailabilityZone == zone {
+					args.SubnetIds = []string{*subnet.SubnetId}
+					break
+				}
+			}
+			if len(args.SubnetIds) != 1 {
+				lib.Logger.Fatalf("no subnet in zone %s for vpc %s", zone, vpcID)
+			}
+		} else {
+			for _, subnet := range subnets {
+				args.SubnetIds = append(args.SubnetIds, *subnet.SubnetId)
+			}
+			if len(args.SubnetIds) == 0 {
+				lib.Logger.Fatalf("no subnets for vpc %s", vpcID)
+			}
+		}
+	}
+}
+
 func ec2New() {
 	var args newArgs
 	p := arg.MustParse(&args)
-	if args.VpcId == "" && len(args.SubnetIds) == 0 {
-		p.Fail("you must specify one of --vpc | --subnets")
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	lib.SignalHandler(cancel)
+	if args.Vpc == "" && len(args.SubnetIds) == 0 {
+		p.Fail("you must specify one of --vpc | --subnets")
+	}
+	useSubnetsFromVpc(ctx, &args)
 	if !strings.HasPrefix(args.Ami, "ami-") {
 		ami, sshUser, err := lib.EC2Ami(ctx, args.Ami)
 		if err != nil {
-		    lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error:", err)
 		}
 		args.Ami = ami
 		args.UserName = sshUser
+	}
+	if !strings.HasPrefix(args.Sg, "sg-") {
+		sgID, err := lib.EC2SgID(ctx, args.Sg)
+		if err != nil {
+		    lib.Logger.Fatal("error:", err)
+		}
+		args.Sg = sgID
 	}
 	var instances []*ec2.Instance
 	var tags []lib.EC2Tag
@@ -69,7 +117,7 @@ func ec2New() {
 		InstanceType:   args.Type,
 		Name:           args.Name,
 		Key:            args.Key,
-		SgID:           args.SgID,
+		SgID:           args.Sg,
 		SubnetIds:      args.SubnetIds,
 		Gigs:           args.Gigs,
 		Iops:           args.Iops,

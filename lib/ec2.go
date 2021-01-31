@@ -931,7 +931,7 @@ func ec2AmiLambda(ctx context.Context) (string, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		err := fmt.Errorf("bad http status code: %d", resp.StatusCode)
+		err = fmt.Errorf("bad http status code: %d", resp.StatusCode)
 		Logger.Println("error:", err)
 		return "", err
 	}
@@ -943,7 +943,7 @@ func ec2AmiLambda(ctx context.Context) (string, error) {
 	}
 	ami := r.FindAllString(string(body), -1)[0]
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String("137112412989")},
+		Owners:  []*string{aws.String("137112412989")},
 		Filters: []*ec2.Filter{{Name: aws.String("name"), Values: []*string{aws.String(ami)}}},
 	})
 	if err != nil {
@@ -1029,7 +1029,7 @@ func ec2AmiArch(ctx context.Context) (string, error) {
 }
 
 func EC2Ami(ctx context.Context, name string) (amiID string, sshUser string, err error) {
-	switch (name) {
+	switch name {
 	case "lambda":
 		amiID, err = ec2AmiLambda(ctx)
 		sshUser = "user"
@@ -1049,14 +1049,30 @@ func EC2Ami(ctx context.Context, name string) (amiID string, sshUser string, err
 func EC2ZonesWithInstance(ctx context.Context, instanceType string) (zones []string, err error) {
 	out, err := EC2Client().DescribeInstanceTypeOfferingsWithContext(ctx, &ec2.DescribeInstanceTypeOfferingsInput{
 		LocationType: aws.String("availability-zone"),
-		Filters: []*ec2.Filter{{Name: aws.String("instance-type"), Values: []*string{aws.String(instanceType)}}},
+		Filters:      []*ec2.Filter{{Name: aws.String("instance-type"), Values: []*string{aws.String(instanceType)}}},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
-	    return nil, err
+		return nil, err
 	}
 	for _, offer := range out.InstanceTypeOfferings {
 		zones = append(zones, *offer.Location)
 	}
 	return zones, nil
+}
+
+func EC2SgID(ctx context.Context, name string) (string, error) {
+	out, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
+		Filters: []*ec2.Filter{{Name: aws.String("tag:Name"), Values: []*string{aws.String(name)}}},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+	    return "", err
+	}
+	if len(out.SecurityGroups) != 1 {
+		err = fmt.Errorf("didn't find exactly 1 security group for name: %s", name)
+		Logger.Println("error:", err)
+		return "", err
+	}
+	return *out.SecurityGroups[0].GroupId, nil
 }
