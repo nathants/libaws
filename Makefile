@@ -1,9 +1,9 @@
-.PHONY: cliaws check check-static check-ineff check-err check-vet test-lib check-bodyclose check-nargs check-fmt check-shadow
+.PHONY: cli-aws check check-static check-ineff check-err check-vet test-lib check-bodyclose check-nargs check-fmt check-shadow
 
-all: cliaws
+all: cli-aws
 
-cliaws:
-	go build -o cliaws cmd/cliaws/main.go
+cli-aws:
+	go build
 
 check: check-deps check-static check-ineff check-err check-vet check-lint check-bodyclose check-nargs check-fmt check-shadow
 
