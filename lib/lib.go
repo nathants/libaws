@@ -137,3 +137,10 @@ func Exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+func StringOr(s *string, d string) string {
+	if s == nil {
+		return d
+	}
+	return *s
+}

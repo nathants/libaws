@@ -29,6 +29,6 @@ func ec2Ls() {
 		lib.Logger.Fatal("error:", err)
 	}
 	for _, instance := range instances {
-		fmt.Println(*instance.InstanceId, *instance.State.Name, *instance.InstanceType)
+		fmt.Println(*instance.InstanceId, *instance.State.Name, *instance.InstanceType, lib.EC2Tags(instance.Tags))
 	}
 }

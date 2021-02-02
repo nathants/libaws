@@ -1076,3 +1076,11 @@ func EC2SgID(ctx context.Context, name string) (string, error) {
 	}
 	return *out.SecurityGroups[0].GroupId, nil
 }
+
+func EC2Tags(tags []*ec2.Tag) string {
+	var res []string
+	for _, tag := range tags {
+		res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
+	}
+	return strings.Join(res, ",")
+}
