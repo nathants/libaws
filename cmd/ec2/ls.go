@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
+	"os"
 )
 
 func init() {
@@ -28,7 +29,17 @@ func ec2Ls() {
 	if err != nil {
 		lib.Logger.Fatal("error:", err)
 	}
+	fmt.Fprintln(os.Stderr, "name", "type", "state", "id", "image", "kind", "security-group", "tags")
 	for _, instance := range instances {
-		fmt.Println(*instance.InstanceId, *instance.State.Name, *instance.InstanceType, lib.EC2Tags(instance.Tags))
+		fmt.Println(
+			lib.EC2Name(instance.Tags),
+			*instance.InstanceType,
+			lib.EC2State(instance),
+			*instance.InstanceId,
+			*instance.ImageId,
+			lib.EC2Kind(instance),
+			lib.EC2SecurityGroups(instance.SecurityGroups),
+			lib.EC2Tags(instance.Tags),
+		)
 	}
 }

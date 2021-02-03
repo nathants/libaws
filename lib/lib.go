@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
+	"github.com/mattn/go-isatty"
 )
 
 type LogWriter struct{}
@@ -144,3 +145,22 @@ func StringOr(s *string, d string) string {
 	}
 	return *s
 }
+
+func color(code int) func(string) string {
+	return func(s string) string {
+		if isatty.IsTerminal(os.Stdout.Fd()) {
+			return fmt.Sprintf("\033[%dm%s\033[0m", code, s)
+		}
+		return s
+	}
+}
+
+var (
+	Red     = color(31)
+	Green   = color(32)
+	Yellow  = color(33)
+	Blue    = color(34)
+	Magenta = color(35)
+	Cyan    = color(36)
+	White   = color(37)
+)

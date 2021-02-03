@@ -1080,7 +1080,48 @@ func EC2SgID(ctx context.Context, name string) (string, error) {
 func EC2Tags(tags []*ec2.Tag) string {
 	var res []string
 	for _, tag := range tags {
-		res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
+		if *tag.Key != "Name" {
+			res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
+		}
 	}
 	return strings.Join(res, ",")
+}
+
+func EC2Name(tags []*ec2.Tag) string {
+	for _, tag := range tags {
+		if *tag.Key == "Name" {
+			return *tag.Value
+		}
+	}
+	return "-"
+}
+
+func EC2State(instance *ec2.Instance) string {
+	switch *instance.State.Name {
+	case "running":
+		return Green("running")
+	case "pending":
+		return Cyan("pending")
+	default:
+		return Red(*instance.State.Name)
+	}
+}
+
+func EC2SecurityGroups(sgs []*ec2.GroupIdentifier) string {
+	var res []string
+	for _, sg := range sgs {
+		if *sg.GroupName != "" {
+			res = append(res, *sg.GroupName)
+		} else {
+			res = append(res, *sg.GroupId)
+		}
+	}
+	return strings.Join(res, ",")
+}
+
+func EC2Kind(instance *ec2.Instance) string {
+	if instance.SpotInstanceRequestId != nil {
+		return "spot"
+	}
+	return "ondemand"
 }
