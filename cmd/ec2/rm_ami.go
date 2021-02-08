@@ -1,13 +1,13 @@
 package cliaws
 
 import (
-	"time"
 	"context"
 	"fmt"
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/cli-aws/lib"
+	"time"
 )
 
 func init() {
@@ -73,7 +73,7 @@ func ec2RmAmi() {
 			break
 		}
 		lib.Logger.Println("wait for image to delete before deleting backing snapshot")
-		time.Sleep(1*time.Second)
+		time.Sleep(1 * time.Second)
 	}
 	// delete snapshot
 	for _, snapshot := range snaps.Snapshots {

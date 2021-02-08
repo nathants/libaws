@@ -38,7 +38,7 @@ func ec2LsSnapshot() {
 			NextToken: nextToken,
 		})
 		if err != nil {
-		    lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error:", err)
 		}
 		snapshots = append(snapshots, out.Snapshots...)
 		if out.NextToken == nil {
