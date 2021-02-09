@@ -41,7 +41,7 @@ func route53Ls() {
 				for _, val := range record.ResourceRecords {
 					vals = append(vals, *val.Value)
 				}
-				fmt.Println("-", *record.Name, record.Type, *record.TTL, "=>", strings.Join(vals, " "))
+				fmt.Println("-", *record.Name, *record.Type, *record.TTL, "=>", strings.Join(vals, " "))
 			}
 		}
 		fmt.Println()
