@@ -14,7 +14,7 @@ func init() {
 	lib.Commands["ec2-new"] = ec2New
 }
 
-type newArgs struct {
+type ec2NewArgs struct {
 	Name           string   `arg:"positional,required"`
 	Num            int      `arg:"-n,--num" default:"1"`
 	Type           string   `arg:"-t,--type,required"`
@@ -34,11 +34,11 @@ type newArgs struct {
 	SecondsTimeout int      `arg:"--seconds-timeout" default:"3600" help:"will $(sudo poweroff) after this many seconds.\n                         calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff).\n                         set to 0 to disable.\n                         $(sudo journalctl -f -u timeout.service) to follow logs.\n                        "`
 }
 
-func (newArgs) Description() string {
+func (ec2NewArgs) Description() string {
 	return "\ncreate ec2 instances\n"
 }
 
-func useSubnetsFromVpc(ctx context.Context, args *newArgs) {
+func useSubnetsFromVpc(ctx context.Context, args *ec2NewArgs) {
 	if args.Vpc != "" {
 		zones, err := lib.EC2ZonesWithInstance(ctx, args.Type)
 		if err != nil {
@@ -78,7 +78,7 @@ func useSubnetsFromVpc(ctx context.Context, args *newArgs) {
 }
 
 func ec2New() {
-	var args newArgs
+	var args ec2NewArgs
 	p := arg.MustParse(&args)
 	ctx, cancel := context.WithCancel(context.Background())
 	lib.SignalHandler(cancel)

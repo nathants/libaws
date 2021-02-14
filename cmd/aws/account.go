@@ -12,15 +12,15 @@ func init() {
 	lib.Commands["aws-account"] = account
 }
 
-type lsArgs struct {
+type accountArgs struct {
 }
 
-func (lsArgs) Description() string {
+func (accountArgs) Description() string {
 	return "\ncurrent account id\n"
 }
 
 func account() {
-	var args lsArgs
+	var args accountArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	account, err := lib.Account(ctx)

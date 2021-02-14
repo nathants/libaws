@@ -15,15 +15,15 @@ func init() {
 	lib.Commands["ec2-ls-snapshot"] = ec2LsSnapshot
 }
 
-type lsSnapshotArgs struct {
+type ec2LsSnapshotArgs struct {
 }
 
-func (lsSnapshotArgs) Description() string {
+func (ec2LsSnapshotArgs) Description() string {
 	return "\nlist snapshots\n"
 }
 
 func ec2LsSnapshot() {
-	var args lsSnapshotArgs
+	var args ec2LsSnapshotArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	account, err := lib.Account(ctx)

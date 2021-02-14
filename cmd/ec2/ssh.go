@@ -15,7 +15,7 @@ func init() {
 	lib.Commands["ec2-ssh"] = ec2Ssh
 }
 
-type sshArgs struct {
+type ec2SshArgs struct {
 	Selectors []string `arg:"positional" help:"instance-ids | dns-names | private-dns-names | tags | vpc-id | subnet-id | security-group-id | ip-addresses | private-ip-addresses"`
 	User      string   `arg:"-u,--user" help:"ssh user if not tagged on instance as 'user'"`
 	Cmd       string   `arg:"-c,--cmd"`
@@ -24,12 +24,12 @@ type sshArgs struct {
 	Timeout   int      `arg:"-t,--timeout" help:"seconds before ssh cmd is considered failed"`
 }
 
-func (sshArgs) Description() string {
+func (ec2SshArgs) Description() string {
 	return "\nssh to ec2 instances\n"
 }
 
 func ec2Ssh() {
-	var args sshArgs
+	var args ec2SshArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	instances, err := lib.EC2RetryListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)

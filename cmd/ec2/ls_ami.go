@@ -14,15 +14,15 @@ func init() {
 	lib.Commands["ec2-ls-ami"] = ec2LsAmi
 }
 
-type lsAmiArgs struct {
+type ec2LsAmiArgs struct {
 }
 
-func (lsAmiArgs) Description() string {
+func (ec2LsAmiArgs) Description() string {
 	return "\nlist amis\n"
 }
 
 func ec2LsAmi() {
-	var args lsAmiArgs
+	var args ec2LsAmiArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	account, err := lib.Account(ctx)

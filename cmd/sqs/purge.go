@@ -12,16 +12,16 @@ func init() {
 	lib.Commands["sqs-purge"] = sqsPurge
 }
 
-type purgeArgs struct {
+type sqsPurgeArgs struct {
 	QueueName string `arg:"positional,required"`
 }
 
-func (purgeArgs) Description() string {
+func (sqsPurgeArgs) Description() string {
 	return "\nsqs queues purge\n"
 }
 
 func sqsPurge() {
-	var args purgeArgs
+	var args sqsPurgeArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	queueUrl, err := lib.SQSQueueUrl(ctx, args.QueueName)

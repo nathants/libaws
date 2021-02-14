@@ -12,15 +12,15 @@ func init() {
 	lib.Commands["route53-ls"] = route53Ls
 }
 
-type lsArgs struct {
+type route53LsArgs struct {
 }
 
-func (lsArgs) Description() string {
+func (route53LsArgs) Description() string {
 	return "\nlist route53 entries\n"
 }
 
 func route53Ls() {
-	var args lsArgs
+	var args route53LsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	zones, err := lib.Route53ListZones(ctx)

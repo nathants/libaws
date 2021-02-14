@@ -13,15 +13,15 @@ func init() {
 	lib.Commands["sqs-ls"] = sqsLs
 }
 
-type lsArgs struct {
+type sqsLsArgs struct {
 }
 
-func (lsArgs) Description() string {
+func (sqsLsArgs) Description() string {
 	return "\nlist sqs queues\n"
 }
 
 func sqsLs() {
-	var args lsArgs
+	var args sqsLsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	queues, err := lib.SQSListQueues(ctx)

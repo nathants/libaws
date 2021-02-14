@@ -12,17 +12,17 @@ func init() {
 	lib.Commands["ec2-ls"] = ec2Ls
 }
 
-type lsArgs struct {
+type ec2LsArgs struct {
 	Selectors []string `arg:"positional" help:"instance-ids | dns-names | private-dns-names | tags | vpc-id | subnet-id | security-group-id | ip-addresses | private-ip-addresses"`
 	State     string   `arg:"-s,--state" default:"" help:"running | pending | terminated | stopped"`
 }
 
-func (lsArgs) Description() string {
+func (ec2LsArgs) Description() string {
 	return "\nlist ec2 instances\n"
 }
 
 func ec2Ls() {
-	var args lsArgs
+	var args ec2LsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	instances, err := lib.EC2RetryListInstances(ctx, args.Selectors, args.State)

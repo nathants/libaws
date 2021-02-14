@@ -12,16 +12,16 @@ func init() {
 	lib.Commands["ec2-rm-snapshot"] = ec2RmSnapshot
 }
 
-type rmSnapshotArgs struct {
+type ec2RmSnapshotArgs struct {
 	SnapshotID string `arg:"positional"`
 }
 
-func (rmSnapshotArgs) Description() string {
+func (ec2RmSnapshotArgs) Description() string {
 	return "\ndelete an snapshot\n"
 }
 
 func ec2RmSnapshot() {
-	var args rmSnapshotArgs
+	var args ec2RmSnapshotArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	_, err := lib.EC2Client().DeleteSnapshotWithContext(ctx, &ec2.DeleteSnapshotInput{

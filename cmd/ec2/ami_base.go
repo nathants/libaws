@@ -11,16 +11,16 @@ func init() {
 	lib.Commands["ec2-ami-base"] = ec2AmiBase
 }
 
-type amiBaseArgs struct {
+type ec2AmiBaseArgs struct {
 	Name string `arg:"positional,required" help:"arch | amzn | lambda | deeplearning | bionic | xenial | trusty | eoan | focal"`
 }
 
-func (amiBaseArgs) Description() string {
+func (ec2AmiBaseArgs) Description() string {
 	return "\nget the latest ami-id for a given base ami name\n"
 }
 
 func ec2AmiBase() {
-	var args amiBaseArgs
+	var args ec2AmiBaseArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	amiID, _, err := lib.EC2Ami(ctx, args.Name)

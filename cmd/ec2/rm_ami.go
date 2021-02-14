@@ -14,16 +14,16 @@ func init() {
 	lib.Commands["ec2-rm-ami"] = ec2RmAmi
 }
 
-type rmAmiArgs struct {
+type ec2RmAmiArgs struct {
 	AmiID string `arg:"positional"`
 }
 
-func (rmAmiArgs) Description() string {
+func (ec2RmAmiArgs) Description() string {
 	return "\ndelete an ami\n"
 }
 
 func ec2RmAmi() {
-	var args rmAmiArgs
+	var args ec2RmAmiArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	account, err := lib.Account(ctx)

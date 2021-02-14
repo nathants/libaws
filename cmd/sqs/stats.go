@@ -13,16 +13,16 @@ func init() {
 	lib.Commands["sqs-stats"] = sqsStats
 }
 
-type statsArgs struct {
+type sqsStatsArgs struct {
 	QueueName string `arg:"positional,required"`
 }
 
-func (statsArgs) Description() string {
+func (sqsStatsArgs) Description() string {
 	return "\nsqs queues stats\n"
 }
 
 func sqsStats() {
-	var args statsArgs
+	var args sqsStatsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	queueUrl, err := lib.SQSQueueUrl(ctx, args.QueueName)
