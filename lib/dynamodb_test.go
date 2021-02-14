@@ -56,9 +56,9 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			[]string{"userid:s:hash"},
 			[]string{},
 			&dynamodb.CreateTableInput{
-				TableName:              aws.String("table"),
-				BillingMode:            aws.String("PAY_PER_REQUEST"),
-				StreamSpecification:    &dynamodb.StreamSpecification{
+				TableName:   aws.String("table"),
+				BillingMode: aws.String("PAY_PER_REQUEST"),
+				StreamSpecification: &dynamodb.StreamSpecification{
 					StreamEnabled: aws.Bool(false),
 				},
 				AttributeDefinitions: []*dynamodb.AttributeDefinition{
@@ -78,9 +78,9 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			},
 			[]string{},
 			&dynamodb.CreateTableInput{
-				TableName:              aws.String("table"),
-				BillingMode:            aws.String("PAY_PER_REQUEST"),
-				StreamSpecification:    &dynamodb.StreamSpecification{
+				TableName:   aws.String("table"),
+				BillingMode: aws.String("PAY_PER_REQUEST"),
+				StreamSpecification: &dynamodb.StreamSpecification{
 					StreamEnabled: aws.Bool(false),
 				},
 				AttributeDefinitions: []*dynamodb.AttributeDefinition{
@@ -283,9 +283,9 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 				"Tags.1.Value=123",
 			},
 			&dynamodb.CreateTableInput{
-				TableName:             aws.String("table"),
-				BillingMode:           aws.String("PAY_PER_REQUEST"),
-				StreamSpecification:   &dynamodb.StreamSpecification{
+				TableName:   aws.String("table"),
+				BillingMode: aws.String("PAY_PER_REQUEST"),
+				StreamSpecification: &dynamodb.StreamSpecification{
 					StreamEnabled: aws.Bool(false),
 				},
 				Tags: []*dynamodb.Tag{

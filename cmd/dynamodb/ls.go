@@ -7,7 +7,6 @@ import (
 	// "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 
-
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
@@ -36,7 +35,7 @@ func dynamodbLs() {
 			TableName: table,
 		})
 		if err != nil {
-		    lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error:", err)
 		}
 		fmt.Println(*table, *description.Table.TableStatus)
 	}
