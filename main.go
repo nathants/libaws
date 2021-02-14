@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	_ "github.com/nathants/cli-aws/cmd/aws"
+	_ "github.com/nathants/cli-aws/cmd/dynamodb"
 	_ "github.com/nathants/cli-aws/cmd/ec2"
 	_ "github.com/nathants/cli-aws/cmd/route53"
 	_ "github.com/nathants/cli-aws/cmd/sqs"

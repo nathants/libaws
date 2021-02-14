@@ -1,8 +1,11 @@
 package lib
 
 import (
+	"context"
+	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/satori/go.uuid"
 	"reflect"
 	"testing"
 )
@@ -48,7 +51,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 		err   bool
 	}
 	tests := []test{
-
 		{
 			"table",
 			[]string{"userid:s:hash"},
@@ -56,12 +58,9 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			&dynamodb.CreateTableInput{
 				TableName:              aws.String("table"),
 				BillingMode:            aws.String("PAY_PER_REQUEST"),
-				ProvisionedThroughput:  &dynamodb.ProvisionedThroughput{},
-				SSESpecification:       &dynamodb.SSESpecification{},
-				StreamSpecification:    &dynamodb.StreamSpecification{},
-				Tags:                   []*dynamodb.Tag{},
-				GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{},
-				LocalSecondaryIndexes:  []*dynamodb.LocalSecondaryIndex{},
+				StreamSpecification:    &dynamodb.StreamSpecification{
+					StreamEnabled: aws.Bool(false),
+				},
 				AttributeDefinitions: []*dynamodb.AttributeDefinition{
 					{AttributeName: aws.String("userid"), AttributeType: aws.String("S")},
 				},
@@ -71,7 +70,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			},
 			false,
 		},
-
 		{
 			"table",
 			[]string{
@@ -82,12 +80,9 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			&dynamodb.CreateTableInput{
 				TableName:              aws.String("table"),
 				BillingMode:            aws.String("PAY_PER_REQUEST"),
-				ProvisionedThroughput:  &dynamodb.ProvisionedThroughput{},
-				SSESpecification:       &dynamodb.SSESpecification{},
-				StreamSpecification:    &dynamodb.StreamSpecification{},
-				Tags:                   []*dynamodb.Tag{},
-				GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{},
-				LocalSecondaryIndexes:  []*dynamodb.LocalSecondaryIndex{},
+				StreamSpecification:    &dynamodb.StreamSpecification{
+					StreamEnabled: aws.Bool(false),
+				},
 				AttributeDefinitions: []*dynamodb.AttributeDefinition{
 					{AttributeName: aws.String("userid"), AttributeType: aws.String("S")},
 					{AttributeName: aws.String("date"), AttributeType: aws.String("N")},
@@ -99,7 +94,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			},
 			false,
 		},
-
 		{
 			"table",
 			[]string{
@@ -118,14 +112,10 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					ReadCapacityUnits:  aws.Int64(10),
 					WriteCapacityUnits: aws.Int64(10),
 				},
-				SSESpecification:       &dynamodb.SSESpecification{},
-				StreamSpecification:    &dynamodb.StreamSpecification{
-					StreamEnabled: aws.Bool(true),
+				StreamSpecification: &dynamodb.StreamSpecification{
+					StreamEnabled:  aws.Bool(true),
 					StreamViewType: aws.String("KEYS_ONLY"),
 				},
-				Tags:                   []*dynamodb.Tag{},
-				GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{},
-				LocalSecondaryIndexes:  []*dynamodb.LocalSecondaryIndex{},
 				AttributeDefinitions: []*dynamodb.AttributeDefinition{
 					{AttributeName: aws.String("userid"), AttributeType: aws.String("S")},
 					{AttributeName: aws.String("date"), AttributeType: aws.String("N")},
@@ -137,7 +127,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			},
 			false,
 		},
-
 		{
 			"table",
 			[]string{
@@ -162,10 +151,9 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					ReadCapacityUnits:  aws.Int64(10),
 					WriteCapacityUnits: aws.Int64(10),
 				},
-				SSESpecification:       &dynamodb.SSESpecification{},
-				StreamSpecification:    &dynamodb.StreamSpecification{},
-				Tags:                   []*dynamodb.Tag{},
-				GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{},
+				StreamSpecification: &dynamodb.StreamSpecification{
+					StreamEnabled: aws.Bool(false),
+				},
 				LocalSecondaryIndexes: []*dynamodb.LocalSecondaryIndex{
 					{
 						IndexName: aws.String("index"),
@@ -190,7 +178,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			},
 			false,
 		},
-
 		{
 			"table",
 			[]string{
@@ -211,7 +198,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			&dynamodb.CreateTableInput{},
 			true,
 		},
-
 		{
 			"table",
 			[]string{
@@ -243,14 +229,14 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					ReadCapacityUnits:  aws.Int64(10),
 					WriteCapacityUnits: aws.Int64(10),
 				},
-				SSESpecification:    &dynamodb.SSESpecification{},
-				StreamSpecification: &dynamodb.StreamSpecification{},
-				Tags:                []*dynamodb.Tag{},
+				StreamSpecification: &dynamodb.StreamSpecification{
+					StreamEnabled: aws.Bool(false),
+				},
 				GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{
 					{
 						IndexName: aws.String("index"),
 						ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
-							ReadCapacityUnits: aws.Int64(5),
+							ReadCapacityUnits:  aws.Int64(5),
 							WriteCapacityUnits: aws.Int64(5),
 						},
 						KeySchema: []*dynamodb.KeySchemaElement{
@@ -264,7 +250,7 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					{
 						IndexName: aws.String("index2"),
 						ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
-							ReadCapacityUnits: aws.Int64(7),
+							ReadCapacityUnits:  aws.Int64(7),
 							WriteCapacityUnits: aws.Int64(7),
 						},
 						KeySchema: []*dynamodb.KeySchemaElement{
@@ -276,7 +262,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 						},
 					},
 				},
-				LocalSecondaryIndexes: []*dynamodb.LocalSecondaryIndex{},
 				AttributeDefinitions: []*dynamodb.AttributeDefinition{
 					{AttributeName: aws.String("userid"), AttributeType: aws.String("S")},
 					{AttributeName: aws.String("date"), AttributeType: aws.String("N")},
@@ -288,7 +273,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			},
 			false,
 		},
-
 		{
 			"table",
 			[]string{"userid:s:hash"},
@@ -299,17 +283,15 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 				"Tags.1.Value=123",
 			},
 			&dynamodb.CreateTableInput{
-				TableName:              aws.String("table"),
-				BillingMode:            aws.String("PAY_PER_REQUEST"),
-				ProvisionedThroughput:  &dynamodb.ProvisionedThroughput{},
-				SSESpecification:       &dynamodb.SSESpecification{},
-				StreamSpecification:    &dynamodb.StreamSpecification{},
-				Tags:                   []*dynamodb.Tag{
+				TableName:             aws.String("table"),
+				BillingMode:           aws.String("PAY_PER_REQUEST"),
+				StreamSpecification:   &dynamodb.StreamSpecification{
+					StreamEnabled: aws.Bool(false),
+				},
+				Tags: []*dynamodb.Tag{
 					{Key: aws.String("foo"), Value: aws.String("bar")},
 					{Key: aws.String("asdf"), Value: aws.String("123")},
 				},
-				GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{},
-				LocalSecondaryIndexes:  []*dynamodb.LocalSecondaryIndex{},
 				AttributeDefinitions: []*dynamodb.AttributeDefinition{
 					{AttributeName: aws.String("userid"), AttributeType: aws.String("S")},
 				},
@@ -319,7 +301,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			},
 			false,
 		},
-
 		{
 			"table",
 			[]string{
@@ -332,8 +313,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			&dynamodb.CreateTableInput{TableName: aws.String("table")},
 			true,
 		},
-
-		//
 	}
 	for _, test := range tests {
 		input, err := DynamoDBEnsureInput(test.name, test.keys, test.attrs)
@@ -351,5 +330,381 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			t.Errorf("\ngot:\n%v\nwant:\n%v\n", input, test.input)
 			continue
 		}
+	}
+}
+
+func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
+	ctx := context.Background()
+	name := "test-table-" + uuid.NewV4().String()
+	//
+	input, err := DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{
+			"read=10",
+			"write=10",
+			"stream=keys_only",
+		},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsureTable(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	//
+	defer func() {
+		err := DynamoDBDeleteTable(ctx, name)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("deleted table:", name)
+	}()
+	//
+	err = DynamoDBWaitForActive(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 10 {
+		t.Errorf("\nattr mismatch read != 10")
+		return
+	}
+	if *table.Table.ProvisionedThroughput.WriteCapacityUnits != 10 {
+		t.Errorf("\nattr mismatch write != 10")
+		return
+	}
+	if !*table.Table.StreamSpecification.StreamEnabled {
+		t.Errorf("\nattr mismatch stream !enabled")
+		return
+	}
+	if *table.Table.StreamSpecification.StreamViewType != "KEYS_ONLY" {
+		t.Errorf("\nattr mismatch stream != keys_only")
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+	//
+	input, err = DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{
+			"read=5",
+			"write=5",
+			"stream=keys_only",
+		},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsureTable(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBWaitForActive(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 5 {
+		t.Errorf("\nattr mismatch read != 5")
+		return
+	}
+	if *table.Table.ProvisionedThroughput.WriteCapacityUnits != 5 {
+		t.Errorf("\nattr mismatch write != 5")
+		return
+	}
+	if !*table.Table.StreamSpecification.StreamEnabled {
+		t.Errorf("\nattr mismatch stream !enabled")
+		return
+	}
+	if *table.Table.StreamSpecification.StreamViewType != "KEYS_ONLY" {
+		t.Errorf("\nattr mismatch stream != keys_only")
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+	//
+	input, err = DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{
+			"read=5",
+			"write=5",
+		},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsureTable(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBWaitForActive(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 5 {
+		t.Errorf("\nattr mismatch read != 5")
+		return
+	}
+	if *table.Table.ProvisionedThroughput.WriteCapacityUnits != 5 {
+		t.Errorf("\nattr mismatch write != 5")
+		return
+	}
+	if table.Table.StreamSpecification != nil {
+		t.Errorf("\nattr mismatch stream enabled")
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+}
+
+func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
+	ctx := context.Background()
+	name := "test-table-" + uuid.NewV4().String()
+	//
+	input, err := DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsureTable(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	//
+	defer func() {
+		err := DynamoDBDeleteTable(ctx, name)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("deleted table:", name)
+	}()
+	//
+	err = DynamoDBWaitForActive(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
+		t.Errorf("\nattr mismatch throughput != nil")
+		return
+	}
+	if table.Table.StreamSpecification != nil {
+		t.Errorf("\nattr mismatch stream != nil")
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+	tags, err := DynamoDBListTags(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if len(tags) != 0 {
+		t.Errorf("\nlen(tags) != 0")
+		return
+	}
+	//
+	input, err = DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{
+			"Tags.0.Key=foo",
+			"Tags.0.Value=bar",
+			"Tags.1.Key=asdf",
+			"Tags.1.Value=123",
+		},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsureTable(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBWaitForActive(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
+		t.Errorf("\nattr mismatch throughput != nil")
+		return
+	}
+	if table.Table.StreamSpecification != nil {
+		t.Errorf("\nattr mismatch stream != nil")
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+	tags, err = DynamoDBListTags(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if len(tags) != 2 {
+		t.Errorf("\nlen(tags) != 2")
+		return
+	}
+	if *tags[0].Key != "foo" || *tags[0].Value != "bar" {
+		t.Errorf("\ntag:foo != bar")
+		return
+	}
+	if *tags[1].Key != "asdf" || *tags[1].Value != "123" {
+		t.Errorf("\ntag:asdf != 123")
+		return
+	}
+	//
+	input, err = DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{
+			"Tags.0.Key=asdf",
+			"Tags.0.Value=123",
+		},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsureTable(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBWaitForActive(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
+		t.Errorf("\nattr mismatch throughput != nil")
+		return
+	}
+	if table.Table.StreamSpecification != nil {
+		t.Errorf("\nattr mismatch stream != nil")
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+	tags, err = DynamoDBListTags(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if len(tags) != 1 {
+		t.Errorf("\nlen(tags) != 1")
+		return
+	}
+	if *tags[0].Key != "asdf" || *tags[0].Value != "123" {
+		t.Errorf("\ntag:asdf != 123")
+		return
 	}
 }

@@ -2,12 +2,15 @@ package lib
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
 
@@ -46,10 +49,12 @@ func splitOnce(s string, sep string) (head, tail string, err error) {
 func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.CreateTableInput, error) {
 
 	input := &dynamodb.CreateTableInput{
-		TableName:              aws.String(name),
-		BillingMode:            aws.String("PAY_PER_REQUEST"),
-		SSESpecification:       &dynamodb.SSESpecification{},
-		StreamSpecification:    &dynamodb.StreamSpecification{},
+		TableName:        aws.String(name),
+		BillingMode:      aws.String("PAY_PER_REQUEST"),
+		SSESpecification: &dynamodb.SSESpecification{},
+		StreamSpecification: &dynamodb.StreamSpecification{
+			StreamEnabled: aws.Bool(false),
+		},
 		ProvisionedThroughput:  &dynamodb.ProvisionedThroughput{},
 		LocalSecondaryIndexes:  []*dynamodb.LocalSecondaryIndex{},
 		GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{},
@@ -163,7 +168,10 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			}
 			switch len(input.LocalSecondaryIndexes) {
 			case i:
-				input.LocalSecondaryIndexes = append(input.LocalSecondaryIndexes, &dynamodb.LocalSecondaryIndex{Projection: &dynamodb.Projection{}})
+				input.LocalSecondaryIndexes = append(
+					input.LocalSecondaryIndexes,
+					&dynamodb.LocalSecondaryIndex{Projection: &dynamodb.Projection{}},
+				)
 			case i + 1:
 			default:
 				err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
@@ -193,7 +201,10 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					}
 					switch len(input.LocalSecondaryIndexes[i].KeySchema) {
 					case j:
-						input.LocalSecondaryIndexes[i].KeySchema = append(input.LocalSecondaryIndexes[i].KeySchema, &dynamodb.KeySchemaElement{})
+						input.LocalSecondaryIndexes[i].KeySchema = append(
+							input.LocalSecondaryIndexes[i].KeySchema,
+							&dynamodb.KeySchemaElement{},
+						)
 					case j + 1:
 					default:
 						err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
@@ -229,7 +240,10 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 							}
 							switch len(input.LocalSecondaryIndexes[i].Projection.NonKeyAttributes) {
 							case j:
-								input.LocalSecondaryIndexes[i].Projection.NonKeyAttributes = append(input.LocalSecondaryIndexes[i].Projection.NonKeyAttributes, aws.String(value))
+								input.LocalSecondaryIndexes[i].Projection.NonKeyAttributes = append(
+									input.LocalSecondaryIndexes[i].Projection.NonKeyAttributes,
+									aws.String(value),
+								)
 							default:
 								err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
 								Logger.Println("error:", err)
@@ -262,7 +276,13 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			}
 			switch len(input.GlobalSecondaryIndexes) {
 			case i:
-				input.GlobalSecondaryIndexes = append(input.GlobalSecondaryIndexes, &dynamodb.GlobalSecondaryIndex{Projection: &dynamodb.Projection{}, ProvisionedThroughput: &dynamodb.ProvisionedThroughput{}})
+				input.GlobalSecondaryIndexes = append(
+					input.GlobalSecondaryIndexes,
+					&dynamodb.GlobalSecondaryIndex{
+						Projection:            &dynamodb.Projection{},
+						ProvisionedThroughput: &dynamodb.ProvisionedThroughput{},
+					},
+				)
 			case i + 1:
 			default:
 				err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
@@ -292,7 +312,10 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					}
 					switch len(input.GlobalSecondaryIndexes[i].KeySchema) {
 					case j:
-						input.GlobalSecondaryIndexes[i].KeySchema = append(input.GlobalSecondaryIndexes[i].KeySchema, &dynamodb.KeySchemaElement{})
+						input.GlobalSecondaryIndexes[i].KeySchema = append(
+							input.GlobalSecondaryIndexes[i].KeySchema,
+							&dynamodb.KeySchemaElement{},
+						)
 					case j + 1:
 					default:
 						err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
@@ -349,7 +372,10 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 							}
 							switch len(input.GlobalSecondaryIndexes[i].Projection.NonKeyAttributes) {
 							case j:
-								input.GlobalSecondaryIndexes[i].Projection.NonKeyAttributes = append(input.GlobalSecondaryIndexes[i].Projection.NonKeyAttributes, aws.String(value))
+								input.GlobalSecondaryIndexes[i].Projection.NonKeyAttributes = append(
+									input.GlobalSecondaryIndexes[i].Projection.NonKeyAttributes,
+									aws.String(value),
+								)
 							default:
 								err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
 								Logger.Println("error:", err)
@@ -408,48 +434,473 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 
 	}
 
+	if len(input.LocalSecondaryIndexes) == 0 {
+		input.LocalSecondaryIndexes = nil
+	}
+
+	if len(input.GlobalSecondaryIndexes) == 0 {
+		input.GlobalSecondaryIndexes = nil
+	}
+
+	if len(input.Tags) == 0 {
+		input.Tags = nil
+	}
+
+	if input.ProvisionedThroughput.ReadCapacityUnits == nil &&
+		input.ProvisionedThroughput.WriteCapacityUnits == nil {
+		input.ProvisionedThroughput = nil
+	}
+
+	if input.SSESpecification.Enabled == nil &&
+		input.SSESpecification.KMSMasterKeyId == nil &&
+		input.SSESpecification.SSEType == nil {
+		input.SSESpecification = nil
+	}
+
 	return input, nil
 }
 
-func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput) error {
-
-	_, err := DynamoDBClient().CreateTableWithContext(ctx, input)
+func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, preview bool) error {
+	//
+	table, err := DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
+		TableName: input.TableName,
+	})
+	//
 	if err != nil {
-		Logger.Println("error:", err)
-		return err
+		aerr, ok := err.(awserr.Error)
+		if !ok {
+			Logger.Println("error:", err)
+			return err
+		}
+		switch aerr.Code() {
+		//
+		case dynamodb.ErrCodeResourceNotFoundException:
+			val, err := json.MarshalIndent(input, "", "\t")
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			if preview {
+				Logger.Println("preview: created table:", *input.TableName, string(val))
+			} else {
+				_, err = DynamoDBClient().CreateTableWithContext(ctx, input)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				Logger.Println("created table:", *input.TableName, string(val))
+			}
+			return nil
+		//
+		default:
+			Logger.Println("error:", err)
+			return err
+		}
 	}
-
-	_, err = DynamoDBClient().UpdateTableWithContext(ctx, &dynamodb.UpdateTableInput{
-		TableName:                   aws.String(""),
-		BillingMode:                 aws.String(""),
+	//
+	needsUpdate := false
+	//
+	update := &dynamodb.UpdateTableInput{
+		TableName:                   input.TableName,
+		BillingMode:                 nil,
 		ProvisionedThroughput:       &dynamodb.ProvisionedThroughput{},
-		SSESpecification:            &dynamodb.SSESpecification{},
+		SSESpecification:            nil, // TODO update see
 		StreamSpecification:         &dynamodb.StreamSpecification{},
 		AttributeDefinitions:        []*dynamodb.AttributeDefinition{},
 		GlobalSecondaryIndexUpdates: []*dynamodb.GlobalSecondaryIndexUpdate{},
-	})
+	}
+	//
+	existingThroughputNil := table.Table.ProvisionedThroughput == nil && input.ProvisionedThroughput != nil
+	readNotEqual := table.Table.ProvisionedThroughput != nil &&
+		input.ProvisionedThroughput != nil &&
+		*table.Table.ProvisionedThroughput.ReadCapacityUnits != *input.ProvisionedThroughput.ReadCapacityUnits
+	if existingThroughputNil || readNotEqual {
+		needsUpdate = true
+		update.ProvisionedThroughput.ReadCapacityUnits = input.ProvisionedThroughput.ReadCapacityUnits
+		old := int64(0)
+		if !existingThroughputNil {
+			old = *table.Table.ProvisionedThroughput.ReadCapacityUnits
+		}
+		Logger.Printf(
+			"update ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
+			*input.TableName,
+			old,
+			*input.ProvisionedThroughput.ReadCapacityUnits,
+		)
+	}
+	//
+	writeNotEqual := table.Table.ProvisionedThroughput != nil &&
+		input.ProvisionedThroughput != nil &&
+		*table.Table.ProvisionedThroughput.WriteCapacityUnits != *input.ProvisionedThroughput.WriteCapacityUnits
+	if existingThroughputNil || writeNotEqual {
+		needsUpdate = true
+		update.ProvisionedThroughput.WriteCapacityUnits = input.ProvisionedThroughput.WriteCapacityUnits
+		old := int64(0)
+		if !existingThroughputNil {
+			old = *table.Table.ProvisionedThroughput.WriteCapacityUnits
+		}
+		Logger.Printf(
+			"update ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
+			*input.TableName,
+			old,
+			*input.ProvisionedThroughput.WriteCapacityUnits,
+		)
+	}
+	//
+	existingStreamNil := table.Table.StreamSpecification == nil &&
+		input.StreamSpecification != nil &&
+		*input.StreamSpecification.StreamEnabled
+	streamEnabledNotEqual := table.Table.StreamSpecification != nil &&
+		input.StreamSpecification != nil &&
+		*table.Table.StreamSpecification.StreamEnabled != *input.StreamSpecification.StreamEnabled
+	if existingStreamNil || streamEnabledNotEqual {
+		needsUpdate = true
+		update.StreamSpecification.StreamEnabled = input.StreamSpecification.StreamEnabled
+		old := false
+		if !existingStreamNil {
+			old = *table.Table.StreamSpecification.StreamEnabled
+		}
+		Logger.Printf(
+			"update StreamSpecification.StreamEnabled for table %s: %t => %t\n",
+			*input.TableName,
+			old,
+			*input.StreamSpecification.StreamEnabled,
+		)
+	}
+	//
+	streamViewTypeNotEqual := table.Table.StreamSpecification != nil &&
+		input.StreamSpecification != nil &&
+		*input.StreamSpecification.StreamEnabled &&
+		*table.Table.StreamSpecification.StreamViewType != *input.StreamSpecification.StreamViewType
+	if (existingStreamNil || streamViewTypeNotEqual) && *input.StreamSpecification.StreamEnabled {
+		needsUpdate = true
+		update.StreamSpecification.StreamViewType = input.StreamSpecification.StreamViewType
+		old := ""
+		if !existingStreamNil {
+			old = *table.Table.StreamSpecification.StreamViewType
+		}
+		Logger.Printf(
+			"update StreamSpecification.StreamViewType for table %s: %s => %s\n",
+			*input.TableName,
+			old,
+			*input.StreamSpecification.StreamViewType,
+		)
+	}
+	//
+	existingLocalIndices := make(map[string]*dynamodb.LocalSecondaryIndexDescription)
+	for _, index := range table.Table.LocalSecondaryIndexes {
+		existingLocalIndices[*index.IndexName] = index
+	}
+	for _, index := range input.LocalSecondaryIndexes {
+		existing, ok := existingLocalIndices[*index.IndexName]
+		if !ok {
+			return fmt.Errorf("LocalSecondaryIndices can only be set at table creation time")
+		}
+		if *existing.Projection.ProjectionType != *index.Projection.ProjectionType {
+			return fmt.Errorf("ProjectionType not updated. LocalSecondaryIndices can only be set at table creation time")
+		}
+		if len(existing.Projection.NonKeyAttributes) != len(index.Projection.NonKeyAttributes) {
+			return fmt.Errorf("NoneKeyAttributes not updated. LocalSecondaryIndices can only be set at table creation time")
+		}
+		attrs := make(map[string]interface{})
+		for _, attr := range existing.Projection.NonKeyAttributes {
+			attrs[*attr] = nil
+		}
+		for _, attr := range index.Projection.NonKeyAttributes {
+			_, ok := attrs[*attr]
+			if !ok {
+				return fmt.Errorf("NoneKeyAttributes not updated. LocalSecondaryIndices can only be set at table creation time")
+			}
+		}
+	}
+	//
+	existingGlobalIndices := make(map[string]*dynamodb.GlobalSecondaryIndexDescription)
+	for _, index := range table.Table.GlobalSecondaryIndexes {
+		existingGlobalIndices[*index.IndexName] = index
+	}
+	for _, index := range input.GlobalSecondaryIndexes {
+		existing, ok := existingGlobalIndices[*index.IndexName]
+		if !ok {
+			needsUpdate = true
+			update.GlobalSecondaryIndexUpdates = append(
+				update.GlobalSecondaryIndexUpdates,
+				&dynamodb.GlobalSecondaryIndexUpdate{
+					Create: &dynamodb.CreateGlobalSecondaryIndexAction{
+						IndexName:             index.IndexName,
+						KeySchema:             index.KeySchema,
+						Projection:            index.Projection,
+						ProvisionedThroughput: index.ProvisionedThroughput,
+					},
+				},
+			)
+			val, err := json.MarshalIndent(index, "", "\t")
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			Logger.Println("add GlobalSecondaryIndex:", string(val))
+		} else {
+			if *existing.Projection.ProjectionType != *index.Projection.ProjectionType {
+				return fmt.Errorf("ProjectionType not updated. this GlobalSecondaryIndex attr can only be set at table creation time")
+			}
+			if len(existing.Projection.NonKeyAttributes) != len(index.Projection.NonKeyAttributes) {
+				return fmt.Errorf("NoneKeyAttributes not updated. this GlobalSecondaryIndex attr can only be set at table creation time")
+			}
+			attrs := make(map[string]interface{})
+			for _, attr := range existing.Projection.NonKeyAttributes {
+				attrs[*attr] = nil
+			}
+			for _, attr := range index.Projection.NonKeyAttributes {
+				_, ok := attrs[*attr]
+				if !ok {
+					return fmt.Errorf("NoneKeyAttributes not updated. this GlobalSecondaryIndex attr can only be set at table creation time")
+				}
+			}
+			updateIndex := false
+			if *existing.ProvisionedThroughput.ReadCapacityUnits != *index.ProvisionedThroughput.ReadCapacityUnits {
+				updateIndex = true
+				Logger.Printf(
+					"update GlobalSecondaryIndex %s ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
+					*index.IndexName,
+					*input.TableName,
+					*existing.ProvisionedThroughput.ReadCapacityUnits,
+					*index.ProvisionedThroughput.ReadCapacityUnits,
+				)
+			}
+			if *existing.ProvisionedThroughput.WriteCapacityUnits != *index.ProvisionedThroughput.WriteCapacityUnits {
+				updateIndex = true
+				Logger.Printf(
+					"update GlobalSecondaryIndex %s ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
+					*index.IndexName,
+					*input.TableName,
+					*existing.ProvisionedThroughput.WriteCapacityUnits,
+					*index.ProvisionedThroughput.WriteCapacityUnits,
+				)
+			}
+			if updateIndex {
+				update.GlobalSecondaryIndexUpdates = append(
+					update.GlobalSecondaryIndexUpdates,
+					&dynamodb.GlobalSecondaryIndexUpdate{
+						Update: &dynamodb.UpdateGlobalSecondaryIndexAction{
+							IndexName:             index.IndexName,
+							ProvisionedThroughput: index.ProvisionedThroughput,
+						},
+					},
+				)
+			}
+		}
+	}
+	updateGlobalIndices := make(map[string]interface{})
+	for _, index := range input.GlobalSecondaryIndexes {
+		updateGlobalIndices[*index.IndexName] = nil
+	}
+	for _, index := range table.Table.GlobalSecondaryIndexes {
+		_, ok := updateGlobalIndices[*index.IndexName]
+		if !ok {
+			val, err := json.MarshalIndent(index, "", "\t")
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			Logger.Println("remove GlobalSecondaryIndex:", string(val))
+			update.GlobalSecondaryIndexUpdates = append(update.GlobalSecondaryIndexUpdates, &dynamodb.GlobalSecondaryIndexUpdate{
+				Delete: &dynamodb.DeleteGlobalSecondaryIndexAction{
+					IndexName: index.IndexName,
+				},
+			})
+		}
+	}
+	if len(update.GlobalSecondaryIndexUpdates) == 0 {
+		update.GlobalSecondaryIndexUpdates = nil
+	}
+	if update.StreamSpecification.StreamEnabled == nil && update.StreamSpecification.StreamViewType == nil {
+		update.StreamSpecification = nil
+	}
+	if update.ProvisionedThroughput.ReadCapacityUnits == nil && update.ProvisionedThroughput.WriteCapacityUnits == nil {
+		update.ProvisionedThroughput = nil
+	} else {
+		readChanged := *table.Table.ProvisionedThroughput.ReadCapacityUnits != *update.ProvisionedThroughput.ReadCapacityUnits
+		writeChanged := *table.Table.ProvisionedThroughput.WriteCapacityUnits != *update.ProvisionedThroughput.WriteCapacityUnits
+		if !readChanged && !writeChanged {
+			update.ProvisionedThroughput = nil
+		}
+	}
+	//
+	if needsUpdate {
+		if preview {
+			Logger.Println("preview: updated table:", *update.TableName)
+		} else {
+			_, err = DynamoDBClient().UpdateTableWithContext(ctx, update)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			Logger.Println("updated table:", *update.TableName)
+		}
+	}
+	//
+	arn, err := DynamoDBArn(ctx, *update.TableName)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-
-	_, err = DynamoDBClient().TagResourceWithContext(ctx, &dynamodb.TagResourceInput{
-		ResourceArn: aws.String(""),
+	//
+	tags, err := DynamoDBListTags(ctx, *update.TableName)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	//
+	tagInput := &dynamodb.TagResourceInput{
+		ResourceArn: aws.String(arn),
 		Tags:        []*dynamodb.Tag{},
-	})
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
 	}
-
-	_, err = dynamoDBClient.UntagResourceWithContext(ctx, &dynamodb.UntagResourceInput{
-		ResourceArn: aws.String(""),
+	existingTags := make(map[string]string)
+	for _, tag := range tags {
+		existingTags[*tag.Key] = *tag.Value
+	}
+	for _, tag := range input.Tags {
+		val, ok := existingTags[*tag.Key]
+		if !ok || val != *tag.Value {
+			tagInput.Tags = append(tagInput.Tags, tag)
+			Logger.Printf(
+				"update tag %s for table %s: %s => %s\n",
+				*tag.Key,
+				*input.TableName,
+				val,
+				*tag.Value,
+			)
+		}
+	}
+	if len(tagInput.Tags) > 0 {
+		if preview {
+			Logger.Println("preview: updated tags for table:", *input.TableName)
+		} else {
+			_, err = DynamoDBClient().TagResourceWithContext(ctx, tagInput)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			Logger.Println("updated tags for table:", *input.TableName)
+		}
+	}
+	//
+	untagInput := &dynamodb.UntagResourceInput{
+		ResourceArn: aws.String(arn),
 		TagKeys:     []*string{},
-	})
+	}
+	updateTags := make(map[string]interface{})
+	for _, tag := range input.Tags {
+		updateTags[*tag.Key] = nil
+	}
+	for _, tag := range tags {
+		_, ok := updateTags[*tag.Key]
+		if !ok {
+			Logger.Printf("remove tag %s for table %s\n", *tag.Key, *input.TableName)
+			untagInput.TagKeys = append(untagInput.TagKeys, tag.Key)
+		}
+	}
+	if len(untagInput.TagKeys) > 0 {
+		if preview {
+			Logger.Println("preview: removed tags for table:", *input.TableName)
+		} else {
+			_, err = dynamoDBClient.UntagResourceWithContext(ctx, untagInput)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			Logger.Println("removed tags for table:", *input.TableName)
+		}
+	}
+	//
+	return nil
+}
+
+func DynamoDBArn(ctx context.Context, tableName string) (string, error) {
+	account, err := Account(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	arn := fmt.Sprintf(
+		"arn:aws:dynamodb:%s:%s:table/%s",
+		Region(),
+		account,
+		tableName,
+	)
+	return arn, nil
+}
+
+func DynamoDBListTags(ctx context.Context, tableName string) ([]*dynamodb.Tag, error) {
+	arn, err := DynamoDBArn(ctx, tableName)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	var tags []*dynamodb.Tag
+	var nextToken *string
+	for {
+		out, err := DynamoDBClient().ListTagsOfResourceWithContext(ctx, &dynamodb.ListTagsOfResourceInput{
+			ResourceArn: aws.String(arn),
+			NextToken:   nextToken,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		tags = append(tags, out.Tags...)
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
+	}
+	return tags, nil
+}
+
+func DynamoDBListTables(ctx context.Context) ([]*string, error) {
+	Logger.Println("list tables")
+	var start *string
+	var tables []*string
+	for {
+		out, err := DynamoDBClient().ListTablesWithContext(ctx, &dynamodb.ListTablesInput{ExclusiveStartTableName: start})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		tables = append(tables, out.TableNames...)
+		if out.LastEvaluatedTableName == nil {
+			break
+		}
+		start = out.LastEvaluatedTableName
+	}
+	return tables, nil
+}
+
+func DynamoDBDeleteTable(ctx context.Context, tableName string) error {
+	err := DynamoDBWaitForActive(ctx, tableName)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
+	_, err = DynamoDBClient().DeleteTableWithContext(ctx, &dynamodb.DeleteTableInput{
+		TableName: aws.String(tableName),
+	})
+	return err
+}
 
-	return nil
+func DynamoDBWaitForActive(ctx context.Context, tableName string) error {
+	for {
+		description, err := DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
+			TableName: aws.String(tableName),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if *description.Table.TableStatus == dynamodb.TableStatusActive {
+			return nil
+		}
+		Logger.Println("waiting for table status active:", tableName)
+		time.Sleep(2 * time.Second)
+	}
 }
