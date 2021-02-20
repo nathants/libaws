@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -188,36 +189,41 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					return nil, err
 				}
 				switch head {
-				case "KeySchema":
-					head, tail, err = splitOnce(tail, ".")
-					if err != nil {
-						Logger.Println("error:", err)
-						return nil, err
-					}
-					j, err := strconv.Atoi(head)
+				case "Key":
+					j, err := strconv.Atoi(tail)
 					if err != nil {
 						Logger.Println("error:", err)
 						return nil, err
 					}
 					switch len(input.LocalSecondaryIndexes[i].KeySchema) {
 					case j:
+						parts := strings.SplitN(value, ":", 3)
+						attrName, attrType, keyType := parts[0], parts[1], parts[2]
 						input.LocalSecondaryIndexes[i].KeySchema = append(
 							input.LocalSecondaryIndexes[i].KeySchema,
-							&dynamodb.KeySchemaElement{},
+							&dynamodb.KeySchemaElement{
+								AttributeName: aws.String(attrName),
+								KeyType:       aws.String(strings.ToUpper(keyType)),
+							},
 						)
-					case j + 1:
+						exists := false
+						for _, attr := range input.AttributeDefinitions {
+							if *attr.AttributeName == attrName {
+								exists = true
+								if *attr.AttributeType != strings.ToUpper(attrType) {
+									return nil, fmt.Errorf("GlobalIndex attrType didn't equal existing with same name: %s, %s != %s", *attr.AttributeName, *attr.AttributeType, strings.ToUpper(attrType))
+								}
+								break
+							}
+						}
+						if !exists {
+							input.AttributeDefinitions = append(input.AttributeDefinitions, &dynamodb.AttributeDefinition{
+								AttributeName: aws.String(attrName),
+								AttributeType: aws.String(strings.ToUpper(attrType)),
+							})
+						}
 					default:
 						err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
-						Logger.Println("error:", err)
-						return nil, err
-					}
-					switch tail {
-					case "AttributeName":
-						input.LocalSecondaryIndexes[i].KeySchema[j].AttributeName = aws.String(value)
-					case "KeyType":
-						input.LocalSecondaryIndexes[i].KeySchema[j].KeyType = aws.String(value)
-					default:
-						err := fmt.Errorf("unknown attr: %s", line)
 						Logger.Println("error:", err)
 						return nil, err
 					}
@@ -299,36 +305,41 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					return nil, err
 				}
 				switch head {
-				case "KeySchema":
-					head, tail, err = splitOnce(tail, ".")
-					if err != nil {
-						Logger.Println("error:", err)
-						return nil, err
-					}
-					j, err := strconv.Atoi(head)
+				case "Key":
+					j, err := strconv.Atoi(tail)
 					if err != nil {
 						Logger.Println("error:", err)
 						return nil, err
 					}
 					switch len(input.GlobalSecondaryIndexes[i].KeySchema) {
 					case j:
+						parts := strings.SplitN(value, ":", 3)
+						attrName, attrType, keyType := parts[0], parts[1], parts[2]
 						input.GlobalSecondaryIndexes[i].KeySchema = append(
 							input.GlobalSecondaryIndexes[i].KeySchema,
-							&dynamodb.KeySchemaElement{},
+							&dynamodb.KeySchemaElement{
+								AttributeName: aws.String(attrName),
+								KeyType:       aws.String(strings.ToUpper(keyType)),
+							},
 						)
-					case j + 1:
+						exists := false
+						for _, attr := range input.AttributeDefinitions {
+							if *attr.AttributeName == attrName {
+								exists = true
+								if *attr.AttributeType != strings.ToUpper(attrType) {
+									return nil, fmt.Errorf("LocalIndex attrType didn't equal existing with same name: %s, %s != %s", *attr.AttributeName, *attr.AttributeType, strings.ToUpper(attrType))
+								}
+								break
+							}
+						}
+						if !exists {
+							input.AttributeDefinitions = append(input.AttributeDefinitions, &dynamodb.AttributeDefinition{
+								AttributeName: aws.String(attrName),
+								AttributeType: aws.String(strings.ToUpper(attrType)),
+							})
+						}
 					default:
 						err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
-						Logger.Println("error:", err)
-						return nil, err
-					}
-					switch tail {
-					case "AttributeName":
-						input.GlobalSecondaryIndexes[i].KeySchema[j].AttributeName = aws.String(value)
-					case "KeyType":
-						input.GlobalSecondaryIndexes[i].KeySchema[j].KeyType = aws.String(value)
-					default:
-						err := fmt.Errorf("unknown attr: %s", line)
 						Logger.Println("error:", err)
 						return nil, err
 					}
@@ -436,10 +447,22 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 
 	if len(input.LocalSecondaryIndexes) == 0 {
 		input.LocalSecondaryIndexes = nil
+	} else {
+		for _, index := range input.LocalSecondaryIndexes {
+			if len(index.Projection.NonKeyAttributes) == 0 && index.Projection.ProjectionType == nil {
+				index.Projection = nil
+			}
+		}
 	}
 
 	if len(input.GlobalSecondaryIndexes) == 0 {
 		input.GlobalSecondaryIndexes = nil
+	} else {
+		for _, index := range input.GlobalSecondaryIndexes {
+			if index.ProvisionedThroughput.ReadCapacityUnits == nil && index.ProvisionedThroughput.WriteCapacityUnits == nil {
+				index.ProvisionedThroughput = nil
+			}
+		}
 	}
 
 	if len(input.Tags) == 0 {
@@ -498,6 +521,12 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 		}
 	}
 	//
+	if len(input.KeySchema) != len(table.Table.KeySchema) {
+		err := fmt.Errorf("KeySchema can only be set at table creation time")
+		Logger.Println("error:", err)
+		return err
+	}
+	//
 	needsUpdate := false
 	//
 	update := &dynamodb.UpdateTableInput{
@@ -508,6 +537,11 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 		StreamSpecification:         &dynamodb.StreamSpecification{},
 		AttributeDefinitions:        []*dynamodb.AttributeDefinition{},
 		GlobalSecondaryIndexUpdates: []*dynamodb.GlobalSecondaryIndexUpdate{},
+	}
+	//
+	if !reflect.DeepEqual(table.Table.AttributeDefinitions, input.AttributeDefinitions) {
+		needsUpdate = true
+		update.AttributeDefinitions = input.AttributeDefinitions
 	}
 	//
 	existingThroughputNil := table.Table.ProvisionedThroughput == nil && input.ProvisionedThroughput != nil
@@ -594,13 +628,19 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 	for _, index := range input.LocalSecondaryIndexes {
 		existing, ok := existingLocalIndices[*index.IndexName]
 		if !ok {
-			return fmt.Errorf("LocalSecondaryIndices can only be set at table creation time")
+			err := fmt.Errorf("LocalSecondaryIndices can only be set at table creation time")
+			Logger.Println("error:", err)
+			return err
 		}
 		if *existing.Projection.ProjectionType != *index.Projection.ProjectionType {
-			return fmt.Errorf("ProjectionType not updated. LocalSecondaryIndices can only be set at table creation time")
+			err := fmt.Errorf("ProjectionType not updated. LocalSecondaryIndices can only be set at table creation time")
+			Logger.Println("error:", err)
+			return err
 		}
 		if len(existing.Projection.NonKeyAttributes) != len(index.Projection.NonKeyAttributes) {
-			return fmt.Errorf("NoneKeyAttributes not updated. LocalSecondaryIndices can only be set at table creation time")
+			err := fmt.Errorf("NonKeyAttributes not updated. LocalSecondaryIndices can only be set at table creation time")
+			Logger.Println("error:", err)
+			return err
 		}
 		attrs := make(map[string]interface{})
 		for _, attr := range existing.Projection.NonKeyAttributes {
@@ -609,7 +649,9 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 		for _, attr := range index.Projection.NonKeyAttributes {
 			_, ok := attrs[*attr]
 			if !ok {
-				return fmt.Errorf("NoneKeyAttributes not updated. LocalSecondaryIndices can only be set at table creation time")
+				err := fmt.Errorf("NonKeyAttributes not updated. LocalSecondaryIndices can only be set at table creation time")
+				Logger.Println("error:", err)
+				return err
 			}
 		}
 	}
@@ -621,7 +663,6 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 	for _, index := range input.GlobalSecondaryIndexes {
 		existing, ok := existingGlobalIndices[*index.IndexName]
 		if !ok {
-			needsUpdate = true
 			update.GlobalSecondaryIndexUpdates = append(
 				update.GlobalSecondaryIndexUpdates,
 				&dynamodb.GlobalSecondaryIndexUpdate{
@@ -633,18 +674,16 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 					},
 				},
 			)
-			val, err := json.MarshalIndent(index, "", "\t")
-			if err != nil {
+		} else {
+			if *existing.Projection.ProjectionType != *index.Projection.ProjectionType {
+				err := fmt.Errorf("ProjectionType not updated. this GlobalSecondaryIndex attr can only be set at index creation time")
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println("add GlobalSecondaryIndex:", string(val))
-		} else {
-			if *existing.Projection.ProjectionType != *index.Projection.ProjectionType {
-				return fmt.Errorf("ProjectionType not updated. this GlobalSecondaryIndex attr can only be set at table creation time")
-			}
 			if len(existing.Projection.NonKeyAttributes) != len(index.Projection.NonKeyAttributes) {
-				return fmt.Errorf("NoneKeyAttributes not updated. this GlobalSecondaryIndex attr can only be set at table creation time")
+				err := fmt.Errorf("NonKeyAttributes not updated. this GlobalSecondaryIndex attr can only be set at index creation time")
+				Logger.Println("error:", err)
+				return err
 			}
 			attrs := make(map[string]interface{})
 			for _, attr := range existing.Projection.NonKeyAttributes {
@@ -653,11 +692,13 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 			for _, attr := range index.Projection.NonKeyAttributes {
 				_, ok := attrs[*attr]
 				if !ok {
-					return fmt.Errorf("NoneKeyAttributes not updated. this GlobalSecondaryIndex attr can only be set at table creation time")
+					err := fmt.Errorf("NonKeyAttributes not updated. this GlobalSecondaryIndex attr can only be set at index creation time")
+					Logger.Println("error:", err)
+					return err
 				}
 			}
 			updateIndex := false
-			if *existing.ProvisionedThroughput.ReadCapacityUnits != *index.ProvisionedThroughput.ReadCapacityUnits {
+			if index.ProvisionedThroughput != nil && *existing.ProvisionedThroughput.ReadCapacityUnits != *index.ProvisionedThroughput.ReadCapacityUnits {
 				updateIndex = true
 				Logger.Printf(
 					"update GlobalSecondaryIndex %s ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
@@ -667,7 +708,12 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 					*index.ProvisionedThroughput.ReadCapacityUnits,
 				)
 			}
-			if *existing.ProvisionedThroughput.WriteCapacityUnits != *index.ProvisionedThroughput.WriteCapacityUnits {
+			if !reflect.DeepEqual(existing.KeySchema, index.KeySchema) {
+				err := fmt.Errorf("KeySchema not updated. this GlobalSecondaryIndex attr can only be set at index creation time")
+				Logger.Println("error:", err)
+				return err
+			}
+			if index.ProvisionedThroughput != nil && *existing.ProvisionedThroughput.WriteCapacityUnits != *index.ProvisionedThroughput.WriteCapacityUnits {
 				updateIndex = true
 				Logger.Printf(
 					"update GlobalSecondaryIndex %s ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
@@ -697,12 +743,6 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 	for _, index := range table.Table.GlobalSecondaryIndexes {
 		_, ok := updateGlobalIndices[*index.IndexName]
 		if !ok {
-			val, err := json.MarshalIndent(index, "", "\t")
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			Logger.Println("remove GlobalSecondaryIndex:", string(val))
 			update.GlobalSecondaryIndexUpdates = append(update.GlobalSecondaryIndexUpdates, &dynamodb.GlobalSecondaryIndexUpdate{
 				Delete: &dynamodb.DeleteGlobalSecondaryIndexAction{
 					IndexName: index.IndexName,
@@ -712,6 +752,8 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 	}
 	if len(update.GlobalSecondaryIndexUpdates) == 0 {
 		update.GlobalSecondaryIndexUpdates = nil
+	} else {
+		needsUpdate = true
 	}
 	if update.StreamSpecification.StreamEnabled == nil && update.StreamSpecification.StreamViewType == nil {
 		update.StreamSpecification = nil
@@ -726,16 +768,43 @@ func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, 
 		}
 	}
 	//
+	if len(update.AttributeDefinitions) == 0 {
+		update.AttributeDefinitions = nil
+	}
+	//
 	if needsUpdate {
+		val, err := json.MarshalIndent(update, "", "\t")
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		if preview {
-			Logger.Println("preview: updated table:", *update.TableName)
+			Logger.Println("preview: updated table:", *update.TableName, string(val))
 		} else {
-			_, err = DynamoDBClient().UpdateTableWithContext(ctx, update)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
+			if len(update.GlobalSecondaryIndexUpdates) > 1 {
+				// index updates must be applied one at a time when table is ready
+				indexUpdates := update.GlobalSecondaryIndexUpdates
+				for _, indexUpdate := range indexUpdates {
+					update.GlobalSecondaryIndexUpdates = []*dynamodb.GlobalSecondaryIndexUpdate{indexUpdate}
+					err := DynamoDBWaitForReady(ctx, *update.TableName)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					_, err = DynamoDBClient().UpdateTableWithContext(ctx, update)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+			} else {
+				_, err = DynamoDBClient().UpdateTableWithContext(ctx, update)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
 			}
-			Logger.Println("updated table:", *update.TableName)
+			Logger.Println("updated table:", *update.TableName, string(val))
 		}
 	}
 	//
@@ -877,7 +946,7 @@ func DynamoDBListTables(ctx context.Context) ([]*string, error) {
 }
 
 func DynamoDBDeleteTable(ctx context.Context, tableName string) error {
-	err := DynamoDBWaitForActive(ctx, tableName)
+	err := DynamoDBWaitForReady(ctx, tableName)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -888,7 +957,7 @@ func DynamoDBDeleteTable(ctx context.Context, tableName string) error {
 	return err
 }
 
-func DynamoDBWaitForActive(ctx context.Context, tableName string) error {
+func DynamoDBWaitForReady(ctx context.Context, tableName string) error {
 	for {
 		description, err := DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
 			TableName: aws.String(tableName),
@@ -897,10 +966,21 @@ func DynamoDBWaitForActive(ctx context.Context, tableName string) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		if *description.Table.TableStatus == dynamodb.TableStatusActive {
+		ready := *description.Table.TableStatus == dynamodb.TableStatusActive
+		if !ready {
+			Logger.Println("waiting for table active:", tableName)
+		} else {
+			for _, index := range description.Table.GlobalSecondaryIndexes {
+				if *index.IndexStatus != dynamodb.IndexStatusActive {
+					Logger.Println("waiting for table index:", *index.IndexName)
+					ready = false
+					break
+				}
+			}
+		}
+		if ready {
 			return nil
 		}
-		Logger.Println("waiting for table status active:", tableName)
 		time.Sleep(2 * time.Second)
 	}
 }
