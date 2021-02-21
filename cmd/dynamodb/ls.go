@@ -19,7 +19,7 @@ type dynamodbLsArgs struct {
 }
 
 func (dynamodbLsArgs) Description() string {
-	return "\nlist dynamodb queues\n"
+	return "\nlist dynamodb tables\n"
 }
 
 func dynamodbLs() {
