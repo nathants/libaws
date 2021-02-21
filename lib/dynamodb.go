@@ -48,7 +48,7 @@ func splitOnce(s string, sep string) (head, tail string, err error) {
 }
 
 func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.CreateTableInput, error) {
-
+	//
 	input := &dynamodb.CreateTableInput{
 		TableName:        aws.String(name),
 		BillingMode:      aws.String("PAY_PER_REQUEST"),
@@ -61,10 +61,14 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 		GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{},
 		Tags:                   []*dynamodb.Tag{},
 	}
-
 	// unpack keys like "name:s:hash" and "date:n:range"
 	for _, key := range keys {
 		parts := strings.SplitN(key, ":", 3)
+		if len(parts) != 3 {
+			err := fmt.Errorf("keys must be in format: 'Name:AttrType:KeyType', got: %s", key)
+			Logger.Println("error:", err)
+			return nil, err
+		}
 		attrName, attrType, keyType := parts[0], parts[1], parts[2]
 		input.KeySchema = append(input.KeySchema, &dynamodb.KeySchemaElement{
 			AttributeName: aws.String(attrName),
@@ -75,7 +79,6 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			AttributeType: aws.String(strings.ToUpper(attrType)),
 		})
 	}
-
 	// unpack attrs
 	for _, line := range attrs {
 		attr, value, err := splitOnce(line, "=")
@@ -89,14 +92,14 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			Logger.Println("error:", err)
 			return nil, err
 		}
-
+		//
 		switch head {
-
+		//
 		case "BillingMode":
 			err := fmt.Errorf("BillingMode is implied by the existence of provisioned throughput attrs: %s", line)
 			Logger.Println("error:", err)
 			return nil, err
-
+		//
 		case "SSESpecification":
 			switch tail {
 			case "Enabled":
@@ -116,7 +119,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 				Logger.Println("error:", err)
 				return nil, err
 			}
-
+		//
 		case "ProvisionedThroughput":
 			switch tail {
 			case "ReadCapacityUnits":
@@ -140,7 +143,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 				Logger.Println("error:", err)
 				return nil, err
 			}
-
+		//
 		case "StreamSpecification":
 			if err != nil {
 				Logger.Println("error:", err)
@@ -155,7 +158,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 				Logger.Println("error:", err)
 				return nil, err
 			}
-
+		//
 		case "LocalSecondaryIndexes":
 			head, tail, err := splitOnce(tail, ".")
 			if err != nil {
@@ -198,6 +201,11 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					switch len(input.LocalSecondaryIndexes[i].KeySchema) {
 					case j:
 						parts := strings.SplitN(value, ":", 3)
+						if len(parts) != 3 {
+							err := fmt.Errorf("keys must be in format: 'Name:AttrType:KeyType', got: %s", value)
+							Logger.Println("error:", err)
+							return nil, err
+						}
 						attrName, attrType, keyType := parts[0], parts[1], parts[2]
 						input.LocalSecondaryIndexes[i].KeySchema = append(
 							input.LocalSecondaryIndexes[i].KeySchema,
@@ -265,10 +273,9 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					err := fmt.Errorf("unknown attr: %s", line)
 					Logger.Println("error:", err)
 					return nil, err
-
 				}
 			}
-
+		//
 		case "GlobalSecondaryIndexes":
 			head, tail, err := splitOnce(tail, ".")
 			if err != nil {
@@ -314,6 +321,11 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					switch len(input.GlobalSecondaryIndexes[i].KeySchema) {
 					case j:
 						parts := strings.SplitN(value, ":", 3)
+						if len(parts) != 3 {
+							err := fmt.Errorf("keys must be in format: 'Name:AttrType:KeyType', got: %s", value)
+							Logger.Println("error:", err)
+							return nil, err
+						}
 						attrName, attrType, keyType := parts[0], parts[1], parts[2]
 						input.GlobalSecondaryIndexes[i].KeySchema = append(
 							input.GlobalSecondaryIndexes[i].KeySchema,
@@ -404,7 +416,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					return nil, err
 				}
 			}
-
+		//
 		case "Tags":
 			head, tail, err := splitOnce(tail, ".")
 			if err != nil {
@@ -435,16 +447,14 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 				Logger.Println("error:", err)
 				return nil, err
 			}
-
+		//
 		default:
 			err := fmt.Errorf("unknown attr: %s", line)
 			Logger.Println("error:", err)
 			return nil, err
-
 		}
-
 	}
-
+	//
 	if len(input.LocalSecondaryIndexes) == 0 {
 		input.LocalSecondaryIndexes = nil
 	} else {
@@ -454,7 +464,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			}
 		}
 	}
-
+	//
 	if len(input.GlobalSecondaryIndexes) == 0 {
 		input.GlobalSecondaryIndexes = nil
 	} else {
@@ -464,22 +474,22 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			}
 		}
 	}
-
+	//
 	if len(input.Tags) == 0 {
 		input.Tags = nil
 	}
-
+	//
 	if input.ProvisionedThroughput.ReadCapacityUnits == nil &&
 		input.ProvisionedThroughput.WriteCapacityUnits == nil {
 		input.ProvisionedThroughput = nil
 	}
-
+	//
 	if input.SSESpecification.Enabled == nil &&
 		input.SSESpecification.KMSMasterKeyId == nil &&
 		input.SSESpecification.SSEType == nil {
 		input.SSESpecification = nil
 	}
-
+	//
 	return input, nil
 }
 
