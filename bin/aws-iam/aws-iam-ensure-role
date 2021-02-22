@@ -6,7 +6,8 @@ import aws.iam
 @argh.arg('--policy', action='append')
 @argh.arg('--allow', action='append', help='"s3.Get $SOME_RESOURCE", or "s3:* *"')
 def main(name, principal, policy=None, allow=None, preview=False):
-    arn_role = aws.iam.ensure_role(name, principal, preview)
+    aws.iam.ensure_role(name, principal, preview)
+    arn_role = aws.iam.role_arn(name, principal)
     aws.iam.ensure_policies(name, policy or [], preview)
     aws.iam.ensure_allows(name, allow or [], preview)
     aws.iam.rm_extra_allows(name, allow or [], preview)

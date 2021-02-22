@@ -351,7 +351,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("%w", err)
 		return
 	}
-	err = DynamoDBEnsureTable(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
 		t.Errorf("%w", err)
 		return
@@ -417,7 +417,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("%w", err)
 		return
 	}
-	err = DynamoDBEnsureTable(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
 		t.Errorf("%w", err)
 		return
@@ -473,7 +473,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("%w", err)
 		return
 	}
-	err = DynamoDBEnsureTable(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
 		t.Errorf("%w", err)
 		return
@@ -527,7 +527,7 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 		t.Errorf("%w", err)
 		return
 	}
-	err = DynamoDBEnsureTable(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
 		t.Errorf("%w", err)
 		return
@@ -595,7 +595,7 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 		t.Errorf("%w", err)
 		return
 	}
-	err = DynamoDBEnsureTable(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
 		t.Errorf("%w", err)
 		return
@@ -660,7 +660,7 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 		t.Errorf("%w", err)
 		return
 	}
-	err = DynamoDBEnsureTable(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
 		t.Errorf("%w", err)
 		return
@@ -728,7 +728,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 		t.Errorf("%w", err)
 		return
 	}
-	err = DynamoDBEnsureTable(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
 		t.Errorf("%w", err)
 		return
@@ -791,7 +791,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 			t.Errorf("%w", err)
 			return
 		}
-		err = DynamoDBEnsureTable(ctx, input, false)
+		err = DynamoDBEnsure(ctx, input, false)
 		if err != nil {
 			t.Errorf("%w", err)
 			return
@@ -832,7 +832,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 			t.Errorf("%w", err)
 			return
 		}
-		err = DynamoDBEnsureTable(ctx, input, false)
+		err = DynamoDBEnsure(ctx, input, false)
 		if err != nil {
 			t.Errorf("%w", err)
 			return
@@ -921,7 +921,7 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 		t.Errorf("%w", err)
 		return
 	}
-	err = DynamoDBEnsureTable(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
 		t.Errorf("%w", err)
 		return

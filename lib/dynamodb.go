@@ -493,7 +493,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 	return input, nil
 }
 
-func DynamoDBEnsureTable(ctx context.Context, input *dynamodb.CreateTableInput, preview bool) error {
+func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, preview bool) error {
 	//
 	table, err := DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
 		TableName: input.TableName,

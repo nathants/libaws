@@ -70,7 +70,7 @@ func dynamodbEnsure() {
 	if err != nil {
 		lib.Logger.Fatal("error:", err)
 	}
-	err = lib.DynamoDBEnsureTable(ctx, input, args.Preview)
+	err = lib.DynamoDBEnsure(ctx, input, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error:", err)
 	}

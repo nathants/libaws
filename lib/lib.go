@@ -164,3 +164,7 @@ var (
 	Cyan    = color(36)
 	White   = color(37)
 )
+
+func last(parts []string) string {
+	return parts[len(parts)-1]
+}

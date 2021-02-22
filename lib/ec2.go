@@ -540,7 +540,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
 	}
-	role, err := IAMClient().GetRoleWithContext(ctx, &iam.GetRoleInput{
+	role, err := IamClient().GetRoleWithContext(ctx, &iam.GetRoleInput{
 		RoleName: aws.String("aws-ec2-spot-fleet-tagging-role"),
 	})
 	if err != nil {

@@ -1,4 +1,5 @@
 import sys
+import aws
 from aws import stderr, client
 
 def ensure_allows(name, allows, preview):
@@ -40,6 +41,9 @@ def ensure_policies(name, policies, preview):
                         stderr(p['Arn'])
                     sys.exit(1)
 
+def role_arn(name, principal):
+    return f'arn:aws:iam::{aws.account()}:role/{principal}/{name}-path/{name}'
+
 def ensure_role(name, principal, preview):
     stderr('\nensure role:')
     if preview:
@@ -53,10 +57,9 @@ def ensure_role(name, principal, preview):
                          "Statement": [{"Effect": "Allow",
                                         "Principal": {"Service": "%s.amazonaws.com"},
                                         "Action": "sts:AssumeRole"}]}''' % principal
-            return client('iam').create_role(Path=role_path, RoleName=name, AssumeRolePolicyDocument=policy)['Role']['Arn']
+            client('iam').create_role(Path=role_path, RoleName=name, AssumeRolePolicyDocument=policy)
         elif 1 == len(roles):
             stderr('', name)
-            return roles[0]['Arn']
         else:
             stderr(' error: there is more than 1 role under path:', role_path)
             for role in roles:
