@@ -151,7 +151,7 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 				err := fmt.Errorf("found more than 1 policy for name: %s", policyName)
 				Logger.Println("error:", err)
 				for _, policy := range matchedPolicies {
-					Logger.Println("error:", policy.Arn)
+					Logger.Println("error:", *policy.Arn)
 				}
 				return err
 			}
@@ -209,7 +209,7 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 			err := fmt.Errorf("found more than 1 role under path: %s", rolePath)
 			Logger.Println("error:", err)
 			for _, role := range roles {
-				Logger.Println("error:", role.Arn)
+				Logger.Println("error:", *role.Arn)
 			}
 			return err
 		}
@@ -218,5 +218,107 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 	return nil
 }
 
-func IamEnsureInstanceProfileRole(ctx context.Context, profileName, roleName string, preview bool) {
+func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*iam.InstanceProfile, error) {
+	var profiles []*iam.InstanceProfile
+	var marker *string
+	for {
+		out, err := IamClient().ListInstanceProfilesWithContext(ctx, &iam.ListInstanceProfilesInput{
+			Marker:     marker,
+			PathPrefix: pathPrefix,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		profiles = append(profiles, out.InstanceProfiles...)
+		if !*out.IsTruncated {
+			break
+		}
+		marker = out.Marker
+	}
+	return profiles, nil
+}
+
+func IamEnsureInstanceProfileRole(ctx context.Context, profileName, roleName string, preview bool) error {
+	profilePath := fmt.Sprintf("/instance-profile/%s-path/", profileName)
+	profiles, err := IamListInstanceProfiles(ctx, aws.String(profilePath))
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	switch len(profiles) {
+	case 0:
+		if preview {
+			Logger.Println("preview: created instance profile:", profileName)
+		} else {
+			out, err := IamClient().CreateInstanceProfileWithContext(ctx, &iam.CreateInstanceProfileInput{
+				InstanceProfileName: aws.String(profileName),
+				Path:                aws.String(profilePath),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			profiles = append(profiles, out.InstanceProfile)
+			Logger.Println("created instance profile:", profileName)
+		}
+	case 1:
+		if *profiles[0].InstanceProfileName != profileName {
+			err := fmt.Errorf("profile name mismatch: %s != %s", *profiles[0].InstanceProfileName, profileName)
+			Logger.Println("error:", err)
+			return err
+		}
+		if *profiles[0].Path != profilePath {
+			err := fmt.Errorf("profile path mismatch: %s %s != %s", *profiles[0].InstanceProfileName, *profiles[0].Path, profilePath)
+			Logger.Println("error:", err)
+			return err
+		}
+	default:
+		err := fmt.Errorf("found more than 1 instance profile under path: %s", profilePath)
+		Logger.Println("error:", err)
+		for _, profile := range profiles {
+			Logger.Println("error:", *profile.Arn)
+		}
+		return err
+	}
+	if preview {
+		Logger.Println("preview: added role", roleName, "to instance profile", profileName)
+	} else {
+		var roles []string
+		for _, role := range profiles[0].Roles {
+			roles = append(roles, *role.RoleName)
+		}
+		if !Contains(roles, roleName) {
+			_, err := IamClient().AddRoleToInstanceProfileWithContext(ctx, &iam.AddRoleToInstanceProfileInput{
+				InstanceProfileName: aws.String(profileName),
+				RoleName: aws.String(roleName),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+			    return err
+			}
+			Logger.Println("added role:", roleName, "to instance profile:", profileName)
+		} else {
+			Logger.Println("instance profile:", profileName, "already has role:", roleName)
+		}
+	}
+	return nil
+}
+
+func IamRoleArn(ctx context.Context, principalName, roleName string) (string, error) {
+	account, err := Account(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+	    return "", err
+	}
+	return fmt.Sprintf("arn:aws:iam::%s:role/%s/%s-path/%s", account, principalName, roleName, roleName), nil
+}
+
+func IamInstanceProfileArn(ctx context.Context, profileName string) (string, error) {
+	account, err := Account(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+	    return "", err
+	}
+	return fmt.Sprintf("arn:aws:iam::%s:instance-profile/%s", account, profileName), nil
 }

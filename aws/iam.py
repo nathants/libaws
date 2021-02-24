@@ -66,6 +66,9 @@ def ensure_role(name, principal, preview):
                 stderr('', role)
             sys.exit(1)
 
+def instance_profile_arn(name):
+    return f'arn:aws:iam::{aws.account()}:instance-profile/{name}'
+
 def ensure_instance_profile_has_role(name, role_name, preview):
     stderr('\nensure instance profile has role:')
     profiles = [profile
@@ -91,7 +94,7 @@ def ensure_instance_profile_has_role(name, role_name, preview):
         roles = [role['RoleName'] for role in profile['Roles']]
         if role_name not in roles:
             client('iam').add_role_to_instance_profile(InstanceProfileName=name, RoleName=role_name)
-    return profile['Arn']
+
 
 def _policy_name(allow):
     action, resource = allow.split()

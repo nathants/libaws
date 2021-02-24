@@ -13,7 +13,8 @@ def main(name, policy=None, allow=None, preview=False):
     aws.iam.ensure_allows(role_name, allow or [], preview)
     aws.iam.rm_extra_allows(role_name, allow or [], preview)
     aws.iam.rm_extra_policies(role_name, policy or [], preview)
-    arn_profile = aws.iam.ensure_instance_profile_has_role(name, role_name, preview)
+    aws.iam.ensure_instance_profile_has_role(name, role_name, preview)
+    arn_profile = aws.iam.instance_profile_arn(name)
     print('', file=sys.stderr)
     print(arn_profile)
 
