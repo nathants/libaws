@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+import argh
+import sys
+import aws
+from util.retry import retry
+
+def main(table, id):
+
+    not_found = aws.client('dynamodb').exceptions.ResourceNotFoundException
+    try:
+        resp = retry(aws.client('dynamodb').get_paginator('scan').paginate, not_found)(
+            TableName=table,
+        )
+        for items in resp:
+            for item in items['Items']:
+                print(item)
+                retry(aws.client('dynamodb').delete_item)(
+                    TableName=table,
+                    Key={id: item[id]},
+                )
+
+    except not_found as e:
+        print(e)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)
