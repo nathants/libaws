@@ -13,7 +13,7 @@ def main(table, id):
         )
         for items in resp:
             for item in items['Items']:
-                print(item)
+                print(item[id])
                 retry(aws.client('dynamodb').delete_item)(
                     TableName=table,
                     Key={id: item[id]},
