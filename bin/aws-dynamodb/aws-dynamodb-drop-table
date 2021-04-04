@@ -4,7 +4,7 @@ import sys
 import aws
 from util.retry import retry
 
-def main(table, id):
+def main(table, *ids):
 
     not_found = aws.client('dynamodb').exceptions.ResourceNotFoundException
     try:
@@ -13,10 +13,11 @@ def main(table, id):
         )
         for items in resp:
             for item in items['Items']:
-                print(item[id])
+                for id in ids:
+                    print(item[id])
                 retry(aws.client('dynamodb').delete_item)(
                     TableName=table,
-                    Key={id: item[id]},
+                    Key={id: item[id] for id in ids},
                 )
 
     except not_found as e:
