@@ -5,12 +5,11 @@ import aws
 import aws.lamda
 import aws.logs
 
-def main(path: 'lambda code file or name', # type: ignore
+def main(group_name: 'log group name: /aws/SERVICE/NAME', # type: ignore
          follow: 'like tail -f' = False, # type: ignore
          timestamps: 'show log timestamps' = False, # type: ignore
-         exit_after: 'when tailing after this substring is seen in a log line, exit' = None): # type: ignore
+         exit_after: 'when tailing, after this substring is seen in a log line, exit' = None): # type: ignore
     sh.ignore_closed_pipes()
-    group_name = f'/aws/lambda/{aws.lamda.name(path)}'
     aws.logs.tail(group_name, follow, timestamps, exit_after)
 
 if __name__ == '__main__':

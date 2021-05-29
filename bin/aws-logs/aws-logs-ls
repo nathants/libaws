@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+import shell as sh
+import boto3
+import argh
+import aws
+import aws.lamda
+import aws.logs
+
+def main():
+    sh.ignore_closed_pipes()
+    for page in boto3.client('logs').get_paginator('describe_log_groups').paginate():
+        for group in page['logGroups']:
+            print(group['logGroupName'])
+
+if __name__ == '__main__':
+    with aws.setup():
+        argh.dispatch_command(main)
