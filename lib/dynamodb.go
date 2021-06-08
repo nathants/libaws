@@ -2,7 +2,6 @@ package lib
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -508,20 +507,15 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		switch aerr.Code() {
 		//
 		case dynamodb.ErrCodeResourceNotFoundException:
-			val, err := json.MarshalIndent(input, "", "\t")
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
 			if preview {
-				Logger.Println("preview: created table:", *input.TableName, string(val))
+				Logger.Println("preview: created table:", *input.TableName, Pformat(input))
 			} else {
 				_, err = DynamoDBClient().CreateTableWithContext(ctx, input)
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
-				Logger.Println("created table:", *input.TableName, string(val))
+				Logger.Println("created table:", *input.TableName, Pformat(input))
 			}
 			return nil
 		//
@@ -783,13 +777,8 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 	}
 	//
 	if needsUpdate {
-		val, err := json.MarshalIndent(update, "", "\t")
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
 		if preview {
-			Logger.Println("preview: updated table:", *update.TableName, string(val))
+			Logger.Println("preview: updated table:", *update.TableName, Pformat(update))
 		} else {
 			if len(update.GlobalSecondaryIndexUpdates) > 1 {
 				// index updates must be applied one at a time when table is ready
@@ -814,7 +803,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 					return err
 				}
 			}
-			Logger.Println("updated table:", *update.TableName, string(val))
+			Logger.Println("updated table:", *update.TableName, Pformat(update))
 		}
 	}
 	//

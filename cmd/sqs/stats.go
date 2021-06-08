@@ -2,7 +2,6 @@ package cliaws
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/alexflint/go-arg"
@@ -33,9 +32,5 @@ func sqsStats() {
 	if err != nil {
 		lib.Logger.Fatal("error:", err)
 	}
-	val, err := json.MarshalIndent(out, "", "    ")
-	if err != nil {
-		lib.Logger.Fatal("error:", err)
-	}
-	fmt.Println(string(val))
+	fmt.Println(lib.Pformat(out))
 }
