@@ -26,12 +26,12 @@ func sqsPurge() {
 	ctx := context.Background()
 	queueUrl, err := lib.SQSQueueUrl(ctx, args.QueueName)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	_, err = lib.SQSClient().PurgeQueue(&sqs.PurgeQueueInput{
 		QueueUrl: aws.String(queueUrl),
 	})
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }

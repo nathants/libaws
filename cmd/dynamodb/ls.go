@@ -28,14 +28,14 @@ func dynamodbLs() {
 	ctx := context.Background()
 	tables, err := lib.DynamoDBListTables(ctx)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, table := range tables {
 		description, err := lib.DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 			TableName: table,
 		})
 		if err != nil {
-			lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		fmt.Println(*table, *description.Table.TableStatus)
 	}

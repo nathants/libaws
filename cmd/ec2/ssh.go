@@ -34,7 +34,7 @@ func ec2Ssh() {
 	ctx := context.Background()
 	instances, err := lib.EC2RetryListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, instance := range instances {
 		lib.Logger.Println(*instance.InstanceId)
@@ -64,6 +64,6 @@ func ec2Ssh() {
 		})
 	}
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }

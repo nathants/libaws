@@ -42,18 +42,18 @@ func useSubnetsFromVpc(ctx context.Context, args *ec2NewArgs) {
 	if args.Vpc != "" {
 		zones, err := lib.EC2ZonesWithInstance(ctx, args.Type)
 		if err != nil {
-			lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		vpcID := args.Vpc
 		if !strings.HasPrefix("vpc-", args.Vpc) {
 			vpcID, err = lib.VpcID(ctx, args.Vpc)
 			if err != nil {
-				lib.Logger.Fatal("error:", err)
+				lib.Logger.Fatal("error: ", err)
 			}
 		}
 		subnets, err := lib.VpcSubnets(ctx, vpcID)
 		if err != nil {
-			lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		if args.SpotStrategy == "" {
 			zone := zones[rand.Intn(len(zones))]
@@ -89,7 +89,7 @@ func ec2New() {
 	if !strings.HasPrefix(args.Ami, "ami-") {
 		ami, sshUser, err := lib.EC2Ami(ctx, args.Ami)
 		if err != nil {
-			lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		args.Ami = ami
 		args.UserName = sshUser
@@ -97,7 +97,7 @@ func ec2New() {
 	if !strings.HasPrefix(args.Sg, "sg-") {
 		sgID, err := lib.EC2SgID(ctx, args.Sg)
 		if err != nil {
-			lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		args.Sg = sgID
 	}
@@ -134,7 +134,7 @@ func ec2New() {
 		instances, err = lib.EC2NewInstances(ctx, fleetConfig)
 	}
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, instance := range instances {
 		fmt.Println(*instance.InstanceId)

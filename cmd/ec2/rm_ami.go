@@ -26,9 +26,9 @@ func ec2RmAmi() {
 	var args ec2RmAmiArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	account, err := lib.Account(ctx)
+	account, err := lib.StsAccount(ctx)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	// find image
 	images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
@@ -36,7 +36,7 @@ func ec2RmAmi() {
 		Filters: []*ec2.Filter{{Name: aws.String("image-id"), Values: []*string{aws.String(args.AmiID)}}},
 	})
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	if len(images.Images) != 1 {
 		lib.Logger.Fatal("didn't find an image for id:", args.AmiID)
@@ -47,7 +47,7 @@ func ec2RmAmi() {
 		Filters:  []*ec2.Filter{{Name: aws.String("description"), Values: []*string{aws.String(fmt.Sprintf("* %s *", args.AmiID))}}},
 	})
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, snapshot := range snaps.Snapshots {
 		lib.Logger.Println("found backing snapshot:", *snapshot.SnapshotId)
@@ -57,7 +57,7 @@ func ec2RmAmi() {
 		ImageId: aws.String(args.AmiID),
 	})
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	lib.Logger.Println("deregistered:", args.AmiID)
 	//
@@ -67,7 +67,7 @@ func ec2RmAmi() {
 			Filters: []*ec2.Filter{{Name: aws.String("image-id"), Values: []*string{aws.String(args.AmiID)}}},
 		})
 		if err != nil {
-			lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		if len(images.Images) == 0 || (len(images.Images) == 1 && *images.Images[0].State == ec2.ImageStateDeregistered) {
 			break
@@ -81,7 +81,7 @@ func ec2RmAmi() {
 			SnapshotId: snapshot.SnapshotId,
 		})
 		if err != nil {
-			lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		lib.Logger.Println("deleted backing snapshot:", *snapshot.SnapshotId)
 	}

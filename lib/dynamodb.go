@@ -885,7 +885,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 }
 
 func DynamoDBArn(ctx context.Context, tableName string) (string, error) {
-	account, err := Account(ctx)
+	account, err := StsAccount(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err

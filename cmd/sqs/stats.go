@@ -26,11 +26,11 @@ func sqsStats() {
 	ctx := context.Background()
 	queueUrl, err := lib.SQSQueueUrl(ctx, args.QueueName)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	out, err := lib.SQSNumMessages(ctx, queueUrl)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(lib.Pformat(out))
 }

@@ -291,11 +291,11 @@ func IamEnsureInstanceProfileRole(ctx context.Context, profileName, roleName str
 		if !Contains(roles, roleName) {
 			_, err := IamClient().AddRoleToInstanceProfileWithContext(ctx, &iam.AddRoleToInstanceProfileInput{
 				InstanceProfileName: aws.String(profileName),
-				RoleName: aws.String(roleName),
+				RoleName:            aws.String(roleName),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
-			    return err
+				return err
 			}
 			Logger.Println("added role:", roleName, "to instance profile:", profileName)
 		} else {
@@ -306,19 +306,63 @@ func IamEnsureInstanceProfileRole(ctx context.Context, profileName, roleName str
 }
 
 func IamRoleArn(ctx context.Context, principalName, roleName string) (string, error) {
-	account, err := Account(ctx)
+	account, err := StsAccount(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
-	    return "", err
+		return "", err
 	}
 	return fmt.Sprintf("arn:aws:iam::%s:role/%s/%s-path/%s", account, principalName, roleName, roleName), nil
 }
 
 func IamInstanceProfileArn(ctx context.Context, profileName string) (string, error) {
-	account, err := Account(ctx)
+	account, err := StsAccount(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
-	    return "", err
+		return "", err
 	}
 	return fmt.Sprintf("arn:aws:iam::%s:instance-profile/%s", account, profileName), nil
+}
+
+func IamListSSHPublicKeys(ctx context.Context) ([]*iam.SSHPublicKeyMetadata, error) {
+	user, err := StsUser(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	var marker *string
+	var keys []*iam.SSHPublicKeyMetadata
+	for {
+		out, err := IamClient().ListSSHPublicKeysWithContext(ctx, &iam.ListSSHPublicKeysInput{
+			UserName: aws.String(user),
+			Marker:   marker,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+		    return nil, err
+		}
+		keys = append(keys, out.SSHPublicKeys...)
+		if !*out.IsTruncated {
+			break
+		}
+		marker = out.Marker
+	}
+	return keys, nil
+}
+
+func IamGetSSHPublicKey(ctx context.Context, keyID string) (*iam.SSHPublicKey, error) {
+	user, err := StsUser(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	out, err := IamClient().GetSSHPublicKeyWithContext(ctx, &iam.GetSSHPublicKeyInput{
+		Encoding: aws.String("SSH"),
+		SSHPublicKeyId: aws.String(keyID),
+		UserName: aws.String(user),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+	    return nil, err
+	}
+	return out.SSHPublicKey, nil
 }

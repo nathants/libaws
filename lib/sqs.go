@@ -52,7 +52,7 @@ func atoi(a string) int {
 }
 
 func SQSQueueUrl(ctx context.Context, queueName string) (string, error) {
-	account, err := Account(ctx)
+	account, err := StsAccount(ctx)
 	if err != nil {
 		return "", err
 	}

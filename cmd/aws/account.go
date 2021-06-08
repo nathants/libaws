@@ -23,7 +23,7 @@ func account() {
 	var args accountArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	account, err := lib.Account(ctx)
+	account, err := lib.StsAccount(ctx)
 	if err != nil {
 		panic(err)
 	}

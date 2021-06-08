@@ -26,9 +26,9 @@ func ec2LsSnapshot() {
 	var args ec2LsSnapshotArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	account, err := lib.Account(ctx)
+	account, err := lib.StsAccount(ctx)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	var nextToken *string
 	var snapshots []*ec2.Snapshot
@@ -38,7 +38,7 @@ func ec2LsSnapshot() {
 			NextToken: nextToken,
 		})
 		if err != nil {
-			lib.Logger.Fatal("error:", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		snapshots = append(snapshots, out.Snapshots...)
 		if out.NextToken == nil {

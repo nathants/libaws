@@ -25,15 +25,15 @@ func ec2LsAmi() {
 	var args ec2LsAmiArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	account, err := lib.Account(ctx)
+	account, err := lib.StsAccount(ctx)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String(account)},
 	})
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	sort.Slice(images.Images, func(i, j int) bool { return *images.Images[i].CreationDate > *images.Images[j].CreationDate })
 	for _, image := range images.Images {

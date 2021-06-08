@@ -68,10 +68,10 @@ func dynamodbEnsure() {
 	}
 	input, err := lib.DynamoDBEnsureInput(args.Name, keys, attrs)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	err = lib.DynamoDBEnsure(ctx, input, args.Preview)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }

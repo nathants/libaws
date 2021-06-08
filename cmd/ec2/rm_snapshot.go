@@ -28,7 +28,7 @@ func ec2RmSnapshot() {
 		SnapshotId: aws.String(args.SnapshotID),
 	})
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	lib.Logger.Println("deleted snapshot:", args.SnapshotID)
 }

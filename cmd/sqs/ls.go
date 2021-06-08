@@ -26,7 +26,7 @@ func sqsLs() {
 	ctx := context.Background()
 	queues, err := lib.SQSListQueues(ctx)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, queue := range queues {
 		parts := strings.Split(*queue, "/")

@@ -27,7 +27,7 @@ func ec2Ls() {
 	ctx := context.Background()
 	instances, err := lib.EC2RetryListInstances(ctx, args.Selectors, args.State)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Fprintln(os.Stderr, "name", "type", "state", "id", "image", "kind", "security-group", "tags")
 	for _, instance := range instances {

@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/service/sts"
@@ -19,18 +20,26 @@ func STSClient() *sts.STS {
 	return stsClient
 }
 
-var account *string
-var accountLock sync.RWMutex
+var stsAccount *string
+var stsAccountLock sync.RWMutex
 
-func Account(ctx context.Context) (string, error) {
-	accountLock.Lock()
-	defer accountLock.Unlock()
-	if account == nil {
+func StsAccount(ctx context.Context) (string, error) {
+	stsAccountLock.Lock()
+	defer stsAccountLock.Unlock()
+	if stsAccount == nil {
 		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
 			return "", err
 		}
-		account = out.Account
+		stsAccount = out.Account
 	}
-	return *account, nil
+	return *stsAccount, nil
+}
+
+func StsUser(ctx context.Context) (string, error) {
+	out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", err
+	}
+	return strings.SplitN(*out.Arn, "/", 2)[1], nil
 }
