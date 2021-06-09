@@ -43,14 +43,14 @@ def ensure_bucket(name, acl='private', versioning=False, noencrypt=False, print_
             print_fn('', name)
 
         if acl == 'private':
-            client('s3control').put_public_access_block(
+            client('s3').put_public_access_block(
+                Bucket=name,
                 PublicAccessBlockConfiguration={
                     'BlockPublicAcls': True,
                     'IgnorePublicAcls': True,
                     'BlockPublicPolicy': True,
                     'RestrictPublicBuckets': True
                 },
-                AccountId=aws.account(),
             )
 
         if versioning:
