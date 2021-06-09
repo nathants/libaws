@@ -338,7 +338,7 @@ func IamListSSHPublicKeys(ctx context.Context) ([]*iam.SSHPublicKeyMetadata, err
 		})
 		if err != nil {
 			Logger.Println("error:", err)
-		    return nil, err
+			return nil, err
 		}
 		keys = append(keys, out.SSHPublicKeys...)
 		if !*out.IsTruncated {
@@ -356,13 +356,28 @@ func IamGetSSHPublicKey(ctx context.Context, keyID string) (*iam.SSHPublicKey, e
 		return nil, err
 	}
 	out, err := IamClient().GetSSHPublicKeyWithContext(ctx, &iam.GetSSHPublicKeyInput{
-		Encoding: aws.String("SSH"),
+		Encoding:       aws.String("SSH"),
 		SSHPublicKeyId: aws.String(keyID),
-		UserName: aws.String(user),
+		UserName:       aws.String(user),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
-	    return nil, err
+		return nil, err
 	}
 	return out.SSHPublicKey, nil
+}
+
+type IamStatementEntry struct {
+	Sid       string
+	Effect    string
+	Resource  string
+	Principal interface{}
+	Action    interface{}
+	Condition interface{}
+}
+
+type IamPolicyDocument struct {
+	Version   string
+	Id        string
+	Statement []IamStatementEntry
 }

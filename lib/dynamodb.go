@@ -500,29 +500,21 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 	//
 	if err != nil {
 		aerr, ok := err.(awserr.Error)
-		if !ok {
+		if !ok || aerr.Code() != dynamodb.ErrCodeResourceNotFoundException {
 			Logger.Println("error:", err)
 			return err
 		}
-		switch aerr.Code() {
-		//
-		case dynamodb.ErrCodeResourceNotFoundException:
-			if preview {
-				Logger.Println("preview: created table:", *input.TableName, Pformat(input))
-			} else {
-				_, err = DynamoDBClient().CreateTableWithContext(ctx, input)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				Logger.Println("created table:", *input.TableName, Pformat(input))
+		if preview {
+			Logger.Println("preview: created table:", *input.TableName, Pformat(input))
+		} else {
+			_, err = DynamoDBClient().CreateTableWithContext(ctx, input)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
 			}
-			return nil
-		//
-		default:
-			Logger.Println("error:", err)
-			return err
+			Logger.Println("created table:", *input.TableName, Pformat(input))
 		}
+		return nil
 	}
 	//
 	if len(input.KeySchema) != len(table.Table.KeySchema) {
