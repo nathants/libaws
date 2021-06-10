@@ -3,6 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -41,17 +42,27 @@ func s3LsVersions() {
 			fmt.Println(*bucket.Name)
 		}
 	} else {
-		path := lib.Last(strings.Split(args.Path, "s3://"))
-		parts := strings.Split(path, "/")
+		pth := lib.Last(strings.Split(args.Path, "s3://"))
+		parts := strings.Split(pth, "/")
 		bucket := parts[0]
 		var key string
 		if len(parts) > 1 {
 			key = strings.Join(parts[1:], "/")
 		}
+
+		splitKey := key
+		if !strings.HasSuffix(key, "/") {
+			splitKey = path.Dir(key) + "/"
+			if splitKey == "./" {
+				splitKey = ""
+			}
+		}
+
 		s3Client, err := lib.S3ClientBucketRegion(bucket)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
+
 		var delimiter *string
 		if !args.Recursive {
 			delimiter = aws.String("/")
@@ -73,8 +84,8 @@ func s3LsVersions() {
 
 			for _, pre := range out.CommonPrefixes {
 				prefix := *pre.Prefix
-				if key != "" {
-					prefix = strings.SplitN(prefix, key, 2)[1]
+				if splitKey != "" {
+					prefix = strings.SplitN(prefix, splitKey, 2)[1]
 				}
 				fmt.Println(" PRE", prefix)
 			}
@@ -89,8 +100,8 @@ func s3LsVersions() {
 
 			for _, obj := range out.Versions {
 				objKey := *obj.Key
-				if key != "" && !args.Recursive {
-					objKey = strings.SplitN(objKey, key, 2)[1]
+				if splitKey != "" && !args.Recursive {
+					objKey = strings.SplitN(objKey, splitKey, 2)[1]
 				}
 				version := *obj.VersionId
 				kind := "HISTORICAL"
@@ -109,8 +120,8 @@ func s3LsVersions() {
 
 			for _, obj := range out.DeleteMarkers {
 				objKey := *obj.Key
-				if key != "" && !args.Recursive {
-					objKey = strings.SplitN(objKey, key, 2)[1]
+				if splitKey != "" && !args.Recursive {
+					objKey = strings.SplitN(objKey, splitKey, 2)[1]
 				}
 				version := *obj.VersionId
 				kind := "HISTORICAL-DELETE"
