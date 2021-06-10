@@ -166,7 +166,7 @@ var (
 	White   = color(37)
 )
 
-func last(parts []string) string {
+func Last(parts []string) string {
 	return parts[len(parts)-1]
 }
 
@@ -196,6 +196,7 @@ func getch() (string, error) {
 			os.Exit(1)
 		}
 		return string(bytes), nil
+	default:
 	}
 	return "", nil
 }
@@ -205,7 +206,7 @@ func PromptProceed(prompt string) error {
 	fmt.Println("proceed? y/n")
 	ch, err := getch()
 	if err != nil {
-	    return err
+		return err
 	}
 	if ch != "y" {
 		return fmt.Errorf("prompt failed")

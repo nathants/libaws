@@ -40,7 +40,7 @@ func SessionRegion(region string) (*session.Session, error) {
 			Region: aws.String(region),
 		})
 		if err != nil {
-		    return nil, err
+			return nil, err
 		}
 		sessRegional[region] = sess
 	}

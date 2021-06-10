@@ -28,7 +28,7 @@ func S3ClientRegion(region string) (*s3.S3, error) {
 	if !ok {
 		sess, err := SessionRegion(region)
 		if err != nil {
-		    return nil, err
+			return nil, err
 		}
 		s3Client = s3.New(sess)
 		s3ClientsRegional[region] = s3Client
@@ -64,11 +64,11 @@ func S3BucketRegion(bucket string) (string, error) {
 func S3ClientBucketRegion(bucket string) (*s3.S3, error) {
 	region, err := S3BucketRegion(bucket)
 	if err != nil {
-	    return nil, err
+		return nil, err
 	}
 	s3Client, err := S3ClientRegion(region)
 	if err != nil {
-	    return nil, err
+		return nil, err
 	}
 	return s3Client, nil
 }

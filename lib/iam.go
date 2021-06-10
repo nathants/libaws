@@ -33,7 +33,7 @@ func iamAllowPolicyName(action, resource string) *string {
 	resource = strings.ReplaceAll(resource, "*", "")
 	var parts []string
 	for _, part := range strings.Split(resource, ":")[3:] { // arn:aws:service:account:region:target
-		parts = append(parts, last(strings.Split(part, "/")))
+		parts = append(parts, Last(strings.Split(part, "/")))
 	}
 	resource = strings.Join(parts, ":")
 	name := action + "_" + resource
@@ -129,7 +129,7 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 			}
 			var matchedPolicies []*iam.Policy
 			for _, policy := range policies {
-				if last(strings.Split(*policy.Arn, "/")) == policyName {
+				if Last(strings.Split(*policy.Arn, "/")) == policyName {
 					matchedPolicies = append(matchedPolicies, policy)
 				}
 			}

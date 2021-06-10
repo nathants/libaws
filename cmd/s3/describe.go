@@ -108,7 +108,7 @@ func s3Describe() {
 
 	region, err := lib.S3BucketRegion(bucket)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	descr.Region = region
 

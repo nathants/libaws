@@ -33,7 +33,7 @@ func codeCommitLs() {
 			NextToken: token,
 		})
 		if err != nil {
-		    lib.Logger.Fatal("error: ", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		repos = append(repos, out.Repositories...)
 		if out.NextToken == nil {

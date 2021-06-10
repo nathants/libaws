@@ -30,7 +30,7 @@ func iamLsSSHKeys() {
 	for _, key := range keys {
 		data, err := lib.IamGetSSHPublicKey(ctx, *key.SSHPublicKeyId)
 		if err != nil {
-		    lib.Logger.Fatal("error: ", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		fmt.Println(*key.Status, *key.SSHPublicKeyId, *data.Fingerprint)
 	}

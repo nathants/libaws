@@ -22,8 +22,9 @@ func usage() {
 		fns = append(fns, k)
 	}
 	sort.Strings(fns)
+	fmt.Println("available commands:")
 	for _, fn := range fns {
-		fmt.Println(fn)
+		fmt.Println("", fn)
 	}
 }
 
