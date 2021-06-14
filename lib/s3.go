@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -39,7 +40,7 @@ func S3ClientRegion(region string) (*s3.S3, error) {
 func S3ClientRegionMust(region string) *s3.S3 {
 	client, err := S3ClientRegion(region)
 	if err != nil {
-	    panic(err)
+		panic(err)
 	}
 	return client
 }
@@ -70,11 +71,17 @@ func S3BucketRegion(bucket string) (string, error) {
 }
 
 func S3ClientBucketRegion(bucket string) (*s3.S3, error) {
-	region, err := S3BucketRegion(bucket)
-	if err != nil {
-		return nil, err
-	}
-	s3Client, err := S3ClientRegion(region)
+	var s3Client *s3.S3
+	err := Retry(context.Background(), func() error {
+		var region string
+		var err error
+		region, err = S3BucketRegion(bucket)
+		if err != nil {
+			return err
+		}
+		s3Client, err = S3ClientRegion(region)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +91,7 @@ func S3ClientBucketRegion(bucket string) (*s3.S3, error) {
 func S3ClientBucketRegionMust(bucket string) *s3.S3 {
 	client, err := S3ClientBucketRegion(bucket)
 	if err != nil {
-	    panic(err)
+		panic(err)
 	}
 	return client
 }
