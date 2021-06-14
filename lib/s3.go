@@ -36,6 +36,14 @@ func S3ClientRegion(region string) (*s3.S3, error) {
 	return s3Client, nil
 }
 
+func S3ClientRegionMust(region string) *s3.S3 {
+	client, err := S3ClientRegion(region)
+	if err != nil {
+	    panic(err)
+	}
+	return client
+}
+
 var s3BucketRegionLock sync.RWMutex
 var s3BucketRegion = make(map[string]string)
 
@@ -71,4 +79,12 @@ func S3ClientBucketRegion(bucket string) (*s3.S3, error) {
 		return nil, err
 	}
 	return s3Client, nil
+}
+
+func S3ClientBucketRegionMust(bucket string) *s3.S3 {
+	client, err := S3ClientBucketRegion(bucket)
+	if err != nil {
+	    panic(err)
+	}
+	return client
 }
