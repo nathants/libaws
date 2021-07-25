@@ -28,9 +28,13 @@ func DynamoDBClient() *dynamodb.DynamoDB {
 
 func dynamoDBTableAttrShortcut(s string) string {
 	s2, ok := map[string]string{
-		"read":   "ProvisionedThroughput.ReadCapacityUnits",
-		"write":  "ProvisionedThroughput.WriteCapacityUnits",
-		"stream": "StreamSpecification.StreamViewType",
+		"batch":    "BatchSize",
+		"parallel": "ParallelizationFactor",
+		"read":     "ProvisionedThroughput.ReadCapacityUnits",
+		"retry":    "MaximumRetryAttempts",
+		"start":    "StartingPosition",
+		"stream":   "StreamSpecification.StreamViewType",
+		"write":    "ProvisionedThroughput.WriteCapacityUnits",
 	}[s]
 	if ok {
 		return s2
@@ -504,16 +508,14 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			Logger.Println("error:", err)
 			return err
 		}
-		if preview {
-			Logger.Println("preview: created table:", *input.TableName, Pformat(input))
-		} else {
+		if !preview {
 			_, err = DynamoDBClient().CreateTableWithContext(ctx, input)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println("created table:", *input.TableName, Pformat(input))
 		}
+		Logger.Println(PreviewString(preview)+"created table:", *input.TableName, Pformat(input))
 		return nil
 	}
 	//
@@ -552,7 +554,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			old = *table.Table.ProvisionedThroughput.ReadCapacityUnits
 		}
 		Logger.Printf(
-			"update ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
+			PreviewString(preview)+"update ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
 			*input.TableName,
 			old,
 			*input.ProvisionedThroughput.ReadCapacityUnits,
@@ -570,7 +572,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			old = *table.Table.ProvisionedThroughput.WriteCapacityUnits
 		}
 		Logger.Printf(
-			"update ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
+			PreviewString(preview)+"update ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
 			*input.TableName,
 			old,
 			*input.ProvisionedThroughput.WriteCapacityUnits,
@@ -591,7 +593,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			old = *table.Table.StreamSpecification.StreamEnabled
 		}
 		Logger.Printf(
-			"update StreamSpecification.StreamEnabled for table %s: %t => %t\n",
+			PreviewString(preview)+"update StreamSpecification.StreamEnabled for table %s: %t => %t\n",
 			*input.TableName,
 			old,
 			*input.StreamSpecification.StreamEnabled,
@@ -610,7 +612,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			old = *table.Table.StreamSpecification.StreamViewType
 		}
 		Logger.Printf(
-			"update StreamSpecification.StreamViewType for table %s: %s => %s\n",
+			PreviewString(preview)+"update StreamSpecification.StreamViewType for table %s: %s => %s\n",
 			*input.TableName,
 			old,
 			*input.StreamSpecification.StreamViewType,
@@ -697,7 +699,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			if index.ProvisionedThroughput != nil && *existing.ProvisionedThroughput.ReadCapacityUnits != *index.ProvisionedThroughput.ReadCapacityUnits {
 				updateIndex = true
 				Logger.Printf(
-					"update GlobalSecondaryIndex %s ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
+					PreviewString(preview)+"update GlobalSecondaryIndex %s ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
 					*index.IndexName,
 					*input.TableName,
 					*existing.ProvisionedThroughput.ReadCapacityUnits,
@@ -712,7 +714,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			if index.ProvisionedThroughput != nil && *existing.ProvisionedThroughput.WriteCapacityUnits != *index.ProvisionedThroughput.WriteCapacityUnits {
 				updateIndex = true
 				Logger.Printf(
-					"update GlobalSecondaryIndex %s ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
+					PreviewString(preview)+"update GlobalSecondaryIndex %s ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
 					*index.IndexName,
 					*input.TableName,
 					*existing.ProvisionedThroughput.WriteCapacityUnits,
@@ -769,9 +771,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 	}
 	//
 	if needsUpdate {
-		if preview {
-			Logger.Println("preview: updated table:", *update.TableName, Pformat(update))
-		} else {
+		if !preview {
 			if len(update.GlobalSecondaryIndexUpdates) > 1 {
 				// index updates must be applied one at a time when table is ready
 				indexUpdates := update.GlobalSecondaryIndexUpdates
@@ -795,8 +795,8 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 					return err
 				}
 			}
-			Logger.Println("updated table:", *update.TableName, Pformat(update))
 		}
+		Logger.Println(PreviewString(preview)+"updated table:", *update.TableName, Pformat(update))
 	}
 	//
 	arn, err := DynamoDBArn(ctx, *update.TableName)
@@ -824,7 +824,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		if !ok || val != *tag.Value {
 			tagInput.Tags = append(tagInput.Tags, tag)
 			Logger.Printf(
-				"update tag %s for table %s: %s => %s\n",
+				PreviewString(preview)+"update tag %s for table %s: %s => %s\n",
 				*tag.Key,
 				*input.TableName,
 				val,
@@ -833,16 +833,14 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		}
 	}
 	if len(tagInput.Tags) > 0 {
-		if preview {
-			Logger.Println("preview: updated tags for table:", *input.TableName)
-		} else {
+		if !preview {
 			_, err = DynamoDBClient().TagResourceWithContext(ctx, tagInput)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println("updated tags for table:", *input.TableName)
 		}
+		Logger.Println(PreviewString(preview)+"updated tags for table:", *input.TableName)
 	}
 	//
 	untagInput := &dynamodb.UntagResourceInput{
@@ -861,16 +859,14 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		}
 	}
 	if len(untagInput.TagKeys) > 0 {
-		if preview {
-			Logger.Println("preview: removed tags for table:", *input.TableName)
-		} else {
+		if !preview {
 			_, err = dynamoDBClient.UntagResourceWithContext(ctx, untagInput)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println("removed tags for table:", *input.TableName)
 		}
+		Logger.Println(PreviewString(preview)+"removed tags for table:", *input.TableName)
 	}
 	//
 	return nil

@@ -3,7 +3,7 @@ import argh
 import aws
 import aws.lamda
 
-def main(path, limit=100):
+def main(path):
     print(aws.lamda.arn(aws.lamda.name(path)))
 
 if __name__ == '__main__':

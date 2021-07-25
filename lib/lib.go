@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -165,6 +166,26 @@ var (
 	Cyan    = color(36)
 	White   = color(37)
 )
+
+func StringSlice(xs []*string) []string {
+	var result []string
+	for _, x := range xs {
+		result = append(result, *x)
+	}
+	return result
+}
+
+func PreviewString(preview bool) string {
+	if !preview {
+		return ""
+	}
+	return "preview: "
+}
+
+func IsDigit(s string) bool {
+	_, err := strconv.Atoi(s)
+	return err == nil
+}
 
 func Last(parts []string) string {
 	return parts[len(parts)-1]

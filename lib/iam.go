@@ -96,9 +96,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 		}
 		action := parts[0]
 		resource := parts[1]
-		if preview {
-			Logger.Println("preview: ensure role allow:", roleName, allow)
-		} else {
+		if !preview {
 			_, err := IamClient().PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
 				RoleName:       aws.String(roleName),
 				PolicyName:     iamAllowPolicyName(action, resource),
@@ -108,8 +106,8 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println("ensure role allow:", roleName, allow)
 		}
+		Logger.Println(PreviewString(preview)+"ensure role allow:", roleName, allow)
 	}
 	return nil
 }
@@ -119,9 +117,7 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 		return nil
 	}
 	for _, policyName := range policyNames {
-		if preview {
-			Logger.Println("preview: ensure role policy:", roleName, policyName)
-		} else {
+		if !preview {
 			policies, err := IamListPolicies(ctx)
 			if err != nil {
 				Logger.Println("error:", err)
@@ -155,8 +151,8 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 				}
 				return err
 			}
-			Logger.Println("ensure role policy:", roleName, policyName)
 		}
+		Logger.Println(PreviewString(preview)+"ensure role policy:", roleName, policyName)
 	}
 	return nil
 }
@@ -169,9 +165,7 @@ func iamAssumePolicyDocument(principalName string) *string {
 }
 
 func IamEnsureRole(ctx context.Context, roleName, principalName string, preview bool) error {
-	if preview {
-		Logger.Println("preview: ensure role:", roleName, principalName)
-	} else {
+	if !preview {
 		rolePath := fmt.Sprintf("/%s/%s-path/", principalName, roleName)
 		roles, err := IamListRoles(ctx, aws.String(rolePath))
 		if err != nil {
@@ -213,8 +207,8 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 			}
 			return err
 		}
-		Logger.Println("ensure role:", roleName, principalName)
 	}
+	Logger.Println(PreviewString(preview)+"ensure role:", roleName, principalName)
 	return nil
 }
 
@@ -248,9 +242,7 @@ func IamEnsureInstanceProfileRole(ctx context.Context, profileName, roleName str
 	}
 	switch len(profiles) {
 	case 0:
-		if preview {
-			Logger.Println("preview: created instance profile:", profileName)
-		} else {
+		if !preview {
 			out, err := IamClient().CreateInstanceProfileWithContext(ctx, &iam.CreateInstanceProfileInput{
 				InstanceProfileName: aws.String(profileName),
 				Path:                aws.String(profilePath),
@@ -260,8 +252,8 @@ func IamEnsureInstanceProfileRole(ctx context.Context, profileName, roleName str
 				return err
 			}
 			profiles = append(profiles, out.InstanceProfile)
-			Logger.Println("created instance profile:", profileName)
 		}
+		Logger.Println(PreviewString(preview)+"created instance profile:", profileName)
 	case 1:
 		if *profiles[0].InstanceProfileName != profileName {
 			err := fmt.Errorf("profile name mismatch: %s != %s", *profiles[0].InstanceProfileName, profileName)
@@ -281,14 +273,12 @@ func IamEnsureInstanceProfileRole(ctx context.Context, profileName, roleName str
 		}
 		return err
 	}
-	if preview {
-		Logger.Println("preview: added role", roleName, "to instance profile", profileName)
-	} else {
-		var roles []string
-		for _, role := range profiles[0].Roles {
-			roles = append(roles, *role.RoleName)
-		}
-		if !Contains(roles, roleName) {
+	var roles []string
+	for _, role := range profiles[0].Roles {
+		roles = append(roles, *role.RoleName)
+	}
+	if !Contains(roles, roleName) {
+		if !preview {
 			_, err := IamClient().AddRoleToInstanceProfileWithContext(ctx, &iam.AddRoleToInstanceProfileInput{
 				InstanceProfileName: aws.String(profileName),
 				RoleName:            aws.String(roleName),
@@ -297,10 +287,9 @@ func IamEnsureInstanceProfileRole(ctx context.Context, profileName, roleName str
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println("added role:", roleName, "to instance profile:", profileName)
-		} else {
-			Logger.Println("instance profile:", profileName, "already has role:", roleName)
+
 		}
+		Logger.Println(PreviewString(preview)+"added role:", roleName, "to instance profile:", profileName)
 	}
 	return nil
 }

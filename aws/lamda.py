@@ -42,8 +42,7 @@ def filter_metadata(lines):
             break
 
 def parse_metadata(token, lines, silent=False):
-    vals = [(line,
-             line.split(token, 1)[-1].split('#')[0].strip())
+    vals = [(line, line.split(token, 1)[-1].split('#')[0].strip())
             for line in filter_metadata(lines)
             if line.startswith(token)]
     new_vals = []
