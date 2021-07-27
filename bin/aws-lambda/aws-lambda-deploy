@@ -54,13 +54,13 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
             assert sh.getch() == 'y'
         aws.lamda.ensure_infra_log_group(name, preview)
         aws.lamda.ensure_infra_s3(metadata['s3'], preview)
-        rm_extra_s3
+        # rm_extra_s3
         aws.lamda.ensure_infra_dynamodb(metadata['dynamodb'], preview)
-        rm_extra_dynamodb
+        # rm_extra_dynamodb
         aws.lamda.ensure_infra_sns(metadata['sns'], preview)
-        rm_extra_sns
+        # rm_extra_sns
         # aws.lamda.ensure_infra_sqs(metadata['sqs'], preview)
-        rm_extra_sqs
+        # rm_extra_sqs
         aws.iam.ensure_role(name, 'lambda', preview)
         arn_role = aws.iam.role_arn(name, 'lambda')
         aws.iam.ensure_policies(name, metadata['policy'], preview)
@@ -101,15 +101,15 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
             except not_found:
                 arn_lambda = retry(aws.client('lambda').create_function, silent=True)(Code={'ZipFile': zipfile}, **kw)['FunctionArn']
         aws.lamda.ensure_trigger_dynamodb(name, arn_lambda, metadata, preview)
-        rm_extra_trigger_dynamodb
+        # rm_extra_trigger_dynamodb
         aws.lamda.ensure_trigger_sns(name, arn_lambda, metadata, preview)
-        rm_extra_trigger_sns
+        # rm_extra_trigger_sns
         aws.lamda.ensure_trigger_cloudwatch(name, arn_lambda, metadata, preview)
-        rm_extra_trigger_cloudwatch
+        # rm_extra_trigger_cloudwatch
         aws.lamda.ensure_trigger_api(name, arn_lambda, metadata, preview)
-        rm_extra_trigger_api
+        # rm_extra_trigger_api
         aws.lamda.ensure_trigger_s3(name, arn_lambda, metadata, preview)
-        rm_extra_trigger_s3
+        # rm_extra_trigger_s3
         # aws.lamda.ensure_trigger_sqs(name, arn_lambda, metadata, preview)
         aws.lamda.set_concurrency(name, concurrency, preview)
         # always update function after trigger creation
