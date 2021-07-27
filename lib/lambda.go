@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/apigateway"
+	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
 	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -50,7 +53,7 @@ func LambdaSetConcurrency(ctx context.Context, name string, concurrency int, pre
 					return err
 				}
 			}
-			Logger.Printf(PreviewString(preview)+"updated concurrency for %s: %d", name, concurrency)
+			Logger.Println(PreviewString(preview)+"updated concurrency:", name, concurrency)
 		}
 	}
 	return nil
@@ -311,7 +314,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta Lam
 						return err
 					}
 				}
-				Logger.Println(PreviewString(preview)+"updated bucket notifications for %s %s: %s => %s", bucket, name, existingEvents, events)
+				Logger.Printf(PreviewString(preview)+"updated bucket notifications for %s %s: %s => %s", bucket, name, existingEvents, events)
 			}
 		}
 	}
@@ -393,22 +396,294 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAr
 }
 
 func LambdaEnsureTriggerApi(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
-	// for _, trigger := range meta.Trigger {
-	// 	parts := strings.Split(trigger, " ")
-	// 	kind := parts[0]
-	// 	if kind == "api" {
-	// 		break
-	// 	}
-	// }
-	return fmt.Errorf("unimplemented")
+	for _, trigger := range meta.Trigger {
+		parts := strings.Split(trigger, " ")
+		kind := parts[0]
+		if kind == "api" {
+			restApi, err := Api(ctx, name)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			if restApi == nil {
+				if !preview {
+					out, err := ApiClient().CreateRestApiWithContext(ctx, &apigateway.CreateRestApiInput{
+						Name:             aws.String(name),
+						BinaryMediaTypes: apiBinaryMediaTypes,
+						EndpointConfiguration: &apigateway.EndpointConfiguration{
+							Types: apiEndpointConfigurationTypes,
+						},
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					restApi = out
+				}
+				Logger.Println(PreviewString(preview)+"created rest api:", name)
+			} else {
+				if !reflect.DeepEqual(restApi.BinaryMediaTypes, apiBinaryMediaTypes) {
+					err := fmt.Errorf("api binary media types misconfigured for %s %s: %v != %v", name, *restApi.Id, StringSlice(restApi.BinaryMediaTypes), StringSlice(apiBinaryMediaTypes))
+					Logger.Println("error:", err)
+					return err
+				}
+				if !reflect.DeepEqual(restApi.EndpointConfiguration.Types, apiEndpointConfigurationTypes) {
+					err := fmt.Errorf("api endpoint configuration types misconfigured for %s %s: %v != %v", name, *restApi.Id, StringSlice(restApi.EndpointConfiguration.Types), StringSlice(apiEndpointConfigurationTypes))
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			if restApi != nil {
+				parentID, err := apiResourceID(ctx, *restApi.Id, "/")
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				if parentID == "" {
+					err := fmt.Errorf("api resource id not found for: %s %s /", name, *restApi.Id)
+					Logger.Println("error:", err)
+					return err
+				}
+				resourceID, err := apiResourceID(ctx, *restApi.Id, "/{proxy+}")
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				if resourceID == "" {
+					if !preview {
+						out, err := ApiClient().CreateResourceWithContext(ctx, &apigateway.CreateResourceInput{
+							RestApiId: aws.String(*restApi.Id),
+							ParentId:  aws.String(parentID),
+							PathPart:  aws.String("{proxy+}"),
+						})
+						if err != nil {
+							Logger.Println("error:", err)
+							return err
+						}
+						resourceID = *out.Id
+					}
+					Logger.Println(PreviewString(preview)+"created api resource:", *restApi.Id, parentID)
+				}
+				account, err := StsAccount(ctx)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				uri := fmt.Sprintf(
+					"arn:aws:apigateway:%s:lambda:path/%s/functions/arn:aws:lambda:%s:%s:function:%s/invocations",
+					Region(),
+					LambdaClient().APIVersion,
+					Region(),
+					account,
+					name,
+				)
+				for _, id := range []string{parentID, resourceID} {
+					outMethod, err := ApiClient().GetMethodWithContext(ctx, &apigateway.GetMethodInput{
+						RestApiId:  aws.String(*restApi.Id),
+						ResourceId: aws.String(id),
+						HttpMethod: aws.String(apiHttpMethod),
+					})
+					if err != nil {
+						aerr, ok := err.(awserr.Error)
+						if !ok || aerr.Code() != apigateway.ErrCodeNotFoundException {
+							return err
+						}
+						if !preview {
+							_, err := ApiClient().PutMethodWithContext(ctx, &apigateway.PutMethodInput{
+								RestApiId:         aws.String(*restApi.Id),
+								ResourceId:        aws.String(id),
+								HttpMethod:        aws.String(apiHttpMethod),
+								AuthorizationType: aws.String(apiAuthType),
+							})
+							if err != nil {
+								Logger.Println("error:", err)
+								return err
+							}
+						}
+						Logger.Println(PreviewString(preview)+"created api method:", name, *restApi.Id, id)
+					} else {
+						if *outMethod.AuthorizationType != apiAuthType {
+							err := fmt.Errorf("api method auth type misconfigured for %s %s: %s != %s", name, *restApi, *outMethod.AuthorizationType, apiAuthType)
+							Logger.Println("error:", err)
+							return err
+						}
+					}
+					outIntegration, err := ApiClient().GetIntegrationWithContext(ctx, &apigateway.GetIntegrationInput{
+						RestApiId:  aws.String(*restApi.Id),
+						ResourceId: aws.String(id),
+						HttpMethod: aws.String(apiHttpMethod),
+					})
+					if err != nil {
+						aerr, ok := err.(awserr.Error)
+						if !ok || aerr.Code() != apigateway.ErrCodeNotFoundException {
+							return err
+						}
+						if !preview {
+							_, err = ApiClient().PutIntegrationWithContext(ctx, &apigateway.PutIntegrationInput{
+								RestApiId:             aws.String(*restApi.Id),
+								ResourceId:            aws.String(id),
+								HttpMethod:            aws.String(apiHttpMethod),
+								Type:                  aws.String(apiType),
+								IntegrationHttpMethod: aws.String(apiIntegrationHttpMethod),
+								Uri:                   aws.String(uri),
+							})
+							if err != nil {
+								Logger.Println("error:", err)
+								return err
+							}
+						}
+						Logger.Println(PreviewString(preview)+"created api integration:", name, *restApi.Id, id)
+					} else {
+						if *outIntegration.Type != apiType {
+							err := fmt.Errorf("api method type misconfigured for %s %s: %s != %s", name, *restApi, *outIntegration.Type, apiType)
+							Logger.Println("error:", err)
+							return err
+						}
+						if *outIntegration.Uri != uri {
+							err := fmt.Errorf("api method uri misconfigured for %s %s: %s != %s", name, *restApi, *outIntegration.Uri, uri)
+							Logger.Println("error:", err)
+							return err
+						}
+					}
+				}
+				deploymentsOut, err := ApiClient().GetDeploymentsWithContext(ctx, &apigateway.GetDeploymentsInput{
+					RestApiId: restApi.Id,
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				if len(deploymentsOut.Items) != 0 && len(deploymentsOut.Items) != 1 {
+					err := fmt.Errorf("impossible result for get deployments: %s %d", *restApi.Id, len(deploymentsOut.Items))
+					Logger.Println("error:", err)
+					return err
+				}
+				if len(deploymentsOut.Items) != 1 {
+					if !preview {
+						_, err = ApiClient().CreateDeploymentWithContext(ctx, &apigateway.CreateDeploymentInput{
+							RestApiId: restApi.Id,
+							StageName: aws.String(apiStageName),
+						})
+						if err != nil {
+							Logger.Println("error:", err)
+							return err
+						}
+					}
+					Logger.Println(PreviewString(preview)+"created deployment:", *restApi.Id, apiStageName)
+				}
+				arn := fmt.Sprintf("arn:aws:execute-api:%s:%s:%s/*/*/*", Region(), account, *restApi.Id)
+				err = lambdaEnsurePermission(ctx, name, "apigateway.amazonaws.com", arn, preview)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			break
+		}
+	}
+	return nil
 }
 
 func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
-	return fmt.Errorf("unimplemented")
+	var triggers []string
+	for _, trigger := range meta.Trigger {
+		parts := strings.Split(trigger, " ")
+		kind := parts[0]
+		if kind == "cloudwatch" {
+			schedule := parts[1]
+			triggers = append(triggers, schedule)
+		}
+	}
+	if len(triggers) > 0 {
+		for _, schedule := range triggers {
+			var scheduleArn string
+			scheduleName := name + "_" + base64.StdEncoding.EncodeToString([]byte(schedule))
+			out, err := EventsClient().DescribeRuleWithContext(ctx, &cloudwatchevents.DescribeRuleInput{
+				Name: aws.String(scheduleName),
+			})
+			if err != nil {
+				aerr, ok := err.(awserr.Error)
+				if !ok || aerr.Code() != cloudwatchevents.ErrCodeResourceNotFoundException {
+					return err
+				}
+				if !preview {
+					out, err := EventsClient().PutRuleWithContext(ctx, &cloudwatchevents.PutRuleInput{
+						Name:               aws.String(scheduleName),
+						ScheduleExpression: aws.String(schedule),
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					scheduleArn = *out.RuleArn
+				}
+				Logger.Println(PreviewString(preview)+"created cloudwatch rule:", scheduleName, schedule)
+			} else {
+				if *out.ScheduleExpression != schedule {
+					err := fmt.Errorf("cloudwatch rule misconfigured: %s %s != %s", scheduleName, schedule, *out.ScheduleExpression)
+					Logger.Println("error:", err)
+					return err
+				}
+				scheduleArn = *out.Arn
+			}
+			err = lambdaEnsurePermission(ctx, name, "events.amazonaws.com", scheduleArn, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			var targets []*cloudwatchevents.Target
+			err = Retry(ctx, func() error {
+				outRules, err := EventsClient().ListTargetsByRuleWithContext(ctx, &cloudwatchevents.ListTargetsByRuleInput{
+					Rule: aws.String(scheduleName),
+				})
+				if err != nil {
+					return err
+				}
+				targets = outRules.Targets
+				return nil
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			switch len(targets) {
+			case 0:
+				if !preview {
+					_, err := EventsClient().PutTargetsWithContext(ctx, &cloudwatchevents.PutTargetsInput{
+						Rule: aws.String(scheduleName),
+						Targets: []*cloudwatchevents.Target{{
+							Id:  aws.String("1"),
+							Arn: aws.String(arnLambda),
+						}},
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+					    return err
+					}
+				}
+				Logger.Println(PreviewString(preview)+"created cloudwatch rule target:", scheduleName, arnLambda)
+			case 1:
+				if *targets[0].Arn != arnLambda {
+					err := fmt.Errorf("cloudwatch rule is misconfigured with unknown target: %s %s", arnLambda, *targets[0].Arn)
+					Logger.Println("error:", err)
+					return err
+				}
+			default:
+					var targetArns []string
+					for _, target := range targets {
+						targetArns = append(targetArns, *target.Arn)
+					}
+					err := fmt.Errorf("cloudwatch rule is misconfigured with unknown targets: %s %v", arnLambda, targetArns)
+					Logger.Println("error:", err)
+					return err
+			}
+		}
+	}
+	return nil
 }
 
 func LambdaEnsureTriggerSns(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
-	return fmt.Errorf("unimplemented")
+	return nil
 }
 
 func LambdaEnsureTriggerDynamoDB(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
