@@ -100,17 +100,25 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
                 arn_lambda = retry(aws.client('lambda').get_function, not_found)(FunctionName=name)['Configuration']['FunctionArn']
             except not_found:
                 arn_lambda = retry(aws.client('lambda').create_function, silent=True)(Code={'ZipFile': zipfile}, **kw)['FunctionArn']
+
         aws.lamda.ensure_trigger_dynamodb(name, arn_lambda, metadata, preview)
-        # rm_extra_trigger_dynamodb
+        # TODO rm_extra_triggers_and_permissions_dynamodb
+
         aws.lamda.ensure_trigger_sns(name, arn_lambda, metadata, preview)
-        # rm_extra_trigger_sns
+        # TODO rm_extra_trigger_and_permissions_sns
+
         aws.lamda.ensure_trigger_cloudwatch(name, arn_lambda, metadata, preview)
-        # rm_extra_trigger_cloudwatch
+        # TODO rm_extra_trigger_and_permissions_cloudwatch
+
         aws.lamda.ensure_trigger_api(name, arn_lambda, metadata, preview)
-        # rm_extra_trigger_api
+        # TODO rm_extra_trigger_and_permissions_api
+
         aws.lamda.ensure_trigger_s3(name, arn_lambda, metadata, preview)
-        # rm_extra_trigger_s3
-        # aws.lamda.ensure_trigger_sqs(name, arn_lambda, metadata, preview)
+        # TODO rm_extra_trigger_and_permissions_s3
+
+        # TODO aws.lamda.ensure_trigger_sqs(name, arn_lambda, metadata, preview)
+        # TODO rm_extra_trigger_and_permissions_sqs
+
         aws.lamda.set_concurrency(name, concurrency, preview)
         # always update function after trigger creation
         if not preview:

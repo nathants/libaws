@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"reflect"
 	"runtime"
@@ -231,6 +232,39 @@ func PromptProceed(prompt string) error {
 	}
 	if ch != "y" {
 		return fmt.Errorf("prompt failed")
+	}
+	return nil
+}
+
+func shell(format string, a ...interface{}) error {
+	cmd := exec.Command("bash", "-c", fmt.Sprintf(format, a...))
+	var stderr bytes.Buffer
+	var stdout bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	if err != nil {
+	    Logger.Println(stderr.String())
+	    Logger.Println(stdout.String())
+		Logger.Println("error:", err)
+		return err
+	}
+	return nil
+}
+
+func shellAt(dir string, format string, a ...interface{}) error {
+	cmd := exec.Command("bash", "-c", fmt.Sprintf(format, a...))
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	var stdout bytes.Buffer
+	cmd.Stderr = &stderr
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	if err != nil {
+	    Logger.Println(stderr.String())
+	    Logger.Println(stdout.String())
+		Logger.Println("error:", err)
+		return err
 	}
 	return nil
 }

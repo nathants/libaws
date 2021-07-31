@@ -318,7 +318,7 @@ def create_zip(path, requires, preview):
         with sh.cd(site_packages):
             sh.run(f'cp {path} .')
             sh.run('rm -rf wheel pip setuptools pkg_resources easy_install.py')
-            sh.run("ls | grep -E 'info$' | xargs rm -rf")
+            sh.run("ls | grep -E 'info$' | grep -v ' ' | xargs rm -rf")
             libs = sh.run('ls').splitlines()
             for binpath in sh.run(f"find {tempdir}/env/bin/ -type f,l").splitlines():
                 name = os.path.basename(binpath)
@@ -355,7 +355,7 @@ def include_in_zip(path, includes, preview):
                     stderr(' include:', include)
                     sh.run(f'zip {_zip_file} {include}')
 
-def update_zip(path, *includes):
+def update_zip(path):
     stderr('\nupdate zip:')
     _zip_file = zip_file(path)
     tempdir = os.path.dirname(_zip_file)

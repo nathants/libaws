@@ -5,10 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 
 	"strings"
 	"sync"
@@ -19,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
 	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/sns"
 )
 
 var lambdaClient *lambda.Lambda
@@ -658,7 +662,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 					})
 					if err != nil {
 						Logger.Println("error:", err)
-					    return err
+						return err
 					}
 				}
 				Logger.Println(PreviewString(preview)+"created cloudwatch rule target:", scheduleName, arnLambda)
@@ -669,13 +673,13 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 					return err
 				}
 			default:
-					var targetArns []string
-					for _, target := range targets {
-						targetArns = append(targetArns, *target.Arn)
-					}
-					err := fmt.Errorf("cloudwatch rule is misconfigured with unknown targets: %s %v", arnLambda, targetArns)
-					Logger.Println("error:", err)
-					return err
+				var targetArns []string
+				for _, target := range targets {
+					targetArns = append(targetArns, *target.Arn)
+				}
+				err := fmt.Errorf("cloudwatch rule is misconfigured with unknown targets: %s %v", arnLambda, targetArns)
+				Logger.Println("error:", err)
+				return err
 			}
 		}
 	}
@@ -683,13 +687,431 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 }
 
 func LambdaEnsureTriggerSns(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
+	var triggers []string
+	for _, trigger := range meta.Trigger {
+		parts := strings.Split(trigger, " ")
+		kind := parts[0]
+		if kind == "sns" {
+			snsName := parts[1]
+			triggers = append(triggers, snsName)
+		}
+	}
+	if len(triggers) > 0 {
+		for _, snsName := range triggers {
+			arnSNS, err := SNSArn(ctx, snsName)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			subscriptions, err := SNSListSubscriptions(ctx, arnSNS)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			found := false
+			for _, sub := range subscriptions {
+				if *sub.Endpoint == arnLambda {
+					found = true
+					break
+				}
+			}
+			if !found {
+				if !preview {
+					_, err := SNSClient().SubscribeWithContext(ctx, &sns.SubscribeInput{
+						TopicArn: aws.String(arnSNS),
+						Endpoint: aws.String(arnLambda),
+						Protocol: aws.String("lambda"),
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+				Logger.Println(PreviewString(preview)+"create sns trigger:", arnLambda, arnSNS)
+			}
+			err = lambdaEnsurePermission(ctx, name, "sns.amazonaws.com", arnSNS, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+	}
 	return nil
 }
 
+func lambdaDynamoDBTriggerAttrShortcut(s string) string {
+	s2, ok := map[string]string{
+		"batch":    "BatchSize",
+		"parallel": "ParallelizationFactor",
+		"retry":    "MaximumRetryAttempts",
+		"start":    "StartingPosition",
+		"window":   "MaximumBatchingWindowInSeconds",
+	}[s]
+	if ok {
+		return s2
+	}
+	return s
+}
+
 func LambdaEnsureTriggerDynamoDB(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
-	return fmt.Errorf("unimplemented")
+	var triggers [][]string
+	for _, trigger := range meta.Trigger {
+		parts := strings.Split(trigger, " ")
+		kind := parts[0]
+		if kind == "dynamodb" {
+			triggerAttrs := parts[1:]
+			triggers = append(triggers, triggerAttrs)
+		}
+	}
+	if len(triggers) > 0 {
+		for _, triggerAttrs := range triggers {
+			tableName := triggerAttrs[0]
+			triggerAttrs := triggerAttrs[1:]
+			streamArn, err := DynamoDBStreamArn(ctx, tableName)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			input := &lambda.CreateEventSourceMappingInput{
+				FunctionName:   aws.String(name),
+				EventSourceArn: aws.String(streamArn),
+				Enabled:        aws.Bool(true),
+			}
+			for _, line := range triggerAttrs {
+				attr, value, err := splitOnce(line, "=")
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				attr = lambdaDynamoDBTriggerAttrShortcut(attr)
+				switch attr {
+				case "BatchSize":
+					size, err := strconv.Atoi(value)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					input.BatchSize = aws.Int64(int64(size))
+				case "MaximumBatchingWindowInSeconds":
+					size, err := strconv.Atoi(value)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					input.MaximumBatchingWindowInSeconds = aws.Int64(int64(size))
+				case "MaximumRetryAttempts":
+					attempts, err := strconv.Atoi(value)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					input.MaximumRetryAttempts = aws.Int64(int64(attempts))
+				case "ParallelizationFactor":
+					factor, err := strconv.Atoi(value)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					input.ParallelizationFactor = aws.Int64(int64(factor))
+				case "StartingPosition":
+					input.StartingPosition = aws.String(value)
+				default:
+					err := fmt.Errorf("unknown lambda dynamodb trigger attribute: %s", line)
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			eventSourceMappings, err := lambdaListEventSourceMappings(ctx, name, tableName)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			count := 0
+			var found *lambda.EventSourceMappingConfiguration
+			for _, mapping := range eventSourceMappings {
+				if *mapping.EventSourceArn == streamArn && *mapping.FunctionArn == arnLambda {
+					found = mapping
+					count++
+				}
+			}
+			switch count {
+			case 0:
+				if !preview {
+					_, err := LambdaClient().CreateEventSourceMappingWithContext(ctx, input)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+				Logger.Println(PreviewString(preview)+"created event source mapping:", name, arnLambda, streamArn, triggerAttrs)
+			case 1:
+				needsUpdate := false
+				update := &lambda.UpdateEventSourceMappingInput{UUID: found.UUID}
+				update.FunctionName = input.FunctionName
+				if *found.BatchSize != *input.BatchSize {
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d", name, tableName, *found.BatchSize, *input.BatchSize)
+					update.BatchSize = input.BatchSize
+					needsUpdate = true
+				}
+				if *found.MaximumRetryAttempts != *input.MaximumRetryAttempts {
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d", name, tableName, *found.MaximumRetryAttempts, *input.MaximumRetryAttempts)
+					update.MaximumRetryAttempts = input.MaximumRetryAttempts
+					needsUpdate = true
+				}
+				if *found.ParallelizationFactor != *input.ParallelizationFactor {
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d", name, tableName, *found.ParallelizationFactor, *input.ParallelizationFactor)
+					update.ParallelizationFactor = input.ParallelizationFactor
+					needsUpdate = true
+				}
+				if *found.MaximumBatchingWindowInSeconds != *input.MaximumBatchingWindowInSeconds {
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d", name, tableName, *found.MaximumBatchingWindowInSeconds, *input.MaximumBatchingWindowInSeconds)
+					update.MaximumBatchingWindowInSeconds = input.MaximumBatchingWindowInSeconds
+					needsUpdate = true
+				}
+				if needsUpdate {
+					if !preview {
+						_, err := LambdaClient().UpdateEventSourceMappingWithContext(ctx, update)
+						if err != nil {
+							Logger.Println("error:", err)
+							return err
+						}
+					}
+					Logger.Println(PreviewString(preview)+"updated event source mapping for %s %s", name, tableName)
+				}
+			default:
+				err := fmt.Errorf("found more than 1 event source mapping for %s %s", name, tableName)
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func lambdaListEventSourceMappings(ctx context.Context, name, eventSourceArn string) ([]*lambda.EventSourceMappingConfiguration, error) {
+	var marker *string
+	var eventSourceMappings []*lambda.EventSourceMappingConfiguration
+	for {
+		out, err := LambdaClient().ListEventSourceMappingsWithContext(ctx, &lambda.ListEventSourceMappingsInput{
+			FunctionName:   aws.String(name),
+			EventSourceArn: aws.String(eventSourceArn),
+			Marker:         marker,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if out.NextMarker == nil {
+			break
+		}
+		marker = out.NextMarker
+		eventSourceMappings = append(eventSourceMappings, out.EventSourceMappings...)
+	}
+	return eventSourceMappings, nil
 }
 
 func LambdaEnsureTriggerSqs(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
 	return fmt.Errorf("unimplemented")
+}
+
+func LambdaParseFile(path string, silent bool) (*LambdaMetadata, error) {
+	if !Exists(path) {
+		err := fmt.Errorf("no such file: %s", path)
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if !strings.HasSuffix(path, ".py") && !strings.HasSuffix(path, ".go") {
+		err := fmt.Errorf("only .py or .go files supported: %s", path)
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	meta, err := LambdaGetMetadata(strings.Split(string(data), "\n"), silent)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	return meta, nil
+}
+
+func LambdaZipFile(path string) (string, error) {
+	name, err := LambdaName(path)
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	return fmt.Sprintf("/tmp/%s/lambda.zip", name), nil
+}
+
+func LambdaCreateZipPy(pth string, requires []string, preview bool) error {
+	zipFile, err := LambdaZipFile(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	dir := path.Dir(zipFile)
+	if !preview {
+		err := shell("rm -rf %s", dir)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = shell("mkdir -p %s", dir)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = shell("virtualenv --python python3 %s/env", dir)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"created virtualenv:", dir)
+	if len(requires) > 0 {
+		var args []string
+		for _, require := range requires {
+			args = append(args, fmt.Sprintf(`"%s"`, require))
+			Logger.Println(PreviewString(preview)+"require:", require)
+		}
+		if !preview {
+			arg := strings.Join(args, " ")
+			err := shell("%s/env/bin/pip install %s", dir, arg)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"pip installed requires with: %s/env/bin/pip", dir)
+	}
+	if !preview {
+		site_packages, err := filepath.Glob(fmt.Sprintf("%s/env/lib/python3*/site-packages", dir))
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if len(site_packages) != 1 {
+			err := fmt.Errorf("expected 1 site-package dir: %v", site_packages)
+			Logger.Println("error:", err)
+			return err
+		}
+		site_package := site_packages[0]
+		err = shellAt(site_package, "cp %s .", pth)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = shellAt(site_package, "rm -rf wheel pip setuptools pkg_resources easy_install.py")
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = shellAt(site_package, "ls | grep -E 'info$' | grep -v ' ' | xargs rm -rf")
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = shellAt(site_package, "zip -r %s .", zipFile)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"zipped virtualenv:", zipFile)
+	return nil
+}
+
+func LambdaZipBytes(path string) ([]byte, error) {
+	zipFile, err := LambdaZipFile(path)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	data, err := ioutil.ReadFile(zipFile)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	return data, nil
+}
+
+func LambdaIncludeInZip(pth string, includes []string, preview bool) error {
+	name, err := LambdaName(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	zipFile, err := LambdaZipFile(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	dir := path.Dir(pth)
+	for _, include := range includes {
+		if strings.Contains(include, "*") {
+			paths, err := filepath.Glob(path.Join(dir, include))
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			for _, pth := range paths {
+				if !preview {
+					err := shellAt(dir, "zip %s %s", zipFile, pth)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+				Logger.Println(PreviewString(preview)+"include in zip for %s: %s", name, pth)
+			}
+		} else {
+			pth = path.Join(dir, pth)
+			if !preview {
+				err := shellAt(dir, "zip %s %s", zipFile, pth)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"include in zip for %s: %s", name, pth)
+		}
+	}
+	return nil
+}
+
+func LambdaUpdateZip(pth string, preview bool) error {
+	zipFile, err := LambdaZipFile(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if !preview {
+		dir := path.Dir(zipFile)
+		site_packages, err := filepath.Glob(fmt.Sprintf("%s/env/lib/python3*/site-packages", dir))
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if len(site_packages) != 1 {
+			err := fmt.Errorf("expected 1 site-package dir: %v", site_packages)
+			Logger.Println("error:", err)
+			return err
+		}
+		site_package := site_packages[0]
+		err = shellAt(site_package, "cp %s .", pth)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = shellAt(site_package, "zip %s %s", zipFile, path.Base(pth))
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"updated zip:", zipFile, pth)
+	return nil
 }
