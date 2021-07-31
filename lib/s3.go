@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -69,7 +70,6 @@ func S3BucketRegion(bucket string) (string, error) {
 		case 200:
 		case 404:
 			err := awserr.New(s3.ErrCodeNoSuchBucket, bucket, nil)
-			Logger.Println("error:", err)
 			return "", err
 		default:
 			err := fmt.Errorf("http %d for %s", resp.StatusCode, bucket)
@@ -113,7 +113,6 @@ func S3ClientBucketRegionMust(bucket string) *s3.S3 {
 
 type s3EnsureInput struct {
 	name       string
-	region     string
 	acl        string
 	versioning bool
 	encryption bool
@@ -122,7 +121,6 @@ type s3EnsureInput struct {
 func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 	input := &s3EnsureInput{
 		name:       name,
-		region:     Region(),
 		acl:        "private",
 		versioning: false,
 		encryption: true,
@@ -171,12 +169,43 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 	return input, nil
 }
 
+func s3PublicPolicy(bucket string) IamPolicyDocument {
+	return IamPolicyDocument{
+		Version: "2012-10-17",
+		Id:      "S3PublicPolicy",
+		Statement: []IamStatementEntry{{
+			Sid:       "S3PublicPolicy",
+			Effect:    "Allow",
+			Principal: "*",
+			Action:    "s3:GetObject",
+			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
+		}},
+	}
+}
+
+var s3PublicCors = []*s3.CORSRule{{
+	AllowedHeaders: []*string{aws.String("Authorization")},
+	AllowedMethods: []*string{aws.String("GET")},
+	AllowedOrigins: []*string{aws.String("*")},
+	ExposeHeaders:  []*string{aws.String("GET")},
+	MaxAgeSeconds:  aws.Int64(int64(3000)),
+}}
+
 func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
-	region, err := S3BucketRegion(input.name)
-	exists := false
+	//
+	account, err := StsAccount(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	//
+	_, err = S3Client().HeadBucketWithContext(ctx, &s3.HeadBucketInput{
+		Bucket:              aws.String(input.name),
+		ExpectedBucketOwner: aws.String(account),
+	})
 	if err != nil {
 		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != s3.ErrCodeNoSuchBucket {
+		if !ok || aerr.Code() != "NotFound" {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -184,152 +213,355 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			_, err := S3Client().CreateBucketWithContext(ctx, &s3.CreateBucketInput{
 				Bucket: aws.String(input.name),
 				CreateBucketConfiguration: &s3.CreateBucketConfiguration{
-					LocationConstraint: aws.String(input.region),
+					LocationConstraint: aws.String(Region()),
+				},
+			})
+			if err != nil {
+				aerr, ok := err.(awserr.Error)
+				if !ok || aerr.Code() != s3.ErrCodeBucketAlreadyOwnedByYou {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+		}
+		Logger.Println(PreviewString(preview)+"s3 created bucket:", input.name, Region())
+	}
+	//
+	exists := true
+	pabOut, err := S3Client().GetPublicAccessBlockWithContext(ctx, &s3.GetPublicAccessBlockInput{
+		Bucket:              aws.String(input.name),
+		ExpectedBucketOwner: aws.String(account),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "NoSuchPublicAccessBlockConfiguration" {
+			Logger.Println("error:", err)
+			return err
+		}
+		exists = false
+	}
+	if exists {
+		conf := pabOut.PublicAccessBlockConfiguration
+		if input.acl == "private" {
+			if !(*conf.BlockPublicAcls && *conf.IgnorePublicAcls && *conf.BlockPublicPolicy && *conf.RestrictPublicBuckets) {
+				err := fmt.Errorf("acl public/private can only be set at bucket creation")
+				Logger.Println("error:", err)
+				return err
+			}
+		} else {
+			if *conf.BlockPublicAcls || *conf.IgnorePublicAcls || *conf.BlockPublicPolicy || *conf.RestrictPublicBuckets {
+				err := fmt.Errorf("acl public/private can only be set at bucket creation")
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+	}
+	if !exists {
+		if !preview {
+			_, err := S3Client().PutPublicAccessBlockWithContext(ctx, &s3.PutPublicAccessBlockInput{
+				Bucket:              aws.String(input.name),
+				ExpectedBucketOwner: aws.String(account),
+				PublicAccessBlockConfiguration: &s3.PublicAccessBlockConfiguration{
+					BlockPublicAcls:       aws.Bool(input.acl == "private"),
+					IgnorePublicAcls:      aws.Bool(input.acl == "private"),
+					BlockPublicPolicy:     aws.Bool(input.acl == "private"),
+					RestrictPublicBuckets: aws.Bool(input.acl == "private"),
 				},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			exists = true
 		}
-		Logger.Println(PreviewString(preview)+"s3 created bucket:", input.name, input.region)
+		Logger.Printf(PreviewString(preview)+"s3 created public access block for %s: %s\n", input.name, input.acl)
+	}
+	//
+	policyOut, err := S3Client().GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
+		Bucket:              aws.String(input.name),
+		ExpectedBucketOwner: aws.String(account),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "NoSuchBucketPolicy" {
+			Logger.Println("error:", err)
+			return err
+		}
+		//
+		if input.acl == "public" {
+			policyBytes, err := json.Marshal(s3PublicPolicy(input.name))
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = S3Client().PutBucketPolicyWithContext(ctx, &s3.PutBucketPolicyInput{
+				Bucket:              aws.String(input.name),
+				ExpectedBucketOwner: aws.String(account),
+				Policy:              aws.String(string(policyBytes)),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+	} else if input.acl == "private" {
+		err := fmt.Errorf("no bucket policy should exist for private bucket: %s", input.name)
+		Logger.Println("error:", err)
+		return err
 	} else {
-		if region != input.region {
-			err := fmt.Errorf("s3 region can only be set at creation time for %s: %s != %s", input.name, region, input.region)
+		policy := IamPolicyDocument{}
+		err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
+		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		exists = true
+		if !reflect.DeepEqual(s3PublicPolicy, policy) {
+			err := fmt.Errorf("public bucket policy is misconfigured for bucket: %s", input.name)
+			Logger.Println("error:", err)
+			return err
+		}
 	}
 	//
-	if exists {
-		//
-		account, err := StsAccount(ctx)
-		if err != nil {
+	corsOut, err := S3Client().GetBucketCorsWithContext(ctx, &s3.GetBucketCorsInput{
+		Bucket:              aws.String(input.name),
+		ExpectedBucketOwner: aws.String(account),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "NoSuchCORSConfiguration" {
 			Logger.Println("error:", err)
 			return err
 		}
-		//
-		pabOut, err := S3Client().GetPublicAccessBlockWithContext(ctx, &s3.GetPublicAccessBlockInput{
-			Bucket:              aws.String(input.name),
-			ExpectedBucketOwner: aws.String(account),
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		needsUpdate := false
-		conf := pabOut.PublicAccessBlockConfiguration
-		if input.acl == "private" {
-			if !(*conf.BlockPublicAcls && *conf.IgnorePublicAcls && *conf.BlockPublicPolicy && *conf.RestrictPublicBuckets) {
-				needsUpdate = true
-			}
-		} else {
-			if *conf.BlockPublicAcls || *conf.IgnorePublicAcls || *conf.BlockPublicPolicy || *conf.RestrictPublicBuckets {
-				needsUpdate = true
+		if input.acl == "public" {
+			_, err := S3Client().PutBucketCorsWithContext(ctx, &s3.PutBucketCorsInput{
+				Bucket:              aws.String(input.name),
+				ExpectedBucketOwner: aws.String(account),
+				CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3PublicCors},
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
 			}
 		}
-		if needsUpdate {
-			if !preview {
-				_, err := S3Client().PutPublicAccessBlockWithContext(ctx, &s3.PutPublicAccessBlockInput{
-					Bucket:              aws.String(input.name),
-					ExpectedBucketOwner: aws.String(account),
-					PublicAccessBlockConfiguration: &s3.PublicAccessBlockConfiguration{
-						BlockPublicAcls:       aws.Bool(input.acl == "private"),
-						IgnorePublicAcls:      aws.Bool(input.acl == "private"),
-						BlockPublicPolicy:     aws.Bool(input.acl == "private"),
-						RestrictPublicBuckets: aws.Bool(input.acl == "private"),
-					},
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
+	} else if input.acl == "private" {
+		err := fmt.Errorf("no cors config should exist for private bucket: %s", input.name)
+		Logger.Println("error:", err)
+		return err
+	} else if !reflect.DeepEqual(corsOut.CORSRules, s3PublicCors) {
+		err := fmt.Errorf("public bucket cors config is misconfigured for bucket: %s", input.name)
+		Logger.Println("error:", err)
+		return err
+	}
+	//
+	needsUpdate := false
+	versionOut, err := S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
+		Bucket:              aws.String(input.name),
+		ExpectedBucketOwner: aws.String(account),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if (input.versioning && (versionOut.Status == nil || *versionOut.Status != s3.BucketVersioningStatusEnabled)) ||
+		(!input.versioning && versionOut.Status != nil && *versionOut.Status != s3.BucketVersioningStatusSuspended) {
+		needsUpdate = true
+	}
+	if needsUpdate {
+		if !preview {
+			status := s3.BucketVersioningStatusSuspended
+			if input.versioning {
+				status = s3.BucketVersioningStatusEnabled
 			}
-			Logger.Println(PreviewString(preview)+"s3 updated public access block for %s: %s", input.name, input.acl)
-		}
-		//
-		needsUpdate = false
-		versionOut, err := S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
-			Bucket:              aws.String(input.name),
-			ExpectedBucketOwner: aws.String(account),
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		if (input.versioning && *versionOut.Status != s3.BucketVersioningStatusEnabled) ||
-			(!input.versioning && *versionOut.Status != s3.BucketVersioningStatusSuspended) {
-			needsUpdate = true
-		}
-		if needsUpdate {
-			if !preview {
-				status := s3.BucketVersioningStatusSuspended
-				if input.versioning {
-					status = s3.BucketVersioningStatusEnabled
-				}
-				_, err := S3Client().PutBucketVersioningWithContext(ctx, &s3.PutBucketVersioningInput{
-					Bucket:              aws.String(input.name),
-					ExpectedBucketOwner: aws.String(account),
-					VersioningConfiguration: &s3.VersioningConfiguration{
-						Status: aws.String(status),
-					},
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			Logger.Println(PreviewString(preview)+"s3 updated versioning for %s: %v", input.name, input.versioning)
-		}
-		//
-		needsUpdate = false
-		encryptedConfig := &s3.ServerSideEncryptionConfiguration{
-			Rules: []*s3.ServerSideEncryptionRule{{
-				ApplyServerSideEncryptionByDefault: &s3.ServerSideEncryptionByDefault{
-					SSEAlgorithm: aws.String(s3.ServerSideEncryptionAes256),
+			_, err := S3Client().PutBucketVersioningWithContext(ctx, &s3.PutBucketVersioningInput{
+				Bucket:              aws.String(input.name),
+				ExpectedBucketOwner: aws.String(account),
+				VersioningConfiguration: &s3.VersioningConfiguration{
+					Status: aws.String(status),
 				},
-			}},
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
 		}
-		encOut, err := S3Client().GetBucketEncryptionWithContext(ctx, &s3.GetBucketEncryptionInput{
-			Bucket:              aws.String(input.name),
-			ExpectedBucketOwner: aws.String(account),
+		Logger.Printf(PreviewString(preview)+"s3 updated versioning for %s: %v\n", input.name, input.versioning)
+	}
+	//
+	needsUpdate = false
+	encryptedConfig := &s3.ServerSideEncryptionConfiguration{
+		Rules: []*s3.ServerSideEncryptionRule{{
+			ApplyServerSideEncryptionByDefault: &s3.ServerSideEncryptionByDefault{
+				SSEAlgorithm: aws.String(s3.ServerSideEncryptionAes256),
+			},
+		}},
+	}
+	encOut, err := S3Client().GetBucketEncryptionWithContext(ctx, &s3.GetBucketEncryptionInput{
+		Bucket:              aws.String(input.name),
+		ExpectedBucketOwner: aws.String(account),
+	})
+	exists = true
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "ServerSideEncryptionConfigurationNotFoundError" {
+			Logger.Println("error:", err)
+			return err
+		}
+		exists = false
+	}
+	if (input.encryption && (!exists || !reflect.DeepEqual(encOut.ServerSideEncryptionConfiguration, encryptedConfig))) ||
+		(!input.encryption && exists && len(encOut.ServerSideEncryptionConfiguration.Rules) != 0) {
+		needsUpdate = true
+	}
+	if needsUpdate {
+		if !preview {
+			if input.encryption {
+				_, err := S3Client().PutBucketEncryptionWithContext(ctx, &s3.PutBucketEncryptionInput{
+					Bucket:                            aws.String(input.name),
+					ExpectedBucketOwner:               aws.String(account),
+					ServerSideEncryptionConfiguration: encryptedConfig,
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			} else {
+				_, err := S3Client().DeleteBucketEncryptionWithContext(ctx, &s3.DeleteBucketEncryptionInput{
+					Bucket:              aws.String(input.name),
+					ExpectedBucketOwner: aws.String(account),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+		}
+		if !exists {
+			Logger.Printf(PreviewString(preview)+"s3 created encryption for %s: %v\n", input.name, input.encryption)
+		} else {
+			Logger.Printf(PreviewString(preview)+"s3 updated encryption for %s: %v\n", input.name, input.encryption)
+		}
+	}
+	//
+	return nil
+}
+
+func S3RmBucket(ctx context.Context, bucket string) error {
+	// rm objects
+	var marker *string
+	for {
+		out, err := S3Client().ListObjectsWithContext(ctx, &s3.ListObjectsInput{
+			Bucket: aws.String(bucket),
+			Marker: marker,
 		})
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		if (input.encryption && !reflect.DeepEqual(encOut.ServerSideEncryptionConfiguration, encryptedConfig)) ||
-			(!input.encryption && len(encOut.ServerSideEncryptionConfiguration.Rules) != 0) {
-			needsUpdate = true
+		var objects []*s3.ObjectIdentifier
+		for _, obj := range out.Contents {
+			objects = append(objects, &s3.ObjectIdentifier{
+				Key: obj.Key,
+			})
 		}
-		if needsUpdate {
-			if !preview {
-				if input.encryption {
-					_, err := S3Client().PutBucketEncryptionWithContext(ctx, &s3.PutBucketEncryptionInput{
-						Bucket:                            aws.String(input.name),
-						ExpectedBucketOwner:               aws.String(account),
-						ServerSideEncryptionConfiguration: encryptedConfig,
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-				} else {
-					_, err := S3Client().DeleteBucketEncryptionWithContext(ctx, &s3.DeleteBucketEncryptionInput{
-						Bucket:              aws.String(input.name),
-						ExpectedBucketOwner: aws.String(account),
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-				}
+		if len(objects) != 0 {
+			deleteOut, err := S3Client().DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+				Bucket: aws.String(bucket),
+				Delete: &s3.Delete{Objects: objects},
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
 			}
-			Logger.Println(PreviewString(preview)+"s3 updated encryption for %s: %v", input.name, input.encryption)
+			for _, obj := range deleteOut.Deleted {
+				Logger.Println("delete:", *obj.Key)
+			}
+			var keys []string
+			for _, err := range deleteOut.Errors {
+				Logger.Println("error:", *err.Key, *err.Code, *err.Message)
+				keys = append(keys, *err.Key)
+			}
+			if len(deleteOut.Errors) != 0 {
+				return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, keys)
+			}
 		}
+		if !*out.IsTruncated {
+			break
+		}
+		marker = out.NextMarker
 	}
-	//
+	// rm versions
+	var keyMarker *string
+	var versionMarker *string
+	for {
+		out, err := S3Client().ListObjectVersionsWithContext(ctx, &s3.ListObjectVersionsInput{
+			Bucket:          aws.String(bucket),
+			Prefix:          nil,
+			KeyMarker:       keyMarker,
+			VersionIdMarker: versionMarker,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		var objects []*s3.ObjectIdentifier
+		for _, obj := range out.Versions {
+			objects = append(objects, &s3.ObjectIdentifier{
+				Key:       obj.Key,
+				VersionId: obj.VersionId,
+			})
+		}
+		for _, obj := range out.DeleteMarkers {
+			objects = append(objects, &s3.ObjectIdentifier{
+				Key:       obj.Key,
+				VersionId: obj.VersionId,
+			})
+		}
+		if len(objects) != 0 {
+			deleteOut, err := S3Client().DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+				Bucket: aws.String(bucket),
+				Delete: &s3.Delete{Objects: objects},
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			for _, obj := range deleteOut.Deleted {
+				var version string
+				if obj.DeleteMarker != nil && *obj.DeleteMarker {
+					version = *obj.DeleteMarkerVersionId
+				} else {
+					version = *obj.VersionId
+				}
+				if version == "" {
+					version = "-"
+				}
+				Logger.Println("delete:", *obj.Key, version)
+			}
+			var keys []string
+			for _, err := range deleteOut.Errors {
+				version := *err.VersionId
+				if version == "" {
+					version = "-"
+				}
+				Logger.Println("error:", *err.Key, version, *err.Code, *err.Message)
+				keys = append(keys, *err.Key)
+			}
+			if len(deleteOut.Errors) != 0 {
+				return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, keys)
+			}
+		}
+		if !*out.IsTruncated {
+			break
+		}
+		keyMarker = out.NextKeyMarker
+		versionMarker = out.NextVersionIdMarker
+	}
+	// rm bucket
+	_, err := S3Client().DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
 	return nil
 }

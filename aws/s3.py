@@ -27,13 +27,13 @@ def rm_bucket(name, print_fn=stderr):
         pass
 
 def ensure_bucket(name, acl='private', versioning=False, noencrypt=False, print_fn=stderr, preview=False):
+    assert acl in ['public-read', 'private']
     if preview:
         print_fn(' preview:', name)
     else:
 
         try:
             client('s3').create_bucket(
-                ACL=acl,
                 Bucket=name,
                 CreateBucketConfiguration={'LocationConstraint': aws.region()},
             )
@@ -49,10 +49,23 @@ def ensure_bucket(name, acl='private', versioning=False, noencrypt=False, print_
                     'BlockPublicAcls': True,
                     'IgnorePublicAcls': True,
                     'BlockPublicPolicy': True,
-                    'RestrictPublicBuckets': True
+                    'RestrictPublicBuckets': True,
                 },
             )
-
+        else:
+            client('s3').put_public_access_block(
+                Bucket=name,
+                PublicAccessBlockConfiguration={
+                    'BlockPublicAcls': False,
+                    'IgnorePublicAcls': False,
+                    'BlockPublicPolicy': False,
+                    'RestrictPublicBuckets': False,
+                },
+            )
+        client('s3').put_bucket_acl(
+            Bucket=name,
+            ACL=acl,
+        )
         if versioning:
             resource('s3').BucketVersioning(name).enable()
         else:

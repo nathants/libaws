@@ -126,38 +126,39 @@ func s3RmVersions() {
 				})
 			}
 
-			deleteOut, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
-				Bucket: aws.String(bucket),
-				Delete: &s3.Delete{Objects: objects},
-			})
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-
-			for _, obj := range deleteOut.Deleted {
-				var version string
-				if obj.DeleteMarker != nil && *obj.DeleteMarker {
-					version = *obj.DeleteMarkerVersionId
-				} else {
-					version = *obj.VersionId
+			if len(objects) != 0 {
+				deleteOut, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+					Bucket: aws.String(bucket),
+					Delete: &s3.Delete{Objects: objects},
+				})
+				if err != nil {
+					lib.Logger.Fatal("error: ", err)
 				}
-				if version == "" {
-					version = "-"
-				}
-				fmt.Println("delete:", *obj.Key, version)
-			}
 
-			for _, err := range deleteOut.Errors {
-				version := *err.VersionId
-				if version == "" {
-					version = "-"
+				for _, obj := range deleteOut.Deleted {
+					var version string
+					if obj.DeleteMarker != nil && *obj.DeleteMarker {
+						version = *obj.DeleteMarkerVersionId
+					} else {
+						version = *obj.VersionId
+					}
+					if version == "" {
+						version = "-"
+					}
+					fmt.Println("delete:", *obj.Key, version)
 				}
-				fmt.Println("error:", *err.Key, version, *err.Code, *err.Message)
-			}
-			if len(deleteOut.Errors) != 0 {
-				os.Exit(1)
-			}
 
+				for _, err := range deleteOut.Errors {
+					version := *err.VersionId
+					if version == "" {
+						version = "-"
+					}
+					fmt.Println("error:", *err.Key, version, *err.Code, *err.Message)
+				}
+				if len(deleteOut.Errors) != 0 {
+					os.Exit(1)
+				}
+			}
 			if !*out.IsTruncated {
 				break
 			}

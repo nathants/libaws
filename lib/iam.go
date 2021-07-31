@@ -359,14 +359,28 @@ func IamGetSSHPublicKey(ctx context.Context, keyID string) (*iam.SSHPublicKey, e
 type IamStatementEntry struct {
 	Sid       string
 	Effect    string
-	Resource  string
+	Resource  interface{}
 	Principal interface{}
 	Action    interface{}
-	Condition interface{}
 }
 
 type IamPolicyDocument struct {
 	Version   string
 	Id        string
 	Statement []IamStatementEntry
+}
+
+type IamStatementEntryCondition struct {
+	Sid       string
+	Effect    string
+	Resource  interface{}
+	Principal interface{}
+	Action    interface{}
+	Condition interface{}
+}
+
+type IamPolicyDocumentCondition struct {
+	Version   string
+	Id        string
+	Statement []IamStatementEntryCondition
 }
