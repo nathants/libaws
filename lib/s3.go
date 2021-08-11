@@ -68,6 +68,7 @@ func S3BucketRegion(bucket string) (string, error) {
 		}
 		switch resp.StatusCode {
 		case 200:
+		case 403:
 		case 404:
 			err := awserr.New(s3.ErrCodeNoSuchBucket, bucket, nil)
 			return "", err
