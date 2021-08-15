@@ -792,7 +792,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 				}
 			}
 		}
-		Logger.Println(PreviewString(preview)+"updated table:", *update.TableName, Pformat(update))
+		Logger.Println(PreviewString(preview)+"dynamodb updated table:", *update.TableName, Pformat(update))
 	}
 	//
 	arn, err := DynamoDBArn(ctx, *update.TableName)
@@ -928,15 +928,21 @@ func DynamoDBListTables(ctx context.Context) ([]*string, error) {
 	return tables, nil
 }
 
-func DynamoDBDeleteTable(ctx context.Context, tableName string) error {
+func DynamoDBDeleteTable(ctx context.Context, tableName string, preview bool) error {
 	err := DynamoDBWaitForReady(ctx, tableName)
 	if err != nil {
-		Logger.Println("error:", err)
-		return err
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != dynamodb.ErrCodeResourceNotFoundException {
+			return err
+		}
+		return nil
 	}
-	_, err = DynamoDBClient().DeleteTableWithContext(ctx, &dynamodb.DeleteTableInput{
-		TableName: aws.String(tableName),
-	})
+	if !preview {
+		_, err = DynamoDBClient().DeleteTableWithContext(ctx, &dynamodb.DeleteTableInput{
+			TableName: aws.String(tableName),
+		})
+	}
+	Logger.Println(PreviewString(preview)+"dynamodb deleted table:", tableName)
 	return err
 }
 
@@ -946,7 +952,6 @@ func DynamoDBWaitForReady(ctx context.Context, tableName string) error {
 			TableName: aws.String(tableName),
 		})
 		if err != nil {
-			Logger.Println("error:", err)
 			return err
 		}
 		ready := *description.Table.TableStatus == dynamodb.TableStatusActive

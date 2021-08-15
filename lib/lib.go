@@ -244,8 +244,8 @@ func shell(format string, a ...interface{}) error {
 	cmd.Stdout = &stdout
 	err := cmd.Run()
 	if err != nil {
-	    Logger.Println(stderr.String())
-	    Logger.Println(stdout.String())
+		Logger.Println(stderr.String())
+		Logger.Println(stdout.String())
 		Logger.Println("error:", err)
 		return err
 	}
@@ -261,8 +261,8 @@ func shellAt(dir string, format string, a ...interface{}) error {
 	cmd.Stdout = &stdout
 	err := cmd.Run()
 	if err != nil {
-	    Logger.Println(stderr.String())
-	    Logger.Println(stdout.String())
+		Logger.Println(stderr.String())
+		Logger.Println(stdout.String())
 		Logger.Println("error:", err)
 		return err
 	}

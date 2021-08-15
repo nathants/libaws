@@ -25,7 +25,7 @@ func TestS3Ensure(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -46,7 +46,7 @@ func TestS3EnsureVersioningOffByDefault(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -78,7 +78,7 @@ func TestS3EnsureVersioning(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -110,7 +110,7 @@ func TestS3EnsureUpdateVersioning(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -186,7 +186,7 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -227,7 +227,7 @@ func TestS3EnsureEncryptionOff(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -261,7 +261,7 @@ func TestS3EnsureUpdateEncryption(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -347,7 +347,7 @@ func TestS3EnsurePrivateByDefault(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -384,7 +384,7 @@ func TestS3EnsurePublic(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -434,7 +434,7 @@ func TestS3EnsurePrivateToPublicNotAllowed(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}
@@ -467,7 +467,7 @@ func TestS3EnsurePublicToPrivateNotAllowed(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := S3RmBucket(ctx, bucket)
+		err := S3DeleteBucket(ctx, bucket, false)
 		if err != nil {
 			panic(err)
 		}

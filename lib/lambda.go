@@ -399,7 +399,7 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAr
 	return nil
 }
 
-func LambdaEnsureTriggerApi(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
+func LambdaEnsureTriggerApi(ctx context.Context, name string, meta LambdaMetadata, preview bool) error {
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
 		kind := parts[0]
@@ -909,9 +909,9 @@ func lambdaListEventSourceMappings(ctx context.Context, name, eventSourceArn str
 	return eventSourceMappings, nil
 }
 
-func LambdaEnsureTriggerSqs(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
-	return fmt.Errorf("unimplemented")
-}
+// func LambdaEnsureTriggerSqs(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
+// 	return fmt.Errorf("unimplemented")
+// }
 
 func LambdaParseFile(path string, silent bool) (*LambdaMetadata, error) {
 	if !Exists(path) {

@@ -1,4 +1,4 @@
-.PHONY: cli-aws check check-static check-ineff check-err check-vet test-lib check-bodyclose check-nargs check-fmt check-hasdefault
+.PHONY: test cli-aws check check-static check-ineff check-err check-vet test-lib check-bodyclose check-nargs check-fmt check-hasdefault
 
 all: cli-aws
 
@@ -42,3 +42,6 @@ check-err: check-deps
 
 check-vet: check-deps
 	@go vet ./...
+
+test:
+	go test -v lib/*.go

@@ -445,7 +445,14 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	return nil
 }
 
-func S3RmBucket(ctx context.Context, bucket string) error {
+func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
+	resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == 404 {
+		return nil
+	}
 	// rm objects
 	var marker *string
 	for {
@@ -464,24 +471,26 @@ func S3RmBucket(ctx context.Context, bucket string) error {
 			})
 		}
 		if len(objects) != 0 {
-			deleteOut, err := S3Client().DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
-				Bucket: aws.String(bucket),
-				Delete: &s3.Delete{Objects: objects},
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
+			var errs []string
+			if !preview {
+				deleteOut, err := S3Client().DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+					Bucket: aws.String(bucket),
+					Delete: &s3.Delete{Objects: objects},
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				for _, err := range deleteOut.Errors {
+					Logger.Println("error:", *err.Key, *err.Code, *err.Message)
+					errs = append(errs, *err.Key)
+				}
 			}
-			for _, obj := range deleteOut.Deleted {
-				Logger.Println("delete:", *obj.Key)
+			for _, obj := range objects {
+				Logger.Println(PreviewString(preview)+"s3 deleted:", *obj.Key)
 			}
-			var keys []string
-			for _, err := range deleteOut.Errors {
-				Logger.Println("error:", *err.Key, *err.Code, *err.Message)
-				keys = append(keys, *err.Key)
-			}
-			if len(deleteOut.Errors) != 0 {
-				return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, keys)
+			if len(errs) != 0 {
+				return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, errs)
 			}
 		}
 		if !*out.IsTruncated {
@@ -516,39 +525,38 @@ func S3RmBucket(ctx context.Context, bucket string) error {
 				VersionId: obj.VersionId,
 			})
 		}
-		if len(objects) != 0 {
-			deleteOut, err := S3Client().DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
-				Bucket: aws.String(bucket),
-				Delete: &s3.Delete{Objects: objects},
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			for _, obj := range deleteOut.Deleted {
-				var version string
-				if obj.DeleteMarker != nil && *obj.DeleteMarker {
-					version = *obj.DeleteMarkerVersionId
-				} else {
-					version = *obj.VersionId
+		if !preview {
+			if len(objects) != 0 {
+				deleteOut, err := S3Client().DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+					Bucket: aws.String(bucket),
+					Delete: &s3.Delete{Objects: objects},
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
 				}
-				if version == "" {
-					version = "-"
+				var keys []string
+				for _, err := range deleteOut.Errors {
+					version := *err.VersionId
+					if version == "" {
+						version = "-"
+					}
+					Logger.Println("error:", *err.Key, version, *err.Code, *err.Message)
+					keys = append(keys, *err.Key)
 				}
-				Logger.Println("delete:", *obj.Key, version)
-			}
-			var keys []string
-			for _, err := range deleteOut.Errors {
-				version := *err.VersionId
-				if version == "" {
-					version = "-"
+				if len(deleteOut.Errors) != 0 {
+					return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, keys)
 				}
-				Logger.Println("error:", *err.Key, version, *err.Code, *err.Message)
-				keys = append(keys, *err.Key)
 			}
-			if len(deleteOut.Errors) != 0 {
-				return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, keys)
+		}
+		for _, obj := range objects {
+			var version string
+			if obj.VersionId == nil || *obj.VersionId == "" {
+				version = "-"
+			} else {
+				version = *obj.VersionId
 			}
+			Logger.Println(PreviewString(preview)+"s3 deleted:", *obj.Key, version)
 		}
 		if !*out.IsTruncated {
 			break
@@ -557,7 +565,7 @@ func S3RmBucket(ctx context.Context, bucket string) error {
 		versionMarker = out.NextVersionIdMarker
 	}
 	// rm bucket
-	_, err := S3Client().DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+	_, err = S3Client().DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
