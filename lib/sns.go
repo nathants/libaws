@@ -68,6 +68,9 @@ func SNSEnsure(ctx context.Context, name string, preview bool) error {
 		if !preview {
 			_, err := SNSClient().CreateTopicWithContext(ctx, &sns.CreateTopicInput{
 				Name: aws.String(name),
+				Attributes: map[string]*string{
+					"KmsMasterKeyId": aws.String("alias/aws/sns"),
+				},
 			})
 			if err != nil {
 				Logger.Println("error:", err)

@@ -63,6 +63,15 @@ func SQSQueueUrl(ctx context.Context, queueName string) (string, error) {
 	return *out.QueueUrl, nil
 }
 
+func SQSArn(ctx context.Context, name string) (string, error) {
+	account, err := StsAccount(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	return fmt.Sprintf("arn:aws:sqs:%s:%s:%s", Region(), account, name), nil
+}
+
 type SQSNumMessageOutput struct {
 	Messages           int
 	MessagesNotVisible int
@@ -95,10 +104,12 @@ type sqsEnsureInput struct {
 	messageRetentionPeriod        int
 	receiveMessageWaitTimeSeconds int
 	visibilityTimeout             int
+	kmsDataKeyReusePeriodSeconds  int
 }
 
 func (input *sqsEnsureInput) Attrs() map[string]*string {
 	m := make(map[string]*string)
+	m["KmsMasterKeyId"] = aws.String("alias/aws/sqs")
 	if input.delaySeconds != -1 {
 		m["DelaySeconds"] = aws.String(fmt.Sprint(input.delaySeconds))
 	}
@@ -114,6 +125,10 @@ func (input *sqsEnsureInput) Attrs() map[string]*string {
 	if input.visibilityTimeout != -1 {
 		m["VisibilityTimeout"] = aws.String(fmt.Sprint(input.visibilityTimeout))
 	}
+	if input.kmsDataKeyReusePeriodSeconds != -1 {
+		m["KmsDataKeyReusePeriodSeconds"] = aws.String(fmt.Sprint(input.kmsDataKeyReusePeriodSeconds))
+	}
+
 	if len(m) != 0 {
 		return m
 	}
@@ -128,6 +143,7 @@ func SQSEnsureInput(name string, attrs []string) (*sqsEnsureInput, error) {
 		messageRetentionPeriod:        -1,
 		receiveMessageWaitTimeSeconds: -1,
 		visibilityTimeout:             -1,
+		kmsDataKeyReusePeriodSeconds:  -1,
 	}
 	for _, line := range attrs {
 		line = strings.ToLower(line)
@@ -172,6 +188,13 @@ func SQSEnsureInput(name string, attrs []string) (*sqsEnsureInput, error) {
 				return nil, err
 			}
 			input.visibilityTimeout = num
+		case "kmsdatakeyreuseperiodseconds":
+			num, err := strconv.Atoi(value)
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			input.kmsDataKeyReusePeriodSeconds = num
 		default:
 			err := fmt.Errorf("unknown sqs attr: %s", line)
 			Logger.Println("error:", err)
@@ -215,6 +238,7 @@ func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 				aws.String("MessageRetentionPeriod"),
 				aws.String("ReceiveMessageWaitTimeSeconds"),
 				aws.String("VisibilityTimeout"),
+				aws.String("KmsDataKeyReusePeriodSeconds"),
 			},
 		})
 		if err != nil {
@@ -236,6 +260,9 @@ func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 			needsUpdate = true
 		}
 		if input.visibilityTimeout != -1 && attrs["VisibilityTimeout"] != nil && input.visibilityTimeout != atoi(*attrs["VisibilityTimeout"]) {
+			needsUpdate = true
+		}
+		if input.kmsDataKeyReusePeriodSeconds != -1 && attrs["KmsDataKeyReusePeriodSeconds"] != nil && input.kmsDataKeyReusePeriodSeconds != atoi(*attrs["KmsDataKeyReusePeriodSeconds"]) {
 			needsUpdate = true
 		}
 		if needsUpdate {

@@ -837,7 +837,10 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, name, arnLambda string, me
 			switch count {
 			case 0:
 				if !preview {
-					_, err := LambdaClient().CreateEventSourceMappingWithContext(ctx, input)
+					err := Retry(ctx, func() error {
+						_, err := LambdaClient().CreateEventSourceMappingWithContext(ctx, input)
+						return err
+					})
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
@@ -909,9 +912,157 @@ func lambdaListEventSourceMappings(ctx context.Context, name, eventSourceArn str
 	return eventSourceMappings, nil
 }
 
-// func LambdaEnsureTriggerSqs(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
-// 	return fmt.Errorf("unimplemented")
-// }
+func lambdaSQSTriggerAttrShortcut(s string) string {
+	s2, ok := map[string]string{
+		"batch":    "BatchSize",
+		"parallel": "ParallelizationFactor",
+		"retry":    "MaximumRetryAttempts",
+		"start":    "StartingPosition",
+		"window":   "MaximumBatchingWindowInSeconds",
+	}[s]
+	if ok {
+		return s2
+	}
+	return s
+}
+
+func LambdaEnsureTriggerSQS(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
+	var triggers [][]string
+	for _, trigger := range meta.Trigger {
+		parts := strings.Split(trigger, " ")
+		kind := parts[0]
+		if kind == "sqs" {
+			triggerAttrs := parts[1:]
+			triggers = append(triggers, triggerAttrs)
+		}
+	}
+	if len(triggers) > 0 {
+		for _, triggerAttrs := range triggers {
+			queueName := triggerAttrs[0]
+			triggerAttrs := triggerAttrs[1:]
+			sqsArn, err := SQSArn(ctx, queueName)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			input := &lambda.CreateEventSourceMappingInput{
+				FunctionName:   aws.String(name),
+				EventSourceArn: aws.String(sqsArn),
+				Enabled:        aws.Bool(true),
+			}
+			for _, line := range triggerAttrs {
+				attr, value, err := splitOnce(line, "=")
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				attr = lambdaSQSTriggerAttrShortcut(attr)
+				switch attr {
+				case "BatchSize":
+					size, err := strconv.Atoi(value)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					input.BatchSize = aws.Int64(int64(size))
+				case "MaximumBatchingWindowInSeconds":
+					size, err := strconv.Atoi(value)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					input.MaximumBatchingWindowInSeconds = aws.Int64(int64(size))
+				case "MaximumRetryAttempts":
+					attempts, err := strconv.Atoi(value)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					input.MaximumRetryAttempts = aws.Int64(int64(attempts))
+				case "ParallelizationFactor":
+					factor, err := strconv.Atoi(value)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					input.ParallelizationFactor = aws.Int64(int64(factor))
+				case "StartingPosition":
+					input.StartingPosition = aws.String(value)
+				default:
+					err := fmt.Errorf("unknown lambda dynamodb trigger attribute: %s", line)
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			eventSourceMappings, err := lambdaListEventSourceMappings(ctx, name, queueName)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			count := 0
+			var found *lambda.EventSourceMappingConfiguration
+			for _, mapping := range eventSourceMappings {
+				if *mapping.EventSourceArn == sqsArn && *mapping.FunctionArn == arnLambda {
+					found = mapping
+					count++
+				}
+			}
+			switch count {
+			case 0:
+				if !preview {
+					err := Retry(ctx, func() error {
+						_, err := LambdaClient().CreateEventSourceMappingWithContext(ctx, input)
+						return err
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+				Logger.Println(PreviewString(preview)+"created event source mapping:", name, arnLambda, sqsArn, triggerAttrs)
+			case 1:
+				needsUpdate := false
+				update := &lambda.UpdateEventSourceMappingInput{UUID: found.UUID}
+				update.FunctionName = input.FunctionName
+				if *found.BatchSize != *input.BatchSize {
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d", name, queueName, *found.BatchSize, *input.BatchSize)
+					update.BatchSize = input.BatchSize
+					needsUpdate = true
+				}
+				if *found.MaximumRetryAttempts != *input.MaximumRetryAttempts {
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d", name, queueName, *found.MaximumRetryAttempts, *input.MaximumRetryAttempts)
+					update.MaximumRetryAttempts = input.MaximumRetryAttempts
+					needsUpdate = true
+				}
+				if *found.ParallelizationFactor != *input.ParallelizationFactor {
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d", name, queueName, *found.ParallelizationFactor, *input.ParallelizationFactor)
+					update.ParallelizationFactor = input.ParallelizationFactor
+					needsUpdate = true
+				}
+				if *found.MaximumBatchingWindowInSeconds != *input.MaximumBatchingWindowInSeconds {
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d", name, queueName, *found.MaximumBatchingWindowInSeconds, *input.MaximumBatchingWindowInSeconds)
+					update.MaximumBatchingWindowInSeconds = input.MaximumBatchingWindowInSeconds
+					needsUpdate = true
+				}
+				if needsUpdate {
+					if !preview {
+						_, err := LambdaClient().UpdateEventSourceMappingWithContext(ctx, update)
+						if err != nil {
+							Logger.Println("error:", err)
+							return err
+						}
+					}
+					Logger.Println(PreviewString(preview)+"updated event source mapping for %s %s", name, queueName)
+				}
+			default:
+				err := fmt.Errorf("found more than 1 event source mapping for %s %s", name, queueName)
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 func LambdaParseFile(path string, silent bool) (*LambdaMetadata, error) {
 	if !Exists(path) {

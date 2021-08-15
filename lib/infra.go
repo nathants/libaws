@@ -5,7 +5,14 @@ import (
 	"strings"
 )
 
-func EnsureInfraS3(ctx context.Context, buckets []string, preview bool) error {
+type Infra struct {
+}
+
+func InfraDescribe() (*Infra, error) {
+	return nil, nil
+}
+
+func InfraEnsureS3(ctx context.Context, buckets []string, preview bool) error {
 	for _, bucket := range buckets {
 		parts := strings.Split(bucket, " ")
 		name := parts[0]
@@ -24,7 +31,7 @@ func EnsureInfraS3(ctx context.Context, buckets []string, preview bool) error {
 	return nil
 }
 
-func EnsureInfraDynamoDB(ctx context.Context, dbs []string, preview bool) error {
+func InfraEnsureDynamoDB(ctx context.Context, dbs []string, preview bool) error {
 	for _, db := range dbs {
 		parts := strings.Split(db, " ")
 		name := parts[0]
@@ -51,7 +58,7 @@ func EnsureInfraDynamoDB(ctx context.Context, dbs []string, preview bool) error 
 	return nil
 }
 
-func EnsureInfraSqs(ctx context.Context, queues []string, preview bool) error {
+func InfraEnsureSqs(ctx context.Context, queues []string, preview bool) error {
 	for _, queue := range queues {
 		parts := strings.Split(queue, "/")
 		name := parts[0]

@@ -450,6 +450,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == 404 {
 		return nil
 	}
