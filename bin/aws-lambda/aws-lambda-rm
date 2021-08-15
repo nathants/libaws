@@ -49,38 +49,6 @@ def main(path,
         print('\nproceed? y/n ')
         assert sh.getch() == 'y'
 
-    if everything or code:
-        with util.exceptions.ignore(client('lambda').exceptions.ResourceNotFoundException):
-            if preview:
-                print('preview:', end=' ')
-            else:
-                client('lambda').delete_function(FunctionName=name)
-            print('rm function:', name)
-
-    if everything or role:
-        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
-            for policy in client('iam').list_attached_role_policies(RoleName=name)['AttachedPolicies']:
-                if preview:
-                    print('preview:', end=' ')
-                else:
-                    client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
-                print('rm policy:', policy['PolicyArn'])
-
-        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
-            for policy in client('iam').list_role_policies(RoleName=name)['PolicyNames']:
-                if preview:
-                    print('preview:', end=' ')
-                else:
-                    client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
-                print('rm allow:', policy)
-
-        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
-            if preview:
-                print('preview:', end=' ')
-            else:
-                client('iam').delete_role(RoleName=name)
-            print('rm role:', name)
-
     with open(path) as f:
         metadata = aws.lamda.metadata(f.read().splitlines(), silent=True)
 
@@ -164,6 +132,38 @@ def main(path,
 
             # elif kind == 'sqs':
                 # assert False, 'TODO remove'
+
+    if everything or code:
+        with util.exceptions.ignore(client('lambda').exceptions.ResourceNotFoundException):
+            if preview:
+                print('preview:', end=' ')
+            else:
+                client('lambda').delete_function(FunctionName=name)
+            print('rm function:', name)
+
+    if everything or role:
+        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
+            for policy in client('iam').list_attached_role_policies(RoleName=name)['AttachedPolicies']:
+                if preview:
+                    print('preview:', end=' ')
+                else:
+                    client('iam').detach_role_policy(RoleName=name, PolicyArn=policy["PolicyArn"])
+                print('rm policy:', policy['PolicyArn'])
+
+        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
+            for policy in client('iam').list_role_policies(RoleName=name)['PolicyNames']:
+                if preview:
+                    print('preview:', end=' ')
+                else:
+                    client('iam').delete_role_policy(RoleName=name, PolicyName=policy)
+                print('rm allow:', policy)
+
+        with util.exceptions.ignore(client('iam').exceptions.NoSuchEntityException):
+            if preview:
+                print('preview:', end=' ')
+            else:
+                client('iam').delete_role(RoleName=name)
+            print('rm role:', name)
 
     if everything or log:
         with util.exceptions.ignore(client('logs').exceptions.ResourceNotFoundException):
