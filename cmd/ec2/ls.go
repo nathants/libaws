@@ -25,7 +25,7 @@ func ec2Ls() {
 	var args ec2LsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	instances, err := lib.EC2RetryListInstances(ctx, args.Selectors, args.State)
+	instances, err := lib.EC2ListInstances(ctx, args.Selectors, args.State)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

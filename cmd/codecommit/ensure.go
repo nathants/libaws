@@ -44,12 +44,4 @@ func codeCommitEnsure() {
 	if !ok || aerr.Code() != codecommit.ErrCodeRepositoryNameExistsException {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Fprintln(os.Stderr, "exists:", args.Name)
-	getOut, err := lib.CodeCommitClient().GetRepositoryWithContext(ctx, &codecommit.GetRepositoryInput{
-		RepositoryName: aws.String(args.Name),
-	})
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
-	fmt.Println(lib.Pformat(getOut.RepositoryMetadata))
 }

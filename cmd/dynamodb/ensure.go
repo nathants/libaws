@@ -48,8 +48,7 @@ optional params:
  - GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.ReadCapacityUnits=VALUE
  - GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.WriteCapacityUnits=VALUE
 
- - Tags.INTEGER.Key=VALUE
- - Tags.INTEGER.Value=VALUE
+ - Tags.KEY=VALUE
 `
 }
 

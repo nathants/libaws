@@ -61,7 +61,7 @@ type EC2Config struct {
 	SecondsTimeout int
 }
 
-func EC2RetryDescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
+func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
 	Logger.Println("describe spot fleet", *spotFleetRequestId)
 	var output *ec2.DescribeSpotFleetRequestsOutput
 	err := Retry(ctx, func() error {
@@ -86,7 +86,7 @@ func EC2RetryDescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) 
 	return output.SpotFleetRequestConfigs[0], nil
 }
 
-func EC2RetryDescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequestId *string) ([]*ec2.ActiveInstance, error) {
+func EC2DescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequestId *string) ([]*ec2.ActiveInstance, error) {
 	Logger.Println("describe spot fleet instances", *spotFleetRequestId)
 	var instances []*ec2.ActiveInstance
 	var nextToken *string
@@ -142,7 +142,7 @@ func isIPAddress(s string) bool {
 	return true
 }
 
-func EC2RetryListInstances(ctx context.Context, selectors []string, state string) ([]*ec2.Instance, error) {
+func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]*ec2.Instance, error) {
 	Logger.Println("list instances")
 	var filterss [][]*ec2.Filter
 	if len(selectors) == 0 {
@@ -193,7 +193,6 @@ func EC2RetryListInstances(ctx context.Context, selectors []string, state string
 			}
 			filterss = append(filterss, filters)
 		}
-
 	}
 	var instances []*ec2.Instance
 	var nextToken *string
@@ -246,7 +245,7 @@ func tag(instance *ec2.Instance, key string, defaultValue string) string {
 	return val
 }
 
-func EC2RetryDescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Instance, error) {
+func EC2DescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Instance, error) {
 	Logger.Println("describe instances for", len(instanceIDs), "instanceIDs")
 	Assert(len(instanceIDs) < 1000, "cannot list 1000 instances by id")
 	var output *ec2.DescribeInstancesOutput
@@ -281,7 +280,7 @@ var ec2FailedStates = []string{
 func EC2WaitForState(ctx context.Context, instanceIDs []string, state string) error {
 	Logger.Println("wait for state", state, "for", len(instanceIDs), "instanceIDs")
 	for i := 0; i < 300; i++ {
-		instances, err := EC2RetryDescribeInstances(ctx, instanceIDs)
+		instances, err := EC2DescribeInstances(ctx, instanceIDs)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -330,7 +329,7 @@ func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 		Logger.Println("error:", err)
 		return err
 	}
-	instances, err := EC2RetryDescribeSpotFleetActiveInstances(ctx, spotFleetRequestId)
+	instances, err := EC2DescribeSpotFleetActiveInstances(ctx, spotFleetRequestId)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -384,7 +383,7 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) error {
 	Logger.Println("wait for spot fleet", *spotFleetRequestId, "with", num, "instances")
 	for i := 0; i < 300; i++ {
-		config, err := EC2RetryDescribeSpotFleet(ctx, spotFleetRequestId)
+		config, err := EC2DescribeSpotFleet(ctx, spotFleetRequestId)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -402,7 +401,7 @@ func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num in
 			return err
 		}
 		num_ready := 0
-		instances, err := EC2RetryDescribeSpotFleetActiveInstances(ctx, spotFleetRequestId)
+		instances, err := EC2DescribeSpotFleetActiveInstances(ctx, spotFleetRequestId)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -596,7 +595,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		return nil, err
 	}
 	var instanceIDs []string
-	fleetInstances, err := EC2RetryDescribeSpotFleetActiveInstances(ctx, spotFleet.SpotFleetRequestId)
+	fleetInstances, err := EC2DescribeSpotFleetActiveInstances(ctx, spotFleet.SpotFleetRequestId)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -604,7 +603,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 	for _, instance := range fleetInstances {
 		instanceIDs = append(instanceIDs, *instance.InstanceId)
 	}
-	instances, err := EC2RetryDescribeInstances(ctx, instanceIDs)
+	instances, err := EC2DescribeInstances(ctx, instanceIDs)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err

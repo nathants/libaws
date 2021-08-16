@@ -34,7 +34,7 @@ func ApiClient() *apigateway.APIGateway {
 	return apiClient
 }
 
-func apiListApis(ctx context.Context) ([]*apigateway.RestApi, error) {
+func apiList(ctx context.Context) ([]*apigateway.RestApi, error) {
 	var position *string
 	var items []*apigateway.RestApi
 	for {
@@ -45,11 +45,12 @@ func apiListApis(ctx context.Context) ([]*apigateway.RestApi, error) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		if len(out.Items) == 0 {
+		items = append(items, out.Items...)
+		if out.Position == nil {
 			break
 		}
 		position = out.Position
-		items = append(items, out.Items...)
+
 	}
 	return items, nil
 }
@@ -57,7 +58,7 @@ func apiListApis(ctx context.Context) ([]*apigateway.RestApi, error) {
 func Api(ctx context.Context, name string) (*apigateway.RestApi, error) {
 	var count int
 	var result *apigateway.RestApi
-	apis, err := apiListApis(ctx)
+	apis, err := apiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err

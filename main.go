@@ -8,6 +8,7 @@ import (
 	_ "github.com/nathants/cli-aws/cmd/ec2"
 	_ "github.com/nathants/cli-aws/cmd/ecr"
 	_ "github.com/nathants/cli-aws/cmd/iam"
+	_ "github.com/nathants/cli-aws/cmd/infra"
 	_ "github.com/nathants/cli-aws/cmd/lambda"
 	_ "github.com/nathants/cli-aws/cmd/route53"
 	_ "github.com/nathants/cli-aws/cmd/s3"

@@ -276,10 +276,8 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			"table",
 			[]string{"userid:s:hash"},
 			[]string{
-				"Tags.0.Key=foo",
-				"Tags.0.Value=bar",
-				"Tags.1.Key=asdf",
-				"Tags.1.Value=123",
+				"Tags.foo=bar",
+				"Tags.asdf=123",
 			},
 			&dynamodb.CreateTableInput{
 				TableName:   aws.String("table"),
@@ -585,10 +583,8 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 			"userid:s:hash",
 		},
 		[]string{
-			"Tags.0.Key=foo",
-			"Tags.0.Value=bar",
-			"Tags.1.Key=asdf",
-			"Tags.1.Value=123",
+			"Tags.foo=bar",
+			"Tags.asdf=123",
 		},
 	)
 	if err != nil {
@@ -652,8 +648,7 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 			"userid:s:hash",
 		},
 		[]string{
-			"Tags.0.Key=asdf",
-			"Tags.0.Value=123",
+			"Tags.asdf=123",
 		},
 	)
 	if err != nil {

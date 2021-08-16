@@ -32,7 +32,7 @@ func ec2Ssh() {
 	var args ec2SshArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	instances, err := lib.EC2RetryListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)
+	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

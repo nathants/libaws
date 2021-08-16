@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"context"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/service/codecommit"
@@ -16,4 +17,23 @@ func CodeCommitClient() *codecommit.CodeCommit {
 		codeCommitClient = codecommit.New(Session())
 	}
 	return codeCommitClient
+}
+
+func CodeCommitListRepos(ctx context.Context) ([]*codecommit.RepositoryNameIdPair, error) {
+	var token *string
+	var repos []*codecommit.RepositoryNameIdPair
+	for {
+		out, err := CodeCommitClient().ListRepositoriesWithContext(ctx, &codecommit.ListRepositoriesInput{
+			NextToken: token,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		repos = append(repos, out.Repositories...)
+		if out.NextToken == nil {
+			break
+		}
+	}
+	return repos, nil
 }

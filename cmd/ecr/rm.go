@@ -1,8 +1,8 @@
 package cliaws
 
 import (
-	"strings"
 	"context"
+	"strings"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
@@ -38,6 +38,6 @@ func ecrRm() {
 		},
 	})
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }

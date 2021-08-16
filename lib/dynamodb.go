@@ -417,35 +417,10 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			}
 		//
 		case "Tags":
-			head, tail, err := splitOnce(tail, ".")
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
-			}
-			i, err := strconv.Atoi(head)
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
-			}
-			switch len(input.Tags) {
-			case i:
-				input.Tags = append(input.Tags, &dynamodb.Tag{})
-			case i + 1:
-			default:
-				err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
-				Logger.Println("error:", err)
-				return nil, err
-			}
-			switch tail {
-			case "Key":
-				input.Tags[i].Key = aws.String(value)
-			case "Value":
-				input.Tags[i].Value = aws.String(value)
-			default:
-				err := fmt.Errorf("unknown dynamodb attr: %s", line)
-				Logger.Println("error:", err)
-				return nil, err
-			}
+			input.Tags = append(input.Tags, &dynamodb.Tag{
+				Key:   aws.String(tail),
+				Value: aws.String(value),
+			})
 		//
 		default:
 			err := fmt.Errorf("unknown dynamodb attr: %s", line)
@@ -909,17 +884,19 @@ func DynamoDBListTags(ctx context.Context, tableName string) ([]*dynamodb.Tag, e
 	return tags, nil
 }
 
-func DynamoDBListTables(ctx context.Context) ([]*string, error) {
+func DynamoDBListTables(ctx context.Context) ([]string, error) {
 	Logger.Println("dynamodb list tables")
 	var start *string
-	var tables []*string
+	var tables []string
 	for {
 		out, err := DynamoDBClient().ListTablesWithContext(ctx, &dynamodb.ListTablesInput{ExclusiveStartTableName: start})
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		tables = append(tables, out.TableNames...)
+		for _, name := range out.TableNames {
+			tables = append(tables, *name)
+		}
 		if out.LastEvaluatedTableName == nil {
 			break
 		}

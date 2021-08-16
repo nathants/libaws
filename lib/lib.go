@@ -23,7 +23,12 @@ import (
 
 type LogWriter struct{}
 
+var doLogging = strings.ToLower(os.Getenv("LOGGING") + " ")[:1] == "y"
+
 func (LogWriter) Write(p []byte) (int, error) {
+	if !doLogging {
+		return 0, nil
+	}
 	sep1 := []byte(".go:")
 	sep2 := []byte("/")
 	parts := bytes.SplitN(p, sep1, 2)
