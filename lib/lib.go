@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -20,28 +19,6 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/pkg/term"
 )
-
-type LogWriter struct{}
-
-var doLogging = strings.ToLower(os.Getenv("LOGGING") + " ")[:1] == "y"
-
-func (LogWriter) Write(p []byte) (int, error) {
-	if !doLogging {
-		return 0, nil
-	}
-	sep1 := []byte(".go:")
-	sep2 := []byte("/")
-	parts := bytes.SplitN(p, sep1, 2)
-	filepath := bytes.Split(parts[0], sep2)
-	keep := [][]byte{
-		filepath[len(filepath)-2],
-		filepath[len(filepath)-1],
-	}
-	parts[0] = bytes.Join(keep, sep2)
-	return os.Stderr.Write(bytes.Join(parts, sep1))
-}
-
-var Logger = log.New(LogWriter{}, "", log.Llongfile)
 
 func SignalHandler(cancel func()) {
 	c := make(chan os.Signal, 1)
