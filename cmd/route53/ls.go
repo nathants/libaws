@@ -29,7 +29,7 @@ func route53Ls() {
 	}
 	for _, zone := range zones {
 		fmt.Println(*zone.Name)
-		records, err := lib.Route53ListRecords(ctx, zone.Id)
+		records, err := lib.Route53ListRecords(ctx, *zone.Id)
 		if err != nil {
 			lib.Logger.Fatal(err)
 		}

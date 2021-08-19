@@ -12,7 +12,7 @@ type logger struct {
 }
 
 var Logger = &logger{
-	disabled: strings.ToLower(os.Getenv("LOGGING") + " ")[:1] != "y",
+	disabled: strings.ToLower(os.Getenv("LOGGING") + " ")[:1] == "n",
 }
 
 func caller() string {

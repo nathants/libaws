@@ -1,0 +1,40 @@
+package cliaws
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/nathants/cli-aws/lib"
+)
+
+func init() {
+	lib.Commands["route53-describe-zone"] = route53DescribeZone
+}
+
+type route53DescribeZoneArgs struct {
+	Name string `arg:"positional,required"`
+}
+
+func (route53DescribeZoneArgs) Description() string {
+	return "\ndescribe zone\n"
+}
+
+func route53DescribeZone() {
+	var args route53DescribeZoneArgs
+	arg.MustParse(&args)
+	ctx := context.Background()
+	id, err := lib.Route53ZoneID(ctx, args.Name)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+	out, err := lib.Route53Client().GetHostedZoneWithContext(ctx, &route53.GetHostedZoneInput{
+		Id: aws.String(id),
+	})
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+	fmt.Println(lib.Pformat(out))
+}

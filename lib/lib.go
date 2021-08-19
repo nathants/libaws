@@ -48,6 +48,14 @@ outer:
 	return strings.Join(lines, "\n")
 }
 
+func Format(i interface{}) string {
+	val, err := json.Marshal(i)
+	if err != nil {
+		panic(err)
+	}
+	return string(val)
+}
+
 func Pformat(i interface{}) string {
 	val, err := json.MarshalIndent(i, "", "    ")
 	if err != nil {

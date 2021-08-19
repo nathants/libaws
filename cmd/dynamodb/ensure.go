@@ -14,7 +14,7 @@ func init() {
 
 type dynamodbEnsureArgs struct {
 	Name    string   `arg:"positional,required"`
-	Params  []string `arg:"positional,required"`
+	Attrs   []string `arg:"positional,required"`
 	Preview bool     `arg:"-p,--preview"`
 }
 
@@ -25,10 +25,10 @@ ensure a dynamodb table
 example:
  - cli-aws dynamodb-ensure test-table userid:s:hash timestamp:n:range Tags.0.Key=foo Tags.0.Key=bar
 
-required params:
+required attrs:
  - NAME:ATTR_TYPE:KEY_TYPE
 
-optional params:
+optional attrs:
  - SSESpecification.KMSMasterKeyId=VALUE
 
  - ProvisionedThroughput.ReadCapacityUnits=VALUE
@@ -58,7 +58,7 @@ func dynamodbEnsure() {
 	ctx := context.Background()
 	var keys []string
 	var attrs []string
-	for _, param := range args.Params {
+	for _, param := range args.Attrs {
 		if strings.Contains(param, "=") {
 			attrs = append(attrs, param)
 		} else {
