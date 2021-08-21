@@ -100,6 +100,8 @@ type route53EnsureRecordInput struct {
 }
 
 func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*route53EnsureRecordInput, error) {
+	zoneName = strings.Trim(zoneName, ".")
+	recordName = strings.Trim(recordName, ".")
 	input := &route53EnsureRecordInput{
 		zoneName: zoneName,
 		change: &route53.Change{
@@ -251,6 +253,7 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 }
 
 func Route53EnsureZone(ctx context.Context, name string, preview bool) error {
+	name = strings.Trim(name, ".")
 	zones, err := Route53ListZones(ctx)
 	if err != nil {
 		Logger.Println("error:", err)

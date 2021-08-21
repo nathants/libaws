@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"time"
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
@@ -329,6 +330,133 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 		}
 	}
 }
+
+
+func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
+	ctx := context.Background()
+	name := "test-table-" + uuid.NewV4().String()
+	//
+	input, err := DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsure(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	//
+	defer func() {
+		err := DynamoDBDeleteTable(ctx, name, false)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("deleted table:", name)
+	}()
+	//
+	err = DynamoDBWaitForReady(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+	//
+	input, err = DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsure(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBWaitForReady(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+	//
+	input, err = DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsure(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBWaitForReady(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if len(table.Table.KeySchema) != 1 ||
+		len(table.Table.AttributeDefinitions) != 1 ||
+		*table.Table.KeySchema[0].AttributeName != "userid" ||
+		*table.Table.KeySchema[0].KeyType != "HASH" ||
+		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
+		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
+		t.Errorf("\nkeys != [userid:s:hash]")
+		return
+	}
+}
+
 
 func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 	ctx := context.Background()
@@ -894,6 +1022,99 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 	}
 }
 
+func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
+	ctx := context.Background()
+	name := "test-table-" + uuid.NewV4().String()
+	//
+	input, err := DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{
+			"GlobalSecondaryIndexes.0.IndexName=index",
+			"GlobalSecondaryIndexes.0.Key.0=name:s:hash",
+			"GlobalSecondaryIndexes.0.Projection.NonKeyAttributes.0=foo",
+			"GlobalSecondaryIndexes.0.Projection.ProjectionType=include",
+		},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsure(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	//
+	defer func() {
+		err := DynamoDBDeleteTable(ctx, name, false)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("deleted table:", name)
+	}()
+	//
+	err = DynamoDBWaitForReady(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if len(table.Table.GlobalSecondaryIndexes) != 1 {
+		t.Errorf("len(globalIndices) != 1")
+		return
+	}
+	if *table.Table.GlobalSecondaryIndexes[0].IndexName != "index" {
+		t.Errorf("\nattr mismatch indexName != index")
+		return
+	}
+	//
+	input, err = DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+		},
+		[]string{},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsure(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	//
+	count := 0
+	for {
+		table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+			TableName: aws.String(name),
+		})
+		if err != nil {
+			t.Errorf("%w", err)
+			return
+		}
+		if len(table.Table.GlobalSecondaryIndexes) == 0 {
+			break
+		}
+		// index delete takes a while to appear in describeTable() response
+		if count > 30 {
+			t.Errorf("%d != 0", len(table.Table.GlobalSecondaryIndexes))
+			return
+		}
+		time.Sleep(1 * time.Second)
+		count ++
+	}
+}
+
 func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 	ctx := context.Background()
 	name := "test-table-" + uuid.NewV4().String()
@@ -973,4 +1194,84 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 		t.Errorf("\nattr mismatch projectionType != include")
 		return
 	}
+}
+
+func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
+	ctx := context.Background()
+	name := "test-table-" + uuid.NewV4().String()
+	//
+	input, err := DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+			"date:n:range",
+		},
+		[]string{
+			"LocalSecondaryIndexes.0.IndexName=index",
+			"LocalSecondaryIndexes.0.Key.0=userid:s:hash",
+			"LocalSecondaryIndexes.0.Key.1=value:n:range",
+			"LocalSecondaryIndexes.0.Projection.NonKeyAttributes.0=foo",
+			"LocalSecondaryIndexes.0.Projection.ProjectionType=include",
+		},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsure(ctx, input, false)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	//
+	defer func() {
+		err := DynamoDBDeleteTable(ctx, name, false)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("deleted table:", name)
+	}()
+	//
+	err = DynamoDBWaitForReady(ctx, name)
+	if err != nil {
+		t.Errorf("%w", err)
+	}
+	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+		TableName: aws.String(name),
+	})
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	if len(table.Table.LocalSecondaryIndexes) != 1 {
+		t.Errorf("len(localIndices) != 1")
+		return
+	}
+	if *table.Table.LocalSecondaryIndexes[0].IndexName != "index" {
+		t.Errorf("\nattr mismatch indexName != index")
+		return
+	}
+	//
+	input, err = DynamoDBEnsureInput(
+		name,
+		[]string{
+			"userid:s:hash",
+			"date:n:range",
+		},
+		[]string{},
+	)
+	if err != nil {
+		t.Errorf("%w", err)
+		return
+	}
+	err = DynamoDBEnsure(ctx, input, false)
+	if err == nil {
+		t.Errorf("expected error")
+		return
+	}
+	if err.Error() != "local secondary indices cannot be deleted: index" {
+		t.Errorf("unknown error: %s", err.Error())
+		return
+	}
+
 }

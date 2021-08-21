@@ -22,25 +22,30 @@ type credsSetArgs struct {
 
 func (credsSetArgs) Description() string {
 	return `
-    easily switch between aws creds stored as environement vars in files like: ~/.aws_creds/NAME.sh
+    easily switch between aws creds environment variables stored at ~/.aws_creds/
 
-    NAME.sh should contain at least:
-      export AWS_ACCESS_KEY_ID=
-      export AWS_SECRET_ACCESS_KEY=
-      export AWS_DEFAULT_REGION
+    add new credentials:
 
-    defines env var AWS_CREDS_NAME=NAME when switching
+        cli-aws creds-add NAME KEY_ID KEY_SECRET REGION
 
-    define bash functions like this to make your life easier:
+    setup your bashrc:
+
+        source ~/.aws_creds/_temp_creds.sh
+
+    define bash helper functions:
 
         aws-creds() {
+            # permanently set aws credentials for this and future terminal sessions
             cli-aws creds-set $1 && . ~/.aws_creds/_temp_creds.sh
         }
 
         aws-creds-temp() {
-            export AWS_CREDS_NAME=$(echo $1|cut -d. -f1)
+            # temporarily set aws credentials for the current terminal session
             . ~/.aws_creds/$1.sh
+            export AWS_CREDS_NAME=$(echo $1|cut -d. -f1)
         }
+
+    AWS_CREDS_NAME=NAME is exported by _temp_creds.sh automatically
 `
 }
 

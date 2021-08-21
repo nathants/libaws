@@ -3,10 +3,12 @@ package lib
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/iam"
 	"strings"
 	"sync"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/iam"
 )
 
 var iamClient *iam.IAM
@@ -62,14 +64,16 @@ func IamListPolicies(ctx context.Context) ([]*iam.Policy, error) {
 	return policies, nil
 }
 
-func IamListRoles(ctx context.Context, pathPrefix *string) ([]*iam.Role, error) {
+func IamListRoles(ctx context.Context, pathPrefix string) ([]*iam.Role, error) {
 	var roles []*iam.Role
 	var marker *string
+	input := &iam.ListRolesInput{}
+	if pathPrefix != "" {
+		input.PathPrefix = aws.String(pathPrefix)
+	}
 	for {
-		out, err := IamClient().ListRolesWithContext(ctx, &iam.ListRolesInput{
-			Marker:     marker,
-			PathPrefix: pathPrefix,
-		})
+		input.Marker = marker
+		out, err := IamClient().ListRolesWithContext(ctx, input)
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
@@ -167,7 +171,7 @@ func iamAssumePolicyDocument(principalName string) *string {
 func IamEnsureRole(ctx context.Context, roleName, principalName string, preview bool) error {
 	if !preview {
 		rolePath := fmt.Sprintf("/%s/%s-path/", principalName, roleName)
-		roles, err := IamListRoles(ctx, aws.String(rolePath))
+		roles, err := IamListRoles(ctx, rolePath)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -383,4 +387,124 @@ type IamPolicyDocumentCondition struct {
 	Version   string
 	Id        string
 	Statement []IamStatementEntryCondition
+}
+
+func IamPolicyArn(ctx context.Context, policyName string) (string, error) {
+	policies, err := IamListPolicies(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	count := 0
+	var policy *iam.Policy
+	for _, p := range policies {
+		if policyName == *p.PolicyName {
+			policy = p
+			count++
+		}
+	}
+	switch count {
+	case 0:
+		err := fmt.Errorf("iam no policy found with name: %s", policyName)
+		Logger.Println("error:", err)
+		return "", err
+	case 1:
+		return *policy.Arn, nil
+	default:
+		err := fmt.Errorf("iam more than 1 (%d) policy found with name: %s", count, policyName)
+		Logger.Println("error:", err)
+		return "", err
+	}
+}
+
+func IamListUserPolicies(ctx context.Context, username string) ([]string, error) {
+	var marker *string
+	var policies []string
+	for {
+		out, err := IamClient().ListUserPoliciesWithContext(ctx, &iam.ListUserPoliciesInput{
+			Marker:   marker,
+			UserName: aws.String(username),
+		})
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, StringSlice(out.PolicyNames)...)
+		if !*out.IsTruncated {
+			break
+		}
+	}
+	return policies, nil
+}
+
+func IamEnsureUser(ctx context.Context, username, password, policyName string, preview bool) error {
+	_, err := IamClient().GetUserWithContext(ctx, &iam.GetUserInput{
+		UserName: aws.String(username),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			Logger.Println("error:", err)
+			return err
+		}
+		if !preview {
+			_, err := IamClient().CreateUserWithContext(ctx, &iam.CreateUserInput{
+				UserName: aws.String(username),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"iam created user:", username)
+	}
+
+	_, err = IamClient().GetLoginProfileWithContext(ctx, &iam.GetLoginProfileInput{
+		UserName: aws.String(username),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			Logger.Println("error:", err)
+			return err
+		}
+		_, err = IamClient().CreateLoginProfileWithContext(ctx, &iam.CreateLoginProfileInput{
+			Password:              aws.String(password),
+			UserName:              aws.String(username),
+			PasswordResetRequired: aws.Bool(true),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+
+	policies, err := IamListUserPolicies(ctx, username)
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			Logger.Println("error:", err)
+			return err
+		}
+		if preview {
+			return nil
+		}
+		Logger.Println("error:", err)
+		return err
+	}
+	if !Contains(policies, policyName) {
+		policyArn, err := IamPolicyArn(ctx, policyName)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		_, err = IamClient().AttachUserPolicyWithContext(ctx, &iam.AttachUserPolicyInput{
+			PolicyArn: aws.String(policyArn),
+			UserName:  aws.String(username),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	return nil
 }

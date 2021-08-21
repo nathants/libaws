@@ -625,6 +625,19 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		}
 	}
 	//
+	updateLocalIndices := make(map[string]interface{})
+	for _, index := range input.LocalSecondaryIndexes {
+		updateLocalIndices[*index.IndexName] = nil
+	}
+	for _, index := range table.Table.LocalSecondaryIndexes {
+		_, ok := updateLocalIndices[*index.IndexName]
+		if !ok {
+			err := fmt.Errorf("local secondary indices cannot be deleted: %s", *index.IndexName)
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	//
 	existingGlobalIndices := make(map[string]*dynamodb.GlobalSecondaryIndexDescription)
 	for _, index := range table.Table.GlobalSecondaryIndexes {
 		existingGlobalIndices[*index.IndexName] = index
@@ -717,6 +730,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 					IndexName: index.IndexName,
 				},
 			})
+			Logger.Println(PreviewString(preview)+"dynamodb deleted global index:", *index.IndexName)
 		}
 	}
 	if len(update.GlobalSecondaryIndexUpdates) == 0 {
