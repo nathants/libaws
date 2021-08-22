@@ -15,6 +15,8 @@ const (
 	apiHttpMethod            = "ANY"
 	apiType                  = "AWS_PROXY"
 	apiIntegrationHttpMethod = "POST"
+	apiPath                  = "/{proxy+}"
+	apiPathPart              = "{proxy+}"
 )
 
 var (
@@ -81,7 +83,7 @@ func Api(ctx context.Context, name string) (*apigateway.RestApi, error) {
 	}
 }
 
-func apiResourceID(ctx context.Context, restApiID, path string) (string, error) {
+func ApiResourceID(ctx context.Context, restApiID, path string) (string, error) {
 	var position *string
 	for {
 		out, err := ApiClient().GetResourcesWithContext(ctx, &apigateway.GetResourcesInput{

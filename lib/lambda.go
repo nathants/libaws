@@ -25,6 +25,31 @@ import (
 	"github.com/aws/aws-sdk-go/service/sns"
 )
 
+const (
+	//
+	lambdaConfConcurrency = "concurrency"
+	lambdaConfMemory      = "memory"
+	lambdaConfTimeout     = "timeout"
+	//
+	lambdaTriggerSNS        = "sns"
+	lambdaTriggerSQS        = "sqs"
+	lambdaTrigerS3          = "s3"
+	lambdaTriggerDynamoDB   = "dynamodb"
+	lambdaTriggerApi        = "api"
+	lambdaTriggerCloudwatch = "cloudwatch"
+	//
+	lambdaMetaS3       = "s3"
+	lambdaMetaDynamoDB = "dynamodb"
+	lambdaMetaSNS      = "sns"
+	lambdaMetaSQS      = "sqs"
+	lambdaMetaPolicy   = "policy"
+	lambdaMetaAllow    = "allow"
+	lambdaMetaInclude  = "include"
+	lambdaMetaTrigger  = "trigger"
+	lambdaMetaRequire  = "require"
+	lambdaMetaConf     = "conf"
+)
+
 var lambdaClient *lambda.Lambda
 var lambdaClientLock sync.RWMutex
 
@@ -124,6 +149,7 @@ func lambdaFilterMetadata(lines []string) []string {
 }
 
 func lambdaParseMetadata(token string, lines []string, silent bool) ([]string, error) {
+	token = token + ":"
 	var vals [][]string
 	for _, line := range lambdaFilterMetadata(lines) {
 		if strings.HasPrefix(line, token) {
@@ -176,52 +202,52 @@ type LambdaMetadata struct {
 func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
 	var err error
 	meta := &LambdaMetadata{}
-	meta.S3, err = lambdaParseMetadata("s3:", lines, silent)
+	meta.S3, err = lambdaParseMetadata(lambdaMetaS3, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.DynamoDB, err = lambdaParseMetadata("dynamodb:", lines, silent)
+	meta.DynamoDB, err = lambdaParseMetadata(lambdaMetaDynamoDB, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Sns, err = lambdaParseMetadata("sns:", lines, silent)
+	meta.Sns, err = lambdaParseMetadata(lambdaMetaSNS, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Sqs, err = lambdaParseMetadata("sqs:", lines, silent)
+	meta.Sqs, err = lambdaParseMetadata(lambdaMetaSQS, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Policy, err = lambdaParseMetadata("policy:", lines, silent)
+	meta.Policy, err = lambdaParseMetadata(lambdaMetaPolicy, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Allow, err = lambdaParseMetadata("allow:", lines, silent)
+	meta.Allow, err = lambdaParseMetadata(lambdaMetaAllow, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Include, err = lambdaParseMetadata("include:", lines, silent)
+	meta.Include, err = lambdaParseMetadata(lambdaMetaInclude, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Trigger, err = lambdaParseMetadata("trigger:", lines, silent)
+	meta.Trigger, err = lambdaParseMetadata(lambdaMetaTrigger, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Require, err = lambdaParseMetadata("require:", lines, silent)
+	meta.Require, err = lambdaParseMetadata(lambdaMetaRequire, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Conf, err = lambdaParseMetadata("conf:", lines, silent)
+	meta.Conf, err = lambdaParseMetadata(lambdaMetaConf, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -230,7 +256,7 @@ func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
 		parts := strings.SplitN(conf, " ", 2)
 		k := parts[0]
 		v := parts[1]
-		if !Contains([]string{"concurrency", "memory", "timeout"}, k) {
+		if !Contains([]string{lambdaConfConcurrency, lambdaConfMemory, lambdaConfTimeout}, k) {
 			err := fmt.Errorf("unknown conf: %s", k)
 			Logger.Println("error:", err)
 			return nil, err
@@ -242,7 +268,7 @@ func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
 		}
 	}
 	for _, trigger := range meta.Trigger {
-		if !Contains([]string{"sns", "sqs", "s3", "dynamodb", "api", "cloudwatch"}, trigger) {
+		if !Contains([]string{lambdaTriggerSNS, lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerCloudwatch}, trigger) {
 			err := fmt.Errorf("unknown trigger: %s", trigger)
 			Logger.Println("error:", err)
 			return nil, err
@@ -250,7 +276,7 @@ func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
 	}
 	for _, line := range lambdaFilterMetadata(lines) {
 		token := strings.SplitN(line, ":", 2)[0]
-		if !Contains([]string{"s3", "dynamodb", "sns", "sqs", "policy", "allow", "include", "trigger", "require", "conf"}, token) {
+		if !Contains([]string{lambdaMetaS3, lambdaMetaDynamoDB, lambdaMetaSNS, lambdaMetaSQS, lambdaMetaPolicy, lambdaMetaAllow, lambdaMetaInclude, lambdaMetaTrigger, lambdaMetaRequire, lambdaMetaConf}, token) {
 			err := fmt.Errorf("unknown configuration comment: %s", line)
 			Logger.Println("error:", err)
 			return nil, err
@@ -265,7 +291,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta Lam
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
 		kind := parts[0]
-		if kind == "s3" {
+		if kind == lambdaTrigerS3 {
 			bucket := parts[1]
 			triggers = append(triggers, bucket)
 		}
@@ -399,11 +425,35 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAr
 	return nil
 }
 
+func LambdaApiUri(ctx context.Context, lambdaName string) (string, error) {
+	account, err := StsAccount(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	uri := fmt.Sprintf(
+		"arn:aws:apigateway:%s:lambda:path/%s/functions/arn:aws:lambda:%s:%s:function:%s/invocations",
+		Region(),
+		LambdaClient().APIVersion,
+		Region(),
+		account,
+		lambdaName,
+	)
+	return uri, nil
+}
+
+func LambdaApiUriToLambdaName(apiUri string) string {
+	// "arn:aws:apigateway:%s:lambda:path/%s/functions/arn:aws:lambda:%s:%s:function:%s/invocations",
+	name := Last(strings.Split(apiUri, ":"))
+	name = strings.Split(name, "/")[0]
+	return name
+}
+
 func LambdaEnsureTriggerApi(ctx context.Context, name string, meta LambdaMetadata, preview bool) error {
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
 		kind := parts[0]
-		if kind == "api" {
+		if kind == lambdaTriggerApi {
 			restApi, err := Api(ctx, name)
 			if err != nil {
 				Logger.Println("error:", err)
@@ -438,7 +488,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta LambdaMetadat
 				}
 			}
 			if restApi != nil {
-				parentID, err := apiResourceID(ctx, *restApi.Id, "/")
+				parentID, err := ApiResourceID(ctx, *restApi.Id, "/")
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
@@ -448,7 +498,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta LambdaMetadat
 					Logger.Println("error:", err)
 					return err
 				}
-				resourceID, err := apiResourceID(ctx, *restApi.Id, "/{proxy+}")
+				resourceID, err := ApiResourceID(ctx, *restApi.Id, apiPath)
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
@@ -458,7 +508,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta LambdaMetadat
 						out, err := ApiClient().CreateResourceWithContext(ctx, &apigateway.CreateResourceInput{
 							RestApiId: aws.String(*restApi.Id),
 							ParentId:  aws.String(parentID),
-							PathPart:  aws.String("{proxy+}"),
+							PathPart:  aws.String(apiPathPart),
 						})
 						if err != nil {
 							Logger.Println("error:", err)
@@ -468,19 +518,11 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta LambdaMetadat
 					}
 					Logger.Println(PreviewString(preview)+"created api resource:", *restApi.Id, parentID)
 				}
-				account, err := StsAccount(ctx)
+				uri, err := LambdaApiUri(ctx, name)
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
-				uri := fmt.Sprintf(
-					"arn:aws:apigateway:%s:lambda:path/%s/functions/arn:aws:lambda:%s:%s:function:%s/invocations",
-					Region(),
-					LambdaClient().APIVersion,
-					Region(),
-					account,
-					name,
-				)
 				for _, id := range []string{parentID, resourceID} {
 					outMethod, err := ApiClient().GetMethodWithContext(ctx, &apigateway.GetMethodInput{
 						RestApiId:  aws.String(*restApi.Id),
@@ -575,6 +617,11 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta LambdaMetadat
 					}
 					Logger.Println(PreviewString(preview)+"created deployment:", *restApi.Id, apiStageName)
 				}
+				account, err := StsAccount(ctx)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
 				arn := fmt.Sprintf("arn:aws:execute-api:%s:%s:%s/*/*/*", Region(), account, *restApi.Id)
 				err = lambdaEnsurePermission(ctx, name, "apigateway.amazonaws.com", arn, preview)
 				if err != nil {
@@ -593,7 +640,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
 		kind := parts[0]
-		if kind == "cloudwatch" {
+		if kind == lambdaTriggerCloudwatch {
 			schedule := parts[1]
 			triggers = append(triggers, schedule)
 		}
@@ -637,14 +684,9 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 			}
 			var targets []*cloudwatchevents.Target
 			err = Retry(ctx, func() error {
-				outRules, err := EventsClient().ListTargetsByRuleWithContext(ctx, &cloudwatchevents.ListTargetsByRuleInput{
-					Rule: aws.String(scheduleName),
-				})
-				if err != nil {
-					return err
-				}
-				targets = outRules.Targets
-				return nil
+				var err error
+				targets, err = EventsListRuleTargets(ctx, scheduleName)
+				return err
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -691,7 +733,7 @@ func LambdaEnsureTriggerSns(ctx context.Context, name, arnLambda string, meta La
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
 		kind := parts[0]
-		if kind == "sns" {
+		if kind == lambdaTriggerSNS {
 			snsName := parts[1]
 			triggers = append(triggers, snsName)
 		}
@@ -758,7 +800,7 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, name, arnLambda string, me
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
 		kind := parts[0]
-		if kind == "dynamodb" {
+		if kind == lambdaTriggerDynamoDB {
 			triggerAttrs := parts[1:]
 			triggers = append(triggers, triggerAttrs)
 		}
@@ -931,7 +973,7 @@ func LambdaEnsureTriggerSQS(ctx context.Context, name, arnLambda string, meta La
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
 		kind := parts[0]
-		if kind == "sqs" {
+		if kind == lambdaTriggerSQS {
 			triggerAttrs := parts[1:]
 			triggers = append(triggers, triggerAttrs)
 		}
@@ -1265,4 +1307,25 @@ func LambdaUpdateZip(pth string, preview bool) error {
 	}
 	Logger.Println(PreviewString(preview)+"updated zip:", zipFile, pth)
 	return nil
+}
+
+func LambdaListFunctions(ctx context.Context) ([]*lambda.FunctionConfiguration, error) {
+	Logger.Println("list lambdas")
+	var marker *string
+	var functions []*lambda.FunctionConfiguration
+	for {
+		out, err := LambdaClient().ListFunctionsWithContext(ctx, &lambda.ListFunctionsInput{
+			Marker: marker,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		functions = append(functions, out.Functions...)
+		if out.NextMarker == nil {
+			break
+		}
+		marker = out.NextMarker
+	}
+	return functions, nil
 }

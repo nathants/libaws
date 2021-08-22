@@ -73,7 +73,7 @@ def metadata(lines, silent=False):
         'include':      parse_metadata('include:', lines, silent),
         'trigger':      parse_metadata('trigger:', lines, silent),
         'require':      [os.path.expanduser(x) for x in parse_metadata('require:', lines, silent)],
-        'conf':         {k: int(v) if v.isdigit() else v for conf in parse_metadata('conf:', lines, silent) for k, v in [conf.split()]},
+        'conf':         {k: int(v) if v.isdigit() else v for conf in parse_metadata('conf:', lines, silent) for k, v in [conf.split(' ')]},
     }
     for key in meta['conf']:
         assert key in {'concurrency', 'memory', 'timeout'}, f'unknown conf option: "conf: {key}"'

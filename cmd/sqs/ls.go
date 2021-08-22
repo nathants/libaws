@@ -3,7 +3,6 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
@@ -29,7 +28,6 @@ func sqsLs() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, queue := range queues {
-		parts := strings.Split(*queue, "/")
-		fmt.Println(parts[len(parts)-1])
+		fmt.Println(queue)
 	}
 }

@@ -2,7 +2,10 @@ package lib
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -23,16 +26,25 @@ func IamClient() *iam.IAM {
 	return iamClient
 }
 
-func iamAllowPolicyDocument(action, resource string) *string {
-	return aws.String(`{"Version": "2012-10-17",
-                        "Statement": [{"Effect": "Allow",
-                                       "Action": "` + action + `",
-                                       "Resource": "` + resource + `"}]}`)
+type iamAllow struct {
+	action   string
+	resource string
 }
 
-func iamAllowPolicyName(action, resource string) *string {
-	action = strings.ReplaceAll(action, "*", "ALL")
-	resource = strings.ReplaceAll(resource, "*", "")
+func (a *iamAllow) String() string {
+	return fmt.Sprintf("%s %s", a.action, a.resource)
+}
+
+func (a *iamAllow) policyDocument() string {
+	return `{"Version": "2012-10-17",
+             "Statement": [{"Effect": "Allow",
+                            "Action": "` + a.action + `",
+                            "Resource": "` + a.resource + `"}]}`
+}
+
+func (allow *iamAllow) policyName() string {
+	action := strings.ReplaceAll(allow.action, "*", "ALL")
+	resource := strings.ReplaceAll(allow.resource, "*", "")
 	var parts []string
 	for _, part := range strings.Split(resource, ":")[3:] { // arn:aws:service:account:region:target
 		parts = append(parts, Last(strings.Split(part, "/")))
@@ -41,7 +53,31 @@ func iamAllowPolicyName(action, resource string) *string {
 	name := action + "_" + resource
 	name = strings.ReplaceAll(name, ":", "_")
 	name = strings.TrimRight(name, "_")
-	return aws.String(name)
+	return name
+}
+
+func iamAllowFromPolicyDocument(policyDocument string) (*iamAllow, error) {
+	policy := IamPolicyDocument{}
+	err := json.Unmarshal([]byte(policyDocument), &policy)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if len(policy.Statement) != 1 {
+		err := fmt.Errorf("expected 1 statement, got 0: %s", policyDocument)
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if policy.Statement[0].Effect != "Allow" {
+		err := fmt.Errorf("expected 1 Allow statement, got: %s", policyDocument)
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	allow := &iamAllow{
+		action:   policy.Statement[0].Action.(string),
+		resource: policy.Statement[0].Resource.(string),
+	}
+	return allow, nil
 }
 
 func IamListPolicies(ctx context.Context) ([]*iam.Policy, error) {
@@ -91,42 +127,78 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 	if len(allows) == 0 {
 		return nil
 	}
-	for _, allow := range allows {
-		parts := strings.SplitN(allow, " ", 2)
+	for _, allowStr := range allows {
+		parts := strings.SplitN(allowStr, " ", 2)
 		if len(parts) != 2 {
-			err := fmt.Errorf("allow format should be: 'SERVICE:ACTION RESOURCE', got: %s", allow)
+			err := fmt.Errorf("allow format should be: 'SERVICE:ACTION RESOURCE', got: %s", allowStr)
 			Logger.Println("error:", err)
 			return err
 		}
-		action := parts[0]
-		resource := parts[1]
+		allow := &iamAllow{
+			action:   parts[0],
+			resource: parts[1],
+		}
+		out, err := IamClient().GetRolePolicyWithContext(ctx, &iam.GetRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(allow.policyName()),
+		})
+		if err != nil {
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+				Logger.Println("error:", err)
+				return err
+			}
+		} else {
+			equal, err := iamPolicyEqual(*out.PolicyDocument, allow.policyDocument())
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			if equal {
+				return nil
+			}
+		}
 		if !preview {
 			_, err := IamClient().PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
 				RoleName:       aws.String(roleName),
-				PolicyName:     iamAllowPolicyName(action, resource),
-				PolicyDocument: iamAllowPolicyDocument(action, resource),
+				PolicyName:     aws.String(allow.policyName()),
+				PolicyDocument: aws.String(allow.policyDocument()),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"ensure role allow:", roleName, allow)
+		Logger.Println(PreviewString(preview)+"attach role allow:", roleName, allow)
 	}
 	return nil
+}
+
+func iamPolicyEqual(a, b string) (bool, error) {
+	aData := make(map[string]interface{})
+	bData := make(map[string]interface{})
+	err := json.Unmarshal([]byte(a), &aData)
+	if err != nil {
+		return false, err
+	}
+	err = json.Unmarshal([]byte(b), &bData)
+	if err != nil {
+		return false, err
+	}
+	return reflect.DeepEqual(aData, bData), nil
 }
 
 func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []string, preview bool) error {
 	if len(policyNames) == 0 {
 		return nil
 	}
+	policies, err := IamListPolicies(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
 	for _, policyName := range policyNames {
 		if !preview {
-			policies, err := IamListPolicies(ctx)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
 			var matchedPolicies []*iam.Policy
 			for _, policy := range policies {
 				if Last(strings.Split(*policy.Arn, "/")) == policyName {
@@ -139,7 +211,17 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 				Logger.Println("error:", err)
 				return err
 			case 1:
-				_, err := IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
+				rolePolicies, err := IamListRolePolicies(ctx, roleName)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				for _, policy := range rolePolicies {
+					if *policy.PolicyName == roleName {
+						return nil
+					}
+				}
+				_, err = IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
 					PolicyArn: matchedPolicies[0].Arn,
 					RoleName:  aws.String(roleName),
 				})
@@ -147,6 +229,7 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 					Logger.Println("error:", err)
 					return err
 				}
+				Logger.Println(PreviewString(preview)+"attached role policy:", roleName, policyName)
 			default:
 				err := fmt.Errorf("found more than 1 policy for name: %s", policyName)
 				Logger.Println("error:", err)
@@ -156,7 +239,6 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"ensure role policy:", roleName, policyName)
 	}
 	return nil
 }
@@ -187,6 +269,7 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 				Logger.Println("error:", err)
 				return err
 			}
+			Logger.Println(PreviewString(preview)+"created role:", roleName, principalName)
 		case 1:
 			if *roles[0].Path != rolePath {
 				err := fmt.Errorf("role path mismatch: %s %s != %s", roleName, *roles[0].Path, rolePath)
@@ -212,7 +295,6 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 			return err
 		}
 	}
-	Logger.Println(PreviewString(preview)+"ensure role:", roleName, principalName)
 	return nil
 }
 
@@ -507,4 +589,66 @@ func IamEnsureUser(ctx context.Context, username, password, policyName string, p
 		}
 	}
 	return nil
+}
+
+func IamListRolePolicies(ctx context.Context, roleName string) ([]*iam.AttachedPolicy, error) {
+	var policies []*iam.AttachedPolicy
+	var marker *string
+	for {
+		out, err := IamClient().ListAttachedRolePoliciesWithContext(ctx, &iam.ListAttachedRolePoliciesInput{
+			RoleName: aws.String(roleName),
+			Marker:   marker,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		policies = append(policies, out.AttachedPolicies...)
+		if !*out.IsTruncated {
+			break
+		}
+		marker = out.Marker
+	}
+	return policies, nil
+}
+
+func IamListRoleAllows(ctx context.Context, roleName string) ([]*iamAllow, error) {
+	var iamAllows []*iamAllow
+	var marker *string
+	for {
+		out, err := IamClient().ListRolePoliciesWithContext(ctx, &iam.ListRolePoliciesInput{
+			RoleName: aws.String(roleName),
+			Marker:   marker,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		for _, policyName := range out.PolicyNames {
+			policy, err := IamClient().GetRolePolicyWithContext(ctx, &iam.GetRolePolicyInput{
+				RoleName:   aws.String(roleName),
+				PolicyName: policyName,
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			policyDocument, err := url.QueryUnescape(*policy.PolicyDocument)
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			allow, err := iamAllowFromPolicyDocument(policyDocument)
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			iamAllows = append(iamAllows, allow)
+		}
+		if !*out.IsTruncated {
+			break
+		}
+		marker = out.Marker
+	}
+	return iamAllows, nil
 }
