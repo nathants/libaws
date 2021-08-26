@@ -11,18 +11,18 @@ import (
 )
 
 func init() {
-	lib.Commands["ec2-ls-ami"] = ec2LsAmi
+	lib.Commands["ec2-ls-amis"] = ec2LsAmis
 }
 
-type ec2LsAmiArgs struct {
+type ec2LsAmisArgs struct {
 }
 
-func (ec2LsAmiArgs) Description() string {
+func (ec2LsAmisArgs) Description() string {
 	return "\nlist amis\n"
 }
 
-func ec2LsAmi() {
-	var args ec2LsAmiArgs
+func ec2LsAmis() {
+	var args ec2LsAmisArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	account, err := lib.StsAccount(ctx)

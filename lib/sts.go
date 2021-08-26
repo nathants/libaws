@@ -41,5 +41,5 @@ func StsUser(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.SplitN(*out.Arn, "/", 2)[1], nil
+	return Last(strings.Split(*out.Arn, ":")), nil
 }

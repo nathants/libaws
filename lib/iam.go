@@ -652,3 +652,23 @@ func IamListRoleAllows(ctx context.Context, roleName string) ([]*iamAllow, error
 	}
 	return iamAllows, nil
 }
+
+func IamListUsers(ctx context.Context) ([]*iam.User, error) {
+	var marker *string
+	var result []*iam.User
+	for {
+		out, err := IamClient().ListUsersWithContext(ctx, &iam.ListUsersInput{
+			Marker: marker,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+		    return nil, err
+		}
+		result = append(result, out.Users...)
+		if !*out.IsTruncated {
+			break
+		}
+		marker = out.Marker
+	}
+	return result, nil
+}

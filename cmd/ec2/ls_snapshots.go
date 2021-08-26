@@ -12,18 +12,18 @@ import (
 )
 
 func init() {
-	lib.Commands["ec2-ls-snapshot"] = ec2LsSnapshot
+	lib.Commands["ec2-ls-snapshots"] = ec2LsSnapshots
 }
 
-type ec2LsSnapshotArgs struct {
+type ec2LsSnapshotsArgs struct {
 }
 
-func (ec2LsSnapshotArgs) Description() string {
+func (ec2LsSnapshotsArgs) Description() string {
 	return "\nlist snapshots\n"
 }
 
-func ec2LsSnapshot() {
-	var args ec2LsSnapshotArgs
+func ec2LsSnapshots() {
+	var args ec2LsSnapshotsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	account, err := lib.StsAccount(ctx)
