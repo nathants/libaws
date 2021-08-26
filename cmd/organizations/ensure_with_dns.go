@@ -57,10 +57,8 @@ func organizationsEnsureWithDns() {
 	fmt.Println("this account will be the parent, and should have an organization enabled at: https://console.aws.amazon.com/organizations/v2/home")
 
 	fmt.Println("hit ENTER to proceed")
-	_, err = fmt.Scanln(&str)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
+	_, _ = fmt.Scanln(&str)
+	fmt.Println()
 
 	accountID, err := lib.OrganizationsEnsure(ctx, args.Name, args.Email, args.Preview)
 	if err != nil {
@@ -70,42 +68,35 @@ func organizationsEnsureWithDns() {
 
 	fmt.Println("open an incognito browser tab")
 	fmt.Println("hit ENTER to proceed")
+	fmt.Println()
 
 	fmt.Println("setup root login for child account via password reset at https://console.aws.amazon.com/ with email:", args.Email)
 	fmt.Println("hit ENTER to proceed")
-	_, err = fmt.Scanln(&str)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
+	_, _ = fmt.Scanln(&str)
+	fmt.Println()
 
 	fmt.Println("login to the console of the child account, click username at top right, choose my security credentials, and add access key.")
 	fmt.Println("save those credentials locally via: cli-aws creds-add", args.Name, "$KEY_ID", "$KEY_SECRET", "$REGION")
 	fmt.Println("hit ENTER to proceed")
-	_, err = fmt.Scanln(&str)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
+	_, _ = fmt.Scanln(&str)
+	fmt.Println()
 
 	fmt.Println("in console, click username at top right, choose my security credentials, and mfa.")
 	fmt.Println("hit ENTER to proceed")
-	_, err = fmt.Scanln(&str)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
+	_, _ = fmt.Scanln(&str)
+	fmt.Println()
 
 	nsFile := fmt.Sprintf("/tmp/%s.ns.txt", args.ChildSubDomain)
 
 	fmt.Println("setup the child account route53 via the following commands:")
 	fmt.Println("")
 	fmt.Printf("(aws-creds-temp %s && cli-aws route53-ensure-zone %s)\n", args.Name, args.ChildSubDomain)
-	fmt.Printf("(aws-creds-temp %s && cli-aws route53-ensure-record %s foo.%s TTL=7 Type=CNAME Value=bar Value=baz)\n", args.Name, args.ChildSubDomain, args.ChildSubDomain)
+	fmt.Printf("(aws-creds-temp %s && cli-aws route53-ensure-record %s foo.%s TTL=7 Type=CNAME Value=bar)\n", args.Name, args.ChildSubDomain, args.ChildSubDomain)
 	fmt.Printf("(aws-creds-temp %s && cli-aws route53-ns %s > %s)\n", args.Name, args.ChildSubDomain, nsFile)
 
 	fmt.Println("hit ENTER to proceed")
-	_, err = fmt.Scanln(&str)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
+	_, _ = fmt.Scanln(&str)
+	fmt.Println()
 
 	fmt.Println("setup the parent account route53 via the following commands:")
 	fmt.Println("")
@@ -123,5 +114,5 @@ func organizationsEnsureWithDns() {
 
 	fmt.Println("test the child account dns with:")
 	fmt.Println("")
-	fmt.Printf("dig foo.%s CNAME # should be: bar baz\n", args.ChildSubDomain)
+	fmt.Printf("dig foo.%s CNAME # should be: bar\n", args.ChildSubDomain)
 }
