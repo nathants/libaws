@@ -52,9 +52,9 @@ func (credsAddArgs) Description() string {
 }
 
 const template = `#!/bin/bash
-AWS_ACCESS_KEY_ID=%s
-AWS_SECRET_ACCESS_KEY=%s
-AWS_DEFAULT_REGION=%s
+export AWS_ACCESS_KEY_ID=%s
+export AWS_SECRET_ACCESS_KEY=%s
+export AWS_DEFAULT_REGION=%s
 `
 
 func credsAdd() {
