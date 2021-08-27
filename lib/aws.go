@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
@@ -36,8 +37,13 @@ func SessionRegion(region string) (*session.Session, error) {
 		if err != nil {
 			return nil, err
 		}
+		endpoint, err := endpoints.GetSTSRegionalEndpoint(region)
+		if err != nil {
+		    return nil, err
+		}
 		sess, err = session.NewSession(&aws.Config{
 			Region: aws.String(region),
+			STSRegionalEndpoint: endpoint,
 		})
 		if err != nil {
 			return nil, err

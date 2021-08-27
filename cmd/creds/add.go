@@ -52,6 +52,8 @@ func (credsAddArgs) Description() string {
 }
 
 const template = `#!/bin/bash
+export AWS_STS_REGIONAL_ENDPOINTS=regional
+export AWS_SDK_LOAD_CONFIG=true
 export AWS_ACCESS_KEY_ID=%s
 export AWS_SECRET_ACCESS_KEY=%s
 export AWS_DEFAULT_REGION=%s
