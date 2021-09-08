@@ -99,9 +99,9 @@ def ensure_instance_profile_has_role(name, role_name, preview):
 def _policy_name(allow):
     action, resource = allow.split()
     action = action.replace('*', 'ALL')
-    resource = resource.replace('*', '')
-    resource = ':'.join([x.split('/')[-1] for x in resource.split(':')[3:] if x]) # arn:aws:service:account:region:target
-    return f'{action}_{resource}'.replace(':', '_').rstrip('_')
+    resource = resource.replace('*', 'ALL')
+    resource = ':'.join([x.replace('/', '__') for x in resource.split(':') if x and x not in ['arn', 'aws', 's3', 'dynamodb', 'sqs', 'sns']]) # arn:aws:service:account:region:target
+    return f'{action}__{resource}'.replace(':', '_').rstrip('_')
 
 def rm_extra_policies(name, policies, preview):
     to_remove = []

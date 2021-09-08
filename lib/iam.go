@@ -44,13 +44,15 @@ func (a *iamAllow) policyDocument() string {
 
 func (allow *iamAllow) policyName() string {
 	action := strings.ReplaceAll(allow.action, "*", "ALL")
-	resource := strings.ReplaceAll(allow.resource, "*", "")
+	resource := strings.ReplaceAll(allow.resource, "*", "ALL")
 	var parts []string
-	for _, part := range strings.Split(resource, ":")[3:] { // arn:aws:service:account:region:target
-		parts = append(parts, Last(strings.Split(part, "/")))
+	for _, part := range strings.Split(resource, ":") { // arn:aws:service:account:region:target
+		if !Contains([]string{"arn", "aws", "s3", "dynamodb", "sqs", "sns"}, part) {
+			parts = append(parts, strings.ReplaceAll(part, "/", "__"))
+		}
 	}
 	resource = strings.Join(parts, ":")
-	name := action + "_" + resource
+	name := action + "__" + resource
 	name = strings.ReplaceAll(name, ":", "_")
 	name = strings.TrimRight(name, "_")
 	return name
@@ -662,7 +664,7 @@ func IamListUsers(ctx context.Context) ([]*iam.User, error) {
 		})
 		if err != nil {
 			Logger.Println("error:", err)
-		    return nil, err
+			return nil, err
 		}
 		result = append(result, out.Users...)
 		if !*out.IsTruncated {
