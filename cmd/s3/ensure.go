@@ -13,7 +13,7 @@ func init() {
 
 type s3EnsureArgs struct {
 	Name    string   `arg:"positional,required"`
-	Attrs   []string `arg:"positional,required"`
+	Attrs   []string `arg:"positional"`
 	Preview bool     `arg:"-p,--preview"`
 }
 

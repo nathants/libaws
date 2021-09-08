@@ -36,7 +36,7 @@ func credsLs() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Println("~/.aws_creds/")
+	lib.Logger.Println("~/.aws_creds/")
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() {
 			continue
@@ -58,7 +58,7 @@ func credsLs() {
 		if !strings.Contains(text, "AWS_DEFAULT_REGION=") {
 			continue
 		}
-		fmt.Println(" ", entry.Name())
+		fmt.Println(strings.Split(entry.Name(), ".sh")[0])
 	}
 
 }

@@ -81,7 +81,7 @@ func organizationsEnsureWithDns() {
 	_, _ = fmt.Scanln(&str)
 	fmt.Println()
 
-	fmt.Println("in console, click username at top right, choose my security credentials, and mfa.")
+	fmt.Println("in console, click username at top right, choose my security credentials, and add mfa.")
 	fmt.Println("hit ENTER to proceed")
 	_, _ = fmt.Scanln(&str)
 	fmt.Println()
