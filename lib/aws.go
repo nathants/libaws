@@ -23,7 +23,9 @@ func Session() *session.Session {
 		if err != nil {
 			panic(err)
 		}
-		sess = session.Must(session.NewSession(&aws.Config{}))
+		sess = session.Must(session.NewSession(&aws.Config{
+			STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
+		}))
 	}
 	return sess
 }
@@ -37,13 +39,9 @@ func SessionRegion(region string) (*session.Session, error) {
 		if err != nil {
 			return nil, err
 		}
-		endpoint, err := endpoints.GetSTSRegionalEndpoint(region)
-		if err != nil {
-		    return nil, err
-		}
 		sess, err = session.NewSession(&aws.Config{
-			Region: aws.String(region),
-			STSRegionalEndpoint: endpoint,
+			Region:              aws.String(region),
+			STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
 		})
 		if err != nil {
 			return nil, err
