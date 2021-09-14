@@ -17,6 +17,7 @@ func init() {
 }
 
 type dynamodbLsArgs struct {
+	Status bool `arg:"-s,--status" help:"show table status"`
 }
 
 func (dynamodbLsArgs) Description() string {
@@ -33,12 +34,16 @@ func dynamodbLs() {
 	}
 	fmt.Fprintln(os.Stderr, "name status")
 	for _, table := range tables {
-		description, err := lib.DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
-			TableName: aws.String(table),
-		})
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
+		if args.Status {
+			description, err := lib.DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
+				TableName: aws.String(table),
+			})
+			if err != nil {
+				lib.Logger.Fatal("error: ", err)
+			}
+			fmt.Println(table, *description.Table.TableStatus)
+		} else {
+			fmt.Println(table)
 		}
-		fmt.Println(table, *description.Table.TableStatus)
 	}
 }
