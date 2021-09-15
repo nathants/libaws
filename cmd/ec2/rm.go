@@ -31,7 +31,9 @@ func ec2Rm() {
 	var ids []*string
 	for _, instance := range instances {
 		ids = append(ids, instance.InstanceId)
-		lib.Logger.Println("going to terminate:", lib.EC2Name(instance.Tags))
+		if *instance.State.Name == ec2.InstanceStateNameRunning || *instance.State.Name == ec2.InstanceStateNameStopped {
+			lib.Logger.Println("going to terminate:", lib.EC2Name(instance.Tags), *instance.InstanceId)
+		}
 	}
 	if !args.Yes {
 		err = lib.PromptProceed("")
