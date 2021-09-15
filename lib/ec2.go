@@ -1,13 +1,13 @@
 package lib
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"golang.org/x/sync/semaphore"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,9 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -692,27 +689,17 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, e
 }
 
 type EC2SshInput struct {
-	NoTTY          bool
-	Instances      []*ec2.Instance
-	Cmd            string
-	TimeoutSeconds int
-	MaxConcurrency int
-	User           string
-	Stdout         io.WriteCloser
-	Stderr         io.WriteCloser
-	Stdin          string
-}
-
-func publicKey(path string) (ssh.AuthMethod, error) {
-	key, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		return nil, err
-	}
-	return ssh.PublicKeys(signer), nil
+	NoTTY            bool
+	Instances        []*ec2.Instance
+	Cmd              string
+	TimeoutSeconds   int
+	MaxConcurrency   int
+	User             string
+	Stdin            string
+	PrivateIP        bool
+	Key              string
+	AccumulateResult bool
+	PrintLock        sync.RWMutex
 }
 
 const remoteCmdTemplate = `
@@ -730,7 +717,7 @@ if [ $code != 0 ]; then
 fi
 `
 
-func remoteCmd(cmd, stdin, instanceID string) string {
+func ec2SshRemoteCmd(cmd, stdin, instanceID string) string {
 	return fmt.Sprintf(
 		remoteCmdTemplate,
 		instanceID,
@@ -739,11 +726,11 @@ func remoteCmd(cmd, stdin, instanceID string) string {
 	)
 }
 
-func EC2Ssh(ctx context.Context, input *EC2SshInput) error {
+func EC2Ssh(ctx context.Context, input *EC2SshInput) (map[string]*[]string, error) {
 	if len(input.Instances) == 0 {
 		err := fmt.Errorf("no instances")
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	if input.User == "" {
 		input.User = tag(input.Instances[0], "user", "")
@@ -752,53 +739,19 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) error {
 			if input.User != user {
 				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		}
 		input.User = tag(input.Instances[0], "user", "")
 		if input.User == "" {
 			err := fmt.Errorf("no user provied and no user tag available")
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 	}
 	//
-	auth := []ssh.AuthMethod{}
-	//
-	socket := os.Getenv("SSH_AUTH_SOCK")
-	agentConn, err := net.Dial("unix", socket)
-	if err == nil {
-		defer func() { _ = agentConn.Close() }()
-		agentClient := agent.NewClient(agentConn)
-		auth = append(auth, ssh.PublicKeysCallback(agentClient.Signers))
-	}
-	//
-	id_rsa := fmt.Sprintf("%s/.ssh/id_rsa", os.Getenv("HOME"))
-	if Exists(id_rsa) {
-		key, err := publicKey(id_rsa)
-		if err == nil {
-			auth = append(auth, key)
-		}
-	}
-	//
-	id_ed25519 := fmt.Sprintf("%s/.ssh/id_ed25519", os.Getenv("HOME"))
-	if Exists(id_rsa) {
-		key, err := publicKey(id_ed25519)
-		if err == nil {
-			auth = append(auth, key)
-		}
-	}
-	if len(auth) == 0 {
-		err := fmt.Errorf("ssh agent not running and no keys found in ~/.ssh")
-		Logger.Println("error:", err)
-		return err
-	}
-	//
-	config := &ssh.ClientConfig{
-		User:            input.User,
-		Auth:            auth,
-		Timeout:         5 * time.Second,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	if !strings.HasPrefix(input.Cmd, "#!") && !strings.HasPrefix(input.Cmd, "set ") {
+		input.Cmd = "#!/bin/bash\nset -eou pipefail\n" + input.Cmd
 	}
 	//
 	if input.MaxConcurrency == 0 {
@@ -809,6 +762,7 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) error {
 		defer timeoutCancel()
 		ctx = timeoutCtx
 	}
+	result := make(map[string]*[]string)
 	done := make(chan error, len(input.Instances))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -821,74 +775,110 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) error {
 				return
 			}
 			defer concurrency.Release(1)
-			done <- ec2Ssh(cancelCtx, config, instance, input)
+			done <- ec2Ssh(cancelCtx, instance, input, result)
 		}(instance)
 	}
 	var errLast error
 	for range input.Instances {
 		err := <-done
 		if err != nil {
-			cancel()
+			Logger.Println("error:", err)
 			errLast = err
 		}
 	}
 	//
-	return errLast
+	return result, errLast
 }
 
-func sshDialContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
-	var d net.Dialer
-	dialContext, dialCancel := context.WithTimeout(ctx, config.Timeout)
-	defer dialCancel()
-	conn, err := d.DialContext(dialContext, network, addr)
-	if err != nil {
-		return nil, err
+func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput, result map[string]*[]string) error {
+	sshCmd := []string{
+		"ssh",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=no",
 	}
-	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
-	if err != nil {
-		return nil, err
+	if input.Key != "" {
+		sshCmd = append(sshCmd, []string{"-i", input.Key}...)
 	}
-	return ssh.NewClient(c, chans, reqs), nil
-}
-
-func ec2Ssh(ctx context.Context, config *ssh.ClientConfig, instance *ec2.Instance, input *EC2SshInput) error {
-	sshConn, err := sshDialContext(ctx, "tcp", fmt.Sprintf("%s:22", *instance.PublicDnsName), config)
+	if input.NoTTY {
+		sshCmd = append(sshCmd, "-T")
+	} else {
+		sshCmd = append(sshCmd, "-tt")
+	}
+	target := input.User + "@"
+	if input.PrivateIP {
+		target += *instance.PrivateIpAddress
+	} else {
+		target += *instance.PublicDnsName
+	}
+	sshCmd = append(sshCmd, target)
+	sshCmd = append(sshCmd, ec2SshRemoteCmd(input.Cmd, input.Stdin, *instance.InstanceId))
+	//
+	cmd := exec.CommandContext(ctx, sshCmd[0], sshCmd[1:]...)
+	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	defer func() { _ = sshConn.Close() }()
-	//
-	sshSession, err := sshConn.NewSession()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	defer func() { _ = sshSession.Close() }()
 	//
+	result[*instance.ImageId] = &[]string{}
+	resultLock := &sync.RWMutex{}
+	done := make(chan error)
+	tail := func(kind string, buf *bufio.Reader) {
+		for {
+			line, err := buf.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					done <- err
+				} else {
+					done <- nil
+				}
+				return
+			}
+			if strings.Contains(line, "Permission denied (publickey)") {
+				done <- fmt.Errorf("ec2 Permission denied (publickey)")
+				return
+			}
+			if len(input.Instances) > 1 {
+				line = *instance.InstanceId + ": " + line
+			}
+			if kind == "stdout" && input.AccumulateResult {
+				resultLock.Lock()
+				*result[*instance.ImageId] = append(*result[*instance.ImageId], line)
+				resultLock.Unlock()
+			}
+			input.PrintLock.Lock()
+			switch kind {
+			case "stderr":
+				_, _ = fmt.Fprint(os.Stderr, line)
+			case "stdout":
+				_, _ = fmt.Fprint(os.Stdout, line)
+			default:
+				panic("unknown kind: " + kind)
+			}
+			input.PrintLock.Unlock()
+		}
+	}
+	//
+	go tail("stdout", bufio.NewReader(stdout))
+	go tail("stderr", bufio.NewReader(stderr))
+	err = cmd.Start()
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	sshSession.Stdout = input.Stdout
-	sshSession.Stderr = input.Stderr
-	//
-	if !input.NoTTY {
-		err = sshSession.RequestPty("xterm", 80, 24, ssh.TerminalModes{})
+	for i := 0; i < 2; i++ {
+		err := <-done
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
 	}
-	cmd := remoteCmd(input.Cmd, input.Stdin, *instance.InstanceId)
-	runContext, runCancel := context.WithCancel(ctx)
-	defer runCancel()
-	go func() {
-		<-runContext.Done()
-		_ = sshSession.Close()
-		_ = sshConn.Close()
-	}()
-	err = sshSession.Run(cmd)
+	err = cmd.Wait()
 	if err != nil {
 		Logger.Println("error:", err)
 		return err

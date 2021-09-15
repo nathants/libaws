@@ -2,6 +2,7 @@ package cliaws
 
 import (
 	"context"
+	"sync"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -16,12 +17,15 @@ func init() {
 }
 
 type ec2SshArgs struct {
-	Selectors []string `arg:"positional" help:"instance-ids | dns-names | private-dns-names | tags | vpc-id | subnet-id | security-group-id | ip-addresses | private-ip-addresses"`
-	User      string   `arg:"-u,--user" help:"ssh user if not tagged on instance as 'user'"`
-	Cmd       string   `arg:"-c,--cmd"`
-	Stdin     string   `arg:"-s,--stdin" help:"stdin value to be provided to remote cmd"`
-	NoTTY     bool     `arg:"--no-tty" help:"when backgrounding a process, you dont want a tty"`
-	Timeout   int      `arg:"-t,--timeout" help:"seconds before ssh cmd is considered failed"`
+	Selectors      []string `arg:"positional" help:"instance-ids | dns-names | private-dns-names | tags | vpc-id | subnet-id | security-group-id | ip-addresses | private-ip-addresses"`
+	User           string   `arg:"-u,--user" help:"ssh user if not tagged on instance as 'user'"`
+	Cmd            string   `arg:"-c,--cmd"`
+	Stdin          string   `arg:"-s,--stdin" help:"stdin value to be provided to remote cmd"`
+	NoTTY          bool     `arg:"-n,--no-tty" help:"when backgrounding a process, you dont want a tty"`
+	Timeout        int      `arg:"-t,--timeout" help:"seconds before ssh cmd is considered failed"`
+	PrivateIP      bool     `arg:"-p,--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
+	MaxConcurrency int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent ssh connections"`
+	Key            string   `arg:"-k,--key" help:"ssh private key"`
 }
 
 func (ec2SshArgs) Description() string {
@@ -49,18 +53,20 @@ func ec2Ssh() {
 	}
 	if len(instances) == 0 {
 		err = fmt.Errorf("no instances found for those selectors")
-	} else if len(instances) == 1 && args.Cmd != "" {
+	} else if len(instances) == 1 && args.Cmd == "" {
 		err = lib.EC2SshLogin(instances[0], args.User)
 	} else {
-		err = lib.EC2Ssh(context.Background(), &lib.EC2SshInput{
+		_, err = lib.EC2Ssh(context.Background(), &lib.EC2SshInput{
 			User:           args.User,
 			TimeoutSeconds: args.Timeout,
 			Instances:      instances,
 			Cmd:            args.Cmd,
-			Stdout:         os.Stdout,
-			Stderr:         os.Stderr,
 			Stdin:          stdin,
 			NoTTY:          args.NoTTY,
+			PrivateIP:      args.PrivateIP,
+			MaxConcurrency: args.MaxConcurrency,
+			Key:            args.Key,
+			PrintLock:      sync.RWMutex{},
 		})
 	}
 	if err != nil {
