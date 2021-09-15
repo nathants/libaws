@@ -12,7 +12,7 @@ func init() {
 }
 
 type ec2AmiBaseArgs struct {
-	Name string `arg:"positional,required" help:"arch | amzn | lambda | deeplearning | bionic | xenial | trusty | eoan | focal"`
+	Name string `arg:"positional,required" help:"arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal"`
 }
 
 func (ec2AmiBaseArgs) Description() string {
