@@ -9,6 +9,7 @@ import (
 
 func init() {
 	lib.Commands["sqs-ensure"] = sqsEnsure
+lib.Args["sqs-ensure"] = sqsEnsureArgs{}
 }
 
 type sqsEnsureArgs struct {

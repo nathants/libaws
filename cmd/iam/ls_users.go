@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["iam-ls-users"] = iamLsUsers
+lib.Args["iam-ls-users"] = iamLsUsersArgs{}
 }
 
 type iamLsUsersArgs struct {

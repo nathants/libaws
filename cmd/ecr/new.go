@@ -11,6 +11,7 @@ import (
 
 func init() {
 	lib.Commands["ecr-new"] = ecrNew
+lib.Args["ecr-new"] = ecrNewArgs{}
 }
 
 type ecrNewArgs struct {

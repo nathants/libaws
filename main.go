@@ -2,6 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"sort"
+	"strings"
+
 	_ "github.com/nathants/cli-aws/cmd/aws"
 	_ "github.com/nathants/cli-aws/cmd/codecommit"
 	_ "github.com/nathants/cli-aws/cmd/creds"
@@ -16,19 +20,19 @@ import (
 	_ "github.com/nathants/cli-aws/cmd/s3"
 	_ "github.com/nathants/cli-aws/cmd/sqs"
 	"github.com/nathants/cli-aws/lib"
-	"os"
-	"sort"
 )
 
 func usage() {
 	var fns []string
-	for k := range lib.Commands {
-		fns = append(fns, k)
+	maxLen := 0
+	for fn := range lib.Commands {
+		fns = append(fns, fn)
+		maxLen = lib.Max(maxLen, len(fn))
 	}
 	sort.Strings(fns)
-	fmt.Println("available commands:")
+	fmtStr := "%-" + fmt.Sprint(maxLen) + "s - %s\n"
 	for _, fn := range fns {
-		fmt.Println("", fn)
+		fmt.Printf(fmtStr, fn, strings.Split(strings.Trim(lib.Args[fn].Description(), "\n"), "\n")[0])
 	}
 }
 

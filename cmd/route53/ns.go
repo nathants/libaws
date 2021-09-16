@@ -12,6 +12,7 @@ import (
 
 func init() {
 	lib.Commands["route53-ns"] = route53NS
+lib.Args["route53-ns"] = route53NSArgs{}
 }
 
 type route53NSArgs struct {

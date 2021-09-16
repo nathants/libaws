@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["route53-describe-records"] = route53DescribeRecords
+lib.Args["route53-describe-records"] = route53DescribeRecordsArgs{}
 }
 
 type route53DescribeRecordsArgs struct {

@@ -12,6 +12,7 @@ import (
 
 func init() {
 	lib.Commands["ec2-rm-ami"] = ec2RmAmi
+lib.Args["ec2-rm-ami"] = ec2RmAmiArgs{}
 }
 
 type ec2RmAmiArgs struct {

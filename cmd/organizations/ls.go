@@ -11,6 +11,7 @@ import (
 
 func init() {
 	lib.Commands["organizations-ls"] = organizationsLs
+lib.Args["organizations-ls"] = organizationsLsArgs{}
 }
 
 type organizationsLsArgs struct {

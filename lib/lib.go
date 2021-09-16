@@ -20,6 +20,14 @@ import (
 	"github.com/pkg/term"
 )
 
+var Commands = make(map[string]func())
+
+type ArgsStruct interface {
+	Description() string
+}
+
+var Args = make(map[string]ArgsStruct)
+
 func SignalHandler(cancel func()) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -257,4 +265,11 @@ func shellAt(dir string, format string, a ...interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func Max(i, j int) int {
+	if i > j {
+		return i
+	}
+	return j
 }

@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["sqs-purge"] = sqsPurge
+lib.Args["sqs-purge"] = sqsPurgeArgs{}
 }
 
 type sqsPurgeArgs struct {

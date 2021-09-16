@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["sqs-ls"] = sqsLs
+lib.Args["sqs-ls"] = sqsLsArgs{}
 }
 
 type sqsLsArgs struct {

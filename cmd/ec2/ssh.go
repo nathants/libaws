@@ -14,6 +14,7 @@ import (
 
 func init() {
 	lib.Commands["ec2-ssh"] = ec2Ssh
+lib.Args["ec2-ssh"] = ec2SshArgs{}
 }
 
 type ec2SshArgs struct {

@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["ec2-ls"] = ec2Ls
+lib.Args["ec2-ls"] = ec2LsArgs{}
 }
 
 type ec2LsArgs struct {

@@ -8,6 +8,7 @@ import (
 
 func init() {
 	lib.Commands["route53-rm-record"] = route53DeleteRecord
+lib.Args["route53-rm-record"] = route53DeleteRecordArgs{}
 }
 
 type route53DeleteRecordArgs struct {

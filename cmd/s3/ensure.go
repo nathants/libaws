@@ -9,6 +9,7 @@ import (
 
 func init() {
 	lib.Commands["s3-ensure"] = s3Ensure
+lib.Args["s3-ensure"] = s3EnsureArgs{}
 }
 
 type s3EnsureArgs struct {

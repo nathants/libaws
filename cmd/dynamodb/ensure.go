@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["dynamodb-ensure"] = dynamodbEnsure
+lib.Args["dynamodb-ensure"] = dynamodbEnsureArgs{}
 }
 
 type dynamodbEnsureArgs struct {

@@ -14,6 +14,7 @@ import (
 
 func init() {
 	lib.Commands["dynamodb-ls"] = dynamodbLs
+lib.Args["dynamodb-ls"] = dynamodbLsArgs{}
 }
 
 type dynamodbLsArgs struct {

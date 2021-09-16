@@ -9,6 +9,7 @@ import (
 
 func init() {
 	lib.Commands["ec2-ls-instance-zones"] = ec2LsInstanceZones
+lib.Args["ec2-ls-instance-zones"] = ec2LsInstanceZonesArgs{}
 }
 
 type ec2LsInstanceZonesArgs struct {

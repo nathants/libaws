@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["iam-ls-policies"] = iamLsPolicies
+lib.Args["iam-ls-policies"] = iamLsPoliciesArgs{}
 }
 
 type iamLsPoliciesArgs struct {

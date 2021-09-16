@@ -14,6 +14,7 @@ import (
 
 func init() {
 	lib.Commands["creds-set"] = credsSet
+lib.Args["creds-set"] = credsSetArgs{}
 }
 
 type credsSetArgs struct {
@@ -22,7 +23,7 @@ type credsSetArgs struct {
 
 func (credsSetArgs) Description() string {
 	return `
-    easily switch between aws creds environment variables stored at ~/.aws_creds/
+easily switch between aws creds
 
     add new credentials:
 

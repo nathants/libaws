@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["lambda-arn"] = lambdaArn
+lib.Args["lambda-arn"] = lambdaArnArgs{}
 }
 
 type lambdaArnArgs struct {

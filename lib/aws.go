@@ -9,8 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
-var Commands = make(map[string]func())
-
 var sess *session.Session
 var sessLock sync.RWMutex
 var sessRegional = make(map[string]*session.Session)

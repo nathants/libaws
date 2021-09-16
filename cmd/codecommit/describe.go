@@ -12,6 +12,7 @@ import (
 
 func init() {
 	lib.Commands["codecommit-describe"] = codeCommitDescribe
+lib.Args["codecommit-describe"] = codeCommitDescribeArgs{}
 }
 
 type codeCommitDescribeArgs struct {

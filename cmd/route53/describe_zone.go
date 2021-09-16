@@ -12,6 +12,7 @@ import (
 
 func init() {
 	lib.Commands["route53-describe-zone"] = route53DescribeZone
+lib.Args["route53-describe-zone"] = route53DescribeZoneArgs{}
 }
 
 type route53DescribeZoneArgs struct {

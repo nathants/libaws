@@ -14,6 +14,7 @@ import (
 
 func init() {
 	lib.Commands["creds-ls"] = credsLs
+lib.Args["creds-ls"] = credsLsArgs{}
 }
 
 type credsLsArgs struct {

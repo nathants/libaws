@@ -15,6 +15,7 @@ import (
 
 func init() {
 	lib.Commands["s3-describe"] = s3Describe
+lib.Args["s3-describe"] = s3DescribeArgs{}
 }
 
 type s3DescribeArgs struct {

@@ -10,6 +10,7 @@ import (
 
 func init() {
 	lib.Commands["sqs-stats"] = sqsStats
+lib.Args["sqs-stats"] = sqsStatsArgs{}
 }
 
 type sqsStatsArgs struct {

@@ -12,6 +12,7 @@ import (
 
 func init() {
 	lib.Commands["infra-ls"] = infraLs
+lib.Args["infra-ls"] = infraLsArgs{}
 }
 
 type infraLsArgs struct {
