@@ -51,7 +51,7 @@ def main(path,
 
     if everything or trigger:
 
-        if 'api' in metadata['trigger']:
+        if 'api' in metadata.get('trigger', []):
             try:
                 rest_api_id = aws.api.api_id(name)
             except AssertionError:
@@ -63,7 +63,7 @@ def main(path,
                     client('apigateway').delete_rest_api(restApiId=rest_api_id)
                 print('rm api trigger:', name)
 
-        for trigger in metadata['trigger']:
+        for trigger in metadata.get('trigger', []):
             kind = trigger.split()[0]
             if kind == 's3':
                 with util.exceptions.ignore(client('lambda').exceptions.ResourceNotFoundException):
