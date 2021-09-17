@@ -12,7 +12,7 @@ import (
 
 func init() {
 	lib.Commands["ec2-ls-amis"] = ec2LsAmis
-lib.Args["ec2-ls-amis"] = ec2LsAmisArgs{}
+	lib.Args["ec2-ls-amis"] = ec2LsAmisArgs{}
 }
 
 type ec2LsAmisArgs struct {

@@ -45,7 +45,7 @@ func EventsListRuleTargets(ctx context.Context, ruleName string) ([]*cloudwatche
 	var token *string
 	for {
 		out, err := EventsClient().ListTargetsByRuleWithContext(ctx, &cloudwatchevents.ListTargetsByRuleInput{
-			Rule: aws.String(ruleName),
+			Rule:      aws.String(ruleName),
 			NextToken: token,
 		})
 		if err != nil {

@@ -10,7 +10,7 @@ import (
 
 func init() {
 	lib.Commands["iam-ls-ssh-keys"] = iamLsSSHKeys
-lib.Args["iam-ls-ssh-keys"] = iamLsSSHKeysArgs{}
+	lib.Args["iam-ls-ssh-keys"] = iamLsSSHKeysArgs{}
 }
 
 type iamLsSSHKeysArgs struct {

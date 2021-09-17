@@ -13,7 +13,7 @@ import (
 
 func init() {
 	lib.Commands["ec2-ls-snapshots"] = ec2LsSnapshots
-lib.Args["ec2-ls-snapshots"] = ec2LsSnapshotsArgs{}
+	lib.Args["ec2-ls-snapshots"] = ec2LsSnapshotsArgs{}
 }
 
 type ec2LsSnapshotsArgs struct {

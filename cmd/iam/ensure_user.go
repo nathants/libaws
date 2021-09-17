@@ -11,7 +11,7 @@ import (
 
 func init() {
 	lib.Commands["iam-ensure-user"] = iamEnsureUser
-lib.Args["iam-ensure-user"] = iamEnsureUserArgs{}
+	lib.Args["iam-ensure-user"] = iamEnsureUserArgs{}
 }
 
 type iamEnsureUserArgs struct {

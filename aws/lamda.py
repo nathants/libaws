@@ -7,7 +7,6 @@ import re
 import os
 import shell as sh
 import aws.api
-import aws.sns
 import aws.s3
 import aws.dynamodb
 from aws import client
@@ -66,22 +65,25 @@ def metadata(lines, silent=False):
     meta = {
         's3':           parse_metadata('s3:', lines, silent),
         'dynamodb':     parse_metadata('dynamodb:', lines, silent),
-        'sns':          parse_metadata('sns:', lines, silent),
         'sqs':          parse_metadata('sqs:', lines, silent),
         'policy':       parse_metadata('policy:', lines, silent),
         'allow':        parse_metadata('allow:', lines, silent),
         'include':      parse_metadata('include:', lines, silent),
         'trigger':      parse_metadata('trigger:', lines, silent),
         'require':      [os.path.expanduser(x) for x in parse_metadata('require:', lines, silent)],
-        'conf':         {k: int(v) if v.isdigit() else v for conf in parse_metadata('conf:', lines, silent) for k, v in [conf.split(' ')]},
+        'attr':         parse_metadata('attr:', lines, silent),
     }
-    for key in meta['conf']:
-        assert key in {'concurrency', 'memory', 'timeout'}, f'unknown conf option: "conf: {key}"'
+    for line in meta['attr']:
+        key = line.split()[0]
+        assert key in {'concurrency', 'memory', 'timeout'}, f'unknown attr: "attr: {key}"'
     for trigger in meta['trigger']:
-        assert trigger.split()[0] in {'sns', 'sqs', 's3', 'dynamodb', 'api', 'cloudwatch'}, f'unknown trigger: "{trigger}"'
+        assert trigger.split()[0] in {'sqs', 's3', 'dynamodb', 'api', 'cloudwatch'}, f'unknown trigger: "{trigger}"'
     for line in filter_metadata(lines):
         token = line.split(':')[0]
         assert token in meta, f'unknown configuration comment: "{token}: ..."'
+    for k, v in list(meta.items()):
+        if not len(v):
+            meta.pop(k)
     return meta
 
 def ensure_trigger_s3(name, arn_lambda, metadata, preview):
@@ -171,29 +173,6 @@ def ensure_trigger_cloudwatch(name, arn_lambda, metadata, preview):
                     targets = client('events').list_targets_by_rule(Rule=name)['Targets']
                     assert len(targets) == 1, f'more than one target found for cloudwatch rule: {name} {schedule} {targets}'
                 retry(ensure_only_one_target)()
-
-def ensure_trigger_sns(name, arn_lambda, metadata, preview):
-    triggers = []
-    for trigger in metadata['trigger']:
-        if trigger.split()[0] == 'sns':
-            kind, sns_name, *_ = trigger.split()
-            triggers.append(sns_name)
-    if triggers:
-        stderr('\nensure triggers sns:')
-        for sns in triggers:
-            if preview:
-                stderr(' preview:', sns_name)
-            else:
-                arn_sns = aws.sns.arn(sns_name)
-                subs = (sub for page in client('sns').get_paginator('list_subscriptions_by_topic').paginate(TopicArn=arn_sns) for sub in page['Subscriptions'])
-                for sub in subs:
-                    if sub['Endpoint'] == arn_lambda:
-                        stderr('', sns_name)
-                        break
-                else:
-                    client('sns').subscribe(TopicArn=arn_sns, Protocol='lambda', Endpoint=arn_lambda)
-                    ensure_permission(name, 'sns.amazonaws.com', arn_sns)
-                    stderr('', sns_name)
 
 trigger_dynamodb_attr_shortcuts = {
     'start': 'StartingPosition',
@@ -391,26 +370,6 @@ def ensure_infra_dynamodb(dbs, preview):
         for i, db in enumerate(dbs):
             name, *args = db.split()
             aws.dynamodb.ensure_table(name, *args, yes=True, print_fn=lambda *a: stderr('', *a), preview=preview)
-
-def ensure_infra_sns(snss, preview):
-    not_found = client('sns').exceptions.NotFoundException
-    if snss:
-        stderr('\nensure infra sns:')
-        for sns in snss:
-            name, *attrs = sns.split()
-            if preview:
-                stderr(' preview:', name)
-            else:
-                attrs = {k: int(v) if v.isdigit() else v for attr in attrs for k, v in [attr.split('=')]}
-                try:
-                    sns_attrs = client('sns').get_topic_attributes(TopicArn=aws.sns.arn(name))
-                except not_found:
-                    client('sns').create_topic(Name=sns)
-                    stderr('', name)
-                else:
-                    for k, v in attrs.items():
-                        assert sns_attrs[k] == v, f'sns attr mismatch {k} {v} != {sns_attrs[k]}'
-                    stderr('', name)
 
 def ensure_infra_sqs(sqss, preview):
     assert False, 'use dotted dict and move to aws'

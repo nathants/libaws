@@ -88,8 +88,6 @@ now when you tab complete any cli that takes *selectors, you will see the result
 
 - [lambda-scheduled](https://github.com/nathants/cli-aws/blob/master/examples/lambda/scheduled.py)
 
-- [lambda-sns](https://github.com/nathants/cli-aws/blob/master/examples/lambda/sns.py)
-
 ## test
 
 ```

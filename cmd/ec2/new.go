@@ -12,7 +12,7 @@ import (
 
 func init() {
 	lib.Commands["ec2-new"] = ec2New
-lib.Args["ec2-new"] = ec2NewArgs{}
+	lib.Args["ec2-new"] = ec2NewArgs{}
 }
 
 type ec2NewArgs struct {

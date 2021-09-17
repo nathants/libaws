@@ -10,7 +10,7 @@ import (
 
 func init() {
 	lib.Commands["organizations-ensure"] = organizationsEnsure
-lib.Args["organizations-ensure"] = organizationsEnsureArgs{}
+	lib.Args["organizations-ensure"] = organizationsEnsureArgs{}
 }
 
 type organizationsEnsureArgs struct {

@@ -11,7 +11,7 @@ import (
 
 func init() {
 	lib.Commands["organizations-ls"] = organizationsLs
-lib.Args["organizations-ls"] = organizationsLsArgs{}
+	lib.Args["organizations-ls"] = organizationsLsArgs{}
 }
 
 type organizationsLsArgs struct {
@@ -32,7 +32,7 @@ func organizationsLs() {
 			NextToken: token,
 		})
 		if err != nil {
-		    lib.Logger.Fatal("error: ", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		accounts = append(accounts, out.Accounts...)
 		if out.NextToken == nil {

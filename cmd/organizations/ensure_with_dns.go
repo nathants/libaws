@@ -13,7 +13,7 @@ import (
 
 func init() {
 	lib.Commands["organizations-ensure-with-dns"] = organizationsEnsureWithDns
-lib.Args["organizations-ensure-with-dns"] = organizationsEnsureWithDnsArgs{}
+	lib.Args["organizations-ensure-with-dns"] = organizationsEnsureWithDnsArgs{}
 }
 
 type organizationsEnsureWithDnsArgs struct {

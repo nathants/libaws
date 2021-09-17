@@ -16,7 +16,7 @@ import (
 
 func init() {
 	lib.Commands["s3-ls"] = s3Ls
-lib.Args["s3-ls"] = s3LsArgs{}
+	lib.Args["s3-ls"] = s3LsArgs{}
 }
 
 type s3LsArgs struct {

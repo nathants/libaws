@@ -13,7 +13,7 @@ import (
 
 func init() {
 	lib.Commands["creds-add"] = credsAdd
-lib.Args["creds-add"] = credsAddArgs{}
+	lib.Args["creds-add"] = credsAddArgs{}
 }
 
 type credsAddArgs struct {

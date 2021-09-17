@@ -8,7 +8,7 @@ import (
 
 func init() {
 	lib.Commands["route53-ensure-zone"] = route53EnsureZone
-lib.Args["route53-ensure-zone"] = route53EnsureZoneArgs{}
+	lib.Args["route53-ensure-zone"] = route53EnsureZoneArgs{}
 }
 
 type route53EnsureZoneArgs struct {

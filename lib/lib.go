@@ -18,6 +18,7 @@ import (
 	"github.com/avast/retry-go"
 	"github.com/mattn/go-isatty"
 	"github.com/pkg/term"
+	"github.com/tidwall/pretty"
 )
 
 var Commands = make(map[string]func())
@@ -156,6 +157,11 @@ func color(code int) func(string) string {
 	}
 }
 
+func ArnToInfraName(arn string) string {
+	// arn:aws:dynamodb:region:account:name
+	return strings.Split(arn, ":")[2]
+}
+
 var (
 	Red     = color(31)
 	Green   = color(32)
@@ -272,4 +278,30 @@ func Max(i, j int) int {
 		return i
 	}
 	return j
+}
+
+var PrettyStyle = &pretty.Style{
+	Key:    [2]string{"\033[31m", "\033[0m"},
+	String: [2]string{"\033[32m", "\033[0m"},
+	Number: [2]string{"\033[33m", "\033[0m"},
+	True:   [2]string{"\033[34m", "\033[0m"},
+	False:  [2]string{"\033[35m", "\033[0m"},
+	Null:   [2]string{"\033[36m", "\033[0m"},
+	Escape: [2]string{"\033[37m", "\033[0m"},
+	Append: func(dst []byte, c byte) []byte {
+		hexp := func(p byte) byte {
+			switch {
+			case p < 10:
+				return p + '0'
+			default:
+				return (p - 10) + 'a'
+			}
+		}
+		if c < ' ' && (c != '\r' && c != '\n' && c != '\t' && c != '\v') {
+			dst = append(dst, "\\u00"...)
+			dst = append(dst, hexp((c>>4)&0xF))
+			return append(dst, hexp((c)&0xF))
+		}
+		return append(dst, c)
+	},
 }

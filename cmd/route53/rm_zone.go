@@ -8,7 +8,7 @@ import (
 
 func init() {
 	lib.Commands["route53-rm-zone"] = route53DeleteZone
-lib.Args["route53-rm-zone"] = route53DeleteZoneArgs{}
+	lib.Args["route53-rm-zone"] = route53DeleteZoneArgs{}
 }
 
 type route53DeleteZoneArgs struct {

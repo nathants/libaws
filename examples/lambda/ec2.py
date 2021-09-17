@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 #
-# conf: concurrency 0
-# conf: memory 1024
-# conf: timeout 900
+# attr: concurrency 0
+# attr: memory 1024
+# attr: timeout 900
 # require: git+https://github.com/nathants/py-util
 # require: git+https://github.com/nathants/py-pool
 # require: git+https://github.com/nathants/py-shell

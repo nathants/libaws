@@ -37,39 +37,60 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
             arn_lambda = 'arn:preview'
         else:
             aws.lamda.update_zip(path)
-            aws.lamda.include_in_zip(path, metadata['include'], False)
+            if 'include' in metadata:
+                aws.lamda.include_in_zip(path, metadata['include'], False)
             zipfile = aws.lamda.zip_bytes(path)
             not_found = aws.client('lambda').exceptions.ResourceNotFoundException
             arn_lambda = retry(aws.client('lambda').update_function_code, not_found, silent=True)(FunctionName=name, ZipFile=zipfile)['FunctionArn']
         stderr('\nupdated:')
         stderr('', arn_lambda)
     else:
-        timeout = metadata['conf'].get('timeout', 900)
-        memory = metadata['conf'].get('memory', 128)
-        concurrency = metadata['conf'].get('concurrency', 0)
+        attrs = {
+            k: int(v)
+            for attr in metadata.get('attr', [])
+            for k, v in [attr.split()]
+        }
+        timeout = attrs.get('timeout', 900)
+        memory = attrs.get('memory', 128)
+        concurrency = attrs.get('concurrency', 0)
         for var in env_vars:
             assert '=' in var, f'bad env-var, should be: KEY=VALUE, not: {var}'
         if not yes and not preview:
             stderr('\nproceed? y/n ')
             assert sh.getch() == 'y'
+
         aws.lamda.ensure_infra_log_group(name, preview)
-        aws.lamda.ensure_infra_s3(metadata['s3'], preview)
+
+        if 's3' in metadata:
+            aws.lamda.ensure_infra_s3(metadata['s3'], preview)
         # rm_extra_s3
-        aws.lamda.ensure_infra_dynamodb(metadata['dynamodb'], preview)
+
+        if 'dynamodb' in metadata:
+            aws.lamda.ensure_infra_dynamodb(metadata['dynamodb'], preview)
         # rm_extra_dynamodb
-        aws.lamda.ensure_infra_sns(metadata['sns'], preview)
-        # rm_extra_sns
-        # aws.lamda.ensure_infra_sqs(metadata['sqs'], preview)
+
+        # if 'sqs' in metadata:
+            # aws.lamda.ensure_infra_sqs(metadata['sqs'], preview)
         # rm_extra_sqs
+
         aws.iam.ensure_role(name, 'lambda', preview)
         arn_role = aws.iam.role_arn(name, 'lambda')
-        aws.iam.ensure_policies(name, metadata['policy'], preview)
-        aws.iam.rm_extra_policies(name, metadata['policy'], preview)
-        aws.iam.ensure_allows(name, metadata['allow'], preview)
-        aws.iam.rm_extra_allows(name, metadata['allow'], preview)
-        aws.lamda.create_zip(path, metadata['require'], preview)
-        aws.lamda.include_in_zip(path, metadata['include'], preview)
+
+        if 'policy' in metadata:
+            aws.iam.ensure_policies(name, metadata['policy'], preview)
+        aws.iam.rm_extra_policies(name, metadata.get('policy', []), preview)
+
+        if 'allow' in metadata:
+            aws.iam.ensure_allows(name, metadata['allow'], preview)
+        aws.iam.rm_extra_allows(name, metadata.get('allow', []), preview)
+
+        aws.lamda.create_zip(path, metadata.get('require', []), preview)
+
+        if 'include' in metadata:
+            aws.lamda.include_in_zip(path, metadata['include'], preview)
+
         zipfile = b'' if preview else aws.lamda.zip_bytes(path)
+
         kw = {'FunctionName': name,
               'Runtime': runtime,
               'Role': arn_role,
@@ -77,6 +98,7 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
               'MemorySize': memory,
               'Environment': {'Variables': {k: v for var in env_vars for k, v in [var.split('=', 1)]}},
               'Handler': os.path.basename(path).split('.py')[0] + '.main'}
+
         if kms_key:
             if not kms_key.startswith('arn:'):
                 assert not kms_key.startswith('/'), f'kms key alias should not start with /: {kms_key}'
@@ -92,6 +114,7 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
             aws.kms.ensure_key_allows_role(kw['KMSKeyArn'], arn_role, preview)
             if not no_encrypt:
                 kw['Environment']['Variables'] = {k: aws.kms.encrypt(kw['KMSKeyArn'], v) for k, v in kw['Environment']['Variables'].items()}
+
         not_found = aws.client('lambda').exceptions.ResourceNotFoundException
         if preview:
             arn_lambda = 'arn:preview'
@@ -103,9 +126,6 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
 
         aws.lamda.ensure_trigger_dynamodb(name, arn_lambda, metadata, preview)
         # TODO rm_extra_triggers_and_permissions_dynamodb
-
-        aws.lamda.ensure_trigger_sns(name, arn_lambda, metadata, preview)
-        # TODO rm_extra_trigger_and_permissions_sns
 
         aws.lamda.ensure_trigger_cloudwatch(name, arn_lambda, metadata, preview)
         # TODO rm_extra_trigger_and_permissions_cloudwatch

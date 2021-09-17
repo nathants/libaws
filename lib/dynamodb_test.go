@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"time"
 	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
@@ -10,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestAttrSplitOnce(t *testing.T) {
@@ -331,7 +331,6 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 	}
 }
 
-
 func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 	ctx := context.Background()
 	name := "test-table-" + uuid.NewV4().String()
@@ -456,7 +455,6 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		return
 	}
 }
-
 
 func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 	ctx := context.Background()
@@ -1111,7 +1109,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 			return
 		}
 		time.Sleep(1 * time.Second)
-		count ++
+		count++
 	}
 }
 

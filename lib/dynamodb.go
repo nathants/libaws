@@ -964,6 +964,11 @@ func DynamoDBWaitForReady(ctx context.Context, tableName string) error {
 	}
 }
 
+func DynamoDBStreamArnToTableName(arn string) string {
+	// arn:aws:dynamodb:region:accountID:table/TableName/stream/timestamp
+	return strings.Split(Last(strings.SplitN(arn, ":", 6)), "/")[1]
+}
+
 func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 	var expectedErr error
 	var streamArn string

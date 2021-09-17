@@ -12,7 +12,7 @@ import (
 
 func init() {
 	lib.Commands["ecr-rm"] = ecrRm
-lib.Args["ecr-rm"] = ecrRmArgs{}
+	lib.Args["ecr-rm"] = ecrRmArgs{}
 }
 
 type ecrRmArgs struct {

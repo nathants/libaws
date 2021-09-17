@@ -9,7 +9,7 @@ import (
 
 func init() {
 	lib.Commands["sqs-ensure"] = sqsEnsure
-lib.Args["sqs-ensure"] = sqsEnsureArgs{}
+	lib.Args["sqs-ensure"] = sqsEnsureArgs{}
 }
 
 type sqsEnsureArgs struct {
@@ -42,10 +42,10 @@ func sqsEnsure() {
 	ctx := context.Background()
 	input, err := lib.SQSEnsureInput(args.Name, args.Attrs)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	err = lib.SQSEnsure(ctx, input, args.Preview)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }

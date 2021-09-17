@@ -14,7 +14,7 @@ import (
 
 func init() {
 	lib.Commands["codecommit-ensure"] = codeCommitEnsure
-lib.Args["codecommit-ensure"] = codeCommitEnsureArgs{}
+	lib.Args["codecommit-ensure"] = codeCommitEnsureArgs{}
 }
 
 type codeCommitEnsureArgs struct {

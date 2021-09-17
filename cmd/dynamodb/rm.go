@@ -9,7 +9,7 @@ import (
 
 func init() {
 	lib.Commands["dynamodb-rm"] = dynamodbRm
-lib.Args["dynamodb-rm"] = dynamodbRmArgs{}
+	lib.Args["dynamodb-rm"] = dynamodbRmArgs{}
 }
 
 type dynamodbRmArgs struct {

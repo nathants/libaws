@@ -7,13 +7,11 @@ from aws import client
 import aws
 import aws.lamda
 import aws.dynamodb
-import aws.sns
 import aws.api
 import aws.s3
 
 
 @argh.arg('-s', '--s3')
-@argh.arg('-n', '--sns')
 @argh.arg('-q', '--sqs')
 @argh.arg('-p', '--preview')
 def main(path,
@@ -25,7 +23,6 @@ def main(path,
          log=False,
          s3=False,
          dynamodb=False,
-         sns=False,
          sqs=False,
          yes=False):
     """
@@ -35,7 +32,7 @@ def main(path,
     """
 
     # preview everything by default
-    if not preview and not any([everything, code, role, trigger, log, s3, dynamodb, sns, sqs]):
+    if not preview and not any([everything, code, role, trigger, log, s3, dynamodb, sqs]):
         preview = True
         everything = True
 
@@ -94,26 +91,6 @@ def main(path,
                         client('events').remove_targets(Rule=name, Ids=['1'])
                         client('events').delete_rule(Name=name)
                         print('rm cloudwatch trigger:', schedule)
-
-            elif kind == 'sns':
-                _, sns_name = trigger.split()
-                arn_sns = aws.sns.arn(sns_name)
-                try:
-                    arn_lambda = aws.lamda.arn(name)
-                except client('lambda').exceptions.ResourceNotFoundException:
-                    pass
-                else:
-                    subs = (sub
-                            for page in client('sns').get_paginator('list_subscriptions_by_topic').paginate(TopicArn=arn_sns)
-                            for sub in page['Subscriptions'])
-                    for sub in subs:
-                        if sub['Endpoint'] == arn_lambda:
-                            if preview:
-                                print('preview:', end=' ')
-                            else:
-                                client('sns').unsubscribe(SubscriptionArn=sub['SubscriptionArn'])
-                            print('rm sns trigger:', sns_name)
-                            break
 
             elif kind == 'dynamodb':
                 _, table_name, *_ = trigger.split()
@@ -175,33 +152,19 @@ def main(path,
             print('rm log:', log)
 
     if everything or s3:
-        for bucket in metadata['s3']:
+        for bucket in metadata.get('s3', []):
             if preview:
                 print('preview: rm bucket:', bucket)
             else:
                 aws.s3.rm_bucket(bucket)
 
     if everything or dynamodb:
-        for db in metadata['dynamodb']:
+        for db in metadata.get('dynamodb', []):
             table, *_ = db.split()
             if preview:
                 print('preview: rm dynamodb:', table)
             else:
                 aws.dynamodb.rm_table(table)
-
-    if everything or sns:
-        for sns in metadata['sns']:
-            sns_arn = aws.sns.arn(sns)
-            if preview:
-                print('preview:', end=' ')
-            else:
-                try:
-                    client('sns').get_topic_attributes(TopicArn=sns_arn)
-                except client('sns').exceptions.NotFoundException:
-                    pass
-                else:
-                    client('sns').delete_topic(TopicArn=sns_arn)
-                    print('rm sns:', sns)
 
     # if everything or sqs:
         # for sqs in metadata['sqs']:

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 #
-# conf: concurrency 0
-# conf: memory 128
-# conf: timeout 60
+# attr: concurrency 0
+# attr: memory 128
+# attr: timeout 60
 # policy: AWSLambdaBasicExecutionRole
 # s3: ${bucket}
 # trigger: s3 ${bucket}

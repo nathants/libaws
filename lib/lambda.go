@@ -22,16 +22,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
 	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/sns"
 )
 
 const (
 	//
-	lambdaConfConcurrency = "concurrency"
-	lambdaConfMemory      = "memory"
-	lambdaConfTimeout     = "timeout"
+	lambdaAttrConcurrency = "concurrency"
+	lambdaAttrMemory      = "memory"
+	lambdaAttrTimeout     = "timeout"
 	//
-	lambdaTriggerSNS        = "sns"
 	lambdaTriggerSQS        = "sqs"
 	lambdaTrigerS3          = "s3"
 	lambdaTriggerDynamoDB   = "dynamodb"
@@ -40,14 +38,13 @@ const (
 	//
 	lambdaMetaS3       = "s3"
 	lambdaMetaDynamoDB = "dynamodb"
-	lambdaMetaSNS      = "sns"
 	lambdaMetaSQS      = "sqs"
 	lambdaMetaPolicy   = "policy"
 	lambdaMetaAllow    = "allow"
 	lambdaMetaInclude  = "include"
 	lambdaMetaTrigger  = "trigger"
 	lambdaMetaRequire  = "require"
-	lambdaMetaConf     = "conf"
+	lambdaMetaAttr     = "attr"
 )
 
 var lambdaClient *lambda.Lambda
@@ -189,14 +186,13 @@ func lambdaParseMetadata(token string, lines []string, silent bool) ([]string, e
 type LambdaMetadata struct {
 	S3       []string
 	DynamoDB []string
-	Sns      []string
 	Sqs      []string
 	Policy   []string
 	Allow    []string
 	Include  []string
 	Trigger  []string
 	Require  []string
-	Conf     []string
+	Attr     []string
 }
 
 func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
@@ -208,11 +204,6 @@ func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
 		return nil, err
 	}
 	meta.DynamoDB, err = lambdaParseMetadata(lambdaMetaDynamoDB, lines, silent)
-	if err != nil {
-		Logger.Println("error:", err)
-		return nil, err
-	}
-	meta.Sns, err = lambdaParseMetadata(lambdaMetaSNS, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -247,17 +238,17 @@ func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Conf, err = lambdaParseMetadata(lambdaMetaConf, lines, silent)
+	meta.Attr, err = lambdaParseMetadata(lambdaMetaAttr, lines, silent)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	for _, conf := range meta.Conf {
+	for _, conf := range meta.Attr {
 		parts := strings.SplitN(conf, " ", 2)
 		k := parts[0]
 		v := parts[1]
-		if !Contains([]string{lambdaConfConcurrency, lambdaConfMemory, lambdaConfTimeout}, k) {
-			err := fmt.Errorf("unknown conf: %s", k)
+		if !Contains([]string{lambdaAttrConcurrency, lambdaAttrMemory, lambdaAttrTimeout}, k) {
+			err := fmt.Errorf("unknown attr: %s", k)
 			Logger.Println("error:", err)
 			return nil, err
 		}
@@ -268,7 +259,7 @@ func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
 		}
 	}
 	for _, trigger := range meta.Trigger {
-		if !Contains([]string{lambdaTriggerSNS, lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerCloudwatch}, trigger) {
+		if !Contains([]string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerCloudwatch}, trigger) {
 			err := fmt.Errorf("unknown trigger: %s", trigger)
 			Logger.Println("error:", err)
 			return nil, err
@@ -276,7 +267,7 @@ func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
 	}
 	for _, line := range lambdaFilterMetadata(lines) {
 		token := strings.SplitN(line, ":", 2)[0]
-		if !Contains([]string{lambdaMetaS3, lambdaMetaDynamoDB, lambdaMetaSNS, lambdaMetaSQS, lambdaMetaPolicy, lambdaMetaAllow, lambdaMetaInclude, lambdaMetaTrigger, lambdaMetaRequire, lambdaMetaConf}, token) {
+		if !Contains([]string{lambdaMetaS3, lambdaMetaDynamoDB, lambdaMetaSQS, lambdaMetaPolicy, lambdaMetaAllow, lambdaMetaInclude, lambdaMetaTrigger, lambdaMetaRequire, lambdaMetaAttr}, token) {
 			err := fmt.Errorf("unknown configuration comment: %s", line)
 			Logger.Println("error:", err)
 			return nil, err
@@ -446,6 +437,12 @@ func LambdaApiUriToLambdaName(apiUri string) string {
 	// "arn:aws:apigateway:%s:lambda:path/%s/functions/arn:aws:lambda:%s:%s:function:%s/invocations",
 	name := Last(strings.Split(apiUri, ":"))
 	name = strings.Split(name, "/")[0]
+	return name
+}
+
+func LambdaArnToLambdaName(arn string) string {
+	// "arn:aws:lambda:%s:%s:function:%s"
+	name := Last(strings.Split(arn, ":"))
 	return name
 }
 
@@ -728,59 +725,6 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 	return nil
 }
 
-func LambdaEnsureTriggerSns(ctx context.Context, name, arnLambda string, meta LambdaMetadata, preview bool) error {
-	var triggers []string
-	for _, trigger := range meta.Trigger {
-		parts := strings.Split(trigger, " ")
-		kind := parts[0]
-		if kind == lambdaTriggerSNS {
-			snsName := parts[1]
-			triggers = append(triggers, snsName)
-		}
-	}
-	if len(triggers) > 0 {
-		for _, snsName := range triggers {
-			arnSNS, err := SNSArn(ctx, snsName)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			subscriptions, err := SNSListSubscriptions(ctx, arnSNS)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			found := false
-			for _, sub := range subscriptions {
-				if *sub.Endpoint == arnLambda {
-					found = true
-					break
-				}
-			}
-			if !found {
-				if !preview {
-					_, err := SNSClient().SubscribeWithContext(ctx, &sns.SubscribeInput{
-						TopicArn: aws.String(arnSNS),
-						Endpoint: aws.String(arnLambda),
-						Protocol: aws.String("lambda"),
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-				}
-				Logger.Println(PreviewString(preview)+"create sns trigger:", arnLambda, arnSNS)
-			}
-			err = lambdaEnsurePermission(ctx, name, "sns.amazonaws.com", arnSNS, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func lambdaDynamoDBTriggerAttrShortcut(s string) string {
 	s2, ok := map[string]string{
 		"batch":    "BatchSize",
@@ -871,9 +815,11 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, name, arnLambda string, me
 			count := 0
 			var found *lambda.EventSourceMappingConfiguration
 			for _, mapping := range eventSourceMappings {
-				if *mapping.EventSourceArn == streamArn && *mapping.FunctionArn == arnLambda {
-					found = mapping
-					count++
+				if ArnToInfraName(*mapping.EventSourceArn) == lambdaTriggerDynamoDB {
+					if DynamoDBStreamArnToTableName(*mapping.EventSourceArn) == DynamoDBStreamArnToTableName(streamArn) && *mapping.FunctionArn == arnLambda {
+						found = mapping
+						count++
+					}
 				}
 			}
 			switch count {

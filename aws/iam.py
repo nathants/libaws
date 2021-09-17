@@ -100,7 +100,7 @@ def _policy_name(allow):
     action, resource = allow.split()
     action = action.replace('*', 'ALL')
     resource = resource.replace('*', 'ALL')
-    resource = ':'.join([x.replace('/', '__') for x in resource.split(':') if x and x not in ['arn', 'aws', 's3', 'dynamodb', 'sqs', 'sns']]) # arn:aws:service:account:region:target
+    resource = ':'.join([x.replace('/', '__') for x in resource.split(':') if x and x not in ['arn', 'aws', 's3', 'dynamodb', 'sqs']]) # arn:aws:service:account:region:target
     return f'{action}__{resource}'.replace(':', '_').rstrip('_')
 
 def rm_extra_policies(name, policies, preview):

@@ -10,7 +10,7 @@ import (
 
 func init() {
 	lib.Commands["ec2-rm-snapshot"] = ec2RmSnapshot
-lib.Args["ec2-rm-snapshot"] = ec2RmSnapshotArgs{}
+	lib.Args["ec2-rm-snapshot"] = ec2RmSnapshotArgs{}
 }
 
 type ec2RmSnapshotArgs struct {

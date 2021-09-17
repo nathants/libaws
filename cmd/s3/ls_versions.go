@@ -17,7 +17,7 @@ import (
 
 func init() {
 	lib.Commands["s3-ls-versions"] = s3LsVersions
-lib.Args["s3-ls-versions"] = s3LsVersionsArgs{}
+	lib.Args["s3-ls-versions"] = s3LsVersionsArgs{}
 }
 
 type s3LsVersionsArgs struct {

@@ -9,7 +9,7 @@ import (
 
 func init() {
 	lib.Commands["s3-ensure"] = s3Ensure
-lib.Args["s3-ensure"] = s3EnsureArgs{}
+	lib.Args["s3-ensure"] = s3EnsureArgs{}
 }
 
 type s3EnsureArgs struct {
@@ -29,6 +29,7 @@ optional attrs:
  - acl=VALUE (values = "public" | "private", default = "private")
  - versioning=VALUE (values = "true" | "false", default = "false")
  - encryption=VALUE (values = "true" | "false", default = "true")
+ - metrics=VALUE    (values = "true" | "false", default = "true")
 `
 }
 

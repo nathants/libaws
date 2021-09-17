@@ -10,7 +10,7 @@ import (
 
 func init() {
 	lib.Commands["aws-user"] = user
-lib.Args["aws-user"] = userArgs{}
+	lib.Args["aws-user"] = userArgs{}
 }
 
 type userArgs struct {

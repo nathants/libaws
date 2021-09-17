@@ -10,7 +10,7 @@ import (
 
 func init() {
 	lib.Commands["codecommit-ls"] = codeCommitLs
-lib.Args["codecommit-ls"] = codeCommitLsArgs{}
+	lib.Args["codecommit-ls"] = codeCommitLsArgs{}
 }
 
 type codeCommitLsArgs struct {

@@ -3,84 +3,113 @@ package lib
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/apigateway"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
+type InfraApi struct{}
+
+type InfraDynamoDB struct {
+	Keys  []string `json:"keys,omitempty"`
+	Attrs []string `json:"attrs,omitempty"`
+}
+
+type InfraEC2 struct {
+	Attrs []string `json:"attrs,omitempty"`
+}
+
+type InfraLambda struct {
+	Policies []string `json:"policies,omitempty"`
+	Allows   []string `json:"allows,omitempty"`
+	Triggers []string `json:"triggers,omitempty"`
+	Attrs    []string `json:"attrs,omitempty"`
+}
+
+type InfraSQS struct {
+	Attrs []string `json:"attrs,omitempty"`
+}
+
+type InfraS3 struct {
+	Attrs []string `json:"attrs,omitempty"`
+}
+
 type Infra struct {
-	Account  map[string]string
-	Api      map[string]string
-	DynamoDB map[string]string
-	EC2      map[string]string
-	SQS      map[string]string
-	Lambda   map[string]string
-	S3       map[string]string
+	Account  string                   `json:"account"`
+	Api      map[string]InfraApi      `json:"api,omitempty"`
+	DynamoDB map[string]InfraDynamoDB `json:"dynamodb,omitempty"`
+	EC2      map[string]InfraEC2      `json:"ec2,omitempty"`
+	Lambda   map[string]InfraLambda   `json:"lambda,omitempty"`
+	SQS      map[string]InfraSQS      `json:"sqs,omitempty"`
+	S3       map[string]InfraS3       `json:"s3,omitempty"`
 }
 
-type infraLambdaTrigger struct {
-	lambdaName   string
-	triggerType  string
-	triggerAttrs []string
+type InfraLambdaTrigger struct {
+	LambdaName   string
+	TriggerType  string
+	TriggerAttrs []string
 }
 
-func InfraList(ctx context.Context) (*Infra, error) {
+func InfraList(ctx context.Context, filter string) (*Infra, error) {
 	var err error
-	infra := Infra{}
+	infra := &Infra{}
 	account, err := StsAccount(ctx)
 	if err != nil {
 		Logger.Fatal("error: ", err)
 	}
-	infra.Account = map[string]string{account: ""}
+	infra.Account = account
+
 	errs := make(chan error)
 	count := 0
-	triggersChan := make(chan infraLambdaTrigger, 1024)
-	//
+	triggersChan := make(chan InfraLambdaTrigger, 1024)
+
 	run := func(fn func()) {
 		go fn()
 		count++
 	}
-	//
+
 	run(func() {
 		infra.Api, err = InfraListApi(ctx, triggersChan)
 		errs <- err
 	})
-	//
+
 	run(func() {
-		infra.DynamoDB, err = InfraListDynamoDB(ctx, triggersChan)
+		infra.DynamoDB, err = InfraListDynamoDB(ctx)
 		errs <- err
 	})
-	//
+
 	run(func() {
 		infra.EC2, err = InfraListEC2(ctx)
 		errs <- err
 	})
-	//
+
 	run(func() {
-		infra.SQS, err = InfraListSQS(ctx, triggersChan)
+		infra.SQS, err = InfraListSQS(ctx)
 		errs <- err
 	})
-	//
+
 	run(func() {
 		infra.S3, err = InfraListS3(ctx, triggersChan)
 		errs <- err
 	})
-	//
+
 	run(func() {
 		_, err = InfraListCloudwatch(ctx, triggersChan)
 		errs <- err
 	})
-	//
+
 	lambdaErr := make(chan error)
 	go func() {
-		infra.Lambda, err = InfraListLambda(ctx, triggersChan)
+		infra.Lambda, err = InfraListLambda(ctx, triggersChan, filter)
 		lambdaErr <- err
 	}()
-	//
+
 	for i := 0; i < count; i++ {
 		err := <-errs
 		if err != nil {
@@ -88,22 +117,24 @@ func InfraList(ctx context.Context) (*Infra, error) {
 		}
 	}
 	close(triggersChan)
-	//
+
 	err = <-lambdaErr
 	if err != nil {
 		Logger.Fatal("error: ", err)
 	}
-	//
-	return &infra, nil
+
+	return infra, nil
 }
 
-func InfraListCloudwatch(ctx context.Context, triggersChan chan<- infraLambdaTrigger) (map[string]string, error) {
+func InfraListCloudwatch(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]string, error) {
+	Logger.Println("cloudwatch list rules")
 	rules, err := EventsListRules(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
 	for _, rule := range rules {
+		Logger.Println("cloudwatch list targets for for rule:", *rule.Name)
 		targets, err := EventsListRuleTargets(ctx, *rule.Name)
 		if err != nil {
 			Logger.Println("error:", err)
@@ -111,10 +142,10 @@ func InfraListCloudwatch(ctx context.Context, triggersChan chan<- infraLambdaTri
 		}
 		for _, target := range targets {
 			if strings.HasPrefix(*target.Arn, "arn:aws:lambda:") {
-				triggersChan <- infraLambdaTrigger{
-					lambdaName:   Last(strings.Split(*target.Arn, ":")),
-					triggerType:  lambdaTriggerCloudwatch,
-					triggerAttrs: []string{*rule.ScheduleExpression},
+				triggersChan <- InfraLambdaTrigger{
+					LambdaName:   Last(strings.Split(*target.Arn, ":")),
+					TriggerType:  lambdaTriggerCloudwatch,
+					TriggerAttrs: []string{*rule.ScheduleExpression},
 				}
 			}
 		}
@@ -122,25 +153,32 @@ func InfraListCloudwatch(ctx context.Context, triggersChan chan<- infraLambdaTri
 	return nil, nil
 }
 
-func InfraListLambda(ctx context.Context, triggersChan <-chan infraLambdaTrigger) (map[string]string, error) {
-	fns, err := LambdaListFunctions(ctx)
+func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger, filter string) (map[string]InfraLambda, error) {
+	Logger.Println("lambda list functions")
+	allFns, err := LambdaListFunctions(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	triggers := make(map[string][]infraLambdaTrigger)
-	for trigger := range triggersChan {
-		triggers[trigger.lambdaName] = append(triggers[trigger.lambdaName], trigger)
+	var fns []*lambda.FunctionConfiguration
+	for _, fn := range allFns {
+		if filter != "" && !strings.Contains(*fn.FunctionName, filter) {
+			continue
+		}
+		fns = append(fns, fn)
 	}
-	res := make(map[string]string)
+	triggers := make(map[string][]InfraLambdaTrigger)
+	res := make(map[string]InfraLambda)
 	for _, fn := range fns {
-		parts := []string{}
+		l := InfraLambda{}
 		if *fn.MemorySize != 128 { // default
-			parts = append(parts, fmt.Sprintf("conf=memory::%d", *fn.MemorySize))
+			l.Attrs = append(l.Attrs, fmt.Sprintf("memory %d", *fn.MemorySize))
 		}
 		if *fn.Timeout != 3 { // default
-			parts = append(parts, fmt.Sprintf("conf=timeout::%d", *fn.Timeout))
+			l.Attrs = append(l.Attrs, fmt.Sprintf("timeout %d", *fn.Timeout))
 		}
+		//
+		Logger.Println("lambda get concurrency for:", *fn.FunctionName)
 		out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
 			FunctionName: aws.String(*fn.FunctionName),
 		})
@@ -149,53 +187,104 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan infraLambdaTrigger
 			return nil, err
 		}
 		if out.ReservedConcurrentExecutions != nil {
-			parts = append(parts, fmt.Sprintf("conf=concurrency::%d", *out.ReservedConcurrentExecutions))
-		}
-		ts, ok := triggers[*fn.FunctionName]
-		if ok {
-			for _, trigger := range ts {
-				val := fmt.Sprintf("trigger=%s", trigger.triggerType)
-				if len(trigger.triggerAttrs) > 0 {
-					val += "::" + strings.ReplaceAll(strings.Join(trigger.triggerAttrs, "::"), " ", "::")
-				}
-				parts = append(parts, val)
-			}
+			l.Attrs = append(l.Attrs, fmt.Sprintf("concurrency %d", *out.ReservedConcurrentExecutions))
 		}
 		//
 		roleName := Last(strings.Split(*fn.Role, "/"))
 		//
+		Logger.Println("lambda list roles for:", *fn.FunctionName)
 		policies, err := IamListRolePolicies(ctx, roleName)
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 		for _, policy := range policies {
-			parts = append(parts, fmt.Sprintf("policy=%s", *policy.PolicyName))
+			l.Policies = append(l.Policies, *policy.PolicyName)
 		}
 		//
+		Logger.Println("lambda list allows for:", *fn.FunctionName)
 		allows, err := IamListRoleAllows(ctx, roleName)
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 		for _, allow := range allows {
-			parts = append(parts, strings.ReplaceAll(fmt.Sprintf("allow=%s", allow), " ", "::"))
+			l.Allows = append(l.Allows, allow.String())
 		}
 		//
-		res[*fn.FunctionName] = strings.Join(parts, " ")
+		var marker *string
+		for {
+			out, err := LambdaClient().ListEventSourceMappingsWithContext(ctx, &lambda.ListEventSourceMappingsInput{
+				FunctionName: fn.FunctionArn,
+				Marker:       marker,
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			for _, mapping := range out.EventSourceMappings {
+				switch ArnToInfraName(*mapping.EventSourceArn) {
+				case lambdaTriggerDynamoDB:
+					triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], InfraLambdaTrigger{
+						LambdaName:  *fn.FunctionName,
+						TriggerType: ArnToInfraName(*mapping.EventSourceArn),
+						TriggerAttrs: []string{
+							DynamoDBStreamArnToTableName(*mapping.EventSourceArn),
+							fmt.Sprintf("batch=%d", *mapping.BatchSize),
+							fmt.Sprintf("parallel=%d", *mapping.ParallelizationFactor),
+							fmt.Sprintf("retry=%d", *mapping.MaximumRetryAttempts),
+							fmt.Sprintf("start=%s", *mapping.StartingPosition),
+							fmt.Sprintf("window=%d", *mapping.MaximumBatchingWindowInSeconds),
+						},
+					})
+				default:
+					Logger.Println("ignoring event source mapping:", *mapping.FunctionArn, *mapping.EventSourceArn)
+				}
+			}
+			if out.NextMarker == nil {
+				break
+			}
+			marker = out.NextMarker
+		}
+		//
+		res[*fn.FunctionName] = l
 	}
+	//
+	Logger.Println("lambda wait for triggers")
+	for trigger := range triggersChan {
+		triggers[trigger.LambdaName] = append(triggers[trigger.LambdaName], trigger)
+	}
+	Logger.Println("lambda got all triggers")
+	for _, fn := range fns {
+		ts, ok := triggers[*fn.FunctionName]
+		if ok {
+			for _, trigger := range ts {
+				val := trigger.TriggerType
+				if len(trigger.TriggerAttrs) > 0 {
+					val += " " + strings.Join(trigger.TriggerAttrs, " ")
+				}
+				l, ok := res[*fn.FunctionName]
+				if !ok {
+					panic(*fn.FunctionName)
+				}
+				l.Triggers = append(l.Triggers, val)
+				res[*fn.FunctionName] = l
+			}
+		}
+	}
+	//
 	return res, nil
 }
 
-func InfraListApi(ctx context.Context, triggersChan chan<- infraLambdaTrigger) (map[string]string, error) {
-	infraApi := make(map[string]string)
+func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]InfraApi, error) {
+	infraApi := make(map[string]InfraApi)
 	apis, err := apiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
 	for _, api := range apis {
-		infraApi[*api.Name] = ""
+		infraApi[*api.Name] = InfraApi{}
 		parentID, err := ApiResourceID(ctx, *api.Id, "/")
 		if err != nil {
 			Logger.Println("error:", err)
@@ -211,62 +300,62 @@ func InfraListApi(ctx context.Context, triggersChan chan<- infraLambdaTrigger) (
 			return nil, err
 		}
 		lambdaName := LambdaApiUriToLambdaName(*out.Uri)
-		triggersChan <- infraLambdaTrigger{
-			lambdaName:  lambdaName,
-			triggerType: lambdaTriggerApi,
+		triggersChan <- InfraLambdaTrigger{
+			LambdaName:  lambdaName,
+			TriggerType: lambdaTriggerApi,
 		}
 	}
 	return infraApi, nil
 }
 
-func InfraListDynamoDB(ctx context.Context, triggersChan chan<- infraLambdaTrigger) (map[string]string, error) {
-	infraDynamoDB := make(map[string]string)
+func InfraListDynamoDB(ctx context.Context) (map[string]InfraDynamoDB, error) {
+	infraDynamoDB := make(map[string]InfraDynamoDB)
 	tableNames, err := DynamoDBListTables(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
 	for _, tableName := range tableNames {
+		db := InfraDynamoDB{}
 		out, err := DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
 			TableName: aws.String(tableName),
 		})
 		if err != nil {
 			Logger.Fatal("error: ", err)
 		}
-		var parts []string
 		attrTypes := make(map[string]string)
 		for _, attr := range out.Table.AttributeDefinitions {
 			attrTypes[*attr.AttributeName] = *attr.AttributeType
 		}
 		for _, key := range out.Table.KeySchema {
-			parts = append(parts, fmt.Sprintf("%s:%s:%s", *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+			db.Keys = append(db.Keys, fmt.Sprintf("%s:%s:%s", *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
 		}
-		parts = append(parts, fmt.Sprintf("ProvisionedThroughput.ReadCapacityUnits=%d", *out.Table.ProvisionedThroughput.ReadCapacityUnits))
-		parts = append(parts, fmt.Sprintf("ProvisionedThroughput.WriteCapacityUnits=%d", *out.Table.ProvisionedThroughput.WriteCapacityUnits))
+		db.Attrs = append(db.Attrs, fmt.Sprintf("ProvisionedThroughput.ReadCapacityUnits=%d", *out.Table.ProvisionedThroughput.ReadCapacityUnits))
+		db.Attrs = append(db.Attrs, fmt.Sprintf("ProvisionedThroughput.WriteCapacityUnits=%d", *out.Table.ProvisionedThroughput.WriteCapacityUnits))
 		if out.Table.StreamSpecification != nil {
-			parts = append(parts, fmt.Sprintf("StreamSpecification.StreamViewType=%s", *out.Table.StreamSpecification.StreamViewType))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("StreamSpecification.StreamViewType=%s", *out.Table.StreamSpecification.StreamViewType))
 		}
 		for i, index := range out.Table.LocalSecondaryIndexes {
-			parts = append(parts, fmt.Sprintf("LocalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
 			for j, key := range index.KeySchema {
-				parts = append(parts, fmt.Sprintf("LocalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+				db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
 			}
-			parts = append(parts, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
 			for j, attr := range index.Projection.NonKeyAttributes {
-				parts = append(parts, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
+				db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
 			}
 		}
 		for i, index := range out.Table.GlobalSecondaryIndexes {
-			parts = append(parts, fmt.Sprintf("GlobalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
 			for j, key := range index.KeySchema {
-				parts = append(parts, fmt.Sprintf("GlobalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+				db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
 			}
-			parts = append(parts, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
 			for j, attr := range index.Projection.NonKeyAttributes {
-				parts = append(parts, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
+				db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
 			}
-			parts = append(parts, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.ReadCapacityUnits=%d", i, *index.ProvisionedThroughput.ReadCapacityUnits))
-			parts = append(parts, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.WriteCapacityUnits=%d", i, *index.ProvisionedThroughput.WriteCapacityUnits))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.ReadCapacityUnits=%d", i, *index.ProvisionedThroughput.ReadCapacityUnits))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.WriteCapacityUnits=%d", i, *index.ProvisionedThroughput.WriteCapacityUnits))
 		}
 		tags, err := DynamoDBListTags(ctx, tableName)
 		if err != nil {
@@ -274,49 +363,94 @@ func InfraListDynamoDB(ctx context.Context, triggersChan chan<- infraLambdaTrigg
 			return nil, err
 		}
 		for i, tag := range tags {
-			parts = append(parts, fmt.Sprintf("Tags.%d.Key=%s", i, *tag.Key))
-			parts = append(parts, fmt.Sprintf("Tags.%d.Value=%s", i, *tag.Value))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("Tags.%d.Key=%s", i, *tag.Key))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("Tags.%d.Value=%s", i, *tag.Value))
 		}
-		infraDynamoDB[tableName] = strings.Join(parts, " ")
+		infraDynamoDB[tableName] = db
 	}
 	return infraDynamoDB, nil
 }
 
-func InfraListEC2(ctx context.Context) (map[string]string, error) {
-	infraEC2 := make(map[string]string)
+func InfraListEC2(ctx context.Context) (map[string]InfraEC2, error) {
+	infraEC2 := make(map[string]InfraEC2)
 	instances, err := EC2ListInstances(ctx, nil, "running")
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
 	for _, instance := range instances {
-		var ec2 []string
-		ec2 = append(ec2, fmt.Sprintf("Type=%s", *instance.InstanceType))
-		ec2 = append(ec2, fmt.Sprintf("Image=%s", *instance.ImageId))
-		ec2 = append(ec2, fmt.Sprintf("Kind=%s", EC2Kind(instance)))
-		ec2 = append(ec2, fmt.Sprintf("Vpc=%s", *instance.VpcId))
+		ec2 := InfraEC2{}
+		ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Type=%s", *instance.InstanceType))
+		ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Image=%s", *instance.ImageId))
+		ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Kind=%s", EC2Kind(instance)))
+		ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Vpc=%s", *instance.VpcId))
 		for _, tag := range instance.Tags {
 			if *tag.Key != "creation-date" && *tag.Key != "Name" {
-				ec2 = append(ec2, fmt.Sprintf("Tags.%s=%s", *tag.Key, *tag.Value))
+				ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Tags.%s=%s", *tag.Key, *tag.Value))
 			}
 		}
-		infraEC2[EC2Name(instance.Tags)] = strings.Join(ec2, " ")
+		infraEC2[EC2Name(instance.Tags)] = ec2
 	}
 	return infraEC2, nil
 }
 
-func InfraListS3(ctx context.Context, triggersChan chan<- infraLambdaTrigger) (map[string]string, error) {
-	res := make(map[string]string)
+func InfraListS3(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]InfraS3, error) {
+	res := make(map[string]InfraS3)
+	buckets, err := S3Client().ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	for _, bucket := range buckets.Buckets {
+		s := InfraS3{}
+		descr, err := S3GetBucketDescription(ctx, *bucket.Name)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		s3Default := s3EnsureInputDefault()
+		//
+		if descr.Policy == nil && s3Default.acl != "private" {
+			s.Attrs = append(s.Attrs, "acl=private")
+		} else if reflect.DeepEqual(s3PublicPolicy(*bucket.Name), descr.Policy) && s3Default.acl != "public" {
+			s.Attrs = append(s.Attrs, "acl=public")
+		}
+		//
+		if descr.Versioning != s3Default.versioning {
+			s.Attrs = append(s.Attrs, fmt.Sprintf("versioning=%t", descr.Versioning))
+		}
+		//
+		encryption := reflect.DeepEqual(descr.Encryption, s3EncryptionConfig)
+		if encryption != s3Default.encryption {
+			s.Attrs = append(s.Attrs, fmt.Sprintf("encryption=%t", encryption))
+		}
+		//
+		metrics := descr.Metrics != nil
+		if s3Default.metrics != metrics {
+			s.Attrs = append(s.Attrs, fmt.Sprintf("metrics=%t", metrics))
+		}
+		//
+		if descr.Notifications != nil {
+			for _, conf := range descr.Notifications.LambdaFunctionConfigurations {
+				triggersChan <- InfraLambdaTrigger{
+					LambdaName:   LambdaArnToLambdaName(*conf.LambdaFunctionArn),
+					TriggerType:  lambdaTrigerS3,
+					TriggerAttrs: []string{*bucket.Name},
+				}
+			}
+		}
+		res[*bucket.Name] = s
+	}
 	return res, nil
 }
 
-func InfraListSQS(ctx context.Context, triggersChan chan<- infraLambdaTrigger) (map[string]string, error) {
+func InfraListSQS(ctx context.Context) (map[string]InfraSQS, error) {
 	urls, err := SQSListQueueUrls(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	res := make(map[string]string)
+	res := make(map[string]InfraSQS)
 	for _, url := range urls {
 		if err != nil {
 			Logger.Println("error:", err)
@@ -337,26 +471,26 @@ func InfraListSQS(ctx context.Context, triggersChan chan<- infraLambdaTrigger) (
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		parts := []string{}
+		s := InfraSQS{}
 		if *out.Attributes["DelaySeconds"] != "0" { // default
-			parts = append(parts, "DelaySeconds="+*out.Attributes["DelaySeconds"])
+			s.Attrs = append(s.Attrs, "DelaySeconds="+*out.Attributes["DelaySeconds"])
 		}
 		if *out.Attributes["MaximumMessageSize"] != "262144" { // default
-			parts = append(parts, "MaximumMessageSize="+*out.Attributes["MaximumMessageSize"])
+			s.Attrs = append(s.Attrs, "MaximumMessageSize="+*out.Attributes["MaximumMessageSize"])
 		}
 		if *out.Attributes["MessageRetentionPeriod"] != "345600" { // default
-			parts = append(parts, "MessageRetentionPeriod="+*out.Attributes["MessageRetentionPeriod"])
+			s.Attrs = append(s.Attrs, "MessageRetentionPeriod="+*out.Attributes["MessageRetentionPeriod"])
 		}
 		if *out.Attributes["ReceiveMessageWaitTimeSeconds"] != "0" { // default
-			parts = append(parts, "ReceiveMessageWaitTimeSeconds="+*out.Attributes["ReceiveMessageWaitTimeSeconds"])
+			s.Attrs = append(s.Attrs, "ReceiveMessageWaitTimeSeconds="+*out.Attributes["ReceiveMessageWaitTimeSeconds"])
 		}
 		if *out.Attributes["VisibilityTimeout"] != "30" {
-			parts = append(parts, "VisibilityTimeout="+*out.Attributes["VisibilityTimeout"])
+			s.Attrs = append(s.Attrs, "VisibilityTimeout="+*out.Attributes["VisibilityTimeout"])
 		}
 		if *out.Attributes["KmsDataKeyReusePeriodSeconds"] != "300" {
-			parts = append(parts, "KmsDataKeyReusePeriodSeconds="+*out.Attributes["KmsDataKeyReusePeriodSeconds"])
+			s.Attrs = append(s.Attrs, "KmsDataKeyReusePeriodSeconds="+*out.Attributes["KmsDataKeyReusePeriodSeconds"])
 		}
-		res[SQSUrlToName(url)] = strings.Join(parts, " ")
+		res[SQSUrlToName(url)] = s
 	}
 	return res, nil
 }
