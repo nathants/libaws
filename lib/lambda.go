@@ -354,7 +354,10 @@ func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, caller
 }
 
 func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerArn string, preview bool) error {
-	sid := strings.ReplaceAll(callerPrincipal, ".", "-") + "__" + strings.ReplaceAll(strings.ReplaceAll(Last(strings.Split(callerArn, ":")), "-", "_"), "/", "__")
+	sid := strings.ReplaceAll(callerPrincipal, ".", "-") + "__" + Last(strings.Split(callerArn, ":"))
+	sid = strings.ReplaceAll(sid, "*", "ALL")
+	sid = strings.ReplaceAll(sid, "-", "_")
+	sid = strings.ReplaceAll(sid, "/", "__")
 	var expectedErr error
 	var policyString string
 	err := Retry(ctx, func() error {

@@ -257,7 +257,7 @@ def ensure_permission(name, principal, arn):
         statements = []
     else:
         statements = [x['Sid'] for x in res['Statement']]
-    id = principal.replace('.', '-') + '__' + arn.split(':')[-1].replace('-', '_').replace('/', '__')
+    id = principal.replace('.', '-') + '__' + arn.split(':')[-1].replace('-', '_').replace('/', '__').replace('*', 'ALL')
     if id not in statements:
         client('lambda').add_permission(FunctionName=name, StatementId=id, Action='lambda:InvokeFunction', Principal=principal, SourceArn=arn)
 
