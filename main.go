@@ -15,6 +15,7 @@ import (
 	_ "github.com/nathants/cli-aws/cmd/iam"
 	_ "github.com/nathants/cli-aws/cmd/infra"
 	_ "github.com/nathants/cli-aws/cmd/lambda"
+	_ "github.com/nathants/cli-aws/cmd/logs"
 	_ "github.com/nathants/cli-aws/cmd/organizations"
 	_ "github.com/nathants/cli-aws/cmd/route53"
 	_ "github.com/nathants/cli-aws/cmd/s3"

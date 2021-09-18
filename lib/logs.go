@@ -44,3 +44,23 @@ func LogsEnsureGroup(ctx context.Context, name string, preview bool) error {
 	}
 	return nil
 }
+
+func LogsListLogGroups(ctx context.Context) ([]*cloudwatchlogs.LogGroup, error) {
+	var token *string
+	var logs []*cloudwatchlogs.LogGroup
+	for {
+		out, err := LogsClient().DescribeLogGroupsWithContext(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+			NextToken: token,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		logs = append(logs, out.LogGroups...)
+		if out.NextToken == nil {
+			break
+		}
+		token = out.NextToken
+	}
+	return logs, nil
+}

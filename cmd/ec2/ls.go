@@ -33,9 +33,9 @@ func ec2Ls() {
 	fmt.Fprintln(os.Stderr, "name", "type", "state", "id", "image", "kind", "security-group", "tags")
 	for _, instance := range instances {
 		fmt.Println(
-			lib.EC2Name(instance.Tags),
+			lib.EC2NameColored(instance),
 			*instance.InstanceType,
-			lib.EC2State(instance),
+			*instance.State.Name,
 			*instance.InstanceId,
 			*instance.ImageId,
 			lib.EC2Kind(instance),

@@ -16,6 +16,7 @@ func init() {
 
 type sqsRmArgs struct {
 	QueueName string `arg:"positional,required"`
+	Yes       bool   `arg:"-y,--yes" default:"false"`
 }
 
 func (sqsRmArgs) Description() string {
@@ -29,6 +30,13 @@ func sqsRm() {
 	queueUrl, err := lib.SQSQueueUrl(ctx, args.QueueName)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
+	}
+	lib.Logger.Println("going to delete:", queueUrl)
+	if !args.Yes {
+		err = lib.PromptProceed("")
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
 	}
 	_, err = lib.SQSClient().DeleteQueueWithContext(ctx, &sqs.DeleteQueueInput{
 		QueueUrl: aws.String(queueUrl),

@@ -1069,12 +1069,23 @@ func EC2SgID(ctx context.Context, name string) (string, error) {
 func EC2Tags(tags []*ec2.Tag) string {
 	var res []string
 	for _, tag := range tags {
+		if !Contains([]string{"Name", "aws:ec2spot:fleet-request-id", "creation-date"}, *tag.Key) {
+			res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
+		}
+	}
+	return strings.Join(res, ",")
+}
+
+func EC2TagsAll(tags []*ec2.Tag) string {
+	var res []string
+	for _, tag := range tags {
 		if *tag.Key != "Name" {
 			res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
 		}
 	}
 	return strings.Join(res, ",")
 }
+
 
 func EC2Name(tags []*ec2.Tag) string {
 	for _, tag := range tags {
@@ -1085,15 +1096,23 @@ func EC2Name(tags []*ec2.Tag) string {
 	return "-"
 }
 
-func EC2State(instance *ec2.Instance) string {
+func EC2NameColored(instance *ec2.Instance) string {
+	name := "-"
+	for _, tag := range instance.Tags {
+		if *tag.Key == "Name" {
+			name = *tag.Value
+			break
+		}
+	}
 	switch *instance.State.Name {
 	case "running":
-		return Green("running")
+		name = Green(name)
 	case "pending":
-		return Cyan("pending")
+		name = Cyan(name)
 	default:
-		return Red(*instance.State.Name)
+		name = Red(name)
 	}
+	return name
 }
 
 func EC2SecurityGroups(sgs []*ec2.GroupIdentifier) string {
