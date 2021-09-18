@@ -16,6 +16,8 @@ _cli_aws () {
         elif [ ${COMP_WORDS[1]} = logs-search ]; then COMPREPLY=($(cli-aws logs-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = logs-near   ]; then COMPREPLY=($(cli-aws logs-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
+        elif [ ${COMP_WORDS[1]} = ecr-ls-tags ]; then COMPREPLY=($(cli-aws ecr-ls-images 2>/dev/null | grep "^${COMP_WORDS[2]}"))
+
         fi
     fi
 }
