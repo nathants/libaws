@@ -1,6 +1,9 @@
 #!/bin/bash
 
-
+if [ ! -z "$ZSH_NAME" ]; then
+    autoload bashcompinit
+    bashcompinit
+fi
 
 _aws_creds_tmp () {
 	COMPREPLY=($(

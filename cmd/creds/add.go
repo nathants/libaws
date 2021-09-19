@@ -39,12 +39,12 @@ add aws creds
 
         aws-creds() {
             # permanently set aws credentials for this and future terminal sessions
-            cli-aws creds-set $1 && . ~/.aws_creds/_temp_creds.sh
+            cli-aws creds-set $1 && source ~/.aws_creds/_temp_creds.sh
         }
 
         aws-creds-temp() {
             # temporarily set aws credentials for the current terminal session
-            . ~/.aws_creds/$1.sh
+            source ~/.aws_creds/$1.sh
             export AWS_CREDS_NAME=$(echo $1|cut -d. -f1)
         }
 

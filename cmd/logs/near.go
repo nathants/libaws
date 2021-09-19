@@ -19,7 +19,7 @@ func init() {
 type logsNearArgs struct {
 	Name      string `arg:"positional,required" help:"log group name"`
 	Timestamp int64  `arg:"positional,required" help:"utc millis timestamp at which to show logs"`
-	Context   int64  `arg:"-c,--context" help"millis context around timestamp" default:"30000"`
+	Context   int64  `arg:"-c,--context" help:"millis context around timestamp" default:"30000"`
 	Max       int    `arg:"-m,--max" default:"64" help:"max results"`
 }
 

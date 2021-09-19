@@ -18,12 +18,12 @@ def main(name):
     define bash functions like this to make your life easier:
 
         aws-creds() {
-            aws-creds-set $1 && . ~/.aws_creds/_temp_creds.sh
+            aws-creds-set $1 && source ~/.aws_creds/_temp_creds.sh
         }
 
         aws-creds-temp() {
             export AWS_CREDS_NAME=$(echo $1|cut -d. -f1)
-            . ~/.aws_creds/$1.sh
+            source ~/.aws_creds/$1.sh
         }
 
     """
