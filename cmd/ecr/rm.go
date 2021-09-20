@@ -2,11 +2,10 @@ package cliaws
 
 import (
 	"context"
-	"strings"
 
-	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -16,27 +15,21 @@ func init() {
 }
 
 type ecrRmArgs struct {
-	Name string `arg:"positional,required"`
+	Name    string `arg:"positional,required"`
+	// Preview bool   `arg:"-p,--preview"`
 }
 
 func (ecrRmArgs) Description() string {
-	return "\nrm ecr\n"
+	return "\nrm ecr container\n"
 }
 
 func ecrRm() {
 	var args ecrRmArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	parts := strings.Split(args.Name, ":")
-	name := parts[0]
-	tag := parts[1]
-	_, err := lib.EcrClient().BatchDeleteImageWithContext(ctx, &ecr.BatchDeleteImageInput{
-		RepositoryName: aws.String(name),
-		ImageIds: []*ecr.ImageIdentifier{
-			{
-				ImageTag: aws.String(tag),
-			},
-		},
+	_, err := lib.EcrClient().DeleteRepositoryWithContext(ctx, &ecr.DeleteRepositoryInput{
+		RepositoryName: aws.String(args.Name),
+		Force: aws.Bool(true),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

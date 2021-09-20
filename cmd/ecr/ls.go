@@ -9,19 +9,19 @@ import (
 )
 
 func init() {
-	lib.Commands["ecr-ls-images"] = ecrLsImages
-	lib.Args["ecr-ls-images"] = ecrLsImagesArgs{}
+	lib.Commands["ecr-ls"] = ecrLs
+	lib.Args["ecr-ls"] = ecrLsArgs{}
 }
 
-type ecrLsImagesArgs struct {
+type ecrLsArgs struct {
 }
 
-func (ecrLsImagesArgs) Description() string {
-	return "\nlist ecr images\n"
+func (ecrLsArgs) Description() string {
+	return "\nlist ecr containers\n"
 }
 
-func ecrLsImages() {
-	var args ecrLsImagesArgs
+func ecrLs() {
+	var args ecrLsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	repos, err := lib.EcrDescribeRepos(ctx)

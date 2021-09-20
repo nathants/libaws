@@ -18,7 +18,7 @@ type ecrEnsureArgs struct {
 }
 
 func (ecrEnsureArgs) Description() string {
-	return "\nensure ecr repo\n"
+	return "\nensure ecr image\n"
 }
 
 func ecrEnsure() {
