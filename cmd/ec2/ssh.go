@@ -38,6 +38,16 @@ func ec2Ssh() {
 	var args ec2SshArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
+	fail := true
+	for _, s := range args.Selectors{
+		if s != "" {
+			fail = false
+			break
+		}
+	}
+	if fail {
+		lib.Logger.Fatal("error: provide some selectors")
+	}
 	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
