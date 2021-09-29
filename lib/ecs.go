@@ -10,7 +10,6 @@ import (
 
 var ecsClient *ecs.ECS
 var ecsClientLock sync.RWMutex
-var ecsClientsRegional = make(map[string]*ecs.ECS)
 
 func ECSClient() *ecs.ECS {
 	ecsClientLock.Lock()

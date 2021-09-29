@@ -26,7 +26,7 @@ func ecrLs() {
 	ctx := context.Background()
 	repos, err := lib.EcrDescribeRepos(ctx)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, repo := range repos {
 		fmt.Println(*repo.RepositoryName)

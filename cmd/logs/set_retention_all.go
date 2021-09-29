@@ -15,7 +15,7 @@ func init() {
 }
 
 type logsSetRetentionALlArgs struct {
-	Days int64  `arg:"positional,required" help:"days to retain log data"`
+	Days int64 `arg:"positional,required" help:"days to retain log data"`
 }
 
 func (logsSetRetentionALlArgs) Description() string {

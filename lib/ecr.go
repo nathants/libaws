@@ -83,7 +83,7 @@ func EcrEnsure(ctx context.Context, name string, preview bool) error {
 func EcrUrl(ctx context.Context) (string, error) {
 	account, err := StsAccount(ctx)
 	if err != nil {
-	    return "", err
+		return "", err
 	}
 	return fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", account, Region()), nil
 }

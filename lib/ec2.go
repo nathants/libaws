@@ -1086,7 +1086,6 @@ func EC2TagsAll(tags []*ec2.Tag) string {
 	return strings.Join(res, ",")
 }
 
-
 func EC2Name(tags []*ec2.Tag) string {
 	for _, tag := range tags {
 		if *tag.Key == "Name" {

@@ -3,8 +3,8 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sort"
+	"strings"
 
 	"github.com/alexflint/go-arg"
 	"github.com/dustin/go-humanize"
@@ -36,7 +36,7 @@ func logsLs() {
 	ctx := context.Background()
 	logs, err := lib.LogsListLogGroups(ctx)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	sort.Slice(logs, func(i, j int) bool { return *logs[i].StoredBytes < *logs[j].StoredBytes })
 	for _, log := range logs {

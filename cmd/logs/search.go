@@ -1,8 +1,8 @@
 package cliaws
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -63,7 +63,7 @@ func logsSearch() {
 				val["timestamp"] = *e.Timestamp
 				bytes, err := json.Marshal(val)
 				if err != nil {
-				    lib.Logger.Fatal("error: ", err)
+					lib.Logger.Fatal("error: ", err)
 				}
 				fmt.Println(string(bytes))
 			}

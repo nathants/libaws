@@ -39,7 +39,7 @@ func ec2Ssh() {
 	arg.MustParse(&args)
 	ctx := context.Background()
 	fail := true
-	for _, s := range args.Selectors{
+	for _, s := range args.Selectors {
 		if s != "" {
 			fail = false
 			break

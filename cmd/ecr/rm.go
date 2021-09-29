@@ -3,9 +3,9 @@ package cliaws
 import (
 	"context"
 
+	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -15,7 +15,7 @@ func init() {
 }
 
 type ecrRmArgs struct {
-	Name    string `arg:"positional,required"`
+	Name string `arg:"positional,required"`
 	// Preview bool   `arg:"-p,--preview"`
 }
 
@@ -29,7 +29,7 @@ func ecrRm() {
 	ctx := context.Background()
 	_, err := lib.EcrClient().DeleteRepositoryWithContext(ctx, &ecr.DeleteRepositoryInput{
 		RepositoryName: aws.String(args.Name),
-		Force: aws.Bool(true),
+		Force:          aws.Bool(true),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

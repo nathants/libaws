@@ -1,13 +1,13 @@
 package cliaws
 
 import (
-	"time"
 	"fmt"
 	"sort"
+	"time"
 
+	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -31,7 +31,7 @@ func ecrLsTags() {
 		RepositoryName: aws.String(args.Image),
 	})
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	sort.Slice(images.ImageDetails, func(a, b int) bool {
 		return images.ImageDetails[a].ImagePushedAt.After(*images.ImageDetails[b].ImagePushedAt)
