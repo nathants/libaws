@@ -25,6 +25,16 @@ func ec2Rm() {
 	var args ec2RmArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
+	fail := true
+	for _, s := range args.Selectors {
+		if s != "" {
+			fail = false
+			break
+		}
+	}
+	if fail {
+		lib.Logger.Fatal("error: provide some selectors")
+	}
 	instances, err := lib.EC2ListInstances(ctx, args.Selectors, "")
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

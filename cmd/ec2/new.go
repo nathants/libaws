@@ -88,7 +88,11 @@ func ec2New() {
 	}
 	useSubnetsFromVpc(ctx, &args)
 	if !strings.HasPrefix(args.Ami, "ami-") {
-		ami, sshUser, err := lib.EC2Ami(ctx, args.Ami)
+		arch := lib.EC2ArchAmd64
+		if strings.Contains(strings.Split(args.Type, ".")[0][1:], "g") { // slice first char, since arm64 g is never first char
+			arch = lib.EC2ArchArm64
+		}
+		ami, sshUser, err := lib.EC2Ami(ctx, args.Ami, arch)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

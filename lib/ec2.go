@@ -23,6 +23,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam"
 )
 
+const (
+	EC2ArchAmd64 = "x86_64"
+	EC2ArchArm64 = "arm64"
+)
+
 var ec2Client *ec2.EC2
 var ec2ClientLock sync.RWMutex
 
@@ -423,16 +428,20 @@ func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num in
 }
 
 const timeoutInit = `
-echo '# timeout will call this script before it $(sudo poweroff)s, and wait 60 seconds for this script to complete' | sudo tee -a /etc/timeout.sh
+if which apk; then
+   sudo apk update
+   sudo apk add bash
+fi
+echo '# timeout will call this script before it $(sudo poweroff)s, and wait 60 seconds for this script to complete' | sudo tee -a /etc/timeout.sh >/dev/null
 echo '#!/bin/bash
     warning="seconds remaining until timeout poweroff. [sudo journalctl -u timeout.service -f] to follow. increase /etc/timeout.seconds to delay. [date +%s | sudo tee /etc/timeout.start.seconds] to reset, or [sudo systemctl {{stop,disable}} timeout.service] to cancel."
-    echo TIMEOUT_SECONDS | sudo tee /etc/timeout.seconds
+    echo TIMEOUT_SECONDS | sudo tee /etc/timeout.seconds >/dev/null
     # count down until timeout
     if [ ! -f /etc/timeout.true_start.seconds ]; then
-        date +%s | sudo tee /etc/timeout.true_start.seconds
+        date +%s | sudo tee /etc/timeout.true_start.seconds >/dev/null
     fi
     if [ ! -f /etc/timeout.start.seconds ]; then
-        date +%s | sudo tee /etc/timeout.start.seconds
+        date +%s | sudo tee /etc/timeout.start.seconds >/dev/null
     fi
     while true; do
         start=$(cat /etc/timeout.start.seconds)
@@ -445,7 +454,7 @@ echo '#!/bin/bash
             break
         fi
         remaining=$(($timeout - $duration))
-        if (($remaining <= 300)) && (($remaining % 60 == 0)); then
+        if (($remaining <= 300)) && (($remaining % 60 == 0)) && which wall >/dev/null; then
             wall "$remaining $warning"
         fi
         echo uptime seconds: $true_duration
@@ -459,7 +468,7 @@ echo '#!/bin/bash
     start=$(date +%s)
     overtime=60
     while true; do
-        ps $pid || break
+        ps | awk '{print $1}' | grep $pid || break
         now=$(date +%s)
         duration=$(($now - $start))
         (($duration > $overtime)) && break
@@ -468,10 +477,11 @@ echo '#!/bin/bash
         sleep 1
     done
     sudo poweroff # sudo poweroff terminates spot instances by default
-' |  sudo tee /usr/local/bin/timeout
+' |  sudo tee /usr/local/bin/timeout >/dev/null
 sudo chmod +x /usr/local/bin/timeout
 
-echo '[Unit]
+if which systemctl; then
+    echo '[Unit]
 Description=timeout
 
 [Service]
@@ -482,11 +492,33 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
-' | sudo tee /etc/systemd/system/timeout.service
+' | sudo tee /etc/systemd/system/timeout.service >/dev/null
 
-sudo systemctl daemon-reload
-sudo systemctl start timeout.service
-sudo systemctl enable timeout.service
+    sudo systemctl daemon-reload
+    sudo systemctl start timeout.service
+    sudo systemctl enable timeout.service
+
+elif which rc-update; then
+
+    echo '#!/sbin/openrc-run
+
+command="/usr/local/bin/timeout"
+command_background="yes"
+pidfile="/tmp/timeout.pid"
+output_log="/var/log/timeout.log"
+error_log="/var/log/timeout.log"
+' | sudo tee /etc/init.d/timeout >/dev/null
+    sudo touch /var/log/timeout.log
+    sudo chmod ugo+rw /var/log/timeout.log
+    sudo chmod +x /etc/init.d/timeout
+    sudo rc-update add timeout default
+    sudo rc-service timeout start
+else
+    sudo touch /var/log/timeout.log
+    sudo chmod ugo+rw /var/log/timeout.log
+    nohup /usr/local/bin/timeout >/var/log/timeout.log &
+fi
+
 `
 
 const nvmeInit = `
@@ -622,7 +654,7 @@ func makeInit(config *EC2Config) string {
 	}
 	if init != "" {
 		init = base64.StdEncoding.EncodeToString([]byte(init))
-		init = fmt.Sprintf("#!/bin/bash\npath=/tmp/$(uuidgen); echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", init, config.UserName)
+		init = fmt.Sprintf("#!/bin/sh\npath=/tmp/$(cat /proc/sys/kernel/random/uuid); if ! which bash >/dev/null && which apk >/dev/null; then sudo apk update; sudo apk add bash; fi; echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", init, config.UserName)
 		init = base64.StdEncoding.EncodeToString([]byte(init))
 	}
 	return init
@@ -705,10 +737,18 @@ type EC2SshInput struct {
 const remoteCmdTemplate = `
 fail_msg="failed to run cmd on instance: %s"
 mkdir -p ~/.cmds || echo $fail_msg
-path=~/.cmds/$(uuidgen)
+path=~/.cmds/$(cat /proc/sys/kernel/random/uuid)
 input=$path.input
 echo %s | base64 -d > $path  || echo $fail_msg
 echo %s | base64 -d > $input || echo $fail_msg
+if ! which bash >/dev/null && which apk >/dev/null; then
+   sudo apk update
+   sudo apk add bash
+fi
+if ! which bash >/dev/null; then
+    echo $fail_msg
+    exit 1
+fi
 cat $input | bash $path
 code=$?
 if [ $code != 0 ]; then
@@ -912,7 +952,7 @@ func EC2SshLogin(instance *ec2.Instance, user string) error {
 	return nil
 }
 
-func ec2AmiLambda(ctx context.Context) (string, error) {
+func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
 	resp, err := http.Get("https://docs.aws.amazon.com/lambda/latest/dg/current-supported-versions.html")
 	if err != nil {
 		Logger.Println("error:", err)
@@ -932,8 +972,11 @@ func ec2AmiLambda(ctx context.Context) (string, error) {
 	}
 	ami := r.FindAllString(string(body), -1)[0]
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners:  []*string{aws.String("137112412989")},
-		Filters: []*ec2.Filter{{Name: aws.String("name"), Values: []*string{aws.String(ami)}}},
+		Owners: []*string{aws.String("137112412989")},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("name"), Values: []*string{aws.String(ami)}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -949,10 +992,10 @@ func ec2AmiLambda(ctx context.Context) (string, error) {
 }
 
 var ubuntus = map[string]string{
-	"focal":  "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server",
-	"bionic": "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server",
-	"xenial": "ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server",
-	"trusty": "ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-amd64-server",
+	"focal":  "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-",
+	"bionic": "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-",
+	"xenial": "ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-",
+	"trusty": "ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-",
 }
 
 func keys(m map[string]string) []string {
@@ -963,7 +1006,7 @@ func keys(m map[string]string) []string {
 	return ks
 }
 
-func ec2AmiUbuntu(ctx context.Context, name string) (string, error) {
+func ec2AmiUbuntu(ctx context.Context, name, arch string) (string, error) {
 	fragment, ok := ubuntus[name]
 	if !ok {
 		err := fmt.Errorf("bad ubuntu name %s, should be one of: %v", name, keys(ubuntus))
@@ -974,7 +1017,7 @@ func ec2AmiUbuntu(ctx context.Context, name string) (string, error) {
 		Owners: []*string{aws.String("099720109477")},
 		Filters: []*ec2.Filter{
 			{Name: aws.String("name"), Values: []*string{aws.String(fmt.Sprintf("*%s*", fragment))}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String("x86_64")}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
 		},
 	})
 	if err != nil {
@@ -985,12 +1028,12 @@ func ec2AmiUbuntu(ctx context.Context, name string) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
-func ec2AmiAmzn(ctx context.Context) (string, error) {
+func ec2AmiAmzn(ctx context.Context, arch string) (string, error) {
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String("137112412989")},
 		Filters: []*ec2.Filter{
 			{Name: aws.String("name"), Values: []*string{aws.String("amzn2-ami-hvm-2.0*-ebs")}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String("x86_64")}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
 		},
 	})
 	if err != nil {
@@ -1001,12 +1044,17 @@ func ec2AmiAmzn(ctx context.Context) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
-func ec2AmiArch(ctx context.Context) (string, error) {
+func ec2AmiArch(ctx context.Context, arch string) (string, error) {
+	if arch != EC2ArchAmd64 {
+		err := fmt.Errorf("ec2 archlinux only supports amd64")
+		Logger.Println("error:", err)
+		return "", err
+	}
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String("093273469852")},
 		Filters: []*ec2.Filter{
 			{Name: aws.String("name"), Values: []*string{aws.String("arch-linux-hvm-*-ebs")}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String("x86_64")}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
 		},
 	})
 	if err != nil {
@@ -1017,19 +1065,57 @@ func ec2AmiArch(ctx context.Context) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
-func EC2Ami(ctx context.Context, name string) (amiID string, sshUser string, err error) {
+func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Owners: []*string{aws.String("538276064493")},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("name"), Values: []*string{aws.String("alpine-ami-*")}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+		},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	var images []*ec2.Image
+	for _, image := range out.Images {
+		if len(strings.Split(strings.Split(*image.Name, "-")[2], ".")) == 3 { // only keep versioned images like: alpine-ami-3.14.2-x86_64-r0
+			images = append(images, image)
+		}
+	}
+	major := func(x string) int { return atoi(strings.Split(strings.Split(x, "-")[2], ".")[0]) }
+	minor := func(x string) int { return atoi(strings.Split(strings.Split(x, "-")[2], ".")[1]) }
+	bugfx := func(x string) int { return atoi(strings.Split(strings.Split(x, "-")[2], ".")[2]) }
+	sort.SliceStable(images, func(i, j int) bool { return bugfx(*images[i].Name) > bugfx(*images[j].Name) })
+	sort.SliceStable(images, func(i, j int) bool { return minor(*images[i].Name) > minor(*images[j].Name) })
+	sort.SliceStable(images, func(i, j int) bool { return major(*images[i].Name) > major(*images[j].Name) })
+	return *images[0].ImageId, nil
+}
+
+func EC2Ami(ctx context.Context, name, arch string) (amiID string, sshUser string, err error) {
+	switch arch {
+	case EC2ArchAmd64:
+	case EC2ArchArm64:
+	default:
+		err := fmt.Errorf("ec2 unknown cpu architecture: %s", arch)
+		Logger.Println("error:", err)
+		return "", "", err
+	}
 	switch name {
 	case "lambda":
-		amiID, err = ec2AmiLambda(ctx)
+		amiID, err = ec2AmiLambda(ctx, arch)
 		sshUser = "user"
 	case "amzn":
-		amiID, err = ec2AmiAmzn(ctx)
+		amiID, err = ec2AmiAmzn(ctx, arch)
 		sshUser = "user"
 	case "arch":
-		amiID, err = ec2AmiArch(ctx)
+		amiID, err = ec2AmiArch(ctx, arch)
 		sshUser = "arch"
+	case "alpine":
+		amiID, err = ec2AmiAlpine(ctx, arch)
+		sshUser = "alpine"
 	default:
-		amiID, err = ec2AmiUbuntu(ctx, name)
+		amiID, err = ec2AmiUbuntu(ctx, name, arch)
 		sshUser = "ubuntu"
 	}
 	return amiID, sshUser, err
