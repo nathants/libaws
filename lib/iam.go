@@ -520,6 +520,19 @@ func IamListUserPolicies(ctx context.Context, username string) ([]string, error)
 	return policies, nil
 }
 
+func IamResetUserLoginTempPassword(ctx context.Context, username, password string) error {
+	_, err := IamClient().UpdateLoginProfileWithContext(ctx, &iam.UpdateLoginProfileInput{
+		Password: aws.String(password),
+		UserName: aws.String(username),
+		PasswordResetRequired: aws.Bool(true),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+	    return err
+	}
+	return nil
+}
+
 func IamEnsureUser(ctx context.Context, username, password, policyName string, preview bool) error {
 	_, err := IamClient().GetUserWithContext(ctx, &iam.GetUserInput{
 		UserName: aws.String(username),
