@@ -42,7 +42,7 @@ _cli_aws () {
         fi
 
     elif [ $COMP_CWORD = 4 ]; then
-        if [ ${COMP_WORDS[1]} = cloudwatch-get-metric ]; then COMPREPLY=($(cli-aws cloudwatch-ls-dimensions "${COMP_WORDS[2]}" "${COMP_WORDS[3]}" 2>/dev/null | grep "^${COMP_WORDS[4]}"))
+        if [ ${COMP_WORDS[1]} = cloudwatch-get-metric ]; then COMPREPLY=($(cli-aws cloudwatch-ls-dimensions "${COMP_WORDS[2]}" $(echo "${COMP_WORDS[3]}" | cut -d, -f1) 2>/dev/null | grep "^${COMP_WORDS[4]}"))
         fi
 
     fi

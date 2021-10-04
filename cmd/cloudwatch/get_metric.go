@@ -3,6 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -17,7 +18,7 @@ func init() {
 
 type cloudwatchGetMetricArgs struct {
 	Namespace string `arg:"positional,required"`
-	Metric    string `arg:"positional,required"`
+	Metric    string `arg:"positional,required" help:"comma separated list of metrics"`
 	Dimension string `arg:"positional,required"`
 	FromHours int    `arg:"-f,--from-hours" default:"72" help:"get data no older than this"`
 	ToHours   int    `arg:"-t,--to-hours" default:"0" help:"get data no younger than this"`
@@ -42,17 +43,32 @@ func cloudwatchGetMetric() {
 	offset := -1 * time.Hour * time.Duration(args.FromHours)
 	fromTime := aws.Time(time.Now().UTC().Add(offset))
 
-	out, err := lib.CloudwatchGetMetricData(ctx, args.Period, args.Stat, fromTime, toTime, args.Namespace, args.Metric, args.Dimension)
+	metrics := strings.Split(args.Metric, ",")
+	out, err := lib.CloudwatchGetMetricData(ctx, args.Period, args.Stat, fromTime, toTime, args.Namespace, metrics, args.Dimension)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	for _, o := range out {
+	var times []string
+	vals := make(map[string][]float64)
+	for i, o := range out {
+		if metrics[i] != *o.Label {
+			panic(fmt.Sprint(metrics[i], *o.Label))
+		}
 		if len(o.Timestamps) != len(o.Values) {
 			panic(fmt.Sprint(len(o.Timestamps), "!=", len(o.Values)))
 		}
-		for i, t := range o.Timestamps {
-			v := o.Values[i]
-			fmt.Println(t.Format(time.RFC3339), *v)
+		for j, t := range o.Timestamps {
+			v := o.Values[j]
+			t := t.Format(time.RFC3339)
+			times = append(times, t)
+			vals[t] = append(vals[t], *v)
 		}
+	}
+	for _, t := range times {
+		fmt.Print("timestamp="+t, " ")
+		for i, m := range metrics {
+			fmt.Print(m+"="+fmt.Sprint(vals[t][i]), " ")
+		}
+		fmt.Print("\n")
 	}
 }
