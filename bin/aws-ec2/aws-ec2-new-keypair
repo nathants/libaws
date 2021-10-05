@@ -10,9 +10,17 @@ def main(name, pub_key: 'path on disk to pubkey file'): # type: ignore
         print('key created')
     except Exception as e:
         if '(InvalidKeyPair.Duplicate)' in str(e):
+            key_type = sh.run(f"cat {pub_key} | awk '{{print $1}}'")
             remote_fingerprint = aws.resource('ec2').KeyPair(name).key_fingerprint
-            local_fingerprint = sh.run(f'ssh-keygen -e -f {pub_key} -m pkcs8 | openssl pkey -pubin -outform der | openssl md5 -c | cut -d" " -f2')
-            assert remote_fingerprint == local_fingerprint, 'key exists with that name exists, but is not the same pub_key'
+            if key_type == 'ssh-ed25519':
+                if remote_fingerprint.endswith('='):
+                    remote_fingerprint = remote_fingerprint[:-1]
+                local_fingerprint = sh.run(f"ssh-keygen -E sha256 -lf {pub_key} | awk '{{print $2}}' | cut -d: -f2")
+            elif key_type == 'ssh-rsa':
+                local_fingerprint = sh.run(f'ssh-keygen -e -f {pub_key} -m pkcs8 | openssl pkey -pubin -outform der | openssl md5 -c | cut -d" " -f2')
+            else:
+                assert False, 'unsupported ssh key type: ' + key_type
+            assert remote_fingerprint == local_fingerprint, f'key exists with that name exists, but is not the same pub_key: {remote_fingerprint} {local_fingerprint}'
             print('key already exists and pub_key fingerprints match')
         else:
             raise
