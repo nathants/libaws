@@ -476,6 +476,7 @@ echo '#!/bin/bash
         echo seconds until poweroff: $remaining
         sleep 1
     done
+    date +%s | sudo tee /etc/timeout.start.seconds >/dev/null # reset start time so when we power the machine back up, the timer is reset
     sudo poweroff # sudo poweroff terminates spot instances by default
 ' |  sudo tee /usr/local/bin/timeout >/dev/null
 sudo chmod +x /usr/local/bin/timeout
