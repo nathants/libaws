@@ -803,8 +803,9 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) (map[string]*[]string, erro
 		defer timeoutCancel()
 		ctx = timeoutCtx
 	}
-	result := make(map[string]*[]string)
-	done := make(chan error, len(input.Instances))
+	//
+	errChan := make(chan error, len(input.Instances))
+	resultChan := make(chan *ec2SshResult, len(input.Instances))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -812,26 +813,37 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) (map[string]*[]string, erro
 		go func(instance *ec2.Instance) {
 			err := concurrency.Acquire(cancelCtx, 1)
 			if err != nil {
-				done <- err
+				errChan <- err
+				resultChan <- nil
 				return
 			}
 			defer concurrency.Release(1)
-			done <- ec2Ssh(cancelCtx, instance, input, result)
+			out, err := ec2Ssh(cancelCtx, instance, input)
+			errChan <- err
+			resultChan <- out
 		}(instance)
 	}
 	var errLast error
+	result := make(map[string]*[]string)
 	for range input.Instances {
-		err := <-done
+		err := <-errChan
 		if err != nil {
 			Logger.Println("error:", err)
 			errLast = err
 		}
+		sshResult := <-resultChan
+		result[sshResult.InstanceID] = &sshResult.Result
 	}
 	//
 	return result, errLast
 }
 
-func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput, result map[string]*[]string) error {
+type ec2SshResult struct {
+	InstanceID string
+	Result     []string
+}
+
+func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) (*ec2SshResult, error) {
 	sshCmd := []string{
 		"ssh",
 		"-o", "UserKnownHostsFile=/dev/null",
@@ -858,15 +870,15 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput, res
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	//
-	result[*instance.ImageId] = &[]string{}
+	result := []string{}
 	resultLock := &sync.RWMutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
@@ -889,7 +901,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput, res
 			}
 			if kind == "stdout" && input.AccumulateResult {
 				resultLock.Lock()
-				*result[*instance.ImageId] = append(*result[*instance.ImageId], line)
+				result = append(result, line)
 				resultLock.Unlock()
 			}
 			input.PrintLock.Lock()
@@ -910,21 +922,25 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput, res
 	err = cmd.Start()
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	for i := 0; i < 2; i++ {
 		err := <-done
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 	}
 	err = cmd.Wait()
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
-	return nil
+	sshResult := &ec2SshResult{
+		InstanceID: *instance.InstanceId,
+		Result:     result,
+	}
+	return sshResult, nil
 }
 
 func EC2SshLogin(instance *ec2.Instance, user string) error {

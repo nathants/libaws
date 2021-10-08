@@ -61,7 +61,7 @@ func ec2Ssh() {
 			lib.Logger.Fatal("error: ", err)
 		}
 	}
-	var stdin string
+	stdin := args.Stdin
 	if args.Stdin == "-" {
 		bytes, err2 := ioutil.ReadAll(os.Stdin)
 		if err2 != nil {
