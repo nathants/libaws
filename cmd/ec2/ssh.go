@@ -18,7 +18,7 @@ func init() {
 }
 
 type ec2SshArgs struct {
-	Selectors      []string `arg:"positional" help:"instance-ids | dns-names | private-dns-names | tags | vpc-id | subnet-id | security-group-id | ip-addresses | private-ip-addresses"`
+	Selectors      []string `arg:"positional" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
 	User           string   `arg:"-u,--user" help:"ssh user if not tagged on instance as 'user'"`
 	Cmd            string   `arg:"-c,--cmd"`
 	Stdin          string   `arg:"-s,--stdin" help:"stdin value to be provided to remote cmd"`

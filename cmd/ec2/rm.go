@@ -13,7 +13,7 @@ func init() {
 }
 
 type ec2RmArgs struct {
-	Selectors []string `arg:"positional" help:"instance-ids | dns-names | private-dns-names | tags | vpc-id | subnet-id | security-group-id | ip-addresses | private-ip-addresses"`
+	Selectors []string `arg:"positional" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
 	Yes       bool     `arg:"-y,--yes" default:"false"`
 }
 
