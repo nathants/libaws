@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -25,11 +26,13 @@ func ec2IpPrivate() {
 	var args ec2IpPrivateArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	instances, err := lib.EC2ListInstances(ctx, args.Selectors, "")
+	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, instance := range instances {
-		fmt.Println(*instance.PrivateIpAddress)
+		if instance.PrivateIpAddress != nil {
+			fmt.Println(*instance.PrivateIpAddress)
+		}
 	}
 }
