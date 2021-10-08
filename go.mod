@@ -5,13 +5,14 @@ go 1.17
 require (
 	github.com/alexflint/go-arg v1.4.2
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/aws/aws-sdk-go v1.40.58
+	github.com/aws/aws-sdk-go v1.40.59
 	github.com/dustin/go-humanize v1.0.0
 	github.com/mattn/go-isatty v0.0.14
 	github.com/pkg/term v1.1.0
 	github.com/satori/go.uuid v1.2.0
 	github.com/sethvargo/go-password v0.2.0
 	github.com/tidwall/pretty v1.2.0
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 )
 

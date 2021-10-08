@@ -5,7 +5,7 @@ import aws.ec2
 
 def main():
     for sg in aws.ec2.sgs():
-        yield '%s %s %s' % (sg.vpc_id, sg.group_name, sg.group_id)
+        yield '%s %s %s' % (sg.group_name, sg.group_id, sg.vpc_id)
 
 if __name__ == '__main__':
     with aws.setup():

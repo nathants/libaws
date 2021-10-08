@@ -74,12 +74,22 @@ func Pformat(i interface{}) string {
 }
 
 func Retry(ctx context.Context, fn func() error) error {
+	return RetryAttempts(ctx, 7, fn)
+}
+
+// 6  attempts =  5  seconds total delay
+// 7  attempts = 10  seconds total delay
+// 8  attempts = 20  seconds total delay
+// 9  attempts = 40  seconds total delay
+// 10 attempts = 80  seconds total delay
+// 11 attempts = 160  seconds total delay
+// 12 attempts = 320 seconds total delay
+func RetryAttempts(ctx context.Context, attempts int, fn func() error) error {
 	count := 0
-	attempts := 6
 	return retry.Do(
 		func() error {
 			if count != 0 {
-				Logger.Printf("retry %d/%d for %v\n", count, attempts-1, functionName(fn))
+				Logger.Printf("retry attempt %d/%d for %v\n", count, attempts-1, functionName(fn))
 			}
 			count++
 			err := fn()
