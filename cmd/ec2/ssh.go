@@ -71,10 +71,16 @@ func ec2Ssh() {
 	}
 	if len(instances) == 0 {
 		err = fmt.Errorf("no instances found for those selectors")
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
 	} else if len(instances) == 1 && args.Cmd == "" {
 		err = lib.EC2SshLogin(instances[0], args.User)
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
 	} else {
-		_, err = lib.EC2Ssh(context.Background(), &lib.EC2SshInput{
+		results, err := lib.EC2Ssh(context.Background(), &lib.EC2SshInput{
 			User:           args.User,
 			TimeoutSeconds: args.Timeout,
 			Instances:      instances,
@@ -86,8 +92,16 @@ func ec2Ssh() {
 			Key:            args.Key,
 			PrintLock:      sync.RWMutex{},
 		})
-	}
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
+		fmt.Fprint(os.Stderr, "\n")
+		for _, result := range results {
+			if result.Err == nil {
+				fmt.Fprintf(os.Stderr, "success: %s\n", lib.Green(result.InstanceID))
+			} else {
+				fmt.Fprintf(os.Stderr, "failure: %s\n", lib.Red(result.InstanceID))
+			}
+		}
+		if err != nil {
+			os.Exit(1)
+		}
 	}
 }

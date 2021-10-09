@@ -736,7 +736,7 @@ type EC2SshInput struct {
 }
 
 const remoteCmdTemplate = `
-fail_msg="failed to run cmd on instance: %s"
+fail_msg="%s"
 mkdir -p ~/.cmds || echo $fail_msg
 path=~/.cmds/$(cat /proc/sys/kernel/random/uuid)
 input=$path.input
@@ -758,16 +758,16 @@ if [ $code != 0 ]; then
 fi
 `
 
-func ec2SshRemoteCmd(cmd, stdin, instanceID string) string {
+func ec2SshRemoteCmd(cmd, stdin, failureMessage string) string {
 	return fmt.Sprintf(
 		remoteCmdTemplate,
-		instanceID,
+		failureMessage,
 		base64.StdEncoding.EncodeToString([]byte(cmd)),
 		base64.StdEncoding.EncodeToString([]byte(stdin)),
 	)
 }
 
-func EC2Ssh(ctx context.Context, input *EC2SshInput) (map[string]*[]string, error) {
+func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 	if len(input.Instances) == 0 {
 		err := fmt.Errorf("no instances")
 		Logger.Println("error:", err)
@@ -804,7 +804,6 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) (map[string]*[]string, erro
 		ctx = timeoutCtx
 	}
 	//
-	errChan := make(chan error, len(input.Instances))
 	resultChan := make(chan *ec2SshResult, len(input.Instances))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -813,37 +812,37 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) (map[string]*[]string, erro
 		go func(instance *ec2.Instance) {
 			err := concurrency.Acquire(cancelCtx, 1)
 			if err != nil {
-				errChan <- err
-				resultChan <- nil
+				resultChan <- &ec2SshResult{Err: err, InstanceID: *instance.InstanceId}
 				return
 			}
 			defer concurrency.Release(1)
-			out, err := ec2Ssh(cancelCtx, instance, input)
-			errChan <- err
-			resultChan <- out
+			resultChan <- ec2Ssh(cancelCtx, instance, input)
 		}(instance)
 	}
 	var errLast error
-	result := make(map[string]*[]string)
+	var result []*ec2SshResult
 	for range input.Instances {
-		err := <-errChan
-		if err != nil {
-			Logger.Println("error:", err)
-			errLast = err
-		}
 		sshResult := <-resultChan
-		result[sshResult.InstanceID] = &sshResult.Result
+		if sshResult.Err != nil {
+			Logger.Println("error:", sshResult.Err)
+			errLast = sshResult.Err
+		}
+		result = append(result, sshResult)
 	}
 	//
 	return result, errLast
 }
 
 type ec2SshResult struct {
+	Err        error
 	InstanceID string
-	Result     []string
+	Stdout     []string
 }
 
-func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) (*ec2SshResult, error) {
+func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec2SshResult {
+	result := &ec2SshResult{
+		InstanceID: *instance.InstanceId,
+	}
 	sshCmd := []string{
 		"ssh",
 		"-o", "UserKnownHostsFile=/dev/null",
@@ -864,21 +863,26 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) (*e
 		target += *instance.PublicDnsName
 	}
 	sshCmd = append(sshCmd, target)
-	sshCmd = append(sshCmd, ec2SshRemoteCmd(input.Cmd, input.Stdin, *instance.InstanceId))
+	failureMessage := "failure"
+	if len(input.Instances) == 1 {
+		failureMessage = fmt.Sprintf("failure on %s", *instance.InstanceId)
+	}
+	sshCmd = append(sshCmd, ec2SshRemoteCmd(input.Cmd, input.Stdin, failureMessage))
 	//
 	cmd := exec.CommandContext(ctx, sshCmd[0], sshCmd[1:]...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		Logger.Println("error:", err)
-		return nil, err
+		result.Err = err
+		return result
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		Logger.Println("error:", err)
-		return nil, err
+		result.Err = err
+		return result
 	}
 	//
-	result := []string{}
 	resultLock := &sync.RWMutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
@@ -901,7 +905,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) (*e
 			}
 			if kind == "stdout" && input.AccumulateResult {
 				resultLock.Lock()
-				result = append(result, line)
+				result.Stdout = append(result.Stdout, line)
 				resultLock.Unlock()
 			}
 			input.PrintLock.Lock()
@@ -922,25 +926,24 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) (*e
 	err = cmd.Start()
 	if err != nil {
 		Logger.Println("error:", err)
-		return nil, err
+		result.Err = err
+		return result
 	}
 	for i := 0; i < 2; i++ {
 		err := <-done
 		if err != nil {
 			Logger.Println("error:", err)
-			return nil, err
+			result.Err = err
+			return result
 		}
 	}
 	err = cmd.Wait()
 	if err != nil {
 		Logger.Println("error:", err)
-		return nil, err
+		result.Err = err
+		return result
 	}
-	sshResult := &ec2SshResult{
-		InstanceID: *instance.InstanceId,
-		Result:     result,
-	}
-	return sshResult, nil
+	return result
 }
 
 func EC2SshLogin(instance *ec2.Instance, user string) error {
