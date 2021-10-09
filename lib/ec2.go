@@ -532,17 +532,33 @@ while true; do
     fi
     sleep 1
 done
-disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
-(
- echo g # Create a new empty GPT partition table
- echo n # Add a new partition
- echo 1 # Partition number
- echo   # First sector (Accept default: 1)
- echo   # Last sector (Accept default: varies)
- echo w # Write changes
-) | sudo fdisk $disk
+
+# alpine arm64 is different from not alpine x86_64, not sure about alpine x86_64
+if which apk &>/dev/null; then
+    sudo apk add e2fsprogs
+    disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | tail -n1)
+    (
+     echo n # Add a new partition
+     echo p # Primary partition
+     echo 1 # Partition number
+     echo   # First sector (Accept default: 1)
+     echo   # Last sector (Accept default: varies)
+     echo w # Write changes
+    ) | sudo fdisk $disk
+else
+    disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
+    (
+     echo g # Create a new empty GPT partition table
+     echo n # Add a new partition
+     echo 1 # Partition number
+     echo   # First sector (Accept default: 1)
+     echo   # Last sector (Accept default: varies)
+     echo w # Write changes
+    ) | sudo fdisk $disk
+fi
+
 sleep 5
-yes | sudo mkfs -t ext4 -E nodiscard ${disk}p1
+yes | sudo mkfs.ext4 -E nodiscard ${disk}p1
 sudo mkdir -p /mnt
 sudo mount -o nodiscard,noatime ${disk}p1 /mnt
 sudo chown -R $(whoami):$(whoami) /mnt
@@ -643,7 +659,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 
 func makeInit(config *EC2Config) string {
 	init := config.Init
-	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d"} {
+	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d", "c6gd", "m6gd", "r6gd"} {
 		if instanceType == strings.Split(config.InstanceType, ".")[0] {
 			Logger.Println("add nvme instance store setup to init script")
 			init = nvmeInit + init
