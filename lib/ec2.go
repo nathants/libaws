@@ -721,6 +721,377 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, e
 	return reservation.Instances, nil
 }
 
+type EC2RsyncInput struct {
+	Source           string
+	Destination      string
+	Instances        []*ec2.Instance
+	TimeoutSeconds   int
+	MaxConcurrency   int
+	User             string
+	PrivateIP        bool
+	Key              string
+	PrintLock        sync.RWMutex
+	AccumulateResult bool
+}
+
+func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error) {
+	if len(input.Instances) == 0 {
+		err := fmt.Errorf("no instances")
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if input.User == "" {
+		input.User = tag(input.Instances[0], "user", "")
+		for _, instance := range input.Instances[1:] {
+			user := tag(instance, "user", "")
+			if input.User != user {
+				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
+				Logger.Println("error:", err)
+				return nil, err
+			}
+		}
+		input.User = tag(input.Instances[0], "user", "")
+		if input.User == "" {
+			err := fmt.Errorf("no user provied and no user tag available")
+			Logger.Println("error:", err)
+			return nil, err
+		}
+	}
+	//
+	if input.MaxConcurrency == 0 {
+		input.MaxConcurrency = 32
+	}
+	if input.TimeoutSeconds != 0 {
+		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, time.Duration(input.TimeoutSeconds)*time.Second)
+		defer timeoutCancel()
+		ctx = timeoutCtx
+	}
+	//
+	resultChan := make(chan *ec2SshResult, len(input.Instances))
+	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for _, instance := range input.Instances {
+		go func(instance *ec2.Instance) {
+			err := concurrency.Acquire(cancelCtx, 1)
+			if err != nil {
+				resultChan <- &ec2SshResult{Err: err, InstanceID: *instance.InstanceId}
+				return
+			}
+			defer concurrency.Release(1)
+			resultChan <- ec2Rsync(cancelCtx, instance, input)
+		}(instance)
+	}
+	var errLast error
+	var result []*ec2SshResult
+	for range input.Instances {
+		sshResult := <-resultChan
+		if sshResult.Err != nil {
+			Logger.Println("error:", sshResult.Err)
+			errLast = sshResult.Err
+		}
+		result = append(result, sshResult)
+	}
+	//
+	return result, errLast
+}
+
+func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput) *ec2SshResult {
+	result := &ec2SshResult{
+		InstanceID: *instance.InstanceId,
+	}
+	rsyncCmd := []string{
+		"rsync",
+		"-avh",
+		"-e", "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no",
+	}
+	if os.Getenv("RSYNC_OPTIONS") != "" {
+		rsyncCmd = append(rsyncCmd, strings.Split(os.Getenv("RSYNC_OPTIONS"), " ")...)
+	}
+	if input.Key != "" {
+		rsyncCmd = append(rsyncCmd, []string{"-i", input.Key}...)
+	}
+	target := input.User + "@"
+	if input.PrivateIP {
+		target += *instance.PrivateIpAddress
+	} else {
+		target += *instance.PublicDnsName
+	}
+	//
+	source := input.Source
+	destination := input.Destination
+	if strings.HasPrefix(source, ":") {
+		source = target + source
+	} else if strings.HasPrefix(destination, ":") {
+		destination = target + destination
+	} else {
+		result.Err = fmt.Errorf("neither source nor destination contains ':'")
+		Logger.Println("error:", result.Err)
+		return result
+	}
+	rsyncCmd = append(rsyncCmd, []string{source, destination}...)
+	//
+	cmd := exec.CommandContext(ctx, rsyncCmd[0], rsyncCmd[1:]...)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
+	//
+	resultLock := &sync.RWMutex{}
+	done := make(chan error)
+	tail := func(kind string, buf *bufio.Reader) {
+		for {
+			line, err := buf.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					done <- err
+				} else {
+					done <- nil
+				}
+				return
+			}
+			if strings.Contains(line, "Permission denied (publickey)") {
+				done <- fmt.Errorf("ec2 Permission denied (publickey)")
+				return
+			}
+			if len(input.Instances) > 1 {
+				line = *instance.InstanceId + ": " + line
+			}
+			if kind == "stdout" && input.AccumulateResult {
+				resultLock.Lock()
+				result.Stdout = append(result.Stdout, line)
+				resultLock.Unlock()
+			}
+			input.PrintLock.Lock()
+			switch kind {
+			case "stderr":
+				_, _ = fmt.Fprint(os.Stderr, line)
+			case "stdout":
+				_, _ = fmt.Fprint(os.Stdout, line)
+			default:
+				panic("unknown kind: " + kind)
+			}
+			input.PrintLock.Unlock()
+		}
+	}
+	//
+	go tail("stdout", bufio.NewReader(stdout))
+	go tail("stderr", bufio.NewReader(stderr))
+	err = cmd.Start()
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
+	for i := 0; i < 2; i++ {
+		err := <-done
+		if err != nil {
+			Logger.Println("error:", err)
+			result.Err = err
+			return result
+		}
+	}
+	err = cmd.Wait()
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
+	return result
+}
+
+type EC2ScpInput struct {
+	Source           string
+	Destination      string
+	Instances        []*ec2.Instance
+	TimeoutSeconds   int
+	MaxConcurrency   int
+	User             string
+	PrivateIP        bool
+	Key              string
+	PrintLock        sync.RWMutex
+	AccumulateResult bool
+}
+
+func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
+	if len(input.Instances) == 0 {
+		err := fmt.Errorf("no instances")
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if input.User == "" {
+		input.User = tag(input.Instances[0], "user", "")
+		for _, instance := range input.Instances[1:] {
+			user := tag(instance, "user", "")
+			if input.User != user {
+				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
+				Logger.Println("error:", err)
+				return nil, err
+			}
+		}
+		input.User = tag(input.Instances[0], "user", "")
+		if input.User == "" {
+			err := fmt.Errorf("no user provied and no user tag available")
+			Logger.Println("error:", err)
+			return nil, err
+		}
+	}
+	//
+	if input.MaxConcurrency == 0 {
+		input.MaxConcurrency = 32
+	}
+	if input.TimeoutSeconds != 0 {
+		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, time.Duration(input.TimeoutSeconds)*time.Second)
+		defer timeoutCancel()
+		ctx = timeoutCtx
+	}
+	//
+	resultChan := make(chan *ec2SshResult, len(input.Instances))
+	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for _, instance := range input.Instances {
+		go func(instance *ec2.Instance) {
+			err := concurrency.Acquire(cancelCtx, 1)
+			if err != nil {
+				resultChan <- &ec2SshResult{Err: err, InstanceID: *instance.InstanceId}
+				return
+			}
+			defer concurrency.Release(1)
+			resultChan <- ec2Scp(cancelCtx, instance, input)
+		}(instance)
+	}
+	var errLast error
+	var result []*ec2SshResult
+	for range input.Instances {
+		sshResult := <-resultChan
+		if sshResult.Err != nil {
+			Logger.Println("error:", sshResult.Err)
+			errLast = sshResult.Err
+		}
+		result = append(result, sshResult)
+	}
+	//
+	return result, errLast
+}
+
+func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec2SshResult {
+	result := &ec2SshResult{
+		InstanceID: *instance.InstanceId,
+	}
+	scpCmd := []string{
+		"scp",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=no",
+	}
+	if input.Key != "" {
+		scpCmd = append(scpCmd, []string{"-i", input.Key}...)
+	}
+	target := input.User + "@"
+	if input.PrivateIP {
+		target += *instance.PrivateIpAddress
+	} else {
+		target += *instance.PublicDnsName
+	}
+	//
+	source := input.Source
+	destination := input.Destination
+	if strings.HasPrefix(source, ":") {
+		source = target + source
+	} else if strings.HasPrefix(destination, ":") {
+		destination = target + destination
+	} else {
+		result.Err = fmt.Errorf("neither source nor destination contains ':'")
+		Logger.Println("error:", result.Err)
+		return result
+	}
+	scpCmd = append(scpCmd, []string{source, destination}...)
+	//
+	cmd := exec.CommandContext(ctx, scpCmd[0], scpCmd[1:]...)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
+	//
+	resultLock := &sync.RWMutex{}
+	done := make(chan error)
+	tail := func(kind string, buf *bufio.Reader) {
+		for {
+			line, err := buf.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					done <- err
+				} else {
+					done <- nil
+				}
+				return
+			}
+			if strings.Contains(line, "Permission denied (publickey)") {
+				done <- fmt.Errorf("ec2 Permission denied (publickey)")
+				return
+			}
+			if len(input.Instances) > 1 {
+				line = *instance.InstanceId + ": " + line
+			}
+			if kind == "stdout" && input.AccumulateResult {
+				resultLock.Lock()
+				result.Stdout = append(result.Stdout, line)
+				resultLock.Unlock()
+			}
+			input.PrintLock.Lock()
+			switch kind {
+			case "stderr":
+				_, _ = fmt.Fprint(os.Stderr, line)
+			case "stdout":
+				_, _ = fmt.Fprint(os.Stdout, line)
+			default:
+				panic("unknown kind: " + kind)
+			}
+			input.PrintLock.Unlock()
+		}
+	}
+	//
+	go tail("stdout", bufio.NewReader(stdout))
+	go tail("stderr", bufio.NewReader(stderr))
+	err = cmd.Start()
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
+	for i := 0; i < 2; i++ {
+		err := <-done
+		if err != nil {
+			Logger.Println("error:", err)
+			result.Err = err
+			return result
+		}
+	}
+	err = cmd.Wait()
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
+	return result
+}
+
 type EC2SshInput struct {
 	NoTTY            bool
 	Instances        []*ec2.Instance
@@ -733,6 +1104,7 @@ type EC2SshInput struct {
 	Key              string
 	AccumulateResult bool
 	PrintLock        sync.RWMutex
+	NoPrint          bool
 }
 
 const remoteCmdTemplate = `
@@ -903,7 +1275,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 			if len(input.Instances) > 1 {
 				line = *instance.InstanceId + ": " + line
 			}
-			if kind == "stdout" && input.AccumulateResult {
+			if !input.NoPrint && kind == "stdout" && input.AccumulateResult {
 				resultLock.Lock()
 				result.Stdout = append(result.Stdout, line)
 				resultLock.Unlock()
