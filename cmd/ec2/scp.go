@@ -75,14 +75,16 @@ func ec2Scp() {
 		PrintLock:      sync.RWMutex{},
 	})
 	fmt.Fprint(os.Stderr, "\n")
+	var lastErr error
 	for _, result := range results {
 		if result.Err == nil {
 			fmt.Fprintf(os.Stderr, "success: %s\n", lib.Green(result.InstanceID))
 		} else {
+			lastErr = err
 			fmt.Fprintf(os.Stderr, "failure: %s\n", lib.Red(result.InstanceID))
 		}
 	}
-	if err != nil {
+	if lastErr != nil {
 		os.Exit(1)
 	}
 }
