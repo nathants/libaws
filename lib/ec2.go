@@ -1125,8 +1125,8 @@ type EC2SshInput struct {
 
 const remoteCmdTemplate = `
 fail_msg="%s"
-mkdir -p ~/.cmds || echo $fail_msg
-path=~/.cmds/$(cat /proc/sys/kernel/random/uuid)
+mkdir -p /dev/shm/.cmds || echo $fail_msg
+path=/dev/shm/.cmds/$(cat /proc/sys/kernel/random/uuid)
 input=$path.input
 echo %s | base64 -d > $path  || echo $fail_msg
 echo %s | base64 -d > $input || echo $fail_msg
