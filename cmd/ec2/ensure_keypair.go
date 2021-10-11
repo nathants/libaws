@@ -34,6 +34,9 @@ func ec2EnsureKeypair() {
 	var args ec2EnsureKeypairArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
+	if !strings.HasSuffix(args.PubKey, ".pub") {
+		lib.Logger.Fatalf("pubkey should end with .pub, got: %s", args.PubKey)
+	}
 	data, err := ioutil.ReadFile(args.PubKey)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
