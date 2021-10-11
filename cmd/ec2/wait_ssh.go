@@ -25,7 +25,6 @@ type ec2WaitSshArgs struct {
 	User           string   `arg:"-u,--user" help:"ssh user if not tagged on instance as 'user'"`
 	Cmd            string   `arg:"-c,--cmd"`
 	Stdin          string   `arg:"-s,--stdin" help:"stdin value to be provided to remote cmd"`
-	NoTTY          bool     `arg:"-n,--no-tty" help:"when backgrounding a process, you dont want a tty"`
 	PrivateIP      bool     `arg:"-p,--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
 	MaxConcurrency int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent waitssh connections"`
 	Key            string   `arg:"-k,--key" help:"waitssh private key"`

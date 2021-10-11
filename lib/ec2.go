@@ -1109,7 +1109,6 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 }
 
 type EC2SshInput struct {
-	NoTTY            bool
 	Instances        []*ec2.Instance
 	Cmd              string
 	TimeoutSeconds   int
@@ -1238,11 +1237,6 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 	}
 	if input.Key != "" {
 		sshCmd = append(sshCmd, []string{"-i", input.Key}...)
-	}
-	if input.NoTTY {
-		sshCmd = append(sshCmd, "-T")
-	} else {
-		sshCmd = append(sshCmd, "-tt")
 	}
 	target := input.User + "@"
 	if input.PrivateIP {
