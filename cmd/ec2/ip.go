@@ -3,6 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -29,6 +30,9 @@ func ec2Ip() {
 	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
+	}
+	if len(instances) == 0 {
+		os.Exit(1)
 	}
 	for _, instance := range instances {
 		if instance.PublicIpAddress != nil {
