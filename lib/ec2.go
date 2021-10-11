@@ -428,7 +428,10 @@ func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num in
 }
 
 const timeoutInit = `
-if which apk; then
+if ! which sudo &>/dev/null; then
+    doas ln -sf $(which doas) /usr/bin/sudo
+fi
+if which apk &>/dev/null; then
    sudo apk update
    sudo apk add bash
 fi
@@ -525,6 +528,9 @@ fi
 const nvmeInit = `
 # pick the first nvme drive which is NOT mounted as / and prepare that as /mnt
 set -x
+if ! which sudo &>/dev/null; then
+    doas ln -sf $(which doas) /usr/bin/sudo
+fi
 while true; do
     echo 'wait for /dev/nvme*'
     if sudo fdisk -l | grep /dev/nvme &>/dev/null; then
@@ -671,7 +677,7 @@ func makeInit(config *EC2Config) string {
 	}
 	if init != "" {
 		init = base64.StdEncoding.EncodeToString([]byte(init))
-		init = fmt.Sprintf("#!/bin/sh\npath=/tmp/$(cat /proc/sys/kernel/random/uuid); if ! which bash >/dev/null && which apk >/dev/null; then sudo apk update; sudo apk add bash; fi; echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", init, config.UserName)
+		init = fmt.Sprintf("#!/bin/sh\npath=/tmp/$(cat /proc/sys/kernel/random/uuid); if ! which sudo &>/dev/null; then doas ln -sf $(which doas) /usr/bin/sudo; fi; if ! which bash >/dev/null && which apk >/dev/null; then sudo apk update; sudo apk add bash; fi; echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", init, config.UserName)
 		init = base64.StdEncoding.EncodeToString([]byte(init))
 	}
 	return init
@@ -1129,6 +1135,9 @@ path=/dev/shm/.cmds/$(cat /proc/sys/kernel/random/uuid)
 input=$path.input
 echo %s | base64 -d > $path  || echo $fail_msg
 echo %s | base64 -d > $input || echo $fail_msg
+if ! which sudo &>/dev/null; then
+    doas ln -sf $(which doas) /usr/bin/sudo
+fi
 if ! which bash >/dev/null && which apk >/dev/null; then
    sudo apk update
    sudo apk add bash
