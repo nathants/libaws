@@ -1503,6 +1503,28 @@ func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
 	return *images[0].ImageId, nil
 }
 
+func ec2AmiAlpineEdge(ctx context.Context, arch string) (string, error) {
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Owners: []*string{aws.String("538276064493")},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("name"), Values: []*string{aws.String("alpine-ami-*")}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+		},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	var images []*ec2.Image
+	for _, image := range out.Images {
+		if strings.Contains(*image.Name, "edge") {
+			images = append(images, image)
+		}
+	}
+	sort.Slice(images, func(i, j int) bool { return *images[i].Name > *images[j].Name })
+	return *images[0].ImageId, nil
+}
+
 func EC2Ami(ctx context.Context, name, arch string) (amiID string, sshUser string, err error) {
 	switch arch {
 	case EC2ArchAmd64:
@@ -1524,6 +1546,9 @@ func EC2Ami(ctx context.Context, name, arch string) (amiID string, sshUser strin
 		sshUser = "arch"
 	case "alpine":
 		amiID, err = ec2AmiAlpine(ctx, arch)
+		sshUser = "alpine"
+	case "alpine-edge":
+		amiID, err = ec2AmiAlpineEdge(ctx, arch)
 		sshUser = "alpine"
 	default:
 		amiID, err = ec2AmiUbuntu(ctx, name, arch)
