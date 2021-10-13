@@ -397,7 +397,7 @@ def main(name: 'name of the instance', # type: ignore
             if init.startswith('#!'):
                 assert init.startswith('#!/bin/bash'), f'bad init script: {init[:50]}...'
                 init = '\n'.join(init.split('\n')[1:])
-        if type.split('.')[0] in ['i3', 'i3en', 'c5d', 'm5d', 'r5d', 'z1d']:
+        if type.split('.')[0] in ['i3', 'i3en', 'c5d', 'm5d', 'r5d', 'z1d', "c6gd", "m6gd", "r6gd", "c5ad"]:
             init = _nvme_init % {'inodes': f'-i {bytes_per_inode}'} + init
         if seconds_timeout:
             stderr(f'this instance will `sudo poweroff` after {seconds_timeout} seconds, or {round(int(seconds_timeout) / 60. / 60., 1)} hours, because of --seconds-timeout')
