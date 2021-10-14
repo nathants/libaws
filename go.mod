@@ -5,7 +5,8 @@ go 1.17
 require (
 	github.com/alexflint/go-arg v1.4.2
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/aws/aws-sdk-go v1.40.59
+	github.com/aws/aws-sdk-go v1.41.9
+	github.com/buger/goterm v1.0.3
 	github.com/dustin/go-humanize v1.0.0
 	github.com/mattn/go-isatty v0.0.14
 	github.com/pkg/term v1.1.0

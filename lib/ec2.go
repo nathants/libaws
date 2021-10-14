@@ -26,6 +26,17 @@ import (
 const (
 	EC2ArchAmd64 = "x86_64"
 	EC2ArchArm64 = "arm64"
+
+	EC2AmiLambda     = "lambda"
+	EC2AmiAmzn       = "amzn"
+	EC2AmiArch       = "arch"
+	EC2AmiAlpine     = "alpine"
+	EC2AmiAlpineEdge = "alpine-edge"
+
+	EC2AmiUbuntuFocal  = "focal"
+	EC2AmiUbuntuBionic = "bionic"
+	EC2AmiUbuntuXenial = "xenial"
+	EC2AmiUbuntuTrusty = "trusty"
 )
 
 var ec2Client *ec2.EC2
@@ -1535,19 +1546,19 @@ func EC2Ami(ctx context.Context, name, arch string) (amiID string, sshUser strin
 		return "", "", err
 	}
 	switch name {
-	case "lambda":
+	case EC2AmiLambda:
 		amiID, err = ec2AmiLambda(ctx, arch)
 		sshUser = "user"
-	case "amzn":
+	case EC2AmiAmzn:
 		amiID, err = ec2AmiAmzn(ctx, arch)
 		sshUser = "user"
-	case "arch":
+	case EC2AmiArch:
 		amiID, err = ec2AmiArch(ctx, arch)
 		sshUser = "arch"
-	case "alpine":
+	case EC2AmiAlpine:
 		amiID, err = ec2AmiAlpine(ctx, arch)
 		sshUser = "alpine"
-	case "alpine-edge":
+	case EC2AmiAlpineEdge:
 		amiID, err = ec2AmiAlpineEdge(ctx, arch)
 		sshUser = "alpine"
 	default:
@@ -1653,4 +1664,96 @@ func EC2Kind(instance *ec2.Instance) string {
 		return "spot"
 	}
 	return "ondemand"
+}
+
+type EC2WaitForSshInput struct {
+	Selectors      []string
+	MaxWaitSeconds int
+	PrivateIP      bool
+	User           string
+	Key            string
+	MaxConcurrency int
+}
+
+func EC2WaitForSsh(ctx context.Context, input *EC2WaitForSshInput) ([]string, error) {
+	start := time.Now()
+	for {
+		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")
+		if err != nil {
+			return nil, err
+		}
+		//
+		var instances []*ec2.Instance
+		var pendingInstances []*ec2.Instance
+		for _, instance := range allInstances {
+			switch *instance.State.Name {
+			case ec2.InstanceStateNameRunning:
+				instances = append(instances, instance)
+			case ec2.InstanceStateNamePending:
+				pendingInstances = append(pendingInstances, instance)
+			}
+		}
+		//
+		var ips []string
+		for _, instance := range instances {
+			if input.PrivateIP {
+				ips = append(ips, *instance.PrivateIpAddress)
+			} else {
+				ips = append(ips, *instance.PublicDnsName)
+			}
+		}
+		// add an executable on PATH named `aws-ec2-ip-callback` which
+		// will be invoked with the ipv4 of all instances to be waited
+		// before each attempt
+		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(ips, " "))).Run()
+		//
+		results, err := EC2Ssh(context.Background(), &EC2SshInput{
+			User:           input.User,
+			TimeoutSeconds: 10,
+			Instances:      instances,
+			Cmd:            "whoami >/dev/null",
+			PrivateIP:      input.PrivateIP,
+			MaxConcurrency: input.MaxConcurrency,
+			Key:            input.Key,
+			PrintLock:      sync.RWMutex{},
+			NoPrint:        true,
+		})
+		for _, result := range results {
+			if result.Err == nil {
+				fmt.Fprintf(os.Stderr, "ready: %s\n", Green(result.InstanceID))
+			} else {
+				fmt.Fprintf(os.Stderr, "unready: %s\n", Red(result.InstanceID))
+			}
+		}
+		for _, instance := range pendingInstances {
+			fmt.Fprintf(os.Stderr, "unready: %s\n", Red(*instance.InstanceId))
+		}
+		if err == nil && len(pendingInstances) == 0 {
+			var ids []string
+			for _, result := range results {
+				ids = append(ids, result.InstanceID)
+			}
+			return ids, nil
+		}
+		if len(pendingInstances) == 0 && input.MaxWaitSeconds != 0 && time.Since(start) > time.Duration(input.MaxWaitSeconds)*time.Second {
+			var ready []string
+			var terminate []string
+			for _, result := range results {
+				if result.Err != nil {
+					fmt.Fprintln(os.Stderr, "terminating unready instance:", result.InstanceID)
+					terminate = append(terminate, result.InstanceID)
+				} else {
+					ready = append(ready, result.InstanceID)
+				}
+			}
+			_, err = EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
+				InstanceIds: aws.StringSlice(terminate),
+			})
+			if err != nil {
+				return nil, err
+			}
+			return ready, nil
+		}
+		time.Sleep(5 * time.Second)
+	}
 }
