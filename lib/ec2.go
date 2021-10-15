@@ -584,8 +584,12 @@ set +x
 `
 
 func makeBlockDeviceMapping(config *EC2Config) []*ec2.BlockDeviceMapping {
+	deviceName := "/dev/sda1"
+	if config.UserName == "alpine" {
+		deviceName = "/dev/xvda"
+	}
 	return []*ec2.BlockDeviceMapping{{
-		DeviceName: aws.String("/dev/sda1"),
+		DeviceName: aws.String(deviceName),
 		Ebs: &ec2.EbsBlockDevice{
 			DeleteOnTermination: aws.Bool(true),
 			Encrypted:           aws.Bool(true),
