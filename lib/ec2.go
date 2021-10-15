@@ -492,16 +492,16 @@ echo '#!/bin/bash
     done
     date +%s | sudo tee /etc/timeout.start.seconds >/dev/null # reset start time so when we power the machine back up, the timer is reset
     sudo poweroff # sudo poweroff terminates spot instances by default
-' |  sudo tee /usr/local/bin/timeout >/dev/null
-sudo chmod +x /usr/local/bin/timeout
+' |  sudo tee /usr/local/bin/ec2-timeout >/dev/null
+sudo chmod +x /usr/local/bin/ec2-timeout
 
 if which systemctl; then
     echo '[Unit]
-Description=timeout
+Description=ec2-timeout
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/timeout
+ExecStart=/usr/local/bin/ec2-timeout
 User=root
 Restart=always
 
@@ -517,7 +517,7 @@ elif which rc-update; then
 
     echo '#!/sbin/openrc-run
 
-command="/usr/local/bin/timeout"
+command="/usr/local/bin/ec2-timeout"
 command_background="yes"
 pidfile="/tmp/timeout.pid"
 output_log="/var/log/timeout.log"
@@ -531,7 +531,7 @@ error_log="/var/log/timeout.log"
 else
     sudo touch /var/log/timeout.log
     sudo chmod ugo+rw /var/log/timeout.log
-    nohup /usr/local/bin/timeout >/var/log/timeout.log &
+    nohup /usr/local/bin/ec2-timeout >/var/log/timeout.log &
 fi
 
 `
