@@ -31,7 +31,6 @@ const (
 	EC2AmiAmzn       = "amzn"
 	EC2AmiArch       = "arch"
 	EC2AmiAlpine     = "alpine"
-	EC2AmiAlpineEdge = "alpine-edge"
 
 	EC2AmiUbuntuFocal  = "focal"
 	EC2AmiUbuntuBionic = "bionic"
@@ -439,13 +438,6 @@ func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num in
 }
 
 const timeoutInit = `
-if ! which sudo &>/dev/null; then
-    doas ln -sf $(which doas) /usr/bin/sudo
-fi
-if which apk &>/dev/null; then
-   sudo apk update
-   sudo apk add bash
-fi
 echo '# timeout will call this script before it $(sudo poweroff)s, and wait 60 seconds for this script to complete' | sudo tee -a /etc/timeout.sh >/dev/null
 echo '#!/bin/bash
     warning="seconds remaining until timeout poweroff. [sudo journalctl -u timeout.service -f] to follow. increase /etc/timeout.seconds to delay. [date +%s | sudo tee /etc/timeout.start.seconds] to reset, or [sudo systemctl {{stop,disable}} timeout.service] to cancel."
@@ -539,9 +531,6 @@ fi
 const nvmeInit = `
 # pick the first nvme drive which is NOT mounted as / and prepare that as /mnt
 set -x
-if ! which sudo &>/dev/null; then
-    doas ln -sf $(which doas) /usr/bin/sudo
-fi
 while true; do
     echo 'wait for /dev/nvme*'
     if sudo fdisk -l | grep /dev/nvme &>/dev/null; then
@@ -690,11 +679,9 @@ func makeInit(config *EC2Config) string {
 	if config.SecondsTimeout != 0 {
 		init = strings.Replace(timeoutInit, "TIMEOUT_SECONDS", fmt.Sprint(config.SecondsTimeout), 1) + init
 	}
-	if init != "" {
-		init = base64.StdEncoding.EncodeToString([]byte(init))
-		init = fmt.Sprintf("#!/bin/sh\npath=/tmp/$(cat /proc/sys/kernel/random/uuid); if ! which sudo &>/dev/null; then doas ln -sf $(which doas) /usr/bin/sudo; fi; if ! which bash >/dev/null && which apk >/dev/null; then sudo apk update; sudo apk add bash; fi; echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", init, config.UserName)
-		init = base64.StdEncoding.EncodeToString([]byte(init))
-	}
+	init = base64.StdEncoding.EncodeToString([]byte(init))
+	init = fmt.Sprintf("#!/bin/sh\nset -x; path=/tmp/$(cat /proc/sys/kernel/random/uuid); if which apk >/dev/null; then apk update && apk add curl git procps ncurses-terminfo coreutils sed grep less vim sudo bash && echo -e '%s ALL=(ALL) NOPASSWD:ALL\nroot ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers; fi; echo %s | base64 -d > $path; sudo -u %s bash -e $path 2>&1", config.UserName, init, config.UserName)
+	init = base64.StdEncoding.EncodeToString([]byte(init))
 	return init
 }
 
@@ -1150,17 +1137,6 @@ path=/dev/shm/.cmds/$(cat /proc/sys/kernel/random/uuid)
 input=$path.input
 echo %s | base64 -d > $path  || echo $fail_msg
 echo %s | base64 -d > $input || echo $fail_msg
-if ! which sudo &>/dev/null; then
-    doas ln -sf $(which doas) /usr/bin/sudo
-fi
-if ! which bash >/dev/null && which apk >/dev/null; then
-   sudo apk update
-   sudo apk add bash
-fi
-if ! which bash >/dev/null; then
-    echo $fail_msg
-    exit 1
-fi
 cat $input | bash $path
 code=$?
 if [ $code != 0 ]; then
@@ -1505,33 +1481,6 @@ func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
 	}
 	var images []*ec2.Image
 	for _, image := range out.Images {
-		if len(strings.Split(strings.Split(*image.Name, "-")[2], ".")) == 3 { // only keep versioned images like: alpine-ami-3.14.2-x86_64-r0
-			images = append(images, image)
-		}
-	}
-	major := func(x string) int { return atoi(strings.Split(strings.Split(x, "-")[2], ".")[0]) }
-	minor := func(x string) int { return atoi(strings.Split(strings.Split(x, "-")[2], ".")[1]) }
-	bugfx := func(x string) int { return atoi(strings.Split(strings.Split(x, "-")[2], ".")[2]) }
-	sort.SliceStable(images, func(i, j int) bool { return bugfx(*images[i].Name) > bugfx(*images[j].Name) })
-	sort.SliceStable(images, func(i, j int) bool { return minor(*images[i].Name) > minor(*images[j].Name) })
-	sort.SliceStable(images, func(i, j int) bool { return major(*images[i].Name) > major(*images[j].Name) })
-	return *images[0].ImageId, nil
-}
-
-func ec2AmiAlpineEdge(ctx context.Context, arch string) (string, error) {
-	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String("538276064493")},
-		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String("alpine-ami-*")}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
-		},
-	})
-	if err != nil {
-		Logger.Println("error:", err)
-		return "", err
-	}
-	var images []*ec2.Image
-	for _, image := range out.Images {
 		if strings.Contains(*image.Name, "edge") {
 			images = append(images, image)
 		}
@@ -1561,9 +1510,6 @@ func EC2Ami(ctx context.Context, name, arch string) (amiID string, sshUser strin
 		sshUser = "arch"
 	case EC2AmiAlpine:
 		amiID, err = ec2AmiAlpine(ctx, arch)
-		sshUser = "alpine"
-	case EC2AmiAlpineEdge:
-		amiID, err = ec2AmiAlpineEdge(ctx, arch)
 		sshUser = "alpine"
 	default:
 		amiID, err = ec2AmiUbuntu(ctx, name, arch)
