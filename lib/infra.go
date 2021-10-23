@@ -412,7 +412,7 @@ func InfraListS3(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (m
 		//
 		if descr.Policy == nil && s3Default.acl != "private" {
 			s.Attrs = append(s.Attrs, "acl=private")
-		} else if reflect.DeepEqual(s3PublicPolicy(*bucket.Name), descr.Policy) && s3Default.acl != "public" {
+		} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.acl != "public" {
 			s.Attrs = append(s.Attrs, "acl=public")
 		}
 		//
