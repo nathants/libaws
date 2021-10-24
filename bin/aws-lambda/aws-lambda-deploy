@@ -16,7 +16,7 @@ def main(path: 'the python file that defines the lambda, see cli-aws/examples/la
          memory=128,
          timeout=300,
          concurrency=0,
-         runtime='python3.8',
+         runtime='python3.9',
          preview=False,
          yes=False,
          quick: 'quick update code only' = False, # type: ignore
