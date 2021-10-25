@@ -8,10 +8,14 @@ import (
 )
 
 type logger struct {
+	PrintFn  func(args ...interface{})
 	disabled bool
 }
 
 var Logger = &logger{
+	PrintFn: func(args ...interface{}) {
+		fmt.Fprint(os.Stderr, args...)
+	},
 	disabled: strings.ToLower(os.Getenv("LOGGING") + " ")[:1] == "n",
 }
 
@@ -31,13 +35,14 @@ func (l *logger) Println(v ...interface{}) {
 		var r []interface{}
 		r = append(r, caller())
 		r = append(r, v...)
-		fmt.Fprintln(os.Stderr, r...)
+		r = append(r, "\n")
+		l.PrintFn(r...)
 	}
 }
 
 func (l *logger) Printf(format string, v ...interface{}) {
 	if !l.disabled {
-		fmt.Fprintf(os.Stderr, caller()+" "+format, v...)
+		l.PrintFn(fmt.Sprintf(caller()+" "+format, v...))
 	}
 }
 
@@ -45,11 +50,12 @@ func (l *logger) Fatal(v ...interface{}) {
 	var r []interface{}
 	r = append(r, caller())
 	r = append(r, v...)
-	fmt.Fprintln(os.Stderr, r...)
+	r = append(r, "\n")
+	l.PrintFn(r...)
 	os.Exit(1)
 }
 
 func (l *logger) Fatalf(format string, v ...interface{}) {
-	fmt.Fprintf(os.Stderr, caller()+" "+format, v...)
+	l.PrintFn(fmt.Sprintf(caller()+" "+format, v...))
 	os.Exit(1)
 }
