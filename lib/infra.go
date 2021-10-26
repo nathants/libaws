@@ -472,22 +472,22 @@ func InfraListSQS(ctx context.Context) (map[string]InfraSQS, error) {
 			return nil, err
 		}
 		s := InfraSQS{}
-		if *out.Attributes["DelaySeconds"] != "0" { // default
+		if out.Attributes["DelaySeconds"] != nil && *out.Attributes["DelaySeconds"] != "0" { // default
 			s.Attrs = append(s.Attrs, "DelaySeconds="+*out.Attributes["DelaySeconds"])
 		}
-		if *out.Attributes["MaximumMessageSize"] != "262144" { // default
+		if out.Attributes["MaximumMessageSize"] != nil && *out.Attributes["MaximumMessageSize"] != "262144" { // default
 			s.Attrs = append(s.Attrs, "MaximumMessageSize="+*out.Attributes["MaximumMessageSize"])
 		}
-		if *out.Attributes["MessageRetentionPeriod"] != "345600" { // default
+		if out.Attributes["MessageRetentionPeriod"] != nil && *out.Attributes["MessageRetentionPeriod"] != "345600" { // default
 			s.Attrs = append(s.Attrs, "MessageRetentionPeriod="+*out.Attributes["MessageRetentionPeriod"])
 		}
-		if *out.Attributes["ReceiveMessageWaitTimeSeconds"] != "0" { // default
+		if out.Attributes["ReceiveMessageWaitTimeSeconds"] != nil && *out.Attributes["ReceiveMessageWaitTimeSeconds"] != "0" { // default
 			s.Attrs = append(s.Attrs, "ReceiveMessageWaitTimeSeconds="+*out.Attributes["ReceiveMessageWaitTimeSeconds"])
 		}
-		if *out.Attributes["VisibilityTimeout"] != "30" {
+		if out.Attributes["VisibilityTimeout"] != nil && *out.Attributes["VisibilityTimeout"] != "30" { // default
 			s.Attrs = append(s.Attrs, "VisibilityTimeout="+*out.Attributes["VisibilityTimeout"])
 		}
-		if *out.Attributes["KmsDataKeyReusePeriodSeconds"] != "300" {
+		if out.Attributes["KmsDataKeyReusePeriodSeconds"] != nil && *out.Attributes["KmsDataKeyReusePeriodSeconds"] != "300" { // default
 			s.Attrs = append(s.Attrs, "KmsDataKeyReusePeriodSeconds="+*out.Attributes["KmsDataKeyReusePeriodSeconds"])
 		}
 		res[SQSUrlToName(url)] = s
