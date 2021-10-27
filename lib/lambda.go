@@ -30,6 +30,10 @@ const (
 	lambdaAttrMemory      = "memory"
 	lambdaAttrTimeout     = "timeout"
 	//
+	lambdaAttrConcurrencyDefault = 0
+	lambdaAttrMemoryDefault      = 128
+	lambdaAttrTimeoutDefault     = 300
+	//
 	lambdaTriggerSQS        = "sqs"
 	lambdaTrigerS3          = "s3"
 	lambdaTriggerDynamoDB   = "dynamodb"
@@ -1277,4 +1281,320 @@ func LambdaListFunctions(ctx context.Context) ([]*lambda.FunctionConfiguration, 
 		marker = out.NextMarker
 	}
 	return functions, nil
+}
+
+func LambdaEnsure(ctx context.Context, pth string, quick, preview bool) error {
+	if strings.HasSuffix(pth, ".py") {
+		return lambdaEnsurePy(ctx, pth, quick, preview)
+	} else if strings.HasSuffix(pth, ".go") {
+		return lambdaEnsureGo(ctx, pth, quick, preview)
+	} else if strings.Contains(strings.ToLower(path.Base(pth)), "dockerfile") {
+		return lambdaEnsureDockerfile(ctx, pth, quick, preview)
+	} else {
+		return fmt.Errorf("lambda unknown file type: %s", pth)
+	}
+}
+
+func lambdaEnsurePy(ctx context.Context, pth string, quick, preview bool) error {
+	var err error
+	pth, err = filepath.Abs(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	name, err := LambdaName(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	arn, err := StsArn(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	Logger.Println("user:", arn)
+	Logger.Println("file:", pth)
+	Logger.Println("name:", name)
+	metadata, err := LambdaParseFile(pth, quick)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	zipFile, err := LambdaZipFile(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if quick && Exists(zipFile) {
+		err := LambdaUpdateZip(pth, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = LambdaIncludeInZip(pth, metadata.Include, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = LambdaUpdateFunctionZip(ctx, name, pth, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		return nil
+	} else {
+		err := LogsEnsureGroup(ctx, name, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = InfraEnsureS3(ctx, metadata.S3, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = InfraEnsureDynamoDB(ctx, metadata.DynamoDB, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = InfraEnsureSqs(ctx, metadata.Sqs, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = IamEnsureRole(ctx, name, "lambda", preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = IamEnsureRolePolicies(ctx, name, metadata.Policy, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = IamEnsureRoleAllows(ctx, name, metadata.Allow, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = LambdaCreateZipPy(pth, metadata.Require, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = LambdaIncludeInZip(pth, metadata.Include, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		var zipFile []byte
+		if !preview {
+			var err error
+			zipFile, err = LambdaZipBytes(pth)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+
+		concurrency := lambdaAttrConcurrencyDefault
+		memory := lambdaAttrMemoryDefault
+		timeout := lambdaAttrTimeoutDefault
+
+		for _, attr := range metadata.Attr {
+			parts := strings.SplitN(attr, " ", 2)
+			k := parts[0]
+			v := parts[1]
+			switch k {
+			case lambdaAttrConcurrency:
+				concurrency = atoi(v)
+			case lambdaAttrMemory:
+				memory = atoi(v)
+			case lambdaAttrTimeout:
+				timeout = atoi(v)
+			default:
+				err := fmt.Errorf("unknown attr: %s", k)
+				Logger.Println("error:", err)
+				return err
+			}
+
+		}
+		arnRole, err := IamRoleArn(ctx, "lambda", name)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		input := &lambdaGetOrCreateFunctionInput{
+			handler: strings.TrimSuffix(path.Base(pth), ".py") + ".main",
+			name:    name,
+			runtime: "python3.9",
+			arnRole: arnRole,
+			timeout: timeout,
+			memory:  memory,
+			envVars: []string{},
+		}
+		arnLambda, err := lambdaGetOrCreateFunction(ctx, input, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+
+		_ = arnLambda
+
+		// ensure triggers
+		//
+		//
+		//
+
+		err = LambdaSetConcurrency(ctx, name, concurrency, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if !preview {
+			err = Retry(ctx, func() error {
+				_, err := LambdaClient().UpdateFunctionCodeWithContext(ctx, &lambda.UpdateFunctionCodeInput{
+					FunctionName: aws.String(name),
+					ZipFile:      zipFile,
+				})
+				return err
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"updated function code:", name)
+		//
+		env := &lambda.Environment{Variables: make(map[string]*string)}
+		if !preview {
+			err = Retry(ctx, func() error {
+				_, err = LambdaClient().UpdateFunctionConfigurationWithContext(ctx, &lambda.UpdateFunctionConfigurationInput{
+					FunctionName: aws.String(input.name),
+					Runtime:      aws.String(input.runtime),
+					Timeout:      aws.Int64(int64(input.timeout)),
+					MemorySize:   aws.Int64(int64(input.memory)),
+					Environment:  env,
+					Handler:      aws.String(input.handler),
+				})
+				return err
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"updated function configuration:", name)
+	}
+	return nil
+}
+
+type lambdaGetOrCreateFunctionInput struct {
+	handler     string
+	name        string
+	runtime     string
+	arnRole     string
+	timeout     int
+	memory      int
+	envVars     []string
+}
+
+func lambdaGetOrCreateFunction(ctx context.Context, input *lambdaGetOrCreateFunctionInput, preview bool) (string, error) {
+	var expectedErr error
+	var arn string
+	err := Retry(ctx, func() error {
+		out, err := LambdaClient().GetFunctionWithContext(ctx, &lambda.GetFunctionInput{
+			FunctionName: aws.String(input.name),
+		})
+		if err != nil {
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != lambda.ErrCodeResourceNotFoundException {
+				return err
+			}
+			expectedErr = err
+			return nil
+		}
+		arn = *out.Configuration.FunctionArn
+		return nil
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	if expectedErr == nil {
+		return arn, nil
+	}
+	if expectedErr != nil {
+		Logger.Println("error:", expectedErr)
+		return "", expectedErr
+	}
+	if !preview {
+		env := &lambda.Environment{Variables: make(map[string]*string)}
+		err = Retry(ctx, func() error {
+			out, err := LambdaClient().CreateFunctionWithContext(ctx, &lambda.CreateFunctionInput{
+				FunctionName: aws.String(input.name),
+				Runtime:      aws.String(input.runtime),
+				Timeout:      aws.Int64(int64(input.timeout)),
+				MemorySize:   aws.Int64(int64(input.memory)),
+				Environment:  env,
+				Handler:      aws.String(input.handler),
+			})
+			if err != nil {
+				return err
+			}
+			arn = *out.FunctionArn
+			return nil
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return "", err
+		}
+	}
+	Logger.Println(PreviewString(preview) + "created function: " + input.name)
+	return arn, nil
+}
+
+func LambdaUpdateFunctionZip(ctx context.Context, name, pth string, preview bool) error {
+	zipBytes, err := LambdaZipBytes(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if !preview {
+		var expectedErr error
+		err = Retry(ctx, func() error {
+			_, err := LambdaClient().UpdateFunctionCodeWithContext(ctx, &lambda.UpdateFunctionCodeInput{
+				FunctionName: aws.String(name),
+				ZipFile:      zipBytes,
+			})
+			if err != nil {
+				aerr, ok := err.(awserr.Error)
+				if !ok || aerr.Code() != lambda.ErrCodeResourceNotFoundException {
+					return err
+				}
+				expectedErr = err
+				return nil
+			}
+			return nil
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if expectedErr != nil {
+			Logger.Println("error:", expectedErr)
+			return expectedErr
+		}
+	}
+	Logger.Println(PreviewString(preview) + "lambda updated code zipfile for: " + name)
+	return nil
+}
+
+func lambdaEnsureGo(ctx context.Context, pth string, quick, preview bool) error {
+	return nil
+}
+
+func lambdaEnsureDockerfile(ctx context.Context, pth string, quick, preview bool) error {
+	return nil
 }

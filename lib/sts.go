@@ -36,10 +36,35 @@ func StsAccount(ctx context.Context) (string, error) {
 	return *stsAccount, nil
 }
 
-func StsUser(ctx context.Context) (string, error) {
-	out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
-	if err != nil {
-		return "", err
+var stsArn *string
+var stsArnLock sync.RWMutex
+
+func StsArn(ctx context.Context) (string, error) {
+	stsArnLock.Lock()
+	defer stsArnLock.Unlock()
+	if stsArn == nil {
+		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+		if err != nil {
+			return "", err
+		}
+		stsArn = out.Arn
 	}
-	return Last(strings.Split(*out.Arn, ":")), nil
+	return *stsArn, nil
+}
+
+var stsUser *string
+var stsUserLock sync.RWMutex
+
+func StsUser(ctx context.Context) (string, error) {
+	stsUserLock.Lock()
+	defer stsUserLock.Unlock()
+	if stsUser == nil {
+		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+		if err != nil {
+			return "", err
+		}
+		user := Last(strings.Split(*out.Arn, ":"))
+		stsUser = &user
+	}
+	return *stsUser, nil
 }

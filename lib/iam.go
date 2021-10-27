@@ -129,6 +129,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 	if len(allows) == 0 {
 		return nil
 	}
+	var allowNames []string
 	for _, allowStr := range allows {
 		parts := strings.SplitN(allowStr, " ", 2)
 		if len(parts) != 2 {
@@ -140,6 +141,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 			action:   parts[0],
 			resource: parts[1],
 		}
+		allowNames = append(allowNames, allow.policyName())
 		out, err := IamClient().GetRolePolicyWithContext(ctx, &iam.GetRolePolicyInput{
 			RoleName:   aws.String(roleName),
 			PolicyName: aws.String(allow.policyName()),
@@ -157,7 +159,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 				return err
 			}
 			if equal {
-				return nil
+				continue
 			}
 		}
 		if !preview {
@@ -172,6 +174,26 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 			}
 		}
 		Logger.Println(PreviewString(preview)+"attach role allow:", roleName, allow)
+	}
+	attachedAllows, err := IamListRoleAllows(ctx, roleName)
+	if err != nil {
+		Logger.Println("error:", err)
+	    return err
+	}
+	for _, allow := range attachedAllows {
+		if !Contains(allowNames, allow.policyName()) {
+			if !preview {
+				_, err := IamClient().DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
+					RoleName: aws.String(roleName),
+					PolicyName: aws.String(allow.policyName()),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+				    return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"detach role allow:", roleName, allow)
+		}
 	}
 	return nil
 }
@@ -199,6 +221,7 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 		Logger.Println("error:", err)
 		return err
 	}
+outer:
 	for _, policyName := range policyNames {
 		if !preview {
 			var matchedPolicies []*iam.Policy
@@ -220,7 +243,7 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 				}
 				for _, policy := range rolePolicies {
 					if *policy.PolicyName == roleName {
-						return nil
+						continue outer
 					}
 				}
 				_, err = IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
@@ -240,6 +263,27 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 				}
 				return err
 			}
+		}
+	}
+	attachedPolicies, err := IamListRolePolicies(ctx, roleName)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	for _, policy := range attachedPolicies {
+		policyName := Last(strings.Split(*policy.PolicyArn, "/"))
+		if !Contains(policyNames, policyName) {
+			if !preview {
+				_, err := IamClient().DetachRolePolicyWithContext(ctx, &iam.DetachRolePolicyInput{
+					RoleName:  aws.String(roleName),
+					PolicyArn: policy.PolicyArn,
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"detached role policy:", roleName, policyName)
 		}
 	}
 	return nil
@@ -522,13 +566,13 @@ func IamListUserPolicies(ctx context.Context, username string) ([]string, error)
 
 func IamResetUserLoginTempPassword(ctx context.Context, username, password string) error {
 	_, err := IamClient().UpdateLoginProfileWithContext(ctx, &iam.UpdateLoginProfileInput{
-		Password: aws.String(password),
-		UserName: aws.String(username),
+		Password:              aws.String(password),
+		UserName:              aws.String(username),
 		PasswordResetRequired: aws.Bool(true),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
-	    return err
+		return err
 	}
 	return nil
 }
