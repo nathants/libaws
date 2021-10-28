@@ -27,14 +27,18 @@ func caller() string {
 		parts[len(parts)-1],
 	}
 	file = strings.Join(keep, "/")
-	return fmt.Sprintf("%s:%d:", file, line)
+	return fmt.Sprintf("%s:%d: ", file, line)
 }
 
 func (l *logger) Println(v ...interface{}) {
 	if !l.disabled {
 		var r []interface{}
 		r = append(r, caller())
-		r = append(r, v...)
+		var xs []string
+		for _, x := range v {
+			xs = append(xs, fmt.Sprint(x))
+		}
+		r = append(r, strings.Join(xs, " "))
 		r = append(r, "\n")
 		l.PrintFn(r...)
 	}
@@ -49,7 +53,11 @@ func (l *logger) Printf(format string, v ...interface{}) {
 func (l *logger) Fatal(v ...interface{}) {
 	var r []interface{}
 	r = append(r, caller())
-	r = append(r, v...)
+	var xs []string
+	for _, x := range v {
+		xs = append(xs, fmt.Sprint(x))
+	}
+	r = append(r, strings.Join(xs, " "))
 	r = append(r, "\n")
 	l.PrintFn(r...)
 	os.Exit(1)

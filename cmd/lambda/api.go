@@ -31,7 +31,7 @@ func lambdaApi() {
 	}
 	url, err := lib.ApiUrl(ctx, name)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(url)
 }

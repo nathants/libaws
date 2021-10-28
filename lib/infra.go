@@ -223,13 +223,25 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 				return nil, err
 			}
 			for _, mapping := range out.EventSourceMappings {
-				switch ArnToInfraName(*mapping.EventSourceArn) {
-				case lambdaTriggerDynamoDB:
+				infra := ArnToInfraName(*mapping.EventSourceArn)
+				switch infra {
+				case lambdaTriggerSQS, lambdaTriggerDynamoDB:
+					var sourceName string
+					switch infra {
+					case lambdaTriggerSQS:
+						sourceName = SQSArnToName(*mapping.EventSourceArn)
+					case lambdaTriggerDynamoDB:
+						sourceName = DynamoDBStreamArnToTableName(*mapping.EventSourceArn)
+					default:
+						err := fmt.Errorf("unknown infra: %s", infra)
+						Logger.Println("error:", err)
+						return nil, err
+					}
 					triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], InfraLambdaTrigger{
 						LambdaName:  *fn.FunctionName,
 						TriggerType: ArnToInfraName(*mapping.EventSourceArn),
 						TriggerAttrs: []string{
-							DynamoDBStreamArnToTableName(*mapping.EventSourceArn),
+							sourceName,
 							fmt.Sprintf("batch=%d", *mapping.BatchSize),
 							fmt.Sprintf("parallel=%d", *mapping.ParallelizationFactor),
 							fmt.Sprintf("retry=%d", *mapping.MaximumRetryAttempts),

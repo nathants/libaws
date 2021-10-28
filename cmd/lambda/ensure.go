@@ -1,12 +1,10 @@
 package cliaws
 
 import (
-	// "fmt"
 	"context"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
-
 )
 
 func init() {
@@ -15,7 +13,9 @@ func init() {
 }
 
 type lambdaEnsureArgs struct {
-	Path string `arg:"positional"`
+	Path    string `arg:"positional,required"`
+	Preview bool   `arg:"-p,--preview"`
+	Quick   bool   `arg:"-q,--quick" help:"quickly patch lambda code without updating anything else"`
 }
 
 func (lambdaEnsureArgs) Description() string {
@@ -26,5 +26,8 @@ func lambdaEnsure() {
 	var args lambdaEnsureArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	_ = ctx
+	err := lib.LambdaEnsure(ctx, args.Path, args.Quick, args.Preview)
+	if err != nil {
+	    lib.Logger.Fatal("error: ", err)
+	}
 }

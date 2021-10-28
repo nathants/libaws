@@ -35,7 +35,7 @@ func cloudwatchLsDimensions() {
 	dimensionsMap := make(map[string]interface{})
 	for _, m := range metrics {
 		for _, d := range m.Dimensions {
-			dimensionsMap[*d.Name + "=" + *d.Value] = nil
+			dimensionsMap[*d.Name+"="+*d.Value] = nil
 		}
 	}
 	var dimensions []string

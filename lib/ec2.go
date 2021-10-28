@@ -27,10 +27,10 @@ const (
 	EC2ArchAmd64 = "x86_64"
 	EC2ArchArm64 = "arm64"
 
-	EC2AmiLambda     = "lambda"
-	EC2AmiAmzn       = "amzn"
-	EC2AmiArch       = "arch"
-	EC2AmiAlpine     = "alpine"
+	EC2AmiLambda = "lambda"
+	EC2AmiAmzn   = "amzn"
+	EC2AmiArch   = "arch"
+	EC2AmiAlpine = "alpine"
 
 	EC2AmiUbuntuFocal  = "focal"
 	EC2AmiUbuntuBionic = "bionic"
@@ -1641,6 +1641,7 @@ func EC2WaitForSsh(ctx context.Context, input *EC2WaitForSshInput) ([]string, er
 				instances = append(instances, instance)
 			case ec2.InstanceStateNamePending:
 				pendingInstances = append(pendingInstances, instance)
+			default:
 			}
 		}
 		//

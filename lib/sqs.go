@@ -101,6 +101,10 @@ func SQSArn(ctx context.Context, name string) (string, error) {
 	return fmt.Sprintf("arn:aws:sqs:%s:%s:%s", Region(), account, name), nil
 }
 
+func SQSArnToName(arn string) string {
+	return Last(strings.Split(arn, ":"))
+}
+
 type SQSNumMessageOutput struct {
 	Messages           int
 	MessagesNotVisible int

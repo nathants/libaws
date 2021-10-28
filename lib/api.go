@@ -94,13 +94,13 @@ func ApiResourceID(ctx context.Context, restApiID, path string) (string, error) 
 			Logger.Println("error:", err)
 			return "", err
 		}
-		if len(out.Items) == 0 {
-			break
-		}
 		for _, resource := range out.Items {
 			if path == *resource.Path {
 				return *resource.Id, nil
 			}
+		}
+		if out.Position == nil {
+			break
 		}
 		position = out.Position
 	}
@@ -111,7 +111,7 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 	api, err := Api(ctx, name)
 	if err != nil {
 		Logger.Println("error:", err)
-	    return "", err
+		return "", err
 	}
 	url := fmt.Sprintf(
 		"https://%s.execute-api.%s.amazonaws.com/%s",

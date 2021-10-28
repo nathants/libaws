@@ -153,7 +153,12 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 				return err
 			}
 		} else {
-			equal, err := iamPolicyEqual(*out.PolicyDocument, allow.policyDocument())
+			document, err := url.QueryUnescape(*out.PolicyDocument)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			equal, err := iamPolicyEqual(document, allow.policyDocument())
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
@@ -178,18 +183,18 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 	attachedAllows, err := IamListRoleAllows(ctx, roleName)
 	if err != nil {
 		Logger.Println("error:", err)
-	    return err
+		return err
 	}
 	for _, allow := range attachedAllows {
 		if !Contains(allowNames, allow.policyName()) {
 			if !preview {
 				_, err := IamClient().DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
-					RoleName: aws.String(roleName),
+					RoleName:   aws.String(roleName),
 					PolicyName: aws.String(allow.policyName()),
 				})
 				if err != nil {
 					Logger.Println("error:", err)
-				    return err
+					return err
 				}
 			}
 			Logger.Println(PreviewString(preview)+"detach role allow:", roleName, allow)
@@ -223,29 +228,29 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 	}
 outer:
 	for _, policyName := range policyNames {
-		if !preview {
-			var matchedPolicies []*iam.Policy
-			for _, policy := range policies {
-				if Last(strings.Split(*policy.Arn, "/")) == policyName {
-					matchedPolicies = append(matchedPolicies, policy)
-				}
+		var matchedPolicies []*iam.Policy
+		for _, policy := range policies {
+			if Last(strings.Split(*policy.Arn, "/")) == policyName {
+				matchedPolicies = append(matchedPolicies, policy)
 			}
-			switch len(matchedPolicies) {
-			case 0:
-				err := fmt.Errorf("didn't find policy for name: %s", policyName)
+		}
+		switch len(matchedPolicies) {
+		case 0:
+			err := fmt.Errorf("didn't find policy for name: %s", policyName)
+			Logger.Println("error:", err)
+			return err
+		case 1:
+			rolePolicies, err := IamListRolePolicies(ctx, roleName)
+			if err != nil {
 				Logger.Println("error:", err)
 				return err
-			case 1:
-				rolePolicies, err := IamListRolePolicies(ctx, roleName)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
+			}
+			for _, policy := range rolePolicies {
+				if *policy.PolicyName == policyName {
+					continue outer
 				}
-				for _, policy := range rolePolicies {
-					if *policy.PolicyName == roleName {
-						continue outer
-					}
-				}
+			}
+			if !preview {
 				_, err = IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
 					PolicyArn: matchedPolicies[0].Arn,
 					RoleName:  aws.String(roleName),
@@ -254,15 +259,15 @@ outer:
 					Logger.Println("error:", err)
 					return err
 				}
-				Logger.Println(PreviewString(preview)+"attached role policy:", roleName, policyName)
-			default:
-				err := fmt.Errorf("found more than 1 policy for name: %s", policyName)
-				Logger.Println("error:", err)
-				for _, policy := range matchedPolicies {
-					Logger.Println("error:", *policy.Arn)
-				}
-				return err
 			}
+			Logger.Println(PreviewString(preview)+"attached role policy:", roleName, policyName)
+		default:
+			err := fmt.Errorf("found more than 1 policy for name: %s", policyName)
+			Logger.Println("error:", err)
+			for _, policy := range matchedPolicies {
+				Logger.Println("error:", *policy.Arn)
+			}
+			return err
 		}
 	}
 	attachedPolicies, err := IamListRolePolicies(ctx, roleName)
@@ -315,15 +320,25 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println(PreviewString(preview)+"created role:", roleName, principalName)
+			Logger.Println(PreviewString(preview)+"created role: ", roleName, principalName)
 		case 1:
 			if *roles[0].Path != rolePath {
 				err := fmt.Errorf("role path mismatch: %s %s != %s", roleName, *roles[0].Path, rolePath)
 				Logger.Println("error:", err)
 				return err
 			}
-			if *roles[0].AssumeRolePolicyDocument != *iamAssumePolicyDocument(principalName) {
-				err := fmt.Errorf("role policy mismatch: %s %s != %s", roleName, *roles[0].AssumeRolePolicyDocument, *iamAssumePolicyDocument(principalName))
+			document, err := url.QueryUnescape(*roles[0].AssumeRolePolicyDocument)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			equal, err := iamPolicyEqual(document, *iamAssumePolicyDocument(principalName))
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			if !equal {
+				err := fmt.Errorf("role policy mismatch: %s %s != %s", roleName, document, *iamAssumePolicyDocument(principalName))
 				Logger.Println("error:", err)
 				return err
 			}

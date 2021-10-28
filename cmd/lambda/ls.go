@@ -50,6 +50,6 @@ func lambdaLs() {
 		if fn.LastModified != nil {
 			lastmodified = strings.Join(strings.Split(*fn.LastModified, ":")[:2], ":") + "Z"
 		}
-		fmt.Println(name, runtime, timeout, memory, lastmodified)
+		fmt.Println(lib.Green(name), runtime, timeout, memory, lastmodified)
 	}
 }

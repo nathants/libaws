@@ -27,7 +27,7 @@ func cloudwatchLsNamespaces() {
 	ctx := context.Background()
 	metrics, err := lib.CloudwatchListMetrics(ctx, nil, nil)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	namespacesMap := make(map[string]interface{})
 	for _, m := range metrics {

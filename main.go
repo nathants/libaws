@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	_ "github.com/nathants/cli-aws/cmd/aws"
-	_ "github.com/nathants/cli-aws/cmd/codecommit"
 	_ "github.com/nathants/cli-aws/cmd/cloudwatch"
+	_ "github.com/nathants/cli-aws/cmd/codecommit"
 	_ "github.com/nathants/cli-aws/cmd/creds"
 	_ "github.com/nathants/cli-aws/cmd/dynamodb"
 	_ "github.com/nathants/cli-aws/cmd/ec2"

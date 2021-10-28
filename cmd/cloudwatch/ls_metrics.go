@@ -34,9 +34,9 @@ func cloudwatchLsMetrics() {
 	}
 	metricsMap := make(map[string]int)
 	for _, m := range metrics {
-		metricsMap[*m.MetricName] += 0
+		metricsMap[*m.MetricName] = 0
 		for range m.Dimensions {
-			metricsMap[*m.MetricName] += 1
+			metricsMap[*m.MetricName]++
 		}
 	}
 	var metricsNames []string

@@ -38,4 +38,4 @@ def main(event, context):
     return {'statusCode': '200',
             'isBase64Encoded': False,
             'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps([event['httpMethod'], event['path'], body])}
+            'body': json.dumps([event['httpMethod'], event['path'], 'asdf'])}

@@ -1,4 +1,3 @@
-
 // attr: concurrency 0
 // attr: memory 128
 // attr: timeout 60
@@ -16,6 +15,8 @@ import (
 )
 
 func handleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	_ = ctx
+	_ = request
 	return events.APIGatewayProxyResponse{Body: "hi", StatusCode: 200}, nil
 }
 

@@ -26,7 +26,7 @@ func ecrUrl() {
 	ctx := context.Background()
 	url, err := lib.EcrUrl(ctx)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(url)
 }

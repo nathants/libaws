@@ -14,7 +14,7 @@ func init() {
 }
 
 type lambdaArnArgs struct {
-	Path string `arg:"positional"`
+	Path string `arg:"positional,required"`
 }
 
 func (lambdaArnArgs) Description() string {

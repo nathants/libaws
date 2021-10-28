@@ -67,15 +67,15 @@ func ec2WaitSsh() {
 	}
 
 	readyIDs, err := lib.EC2WaitForSsh(ctx, &lib.EC2WaitForSshInput{
-		Selectors: args.Selectors,
+		Selectors:      args.Selectors,
 		MaxWaitSeconds: args.MaxWait,
-		PrivateIP: args.PrivateIP,
-		User: args.User,
-		Key: args.Key,
+		PrivateIP:      args.PrivateIP,
+		User:           args.User,
+		Key:            args.Key,
 		MaxConcurrency: args.MaxConcurrency,
 	})
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, id := range readyIDs {
 		fmt.Println(id)
