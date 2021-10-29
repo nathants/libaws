@@ -72,6 +72,9 @@ func LambdaSetConcurrency(ctx context.Context, name string, concurrency int, pre
 			Logger.Println("error:", err)
 			return err
 		}
+		if out.ReservedConcurrentExecutions == nil {
+			out.ReservedConcurrentExecutions = aws.Int64(0)
+		}
 		if int(*out.ReservedConcurrentExecutions) != concurrency {
 			if !preview {
 				_, err := LambdaClient().PutFunctionConcurrencyWithContext(ctx, &lambda.PutFunctionConcurrencyInput{
@@ -83,7 +86,7 @@ func LambdaSetConcurrency(ctx context.Context, name string, concurrency int, pre
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"updated concurrency:", name, concurrency)
+			Logger.Printf(PreviewString(preview)+"updated concurrency: %s %d => %d\n", name, *out.ReservedConcurrentExecutions, concurrency)
 		}
 	}
 	return nil
@@ -1253,7 +1256,7 @@ func LambdaZipFile(path string) (string, error) {
 	return fmt.Sprintf("/tmp/%s/lambda.zip", name), nil
 }
 
-func LambdaCreateZipPy(pth string, requires []string, preview bool) error {
+func lambdaCreateZipPy(pth string, requires []string, preview bool) error {
 	zipFile, err := LambdaZipFile(pth)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1389,7 +1392,7 @@ func LambdaIncludeInZip(pth string, includes []string, preview bool) error {
 	return nil
 }
 
-func LambdaUpdateZip(pth string, preview bool) error {
+func lambdaUpdateZipPy(pth string, preview bool) error {
 	zipFile, err := LambdaZipFile(pth)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1446,9 +1449,10 @@ func LambdaListFunctions(ctx context.Context) ([]*lambda.FunctionConfiguration, 
 
 func LambdaEnsure(ctx context.Context, pth string, quick, preview bool) error {
 	if strings.HasSuffix(pth, ".py") {
-		return lambdaEnsurePy(ctx, pth, quick, preview)
+		return lambdaEnsure(ctx, pth, quick, preview, lambdaUpdateZipPy, lambdaCreateZipPy)
 	} else if strings.HasSuffix(pth, ".go") {
-		return lambdaEnsureGo(ctx, pth, quick, preview)
+		// return lambdaEnsure(ctx, pth, quick, preview)
+		return nil
 	} else if strings.Contains(strings.ToLower(path.Base(pth)), "dockerfile") {
 		return lambdaEnsureDockerfile(ctx, pth, quick, preview)
 	} else {
@@ -1456,7 +1460,11 @@ func LambdaEnsure(ctx context.Context, pth string, quick, preview bool) error {
 	}
 }
 
-func lambdaEnsurePy(ctx context.Context, pth string, quick, preview bool) error {
+type LambdaUpdateZipFn func(pth string, preview bool) error
+
+type LambdaCreateZipFn func(pth string, requires []string, preview bool) error
+
+func lambdaEnsure(ctx context.Context, pth string, quick, preview bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
 	var err error
 	pth, err = filepath.Abs(pth)
 	if err != nil {
@@ -1479,7 +1487,7 @@ func lambdaEnsurePy(ctx context.Context, pth string, quick, preview bool) error 
 		return err
 	}
 	if quick && Exists(zipFile) {
-		err := LambdaUpdateZip(pth, preview)
+		err := updateZipFn(pth, preview)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -1531,7 +1539,7 @@ func lambdaEnsurePy(ctx context.Context, pth string, quick, preview bool) error 
 		Logger.Println("error:", err)
 		return err
 	}
-	err = LambdaCreateZipPy(pth, metadata.Require, preview)
+	err = createZipFn(pth, metadata.Require, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -1579,8 +1587,8 @@ func lambdaEnsurePy(ctx context.Context, pth string, quick, preview bool) error 
 	}
 	input := &lambdaGetOrCreateFunctionInput{
 		handler:  strings.TrimSuffix(path.Base(pth), ".py") + ".main",
-		name:     name,
 		runtime:  "python3.9",
+		name:     name,
 		arnRole:  arnRole,
 		timeout:  timeout,
 		memory:   memory,
@@ -1624,6 +1632,7 @@ func lambdaEnsurePy(ctx context.Context, pth string, quick, preview bool) error 
 		Logger.Println("error:", err)
 		return err
 	}
+	//
 	if !preview {
 		err = Retry(ctx, func() error {
 			_, err := LambdaClient().UpdateFunctionCodeWithContext(ctx, &lambda.UpdateFunctionCodeInput{
@@ -1640,25 +1649,60 @@ func lambdaEnsurePy(ctx context.Context, pth string, quick, preview bool) error 
 	Logger.Println(PreviewString(preview)+"updated function code:", name)
 	//
 	env := &lambda.Environment{Variables: make(map[string]*string)}
-	if !preview {
-		err = Retry(ctx, func() error {
-			_, err = LambdaClient().UpdateFunctionConfigurationWithContext(ctx, &lambda.UpdateFunctionConfigurationInput{
-				FunctionName: aws.String(input.name),
-				Runtime:      aws.String(input.runtime),
-				Timeout:      aws.Int64(int64(input.timeout)),
-				MemorySize:   aws.Int64(int64(input.memory)),
-				Environment:  env,
-				Handler:      aws.String(input.handler),
-				Role:         aws.String(input.arnRole),
-			})
-			return err
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
+	//
+	out, err := LambdaClient().GetFunctionConfigurationWithContext(ctx, &lambda.GetFunctionConfigurationInput{
+		FunctionName: aws.String(input.name),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	//
+	if out.Environment == nil {
+		out.Environment = &lambda.EnvironmentResponse{
+			Variables: make(map[string]*string),
 		}
 	}
-	Logger.Println(PreviewString(preview)+"updated function configuration:", name)
+	needsUpdate := false
+	diff, err := diffMapStringStringPointers(env.Variables, out.Environment.Variables)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if diff {
+		needsUpdate = true
+		Logger.Println(PreviewString(preview) + "update env vars")
+	}
+	if *out.Timeout != int64(input.timeout) {
+		needsUpdate = true
+		Logger.Printf(PreviewString(preview)+"update timeout %d => %d\n", *out.Timeout, input.timeout)
+	}
+	if *out.MemorySize != int64(input.memory) {
+		needsUpdate = true
+		Logger.Printf(PreviewString(preview)+"update memory %d => %d\n", *out.MemorySize, input.memory)
+	}
+	//
+	if needsUpdate {
+		if !preview {
+			err = Retry(ctx, func() error {
+				_, err = LambdaClient().UpdateFunctionConfigurationWithContext(ctx, &lambda.UpdateFunctionConfigurationInput{
+					FunctionName: aws.String(input.name),
+					Runtime:      aws.String(input.runtime),
+					Timeout:      aws.Int64(int64(input.timeout)),
+					MemorySize:   aws.Int64(int64(input.memory)),
+					Handler:      aws.String(input.handler),
+					Role:         aws.String(input.arnRole),
+					Environment:  env,
+				})
+				return err
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"updated function configuration:", name)
+	}
 	return nil
 }
 
@@ -1709,7 +1753,7 @@ func lambdaGetOrCreateFunction(ctx context.Context, input *lambdaGetOrCreateFunc
 				Environment:  env,
 				Handler:      aws.String(input.handler),
 				Role:         aws.String(input.arnRole),
-				Code: &lambda.FunctionCode{ZipFile: input.zipBytes},
+				Code:         &lambda.FunctionCode{ZipFile: input.zipBytes},
 			})
 			if err != nil {
 				return err

@@ -46,7 +46,7 @@ func (l *logger) Println(v ...interface{}) {
 
 func (l *logger) Printf(format string, v ...interface{}) {
 	if !l.disabled {
-		l.PrintFn(fmt.Sprintf(caller()+" "+format, v...))
+		l.PrintFn(fmt.Sprintf(caller()+format, v...))
 	}
 }
 
@@ -64,6 +64,6 @@ func (l *logger) Fatal(v ...interface{}) {
 }
 
 func (l *logger) Fatalf(format string, v ...interface{}) {
-	l.PrintFn(fmt.Sprintf(caller()+" "+format, v...))
+	l.PrintFn(fmt.Sprintf(caller()+format, v...))
 	os.Exit(1)
 }

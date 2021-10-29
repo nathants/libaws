@@ -18,6 +18,7 @@ import (
 	"github.com/avast/retry-go"
 	"github.com/mattn/go-isatty"
 	"github.com/pkg/term"
+	"github.com/r3labs/diff/v2"
 	"github.com/tidwall/pretty"
 )
 
@@ -314,4 +315,26 @@ var PrettyStyle = &pretty.Style{
 		}
 		return append(dst, c)
 	},
+}
+
+func diffMapStringStringPointers(a, b map[string]*string) (bool, error) {
+	d, err := diff.NewDiffer()
+	if err != nil {
+		return false, err
+	}
+	changes, err := d.Diff(a, b)
+	if err != nil {
+		return false, err
+	}
+	for _, c := range changes {
+		switch c.Type {
+		case diff.DELETE:
+			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From))
+		case diff.CREATE:
+			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.To))
+		case diff.UPDATE:
+			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From), "->", c.Path[0]+"="+fmt.Sprint(c.To))
+		}
+	}
+	return len(changes) > 0, nil
 }
