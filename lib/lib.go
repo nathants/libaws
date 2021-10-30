@@ -75,16 +75,16 @@ func Pformat(i interface{}) string {
 }
 
 func Retry(ctx context.Context, fn func() error) error {
-	return RetryAttempts(ctx, 7, fn)
+	return RetryAttempts(ctx, 8, fn)
 }
 
-// 6  attempts =  5  seconds total delay
-// 7  attempts = 10  seconds total delay
-// 8  attempts = 20  seconds total delay
-// 9  attempts = 40  seconds total delay
-// 10 attempts = 80  seconds total delay
+// 6  attempts = 5    seconds total delay
+// 7  attempts = 10   seconds total delay
+// 8  attempts = 20   seconds total delay
+// 9  attempts = 40   seconds total delay
+// 10 attempts = 80   seconds total delay
 // 11 attempts = 160  seconds total delay
-// 12 attempts = 320 seconds total delay
+// 12 attempts = 320  seconds total delay
 func RetryAttempts(ctx context.Context, attempts int, fn func() error) error {
 	count := 0
 	return retry.Do(
@@ -268,7 +268,8 @@ func shell(format string, a ...interface{}) error {
 }
 
 func shellAt(dir string, format string, a ...interface{}) error {
-	cmd := exec.Command("bash", "-c", fmt.Sprintf(format, a...))
+	cmdString := fmt.Sprintf(format, a...)
+	cmd := exec.Command("bash", "-c", cmdString)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	var stdout bytes.Buffer
@@ -276,6 +277,7 @@ func shellAt(dir string, format string, a ...interface{}) error {
 	cmd.Stdout = &stdout
 	err := cmd.Run()
 	if err != nil {
+		Logger.Println("cmd:", cmdString)
 		Logger.Println(stderr.String())
 		Logger.Println(stdout.String())
 		Logger.Println("error:", err)
@@ -334,6 +336,8 @@ func diffMapStringStringPointers(a, b map[string]*string) (bool, error) {
 			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.To))
 		case diff.UPDATE:
 			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From), "->", c.Path[0]+"="+fmt.Sprint(c.To))
+		default:
+			return false, fmt.Errorf("unknown diff type: %s", c.Type)
 		}
 	}
 	return len(changes) > 0, nil

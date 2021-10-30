@@ -320,7 +320,7 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println(PreviewString(preview)+"created role: ", roleName, principalName)
+			Logger.Println(PreviewString(preview)+"created role:", roleName, principalName)
 		case 1:
 			if *roles[0].Path != rolePath {
 				err := fmt.Errorf("role path mismatch: %s %s != %s", roleName, *roles[0].Path, rolePath)

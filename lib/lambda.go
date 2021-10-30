@@ -152,7 +152,7 @@ func lambdaFilterMetadata(lines []string) []string {
 	return res
 }
 
-func lambdaParseMetadata(token string, lines []string, silent bool) ([]string, error) {
+func lambdaParseMetadata(token string, lines []string) ([]string, error) {
 	token = token + ":"
 	var vals [][]string
 	for _, line := range lambdaFilterMetadata(lines) {
@@ -196,50 +196,50 @@ type LambdaMetadata struct {
 	Attr     []string
 }
 
-func LambdaGetMetadata(lines []string, silent bool) (*LambdaMetadata, error) {
+func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 	var err error
 	meta := &LambdaMetadata{}
-	meta.S3, err = lambdaParseMetadata(lambdaMetaS3, lines, silent)
+	meta.S3, err = lambdaParseMetadata(lambdaMetaS3, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.DynamoDB, err = lambdaParseMetadata(lambdaMetaDynamoDB, lines, silent)
+	meta.DynamoDB, err = lambdaParseMetadata(lambdaMetaDynamoDB, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Sqs, err = lambdaParseMetadata(lambdaMetaSQS, lines, silent)
+	meta.Sqs, err = lambdaParseMetadata(lambdaMetaSQS, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Policy, err = lambdaParseMetadata(lambdaMetaPolicy, lines, silent)
+	meta.Policy, err = lambdaParseMetadata(lambdaMetaPolicy, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Allow, err = lambdaParseMetadata(lambdaMetaAllow, lines, silent)
+	meta.Allow, err = lambdaParseMetadata(lambdaMetaAllow, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Include, err = lambdaParseMetadata(lambdaMetaInclude, lines, silent)
+	meta.Include, err = lambdaParseMetadata(lambdaMetaInclude, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Trigger, err = lambdaParseMetadata(lambdaMetaTrigger, lines, silent)
+	meta.Trigger, err = lambdaParseMetadata(lambdaMetaTrigger, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Require, err = lambdaParseMetadata(lambdaMetaRequire, lines, silent)
+	meta.Require, err = lambdaParseMetadata(lambdaMetaRequire, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Attr, err = lambdaParseMetadata(lambdaMetaAttr, lines, silent)
+	meta.Attr, err = lambdaParseMetadata(lambdaMetaAttr, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -1223,7 +1223,7 @@ func LambdaEnsureTriggerSQS(ctx context.Context, name, arnLambda string, meta *L
 	return nil
 }
 
-func LambdaParseFile(path string, silent bool) (*LambdaMetadata, error) {
+func LambdaParseFile(path string) (*LambdaMetadata, error) {
 	if !Exists(path) {
 		err := fmt.Errorf("no such file: %s", path)
 		Logger.Println("error:", err)
@@ -1239,7 +1239,7 @@ func LambdaParseFile(path string, silent bool) (*LambdaMetadata, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta, err := LambdaGetMetadata(strings.Split(string(data), "\n"), silent)
+	meta, err := LambdaGetMetadata(strings.Split(string(data), "\n"))
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -1256,6 +1256,42 @@ func LambdaZipFile(path string) (string, error) {
 	return fmt.Sprintf("/tmp/%s/lambda.zip", name), nil
 }
 
+func lambdaUpdateZipGo(pth string, preview bool) error {
+	return lambdaCreateZipGo(pth, []string{}, preview)
+}
+
+func lambdaCreateZipGo(pth string, _ []string, preview bool) error {
+	zipFile, err := LambdaZipFile(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	dir := path.Dir(zipFile)
+	if !preview {
+		err := os.RemoveAll(dir)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		_ = os.MkdirAll(dir, os.ModePerm)
+	}
+	Logger.Println(PreviewString(preview)+"created tempdir:", dir)
+	if !preview {
+		err = shellAt(path.Dir(pth), "CGO_ENABLED=0 GOOS=linux go build -ldflags='-s -w' -tags 'netgo osusergo' -o %s %s", path.Join(dir, "main"), path.Base(pth))
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = shellAt(dir, "zip %s ./main", zipFile)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"zipped go binary:", zipFile)
+	return nil
+}
+
 func lambdaCreateZipPy(pth string, requires []string, preview bool) error {
 	zipFile, err := LambdaZipFile(pth)
 	if err != nil {
@@ -1264,16 +1300,12 @@ func lambdaCreateZipPy(pth string, requires []string, preview bool) error {
 	}
 	dir := path.Dir(zipFile)
 	if !preview {
-		err := shell("rm -rf %s", dir)
+		err := os.RemoveAll(dir)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		err = shell("mkdir -p %s", dir)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
+		_ = os.MkdirAll(dir, os.ModePerm)
 		err = shell("virtualenv --python python3 %s/env", dir)
 		if err != nil {
 			Logger.Println("error:", err)
@@ -1449,10 +1481,13 @@ func LambdaListFunctions(ctx context.Context) ([]*lambda.FunctionConfiguration, 
 
 func LambdaEnsure(ctx context.Context, pth string, quick, preview bool) error {
 	if strings.HasSuffix(pth, ".py") {
-		return lambdaEnsure(ctx, pth, quick, preview, lambdaUpdateZipPy, lambdaCreateZipPy)
+		runtime := "python3.9"
+		handler := strings.TrimSuffix(path.Base(pth), ".py") + ".main"
+		return lambdaEnsure(ctx, runtime, handler, pth, quick, preview, lambdaUpdateZipPy, lambdaCreateZipPy)
 	} else if strings.HasSuffix(pth, ".go") {
-		// return lambdaEnsure(ctx, pth, quick, preview)
-		return nil
+		runtime := "go1.x"
+		handler := "main"
+		return lambdaEnsure(ctx, runtime, handler, pth, quick, preview, lambdaUpdateZipGo, lambdaCreateZipGo)
 	} else if strings.Contains(strings.ToLower(path.Base(pth)), "dockerfile") {
 		return lambdaEnsureDockerfile(ctx, pth, quick, preview)
 	} else {
@@ -1464,7 +1499,7 @@ type LambdaUpdateZipFn func(pth string, preview bool) error
 
 type LambdaCreateZipFn func(pth string, requires []string, preview bool) error
 
-func lambdaEnsure(ctx context.Context, pth string, quick, preview bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
+func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, preview bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
 	var err error
 	pth, err = filepath.Abs(pth)
 	if err != nil {
@@ -1476,7 +1511,7 @@ func lambdaEnsure(ctx context.Context, pth string, quick, preview bool, updateZi
 		Logger.Println("error:", err)
 		return err
 	}
-	metadata, err := LambdaParseFile(pth, quick)
+	metadata, err := LambdaParseFile(pth)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -1486,7 +1521,7 @@ func lambdaEnsure(ctx context.Context, pth string, quick, preview bool, updateZi
 		Logger.Println("error:", err)
 		return err
 	}
-	if quick && Exists(zipFile) {
+	if quick && (runtime != "python3.9" || Exists(zipFile)) {
 		err := updateZipFn(pth, preview)
 		if err != nil {
 			Logger.Println("error:", err)
@@ -1586,8 +1621,8 @@ func lambdaEnsure(ctx context.Context, pth string, quick, preview bool, updateZi
 		}
 	}
 	input := &lambdaGetOrCreateFunctionInput{
-		handler:  strings.TrimSuffix(path.Base(pth), ".py") + ".main",
-		runtime:  "python3.9",
+		handler:  handler,
+		runtime:  runtime,
 		name:     name,
 		arnRole:  arnRole,
 		timeout:  timeout,
@@ -1803,14 +1838,6 @@ func LambdaUpdateFunctionZip(ctx context.Context, name, pth string, preview bool
 		}
 	}
 	Logger.Println(PreviewString(preview) + "lambda updated code zipfile for: " + name)
-	return nil
-}
-
-func lambdaEnsureGo(ctx context.Context, pth string, quick, preview bool) error {
-	_ = ctx
-	_ = pth
-	_ = quick
-	_ = preview
 	return nil
 }
 
