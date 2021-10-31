@@ -21,6 +21,7 @@ func init() {
 
 type s3LsArgs struct {
 	Path      string `arg:"positional"`
+	Quiet     bool   `arg:"-q,--quiet" help:"print key only"`
 	Recursive bool   `arg:"-r,--recursive"`
 }
 
@@ -33,13 +34,20 @@ func s3Ls() {
 	arg.MustParse(&args)
 	ctx := context.Background()
 
-	if args.Path == "" {
+	if args.Path == "" || !strings.Contains(args.Path, "/") {
 		out, err := lib.S3Client().ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
 		for _, bucket := range out.Buckets {
-			fmt.Println(*bucket.Name)
+			if !strings.Contains(args.Path, "/") && !strings.HasPrefix(*bucket.Name, args.Path) {
+				continue
+			}
+			if args.Quiet {
+				fmt.Println(*bucket.Name + "/")
+			} else {
+				fmt.Println(*bucket.Name)
+			}
 		}
 	} else {
 		pth := lib.Last(strings.Split(args.Path, "s3://"))
@@ -66,7 +74,6 @@ func s3Ls() {
 		if !args.Recursive {
 			delimiter = aws.String("/")
 		}
-
 		var token *string
 		for {
 			out, err := s3Client.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
@@ -84,7 +91,16 @@ func s3Ls() {
 				if splitKey != "" {
 					prefix = strings.SplitN(prefix, splitKey, 2)[1]
 				}
-				fmt.Println(" PRE", prefix)
+				if args.Quiet {
+					path := args.Path
+					if !strings.HasSuffix(args.Path, "/") {
+						parts := strings.Split(args.Path, "/")
+						path = strings.Join(parts[:len(parts)-1], "/") + "/"
+					}
+					fmt.Println(path + prefix)
+				} else {
+					fmt.Println(" PRE", prefix)
+				}
 			}
 
 			zone, _ := time.Now().Zone()
@@ -98,12 +114,21 @@ func s3Ls() {
 				if !args.Recursive && splitKey != "" {
 					objKey = strings.SplitN(objKey, splitKey, 2)[1]
 				}
-				fmt.Println(
-					fmt.Sprint(obj.LastModified.In(loc))[:19],
-					fmt.Sprintf("%10v", *obj.Size),
-					objKey,
-					*obj.StorageClass,
-				)
+				if args.Quiet {
+					path := args.Path
+					if !strings.HasSuffix(args.Path, "/") {
+						parts := strings.Split(args.Path, "/")
+						path = strings.Join(parts[:len(parts)-1], "/") + "/"
+					}
+					fmt.Println(path + objKey)
+				} else {
+					fmt.Println(
+						fmt.Sprint(obj.LastModified.In(loc))[:19],
+						fmt.Sprintf("%10v", *obj.Size),
+						objKey,
+						*obj.StorageClass,
+					)
+				}
 			}
 
 			if !*out.IsTruncated {
