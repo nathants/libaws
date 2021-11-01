@@ -223,6 +223,9 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 				return nil, err
 			}
 			for _, mapping := range out.EventSourceMappings {
+				if Contains([]string{"Disabled", "Disabling"}, *mapping.State) {
+					continue
+				}
 				infra := ArnToInfraName(*mapping.EventSourceArn)
 				switch infra {
 				case lambdaTriggerSQS, lambdaTriggerDynamoDB:
@@ -237,9 +240,10 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 						Logger.Println("error:", err)
 						return nil, err
 					}
+
 					triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], InfraLambdaTrigger{
 						LambdaName:  *fn.FunctionName,
-						TriggerType: ArnToInfraName(*mapping.EventSourceArn),
+						TriggerType: *mapping.EventSourceArn,
 						TriggerAttrs: []string{
 							sourceName,
 							fmt.Sprintf("batch=%d", *mapping.BatchSize),

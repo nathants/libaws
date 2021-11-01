@@ -336,7 +336,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 						return err
 					}
 				}
-				Logger.Printf(PreviewString(preview)+"updated bucket notifications for %s %s: %s => %s", bucket, name, existingEvents, events)
+				Logger.Printf(PreviewString(preview)+"updated bucket notifications for %s %s: %s => %s\n", bucket, name, existingEvents, events)
 			}
 		}
 	}
@@ -347,7 +347,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 		return err
 	}
 	for _, bucket := range buckets.Buckets {
-		out, err := S3Client().GetBucketNotificationConfigurationWithContext(ctx, &s3.GetBucketNotificationConfigurationRequest{
+		out, err := S3ClientBucketRegionMust(*bucket.Name).GetBucketNotificationConfigurationWithContext(ctx, &s3.GetBucketNotificationConfigurationRequest{
 			Bucket: bucket.Name,
 		})
 		if err != nil {
@@ -364,7 +364,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 		}
 		if len(confs) != len(out.LambdaFunctionConfigurations) && !preview {
 			out.LambdaFunctionConfigurations = confs
-			_, err := S3Client().PutBucketNotificationConfigurationWithContext(ctx, &s3.PutBucketNotificationConfigurationInput{
+			_, err := S3ClientBucketRegionMust(*bucket.Name).PutBucketNotificationConfigurationWithContext(ctx, &s3.PutBucketNotificationConfigurationInput{
 				Bucket:                    bucket.Name,
 				NotificationConfiguration: out,
 			})
@@ -899,79 +899,87 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, name, arnLambda string, me
 					}
 					input.ParallelizationFactor = aws.Int64(int64(factor))
 				case "StartingPosition":
-					input.StartingPosition = aws.String(value)
+					input.StartingPosition = aws.String(strings.ToUpper(value))
 				default:
 					err := fmt.Errorf("unknown lambda dynamodb trigger attribute: %s", line)
 					Logger.Println("error:", err)
 					return err
 				}
 			}
-			eventSourceMappings, err := lambdaListEventSourceMappings(ctx, name, streamArn)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			count := 0
-			var found *lambda.EventSourceMappingConfiguration
-			for _, mapping := range eventSourceMappings {
-				if ArnToInfraName(*mapping.EventSourceArn) == lambdaTriggerDynamoDB {
-					if DynamoDBStreamArnToTableName(*mapping.EventSourceArn) == tableName && *mapping.FunctionArn == arnLambda {
-						found = mapping
-						count++
+			//
+			if !preview {
+				var expectedErr error
+				err := Retry(ctx, func() error {
+					_, err := LambdaClient().CreateEventSourceMappingWithContext(ctx, input)
+					if err != nil {
+						aerr, ok := err.(awserr.Error)
+						if !ok || aerr.Code() != lambda.ErrCodeResourceConflictException {
+							return err
+						}
+						expectedErr = err
+						return nil
 					}
+					return err
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
 				}
-			}
-			switch count {
-			case 0:
-				if !preview {
-					err := Retry(ctx, func() error {
-						_, err := LambdaClient().CreateEventSourceMappingWithContext(ctx, input)
-						return err
+				if expectedErr == nil {
+					Logger.Println(PreviewString(preview)+"created event source mapping:", name, arnLambda, streamArn, strings.Join(triggerAttrs, " "))
+				} else {
+					aerr, _ := expectedErr.(awserr.Error)
+					parts := strings.Split(aerr.Message(), " ") // ... Please update or delete the existing mapping with UUID 50d4ed02-364f-4be6-97af-c6d3896fb262
+					if parts[len(parts)-2] != "UUID" {
+						return expectedErr
+					}
+					uuid := Last(parts)
+					found, err := LambdaClient().GetEventSourceMappingWithContext(ctx, &lambda.GetEventSourceMappingInput{
+						UUID: aws.String(uuid),
 					})
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
 					}
-				}
-				Logger.Println(PreviewString(preview)+"created event source mapping:", name, arnLambda, streamArn, triggerAttrs)
-			case 1:
-				needsUpdate := false
-				update := &lambda.UpdateEventSourceMappingInput{UUID: found.UUID}
-				update.FunctionName = input.FunctionName
-				if *found.BatchSize != *input.BatchSize {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d", name, tableName, *found.BatchSize, *input.BatchSize)
-					update.BatchSize = input.BatchSize
-					needsUpdate = true
-				}
-				if *found.MaximumRetryAttempts != *input.MaximumRetryAttempts {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d", name, tableName, *found.MaximumRetryAttempts, *input.MaximumRetryAttempts)
-					update.MaximumRetryAttempts = input.MaximumRetryAttempts
-					needsUpdate = true
-				}
-				if *found.ParallelizationFactor != *input.ParallelizationFactor {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d", name, tableName, *found.ParallelizationFactor, *input.ParallelizationFactor)
-					update.ParallelizationFactor = input.ParallelizationFactor
-					needsUpdate = true
-				}
-				if *found.MaximumBatchingWindowInSeconds != *input.MaximumBatchingWindowInSeconds {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d", name, tableName, *found.MaximumBatchingWindowInSeconds, *input.MaximumBatchingWindowInSeconds)
-					update.MaximumBatchingWindowInSeconds = input.MaximumBatchingWindowInSeconds
-					needsUpdate = true
-				}
-				if needsUpdate {
-					if !preview {
-						_, err := LambdaClient().UpdateEventSourceMappingWithContext(ctx, update)
-						if err != nil {
-							Logger.Println("error:", err)
-							return err
-						}
+					//
+					input.StartingPosition = nil
+					existing := map[string]*int64{
+						"BatchSize":                      found.BatchSize,
+						"MaximumBatchingWindowInSeconds": found.MaximumBatchingWindowInSeconds,
+						"MaximumRetryAttempts":           found.MaximumRetryAttempts,
+						"ParallelizationFactor":          found.ParallelizationFactor,
 					}
-					Logger.Println(PreviewString(preview)+"updated event source mapping for %s %s", name, tableName)
+					if input.MaximumBatchingWindowInSeconds == nil {
+						input.MaximumBatchingWindowInSeconds = aws.Int64(0)
+					}
+					expected := map[string]*int64{
+						"BatchSize":                      input.BatchSize,
+						"MaximumBatchingWindowInSeconds": input.MaximumBatchingWindowInSeconds,
+						"MaximumRetryAttempts":           input.MaximumRetryAttempts,
+						"ParallelizationFactor":          input.ParallelizationFactor,
+					}
+					diff, err := diffMapStringInt64Pointers(existing, expected)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					if diff {
+						if !preview {
+							update := &lambda.UpdateEventSourceMappingInput{UUID: aws.String(uuid)}
+							update.FunctionName = input.FunctionName
+							update.BatchSize = input.BatchSize
+							update.MaximumRetryAttempts = input.MaximumRetryAttempts
+							update.ParallelizationFactor = input.ParallelizationFactor
+							update.MaximumBatchingWindowInSeconds = input.MaximumBatchingWindowInSeconds
+							_, err := LambdaClient().UpdateEventSourceMappingWithContext(ctx, update)
+							if err != nil {
+								Logger.Println("error:", err)
+								return err
+							}
+						}
+						Logger.Printf(PreviewString(preview)+"updated event source mapping for %s %s\n", name, tableName)
+					}
 				}
-			default:
-				err := fmt.Errorf("found more than 1 event source mapping for %s %s", name, tableName)
-				Logger.Println("error:", err)
-				return err
 			}
 		}
 	}
@@ -1013,23 +1021,22 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, name, arnLambda string, me
 	return nil
 }
 
-func lambdaListEventSourceMappings(ctx context.Context, name, eventSourceArn string) ([]*lambda.EventSourceMappingConfiguration, error) {
+func lambdaListEventSourceMappings(ctx context.Context, name string) ([]*lambda.EventSourceMappingConfiguration, error) {
 	var marker *string
 	var eventSourceMappings []*lambda.EventSourceMappingConfiguration
 	for {
 		out, err := LambdaClient().ListEventSourceMappingsWithContext(ctx, &lambda.ListEventSourceMappingsInput{
-			FunctionName:   aws.String(name),
-			EventSourceArn: aws.String(eventSourceArn),
-			Marker:         marker,
+			FunctionName: aws.String(name),
+			Marker:       marker,
 		})
 		if err != nil {
 			return nil, err
 		}
+		eventSourceMappings = append(eventSourceMappings, out.EventSourceMappings...)
 		if out.NextMarker == nil {
 			break
 		}
 		marker = out.NextMarker
-		eventSourceMappings = append(eventSourceMappings, out.EventSourceMappings...)
 	}
 	return eventSourceMappings, nil
 }
@@ -1118,7 +1125,7 @@ func LambdaEnsureTriggerSQS(ctx context.Context, name, arnLambda string, meta *L
 					return err
 				}
 			}
-			eventSourceMappings, err := lambdaListEventSourceMappings(ctx, name, sqsArn)
+			eventSourceMappings, err := lambdaListEventSourceMappings(ctx, name)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
@@ -1149,22 +1156,22 @@ func LambdaEnsureTriggerSQS(ctx context.Context, name, arnLambda string, meta *L
 				update := &lambda.UpdateEventSourceMappingInput{UUID: found.UUID}
 				update.FunctionName = input.FunctionName
 				if *found.BatchSize != *input.BatchSize {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d", name, queueName, *found.BatchSize, *input.BatchSize)
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d\n", name, queueName, *found.BatchSize, *input.BatchSize)
 					update.BatchSize = input.BatchSize
 					needsUpdate = true
 				}
 				if *found.MaximumRetryAttempts != *input.MaximumRetryAttempts {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d", name, queueName, *found.MaximumRetryAttempts, *input.MaximumRetryAttempts)
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d\n", name, queueName, *found.MaximumRetryAttempts, *input.MaximumRetryAttempts)
 					update.MaximumRetryAttempts = input.MaximumRetryAttempts
 					needsUpdate = true
 				}
 				if *found.ParallelizationFactor != *input.ParallelizationFactor {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d", name, queueName, *found.ParallelizationFactor, *input.ParallelizationFactor)
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d\n", name, queueName, *found.ParallelizationFactor, *input.ParallelizationFactor)
 					update.ParallelizationFactor = input.ParallelizationFactor
 					needsUpdate = true
 				}
 				if *found.MaximumBatchingWindowInSeconds != *input.MaximumBatchingWindowInSeconds {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d", name, queueName, *found.MaximumBatchingWindowInSeconds, *input.MaximumBatchingWindowInSeconds)
+					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d\n", name, queueName, *found.MaximumBatchingWindowInSeconds, *input.MaximumBatchingWindowInSeconds)
 					update.MaximumBatchingWindowInSeconds = input.MaximumBatchingWindowInSeconds
 					needsUpdate = true
 				}

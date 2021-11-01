@@ -320,6 +320,50 @@ var PrettyStyle = &pretty.Style{
 }
 
 func diffMapStringStringPointers(a, b map[string]*string) (bool, error) {
+	for k, v := range a {
+		if v == nil {
+			delete(a, k)
+		}
+	}
+	for k, v := range b {
+		if v == nil {
+			delete(b, k)
+		}
+	}
+	d, err := diff.NewDiffer()
+	if err != nil {
+		return false, err
+	}
+	changes, err := d.Diff(a, b)
+	if err != nil {
+		return false, err
+	}
+	for _, c := range changes {
+		switch c.Type {
+		case diff.DELETE:
+			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From))
+		case diff.CREATE:
+			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.To))
+		case diff.UPDATE:
+			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From), "->", c.Path[0]+"="+fmt.Sprint(c.To))
+		default:
+			return false, fmt.Errorf("unknown diff type: %s", c.Type)
+		}
+	}
+	return len(changes) > 0, nil
+}
+
+func diffMapStringInt64Pointers(a, b map[string]*int64) (bool, error) {
+	for k, v := range a {
+		if v == nil {
+			delete(a, k)
+		}
+	}
+	for k, v := range b {
+		if v == nil {
+			delete(b, k)
+		}
+	}
 	d, err := diff.NewDiffer()
 	if err != nil {
 		return false, err

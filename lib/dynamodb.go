@@ -525,7 +525,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			old = *table.Table.ProvisionedThroughput.ReadCapacityUnits
 		}
 		Logger.Printf(
-			PreviewString(preview)+"dynamodb will update ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d",
+			PreviewString(preview)+"dynamodb will update ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
 			*input.TableName,
 			old,
 			*input.ProvisionedThroughput.ReadCapacityUnits,
@@ -543,7 +543,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			old = *table.Table.ProvisionedThroughput.WriteCapacityUnits
 		}
 		Logger.Printf(
-			PreviewString(preview)+"dynamodb will update ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d",
+			PreviewString(preview)+"dynamodb will update ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
 			*input.TableName,
 			old,
 			*input.ProvisionedThroughput.WriteCapacityUnits,
@@ -564,7 +564,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			old = *table.Table.StreamSpecification.StreamEnabled
 		}
 		Logger.Printf(
-			PreviewString(preview)+"dynamodb will update StreamSpecification.StreamEnabled for table %s: %t => %t",
+			PreviewString(preview)+"dynamodb will update StreamSpecification.StreamEnabled for table %s: %t => %t\n",
 			*input.TableName,
 			old,
 			*input.StreamSpecification.StreamEnabled,
@@ -583,7 +583,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			old = *table.Table.StreamSpecification.StreamViewType
 		}
 		Logger.Printf(
-			PreviewString(preview)+"dynamodb will update StreamSpecification.StreamViewType for table %s: %s => %s",
+			PreviewString(preview)+"dynamodb will update StreamSpecification.StreamViewType for table %s: %s => %s\n",
 			*input.TableName,
 			old,
 			*input.StreamSpecification.StreamViewType,
@@ -683,7 +683,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			if index.ProvisionedThroughput != nil && *existing.ProvisionedThroughput.ReadCapacityUnits != *index.ProvisionedThroughput.ReadCapacityUnits {
 				updateIndex = true
 				Logger.Printf(
-					PreviewString(preview)+"dynamodb will update GlobalSecondaryIndex %s ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d",
+					PreviewString(preview)+"dynamodb will update GlobalSecondaryIndex %s ProvisionedThroughput.ReadCapacityUnits for table %s: %d => %d\n",
 					*index.IndexName,
 					*input.TableName,
 					*existing.ProvisionedThroughput.ReadCapacityUnits,
@@ -698,7 +698,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 			if index.ProvisionedThroughput != nil && *existing.ProvisionedThroughput.WriteCapacityUnits != *index.ProvisionedThroughput.WriteCapacityUnits {
 				updateIndex = true
 				Logger.Printf(
-					PreviewString(preview)+"dynamodb will update GlobalSecondaryIndex %s ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d",
+					PreviewString(preview)+"dynamodb will update GlobalSecondaryIndex %s ProvisionedThroughput.WriteCapacityUnits for table %s: %d => %d\n",
 					*index.IndexName,
 					*input.TableName,
 					*existing.ProvisionedThroughput.WriteCapacityUnits,
@@ -809,7 +809,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		if !ok || val != *tag.Value {
 			tagInput.Tags = append(tagInput.Tags, tag)
 			Logger.Printf(
-				PreviewString(preview)+"dynamodb will update tag %s for table %s: %s => %s",
+				PreviewString(preview)+"dynamodb will update tag %s for table %s: %s => %s\n",
 				*tag.Key,
 				*input.TableName,
 				val,
@@ -839,7 +839,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 	for _, tag := range tags {
 		_, ok := updateTags[*tag.Key]
 		if !ok {
-			Logger.Printf("dynamodb remove tag %s for table %s", *tag.Key, *input.TableName)
+			Logger.Printf("dynamodb remove tag %s for table %s\n", *tag.Key, *input.TableName)
 			untagInput.TagKeys = append(untagInput.TagKeys, tag.Key)
 		}
 	}

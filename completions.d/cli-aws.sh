@@ -31,6 +31,8 @@ _cli_aws () {
         elif [ ${COMP_WORDS[1]} = ec2-dns-private ]; then COMPREPLY=($(cli-aws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-wait-ssh    ]; then COMPREPLY=($(cli-aws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
+        elif [ ${COMP_WORDS[1]} = lambda-ensure    ]; then COMPREPLY=($(ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
+
         elif [ ${COMP_WORDS[1]} = sqs-stats ]; then COMPREPLY=($(cli-aws sqs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = sqs-purge ]; then COMPREPLY=($(cli-aws sqs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = sqs-rm    ]; then COMPREPLY=($(cli-aws sqs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
