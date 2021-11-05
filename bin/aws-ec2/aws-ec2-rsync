@@ -33,7 +33,7 @@ def main(src, dst, *selectors, user='', yes=False, internal=False):
                 _src = host + src if src.startswith(':') else src
                 _dst = host + dst if dst.startswith(':') else dst
                 try:
-                    sh.run('rsync -avhc',
+                    sh.run('rsync -avh',
                            os.environ.get('AWS_EC2_RSYNC_OPTIONS', ''),
                            f'-e "ssh {aws.ec2.ssh_args}"',
                            _src,
