@@ -66,13 +66,27 @@ func LogsListLogGroups(ctx context.Context) ([]*cloudwatchlogs.LogGroup, error) 
 }
 
 func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
-	_, err := LogsClient().DeleteLogGroupWithContext(ctx, &cloudwatchlogs.DeleteLogGroupInput{
+	_, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(name),
 	})
-	aerr, ok := err.(awserr.Error)
-	if !ok || aerr.Code() != "ResourceNotFoundException" {
-		Logger.Println("error:", err)
-		return err
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != cloudwatchlogs.ErrCodeResourceNotFoundException {
+			Logger.Println("error:", err)
+			return err
+		}
+		return nil
 	}
+	if !preview {
+		_, err := LogsClient().DeleteLogGroupWithContext(ctx, &cloudwatchlogs.DeleteLogGroupInput{
+			LogGroupName: aws.String(name),
+		})
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "ResourceNotFoundException" {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"deleted log group:", name)
 	return nil
 }

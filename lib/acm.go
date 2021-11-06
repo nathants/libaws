@@ -28,7 +28,7 @@ func AcmListCertificates(ctx context.Context) ([]*acm.CertificateSummary, error)
 		})
 		if err != nil {
 			Logger.Println("error:", err)
-		    return nil, err
+			return nil, err
 		}
 		result = append(result, out.CertificateSummaryList...)
 		if out.NextToken == nil {

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	_ "github.com/nathants/cli-aws/cmd/aws"
 	_ "github.com/nathants/cli-aws/cmd/acm"
+	_ "github.com/nathants/cli-aws/cmd/aws"
 	_ "github.com/nathants/cli-aws/cmd/cloudwatch"
 	_ "github.com/nathants/cli-aws/cmd/codecommit"
 	_ "github.com/nathants/cli-aws/cmd/creds"

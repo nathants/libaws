@@ -25,7 +25,7 @@ func acmLs() {
 	ctx := context.Background()
 	certs, err := lib.AcmListCertificates(ctx)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	lib.Logger.Println(certs)
 }

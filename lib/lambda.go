@@ -538,7 +538,7 @@ func lambdaEnsureTriggerApiDeployment(ctx context.Context, name string, restApi 
 			return err
 		}
 		if parentID == "" {
-			err := fmt.Errorf("api resource id not found for: %s %s /", name)
+			err := fmt.Errorf("api resource id not found for: %s %s /", name, *restApi.Id)
 			Logger.Println("error:", err)
 			return err
 		}
@@ -817,7 +817,7 @@ func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, restApi
 			err = lambdaEnsureTriggerApiBasePathMapping(ctx, name, domain, restApi, preview)
 			if err != nil {
 				Logger.Println("error:", err)
-			    return err
+				return err
 			}
 			//
 			break
