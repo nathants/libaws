@@ -26,10 +26,11 @@ example:
  - cli-aws s3-ensure test-bucket acl=PUBLIC versioning=TRUE
 
 optional attrs:
- - acl=VALUE (values = "public" | "private", default = "private")
- - versioning=VALUE (values = "true" | "false", default = "false")
- - encryption=VALUE (values = "true" | "false", default = "true")
- - metrics=VALUE    (values = "true" | "false", default = "true")
+ - acl=VALUE        (values = "public" | "private", default = "private")
+ - versioning=VALUE (values = "true" | "false",     default = "false")
+ - encryption=VALUE (values = "true" | "false",     default = "true")
+ - metrics=VALUE    (values = "true" | "false",     default = "true")
+ - cors=VALUE       (values = "true" | "false",     default = "true")
 `
 }
 

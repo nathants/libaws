@@ -157,7 +157,7 @@ func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*rou
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		// TODO the reset of the cases
+		// TODO the rest of the cases
 		// change := &route53.Change{
 		// 	ResourceRecordSet: &route53.ResourceRecordSet{
 		// 		AliasTarget: &route53.AliasTarget{
@@ -304,7 +304,6 @@ func Route53EnsureZone(ctx context.Context, name string, preview bool) error {
 }
 
 func Route53ListRecords(ctx context.Context, zoneId string) ([]*route53.ResourceRecordSet, error) {
-	Logger.Println("route53 list records", zoneId)
 	var nextId *string
 	var nextName *string
 	var nextType *string
@@ -332,7 +331,6 @@ func Route53ListRecords(ctx context.Context, zoneId string) ([]*route53.Resource
 }
 
 func Route53ListZones(ctx context.Context) ([]*route53.HostedZone, error) {
-	Logger.Println("route53 list zones")
 	var nextDns *string
 	var nextId *string
 	var zones []*route53.HostedZone

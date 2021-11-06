@@ -17,6 +17,7 @@ const (
 	apiIntegrationHttpMethod = "POST"
 	apiPath                  = "/{proxy+}"
 	apiPathPart              = "{proxy+}"
+	apiMappingBasePath       = ""
 )
 
 var (
@@ -120,4 +121,24 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 		apiStageName,
 	)
 	return url, nil
+}
+
+func ApiListDomains(ctx context.Context) ([]*apigateway.DomainName, error) {
+	var position *string
+	var result []*apigateway.DomainName
+	for {
+		out, err := ApiClient().GetDomainNamesWithContext(ctx, &apigateway.GetDomainNamesInput{
+			Position: position,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		result = append(result, out.Items...)
+		if out.Position == nil {
+			break
+		}
+		position = out.Position
+	}
+	return result, nil
 }

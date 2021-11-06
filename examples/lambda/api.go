@@ -3,7 +3,7 @@
 // attr: memory 128
 // attr: timeout 60
 // policy: AWSLambdaBasicExecutionRole
-// trigger: api
+// trigger: api dns=test.dns.nathants.com
 // trigger: cloudwatch rate(15 minutes) # keep lambda warm for fast responses
 
 package main
@@ -16,7 +16,7 @@ import (
 )
 
 func handleRequest(_ context.Context, _ events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	return events.APIGatewayProxyResponse{Body: "hi!?\n", StatusCode: 200}, nil
+	return events.APIGatewayProxyResponse{Body: "hi\n", StatusCode: 200}, nil
 }
 
 func main() {

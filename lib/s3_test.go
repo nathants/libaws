@@ -396,7 +396,7 @@ func TestS3EnsurePublic(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if !reflect.DeepEqual(cors.CORSRules, s3PublicCors) {
+	if !reflect.DeepEqual(cors.CORSRules, s3Cors) {
 		t.Error("cors config misconfigured")
 		return
 	}

@@ -155,7 +155,6 @@ func isIPAddress(s string) bool {
 }
 
 func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]*ec2.Instance, error) {
-	Logger.Println("list instances")
 	var filterss [][]*ec2.Filter
 	if len(selectors) == 0 {
 		if state != "" {

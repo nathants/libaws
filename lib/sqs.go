@@ -52,7 +52,6 @@ func SQSUrlToName(url string) string {
 }
 
 func SQSListQueueUrls(ctx context.Context) ([]string, error) {
-	Logger.Println("list queues")
 	var nextToken *string
 	var queues []string
 	for {

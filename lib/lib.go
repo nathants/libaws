@@ -89,7 +89,7 @@ func RetryAttempts(ctx context.Context, attempts int, fn func() error) error {
 	count := 0
 	return retry.Do(
 		func() error {
-			if count != 0 {
+			if count > 5 {
 				Logger.Printf("retry attempt %d/%d for %v\n", count, attempts-1, functionName(fn))
 			}
 			count++

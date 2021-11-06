@@ -746,3 +746,72 @@ func IamListUsers(ctx context.Context) ([]*iam.User, error) {
 	}
 	return result, nil
 }
+
+func IamDeleteRolePolicies(ctx context.Context, name string, preview bool) error {
+	rolePolicies, err := IamListRolePolicies(ctx, name)
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			Logger.Println("error:", err)
+			return err
+		}
+		return nil
+	}
+	for _, policy := range rolePolicies {
+		if !preview {
+			_, err := IamClient().DetachRolePolicyWithContext(ctx, &iam.DetachRolePolicyInput{
+				RoleName:  aws.String(name),
+				PolicyArn: policy.PolicyArn,
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"deleted role policy:", name, *policy.PolicyName)
+	}
+	return nil
+}
+
+func IamDeleteRoleAllows(ctx context.Context, name string, preview bool) error {
+	roleAllows, err := IamListRoleAllows(ctx, name)
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			Logger.Println("error:", err)
+			return err
+		}
+		return nil
+	}
+	for _, allow := range roleAllows {
+		if !preview {
+			_, err := IamClient().DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
+				RoleName:   aws.String(name),
+				PolicyName: aws.String(allow.policyName()),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"deleted role allow:", name, allow.policyName())
+	}
+	return nil
+}
+
+func IamDeleteRole(ctx context.Context, name string, preview bool) error {
+	if !preview {
+		_, err := IamClient().DeleteRoleWithContext(ctx, &iam.DeleteRoleInput{
+			RoleName: aws.String(name),
+		})
+		if err != nil {
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+	}
+	Logger.Println(PreviewString(preview)+"deleted role:", name)
+	return nil
+}

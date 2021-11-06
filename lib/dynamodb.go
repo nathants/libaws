@@ -899,7 +899,6 @@ func DynamoDBListTags(ctx context.Context, tableName string) ([]*dynamodb.Tag, e
 }
 
 func DynamoDBListTables(ctx context.Context) ([]string, error) {
-	Logger.Println("dynamodb list tables")
 	var start *string
 	var tables []string
 	for {

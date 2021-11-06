@@ -128,7 +128,6 @@ func InfraList(ctx context.Context, filter string) (*Infra, error) {
 }
 
 func InfraListCloudwatch(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]string, error) {
-	Logger.Println("cloudwatch list rules")
 	rules, err := EventsListRules(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -138,7 +137,6 @@ func InfraListCloudwatch(ctx context.Context, triggersChan chan<- InfraLambdaTri
 	for _, rule := range rules {
 		rule := rule
 		go func() {
-			Logger.Println("cloudwatch list targets for for rule:", *rule.Name)
 			targets, err := EventsListRuleTargets(ctx, *rule.Name)
 			if err != nil {
 				errChan <- err
@@ -167,7 +165,6 @@ func InfraListCloudwatch(ctx context.Context, triggersChan chan<- InfraLambdaTri
 }
 
 func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger, filter string) (map[string]InfraLambda, error) {
-	Logger.Println("lambda list functions")
 	allFns, err := LambdaListFunctions(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -194,7 +191,6 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 				l.Attrs = append(l.Attrs, fmt.Sprintf("timeout %d", *fn.Timeout))
 			}
 			//
-			Logger.Println("lambda get concurrency for:", *fn.FunctionName)
 			out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
 				FunctionName: aws.String(*fn.FunctionName),
 			})
@@ -208,7 +204,6 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 			//
 			roleName := Last(strings.Split(*fn.Role, "/"))
 			//
-			Logger.Println("lambda list roles for:", *fn.FunctionName)
 			policies, err := IamListRolePolicies(ctx, roleName)
 			if err != nil {
 				errChan <- err
@@ -218,7 +213,6 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 				l.Policies = append(l.Policies, *policy.PolicyName)
 			}
 			//
-			Logger.Println("lambda list allows for:", *fn.FunctionName)
 			allows, err := IamListRoleAllows(ctx, roleName)
 			if err != nil {
 				errChan <- err
@@ -288,15 +282,13 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 		err := <-errChan
 		if err != nil {
 			Logger.Println("error:", err)
-		    return nil, err
+			return nil, err
 		}
 	}
 	//
-	Logger.Println("lambda wait for triggers")
 	for trigger := range triggersChan {
 		triggers[trigger.LambdaName] = append(triggers[trigger.LambdaName], trigger)
 	}
-	Logger.Println("lambda got all triggers")
 	for _, fn := range fns {
 		ts, ok := triggers[*fn.FunctionName]
 		if ok {
@@ -326,6 +318,50 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	//
+	domains, err := ApiListDomains(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	domainNames := make(map[string]string)
+	for _, domain := range domains {
+		domainNames[*domain.RegionalDomainName] = *domain.DomainName
+	}
+	zones, err := Route53ListZones(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	restApiToDns := make(map[string]string)
+	for _, zone := range zones {
+		records, err := Route53ListRecords(ctx, *zone.Id)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		for _, record := range records {
+			if record.AliasTarget != nil && record.AliasTarget.DNSName != nil {
+				domain, ok := domainNames[strings.TrimRight(*record.AliasTarget.DNSName, ".")]
+				if ok {
+					mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
+						DomainName: aws.String(domain),
+						Limit:      aws.Int64(500),
+					})
+					if err != nil || len(mappings.Items) == 500 {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+					for _, mapping := range mappings.Items {
+						if *mapping.BasePath == "(none)" && *mapping.Stage == apiStageName {
+							restApiToDns[*mapping.RestApiId] = domain
+						}
+					}
+				}
+			}
+		}
+	}
+	//
 	errChan := make(chan error)
 	for _, api := range apis {
 		api := api
@@ -348,10 +384,16 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 				errChan <- err
 				return
 			}
+			attrs := []string{}
+			dns, ok := restApiToDns[*api.Id]
+			if ok {
+				attrs = append(attrs, fmt.Sprintf("dns=%s", dns))
+			}
 			lambdaName := LambdaApiUriToLambdaName(*out.Uri)
 			triggersChan <- InfraLambdaTrigger{
-				LambdaName:  lambdaName,
-				TriggerType: lambdaTriggerApi,
+				LambdaName:   lambdaName,
+				TriggerType:  lambdaTriggerApi,
+				TriggerAttrs: attrs,
 			}
 			errChan <- nil
 		}()

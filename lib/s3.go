@@ -128,6 +128,7 @@ type s3EnsureInput struct {
 	versioning bool
 	encryption bool
 	metrics    bool
+	cors       bool
 }
 
 func s3EnsureInputDefault() *s3EnsureInput {
@@ -136,6 +137,7 @@ func s3EnsureInputDefault() *s3EnsureInput {
 		versioning: false,
 		encryption: true,
 		metrics:    true,
+		cors:       false,
 	}
 }
 
@@ -150,6 +152,15 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 			return nil, err
 		}
 		switch attr {
+		case "cors":
+			switch value {
+			case "true", "false":
+				input.cors = value == "true"
+			default:
+				err := fmt.Errorf("s3 unknown attr: %s", line)
+				Logger.Println("error:", err)
+				return nil, err
+			}
 		case "acl":
 			switch value {
 			case "public", "private":
@@ -209,11 +220,11 @@ func s3PublicPolicy(bucket string) IamPolicyDocument {
 	}
 }
 
-var s3PublicCors = []*s3.CORSRule{{
+var s3Cors = []*s3.CORSRule{{
 	AllowedHeaders: []*string{aws.String("Authorization")},
-	AllowedMethods: []*string{aws.String("GET")},
+	AllowedMethods: []*string{aws.String("GET"), aws.String("PUT"), aws.String("POST"), aws.String("HEAD")},
 	AllowedOrigins: []*string{aws.String("*")},
-	ExposeHeaders:  []*string{aws.String("GET")},
+	ExposeHeaders:  nil,
 	MaxAgeSeconds:  aws.Int64(int64(3000)),
 }}
 
@@ -323,20 +334,23 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 		//
 		if input.acl == "public" {
-			policyBytes, err := json.Marshal(s3PublicPolicy(input.name))
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
+			if !preview {
+				policyBytes, err := json.Marshal(s3PublicPolicy(input.name))
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				_, err = S3Client().PutBucketPolicyWithContext(ctx, &s3.PutBucketPolicyInput{
+					Bucket:              aws.String(input.name),
+					ExpectedBucketOwner: aws.String(account),
+					Policy:              aws.String(string(policyBytes)),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
 			}
-			_, err = S3Client().PutBucketPolicyWithContext(ctx, &s3.PutBucketPolicyInput{
-				Bucket:              aws.String(input.name),
-				ExpectedBucketOwner: aws.String(account),
-				Policy:              aws.String(string(policyBytes)),
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
+			Logger.Println(PreviewString(preview)+"s3 put acl:", input.name, "public")
 		}
 	} else if input.acl == "private" {
 		err := fmt.Errorf("s3 no bucket policy should exist for private bucket: %s", input.name)
@@ -366,22 +380,25 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		if input.acl == "public" {
-			_, err := S3Client().PutBucketCorsWithContext(ctx, &s3.PutBucketCorsInput{
-				Bucket:              aws.String(input.name),
-				ExpectedBucketOwner: aws.String(account),
-				CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3PublicCors},
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
+		if input.acl == "public" || input.cors {
+			if !preview {
+				_, err := S3Client().PutBucketCorsWithContext(ctx, &s3.PutBucketCorsInput{
+					Bucket:              aws.String(input.name),
+					ExpectedBucketOwner: aws.String(account),
+					CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3Cors},
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
 			}
+			Logger.Println(PreviewString(preview)+"s3 put cors:", input.name)
 		}
-	} else if input.acl == "private" {
-		err := fmt.Errorf("s3 no cors config should exist for private bucket: %s", input.name)
+	} else if !input.cors && input.acl != "public" {
+		err := fmt.Errorf("s3 no cors config should exist for bucket: %s", input.name)
 		Logger.Println("error:", err)
 		return err
-	} else if !reflect.DeepEqual(corsOut.CORSRules, s3PublicCors) {
+	} else if !reflect.DeepEqual(corsOut.CORSRules, s3Cors) {
 		err := fmt.Errorf("s3 public bucket cors config is misconfigured for bucket: %s", input.name)
 		Logger.Println("error:", err)
 		return err

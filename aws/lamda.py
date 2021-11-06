@@ -20,6 +20,12 @@ def set_concurrency(name, concurrency, preview):
         else:
             client('lambda').put_function_concurrency(FunctionName=name, ReservedConcurrentExecutions=concurrency)
             stderr('\nconcurrency:', concurrency)
+    else:
+        if preview:
+            stderr('\npreview: concurrency:', concurrency)
+        else:
+            client('lambda').delete_function_concurrency(FunctionName=name)
+            stderr('\nconcurrency:', concurrency)
 
 def name(path):
     if not os.path.isfile(path):

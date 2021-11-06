@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/apigateway"
 	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
 	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
@@ -64,19 +65,19 @@ func LambdaClient() *lambda.Lambda {
 }
 
 func LambdaSetConcurrency(ctx context.Context, name string, concurrency int, preview bool) error {
-	if concurrency > 0 {
-		out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
-			FunctionName: aws.String(name),
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		if out.ReservedConcurrentExecutions == nil {
-			out.ReservedConcurrentExecutions = aws.Int64(0)
-		}
-		if int(*out.ReservedConcurrentExecutions) != concurrency {
-			if !preview {
+	out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
+		FunctionName: aws.String(name),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if out.ReservedConcurrentExecutions == nil {
+		out.ReservedConcurrentExecutions = aws.Int64(0)
+	}
+	if int(*out.ReservedConcurrentExecutions) != concurrency {
+		if !preview {
+			if concurrency > 0 {
 				_, err := LambdaClient().PutFunctionConcurrencyWithContext(ctx, &lambda.PutFunctionConcurrencyInput{
 					FunctionName:                 aws.String(name),
 					ReservedConcurrentExecutions: aws.Int64(int64(concurrency)),
@@ -85,9 +86,18 @@ func LambdaSetConcurrency(ctx context.Context, name string, concurrency int, pre
 					Logger.Println("error:", err)
 					return err
 				}
+			} else {
+				_, err := LambdaClient().DeleteFunctionConcurrencyWithContext(ctx, &lambda.DeleteFunctionConcurrencyInput{
+					FunctionName: aws.String(name),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+
 			}
-			Logger.Printf(PreviewString(preview)+"updated concurrency: %s %d => %d\n", name, *out.ReservedConcurrentExecutions, concurrency)
 		}
+		Logger.Printf(PreviewString(preview)+"updated concurrency: %s %d => %d\n", name, *out.ReservedConcurrentExecutions, concurrency)
 	}
 	return nil
 }
@@ -131,7 +141,6 @@ func LambdaArn(ctx context.Context, name string) (string, error) {
 		return "", err
 	}
 	if expectedErr != nil {
-		Logger.Println("error:", err)
 		return "", expectedErr
 	}
 	return arn, nil
@@ -484,184 +493,432 @@ func LambdaArnToLambdaName(arn string) string {
 	return name
 }
 
-func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetadata, preview bool) error {
-	hasApi := false
-	for _, trigger := range meta.Trigger {
-		parts := strings.Split(trigger, " ")
-		kind := parts[0]
-		if kind == lambdaTriggerApi {
-			hasApi = true
-			restApi, err := Api(ctx, name)
+func lambdaEnsureTriggerApiRestApi(ctx context.Context, name string, preview bool) (*apigateway.RestApi, error) {
+	restApi, err := Api(ctx, name)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if restApi == nil {
+		if !preview {
+			out, err := ApiClient().CreateRestApiWithContext(ctx, &apigateway.CreateRestApiInput{
+				Name:             aws.String(name),
+				BinaryMediaTypes: apiBinaryMediaTypes,
+				EndpointConfiguration: &apigateway.EndpointConfiguration{
+					Types: apiEndpointConfigurationTypes,
+				},
+			})
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
-			if restApi == nil {
-				if !preview {
-					out, err := ApiClient().CreateRestApiWithContext(ctx, &apigateway.CreateRestApiInput{
-						Name:             aws.String(name),
-						BinaryMediaTypes: apiBinaryMediaTypes,
-						EndpointConfiguration: &apigateway.EndpointConfiguration{
-							Types: apiEndpointConfigurationTypes,
-						},
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-					restApi = out
-				}
-				Logger.Println(PreviewString(preview)+"created rest api:", name)
-			} else {
-				if !reflect.DeepEqual(restApi.BinaryMediaTypes, apiBinaryMediaTypes) {
-					err := fmt.Errorf("api binary media types misconfigured for %s %s: %v != %v", name, *restApi.Id, StringSlice(restApi.BinaryMediaTypes), StringSlice(apiBinaryMediaTypes))
-					Logger.Println("error:", err)
-					return err
-				}
-				if !reflect.DeepEqual(restApi.EndpointConfiguration.Types, apiEndpointConfigurationTypes) {
-					err := fmt.Errorf("api endpoint configuration types misconfigured for %s %s: %v != %v", name, *restApi.Id, StringSlice(restApi.EndpointConfiguration.Types), StringSlice(apiEndpointConfigurationTypes))
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			if restApi != nil {
-				parentID, err := ApiResourceID(ctx, *restApi.Id, "/")
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				if parentID == "" {
-					err := fmt.Errorf("api resource id not found for: %s %s /", name, *restApi.Id)
-					Logger.Println("error:", err)
-					return err
-				}
-				resourceID, err := ApiResourceID(ctx, *restApi.Id, apiPath)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				if resourceID == "" {
-					if !preview {
-						out, err := ApiClient().CreateResourceWithContext(ctx, &apigateway.CreateResourceInput{
-							RestApiId: aws.String(*restApi.Id),
-							ParentId:  aws.String(parentID),
-							PathPart:  aws.String(apiPathPart),
-						})
-						if err != nil {
-							Logger.Println("error:", err)
-							return err
-						}
-						resourceID = *out.Id
-					}
-					Logger.Println(PreviewString(preview)+"created api resource:", *restApi.Id, parentID)
-				}
-				uri, err := LambdaApiUri(ctx, name)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				for _, id := range []string{parentID, resourceID} {
-					outMethod, err := ApiClient().GetMethodWithContext(ctx, &apigateway.GetMethodInput{
-						RestApiId:  aws.String(*restApi.Id),
-						ResourceId: aws.String(id),
-						HttpMethod: aws.String(apiHttpMethod),
-					})
-					if err != nil {
-						aerr, ok := err.(awserr.Error)
-						if !ok || aerr.Code() != apigateway.ErrCodeNotFoundException {
-							return err
-						}
-						if !preview {
-							_, err := ApiClient().PutMethodWithContext(ctx, &apigateway.PutMethodInput{
-								RestApiId:         aws.String(*restApi.Id),
-								ResourceId:        aws.String(id),
-								HttpMethod:        aws.String(apiHttpMethod),
-								AuthorizationType: aws.String(apiAuthType),
-							})
-							if err != nil {
-								Logger.Println("error:", err)
-								return err
-							}
-						}
-						Logger.Println(PreviewString(preview)+"created api method:", name, *restApi.Id, id)
-					} else {
-						if *outMethod.AuthorizationType != apiAuthType {
-							err := fmt.Errorf("api method auth type misconfigured for %s %s: %s != %s", name, *restApi, *outMethod.AuthorizationType, apiAuthType)
-							Logger.Println("error:", err)
-							return err
-						}
-					}
-					outIntegration, err := ApiClient().GetIntegrationWithContext(ctx, &apigateway.GetIntegrationInput{
-						RestApiId:  aws.String(*restApi.Id),
-						ResourceId: aws.String(id),
-						HttpMethod: aws.String(apiHttpMethod),
-					})
-					if err != nil {
-						aerr, ok := err.(awserr.Error)
-						if !ok || aerr.Code() != apigateway.ErrCodeNotFoundException {
-							return err
-						}
-						if !preview {
-							_, err = ApiClient().PutIntegrationWithContext(ctx, &apigateway.PutIntegrationInput{
-								RestApiId:             aws.String(*restApi.Id),
-								ResourceId:            aws.String(id),
-								HttpMethod:            aws.String(apiHttpMethod),
-								Type:                  aws.String(apiType),
-								IntegrationHttpMethod: aws.String(apiIntegrationHttpMethod),
-								Uri:                   aws.String(uri),
-							})
-							if err != nil {
-								Logger.Println("error:", err)
-								return err
-							}
-						}
-						Logger.Println(PreviewString(preview)+"created api integration:", name, *restApi.Id, id)
-					} else {
-						if *outIntegration.Type != apiType {
-							err := fmt.Errorf("api method type misconfigured for %s %s: %s != %s", name, *restApi, *outIntegration.Type, apiType)
-							Logger.Println("error:", err)
-							return err
-						}
-						if *outIntegration.Uri != uri {
-							err := fmt.Errorf("api method uri misconfigured for %s %s: %s != %s", name, *restApi, *outIntegration.Uri, uri)
-							Logger.Println("error:", err)
-							return err
-						}
-					}
-				}
-				deploymentsOut, err := ApiClient().GetDeploymentsWithContext(ctx, &apigateway.GetDeploymentsInput{
-					RestApiId: restApi.Id,
+			return out, nil
+		}
+		Logger.Println(PreviewString(preview)+"created rest api:", name)
+		return nil, nil
+	}
+	if !reflect.DeepEqual(restApi.BinaryMediaTypes, apiBinaryMediaTypes) {
+		err := fmt.Errorf("api binary media types misconfigured for %s %s: %v != %v", name, *restApi.Id, StringSlice(restApi.BinaryMediaTypes), StringSlice(apiBinaryMediaTypes))
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if !reflect.DeepEqual(restApi.EndpointConfiguration.Types, apiEndpointConfigurationTypes) {
+		err := fmt.Errorf("api endpoint configuration types misconfigured for %s %s: %v != %v", name, *restApi.Id, StringSlice(restApi.EndpointConfiguration.Types), StringSlice(apiEndpointConfigurationTypes))
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	return restApi, nil
+}
+
+func lambdaEnsureTriggerApiDeployment(ctx context.Context, name string, restApi *apigateway.RestApi, preview bool) error {
+	if restApi != nil {
+		parentID, err := ApiResourceID(ctx, *restApi.Id, "/")
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if parentID == "" {
+			err := fmt.Errorf("api resource id not found for: %s %s /", name)
+			Logger.Println("error:", err)
+			return err
+		}
+		resourceID, err := ApiResourceID(ctx, *restApi.Id, apiPath)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if resourceID == "" {
+			if !preview {
+				out, err := ApiClient().CreateResourceWithContext(ctx, &apigateway.CreateResourceInput{
+					RestApiId: aws.String(*restApi.Id),
+					ParentId:  aws.String(parentID),
+					PathPart:  aws.String(apiPathPart),
 				})
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
-				if len(deploymentsOut.Items) != 0 && len(deploymentsOut.Items) != 1 {
-					err := fmt.Errorf("impossible result for get deployments: %s %d", *restApi.Id, len(deploymentsOut.Items))
-					Logger.Println("error:", err)
+				resourceID = *out.Id
+			}
+			Logger.Println(PreviewString(preview)+"created api resource:", name)
+		}
+		uri, err := LambdaApiUri(ctx, name)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		for _, id := range []string{parentID, resourceID} {
+			outMethod, err := ApiClient().GetMethodWithContext(ctx, &apigateway.GetMethodInput{
+				RestApiId:  aws.String(*restApi.Id),
+				ResourceId: aws.String(id),
+				HttpMethod: aws.String(apiHttpMethod),
+			})
+			if err != nil {
+				aerr, ok := err.(awserr.Error)
+				if !ok || aerr.Code() != apigateway.ErrCodeNotFoundException {
 					return err
 				}
-				if len(deploymentsOut.Items) != 1 {
-					if !preview {
-						_, err = ApiClient().CreateDeploymentWithContext(ctx, &apigateway.CreateDeploymentInput{
-							RestApiId: restApi.Id,
-							StageName: aws.String(apiStageName),
-						})
-						if err != nil {
-							Logger.Println("error:", err)
-							return err
-						}
+				if !preview {
+					_, err := ApiClient().PutMethodWithContext(ctx, &apigateway.PutMethodInput{
+						RestApiId:         aws.String(*restApi.Id),
+						ResourceId:        aws.String(id),
+						HttpMethod:        aws.String(apiHttpMethod),
+						AuthorizationType: aws.String(apiAuthType),
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
 					}
-					Logger.Println(PreviewString(preview)+"created deployment:", *restApi.Id, apiStageName)
 				}
-				account, err := StsAccount(ctx)
+				Logger.Println(PreviewString(preview)+"created api method:", name)
+			} else {
+				if *outMethod.AuthorizationType != apiAuthType {
+					err := fmt.Errorf("api method auth type misconfigured for %s %s: %s != %s", name, *restApi, *outMethod.AuthorizationType, apiAuthType)
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			outIntegration, err := ApiClient().GetIntegrationWithContext(ctx, &apigateway.GetIntegrationInput{
+				RestApiId:  aws.String(*restApi.Id),
+				ResourceId: aws.String(id),
+				HttpMethod: aws.String(apiHttpMethod),
+			})
+			if err != nil {
+				aerr, ok := err.(awserr.Error)
+				if !ok || aerr.Code() != apigateway.ErrCodeNotFoundException {
+					return err
+				}
+				if !preview {
+					_, err = ApiClient().PutIntegrationWithContext(ctx, &apigateway.PutIntegrationInput{
+						RestApiId:             aws.String(*restApi.Id),
+						ResourceId:            aws.String(id),
+						HttpMethod:            aws.String(apiHttpMethod),
+						Type:                  aws.String(apiType),
+						IntegrationHttpMethod: aws.String(apiIntegrationHttpMethod),
+						Uri:                   aws.String(uri),
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+				Logger.Println(PreviewString(preview)+"created api integration:", name)
+			} else {
+				if *outIntegration.Type != apiType {
+					err := fmt.Errorf("api method type misconfigured for %s %s: %s != %s", name, *restApi, *outIntegration.Type, apiType)
+					Logger.Println("error:", err)
+					return err
+				}
+				if *outIntegration.Uri != uri {
+					err := fmt.Errorf("api method uri misconfigured for %s %s: %s != %s", name, *restApi, *outIntegration.Uri, uri)
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+		}
+		deploymentsOut, err := ApiClient().GetDeploymentsWithContext(ctx, &apigateway.GetDeploymentsInput{
+			RestApiId: restApi.Id,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if len(deploymentsOut.Items) != 0 && len(deploymentsOut.Items) != 1 {
+			err := fmt.Errorf("impossible result for get deployments: %s %d", *restApi.Id, len(deploymentsOut.Items))
+			Logger.Println("error:", err)
+			return err
+		}
+		if len(deploymentsOut.Items) != 1 {
+			if !preview {
+				_, err = ApiClient().CreateDeploymentWithContext(ctx, &apigateway.CreateDeploymentInput{
+					RestApiId: restApi.Id,
+					StageName: aws.String(apiStageName),
+				})
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
-				arn := fmt.Sprintf("arn:aws:execute-api:%s:%s:%s/*/*/*", Region(), account, *restApi.Id)
-				err = lambdaEnsurePermission(ctx, name, "apigateway.amazonaws.com", arn, preview)
+			}
+			Logger.Println(PreviewString(preview)+"created deployment:", name)
+		}
+		account, err := StsAccount(ctx)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		arn := fmt.Sprintf("arn:aws:execute-api:%s:%s:%s/*/*/*", Region(), account, *restApi.Id)
+		err = lambdaEnsurePermission(ctx, name, "apigateway.amazonaws.com", arn, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, preview bool) error {
+	out, err := ApiClient().GetDomainNameWithContext(ctx, &apigateway.GetDomainNameInput{
+		DomainName: aws.String(domain),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != apigateway.ErrCodeNotFoundException {
+			Logger.Println("error:", err)
+			return err
+		}
+		certs, err := AcmListCertificates(ctx)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		arnCert := ""
+		for _, cert := range certs {
+			if *cert.DomainName == domain {
+				arnCert = *cert.CertificateArn
+				break
+			}
+		}
+		if arnCert == "" {
+			err := fmt.Errorf("no acm cert found for: %s", domain)
+			Logger.Println("error:", err)
+			return err
+		}
+		if !preview {
+			_, err = ApiClient().CreateDomainNameWithContext(ctx, &apigateway.CreateDomainNameInput{
+				RegionalCertificateArn: aws.String(arnCert),
+				DomainName:             aws.String(domain),
+				EndpointConfiguration: &apigateway.EndpointConfiguration{
+					Types: []*string{aws.String(apigateway.EndpointTypeRegional)},
+				},
+				SecurityPolicy: aws.String(apigateway.SecurityPolicyTls12),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"created api domain:", name, domain)
+	} else {
+		if len(out.EndpointConfiguration.Types) != 1 || *out.EndpointConfiguration.Types[0] != apigateway.EndpointTypeRegional {
+			err := fmt.Errorf("api endpoint type misconfigured: %s", Pformat(out.EndpointConfiguration))
+			Logger.Println("error:", err)
+			return err
+		}
+		if out.SecurityPolicy == nil || *out.SecurityPolicy != apigateway.SecurityPolicyTls12 {
+			err := fmt.Errorf("api security policy misconfigured: %s", Pformat(out.SecurityPolicy))
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, domain string, zone *route53.HostedZone, preview bool) error {
+	out, err := ApiClient().GetDomainNameWithContext(ctx, &apigateway.GetDomainNameInput{
+		DomainName: aws.String(domain),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != apigateway.ErrCodeNotFoundException {
+			Logger.Println("error:", err)
+			return err
+		}
+		Logger.Println(PreviewString(preview)+"created api dns:", name, domain)
+	} else {
+		records, err := Route53ListRecords(ctx, *zone.Id)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		found := false
+		for _, record := range records {
+			if strings.TrimRight(*record.Name, ".") == domain && *record.Type == route53.RRTypeA {
+				Logger.Println(domain, Pformat(record))
+				found = true
+				if strings.TrimRight(*record.AliasTarget.DNSName, ".") != *out.RegionalDomainName {
+					err := fmt.Errorf("alias target misconfigured: %s != %s", *record.AliasTarget.DNSName, *out.RegionalDomainName)
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+		}
+		if !found {
+			if !preview {
+				_, err := Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
+					HostedZoneId: zone.Id,
+					ChangeBatch: &route53.ChangeBatch{
+						Changes: []*route53.Change{{
+							Action: aws.String(route53.ChangeActionUpsert),
+							ResourceRecordSet: &route53.ResourceRecordSet{
+								Name: aws.String(domain),
+								Type: aws.String(route53.RRTypeA),
+								AliasTarget: &route53.AliasTarget{
+									DNSName:              out.RegionalDomainName,
+									HostedZoneId:         out.RegionalHostedZoneId,
+									EvaluateTargetHealth: aws.Bool(false),
+								},
+							},
+						}},
+					},
+				})
 				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"created api dns:", name, domain, *out.RegionalDomainName)
+		}
+	}
+	return nil
+}
+
+func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, restApi *apigateway.RestApi, preview bool) error {
+	zones, err := Route53ListZones(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	found := false
+	for _, zone := range zones {
+		if domain == strings.TrimRight(*zone.Name, ".") {
+			found = true
+			err := lambdaEnsureTriggerApiDomainName(ctx, name, domain, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			//
+			err = lambdaEnsureTriggerApiDnsRecords(ctx, name, domain, zone, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			//
+			err = lambdaEnsureTriggerApiBasePathMapping(ctx, name, domain, restApi, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+			    return err
+			}
+			//
+			break
+		}
+	}
+	//
+	// TODO subdomains
+	// if !found {
+	// for _, zone := range zones {
+	// }
+	// }
+	if !found {
+		err = fmt.Errorf("no zone found matching: %s", domain)
+		Logger.Println("error:", err)
+		return err
+	}
+	return nil
+}
+
+func lambdaEnsureTriggerApiBasePathMapping(ctx context.Context, name, domain string, restApi *apigateway.RestApi, preview bool) error {
+	mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
+		DomainName: aws.String(domain),
+		Limit:      aws.Int64(500),
+	})
+	if err != nil || len(mappings.Items) == 500 {
+		Logger.Println("error:", err)
+		return err
+	}
+	switch len(mappings.Items) {
+	case 0:
+		if !preview {
+			_, err := ApiClient().CreateBasePathMappingWithContext(ctx, &apigateway.CreateBasePathMappingInput{
+				BasePath:   aws.String(apiMappingBasePath),
+				DomainName: aws.String(domain),
+				RestApiId:  restApi.Id,
+				Stage:      aws.String(apiStageName),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"created api path mapping:", name, domain, *restApi.Id)
+	case 1:
+		mapping := mappings.Items[0]
+		if *mapping.BasePath != apiMappingBasePath {
+			err := fmt.Errorf("base path misconfigured: %s", Pformat(mapping))
+			Logger.Println("error:", err)
+			return err
+		}
+		if *mapping.RestApiId != *restApi.Id {
+			err := fmt.Errorf("restapi id misconfigured: %s", Pformat(mapping))
+			Logger.Println("error:", err)
+			return err
+		}
+		if *mapping.Stage != apiStageName {
+			err := fmt.Errorf("stage misconfigured: %s", Pformat(mapping))
+			Logger.Println("error:", err)
+			return err
+		}
+	default:
+		err := fmt.Errorf("found more than 1 path mapping: %s", Pformat(mappings.Items))
+		Logger.Println("error:", err)
+		return err
+	}
+	return nil
+}
+
+func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetadata, preview bool) error {
+	hasApi := false
+	for _, trigger := range meta.Trigger {
+		parts := strings.Split(trigger, " ")
+		kind := parts[0]
+		attrs := parts[1:]
+		if kind == lambdaTriggerApi {
+			hasApi = true
+			restApi, err := lambdaEnsureTriggerApiRestApi(ctx, name, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			err = lambdaEnsureTriggerApiDeployment(ctx, name, restApi, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			for _, attr := range attrs {
+				k, v, err := splitOnce(attr, "=")
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				switch k {
+				case "dns":
+					err := lambdaEnsureTriggerApiDns(ctx, name, v, restApi, preview)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				default:
+					err := fmt.Errorf("unknown attr: %s", attr)
 					Logger.Println("error:", err)
 					return err
 				}
@@ -676,20 +933,97 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 			Logger.Println("error:", err)
 			return err
 		}
-
 		for _, api := range apis {
 			if *api.Name == name {
+				err := lambdaTriggerApiDeleteDns(ctx, name, api, preview)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				err = lambdaTriggerApiDeleteRestApi(ctx, name, api, preview)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
+func lambdaTriggerApiDeleteRestApi(ctx context.Context, name string, api *apigateway.RestApi, preview bool) error {
+	if !preview {
+		_, err := ApiClient().DeleteRestApiWithContext(ctx, &apigateway.DeleteRestApiInput{
+			RestApiId: api.Id,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"deleted api trigger for:", name)
+	return nil
+}
+
+func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apigateway.RestApi, preview bool) error {
+	domains, err := ApiListDomains(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	for _, domain := range domains {
+		mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
+			DomainName: domain.DomainName,
+			Limit:      aws.Int64(500),
+		})
+		if err != nil || len(mappings.Items) == 500 {
+			Logger.Println("error:", err)
+			return err
+		}
+		for _, mapping := range mappings.Items {
+			if *mapping.RestApiId == *api.Id {
+				zones, err := Route53ListZones(ctx)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				for _, zone := range zones {
+					records, err := Route53ListRecords(ctx, *zone.Id)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					for _, record := range records {
+						if record.AliasTarget != nil && record.AliasTarget.DNSName != nil && strings.TrimRight(*record.AliasTarget.DNSName, ".") == *domain.RegionalDomainName {
+							if !preview {
+								_, err := Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
+									HostedZoneId: zone.Id,
+									ChangeBatch: &route53.ChangeBatch{Changes: []*route53.Change{{
+										Action:            aws.String(route53.ChangeActionDelete),
+										ResourceRecordSet: record,
+									}}},
+								})
+								if err != nil {
+									Logger.Println("error:", err)
+									return err
+								}
+							}
+							Logger.Println(PreviewString(preview)+"deleted api dns records:", name, *zone.Name, *zone.Id)
+						}
+					}
+				}
+				//
 				if !preview {
-					_, err := ApiClient().DeleteRestApiWithContext(ctx, &apigateway.DeleteRestApiInput{
-						RestApiId: api.Id,
+					_, err := ApiClient().DeleteDomainNameWithContext(ctx, &apigateway.DeleteDomainNameInput{
+						DomainName: domain.DomainName,
 					})
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
 					}
 				}
-				Logger.Println(PreviewString(preview)+"deleted api trigger for:", name)
-				break
+				Logger.Println(PreviewString(preview)+"deleted api domain:", name, *domain.DomainName)
 			}
 		}
 	}
@@ -796,7 +1130,6 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 		Logger.Println("error:", err)
 		return err
 	}
-outer:
 	for _, rule := range rules {
 		targets, err := EventsListRuleTargets(ctx, *rule.Name)
 		if err != nil {
@@ -806,7 +1139,19 @@ outer:
 		for _, target := range targets {
 			if *target.Arn == arnLambda && !Contains(triggers, *rule.ScheduleExpression) {
 				if !preview {
-					_, err := EventsClient().DeleteRuleWithContext(ctx, &cloudwatchevents.DeleteRuleInput{
+					ids := []*string{}
+					for _, target := range targets {
+						ids = append(ids, target.Id)
+					}
+					_, err := EventsClient().RemoveTargetsWithContext(ctx, &cloudwatchevents.RemoveTargetsInput{
+						Rule: rule.Name,
+						Ids:  ids,
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					_, err = EventsClient().DeleteRuleWithContext(ctx, &cloudwatchevents.DeleteRuleInput{
 						Name: rule.Name,
 					})
 					if err != nil {
@@ -815,7 +1160,7 @@ outer:
 					}
 				}
 				Logger.Println(PreviewString(preview) + "removed cloudwatch rule")
-				continue outer
+				break
 			}
 		}
 	}
@@ -1466,7 +1811,6 @@ func lambdaUpdateZipPy(pth string, preview bool) error {
 }
 
 func LambdaListFunctions(ctx context.Context) ([]*lambda.FunctionConfiguration, error) {
-	Logger.Println("list lambdas")
 	var marker *string
 	var functions []*lambda.FunctionConfiguration
 	for {
@@ -1853,5 +2197,29 @@ func lambdaEnsureDockerfile(ctx context.Context, pth string, quick, preview bool
 	_ = pth
 	_ = quick
 	_ = preview
+	return nil
+}
+
+func LambdaDeleteFunction(ctx context.Context, name string, preview bool) error {
+	if !preview {
+		err := Retry(ctx, func() error {
+			_, err := LambdaClient().DeleteFunctionWithContext(ctx, &lambda.DeleteFunctionInput{
+				FunctionName: aws.String(name),
+			})
+			if err != nil {
+				aerr, ok := err.(awserr.Error)
+				if !ok || aerr.Code() != lambda.ErrCodeResourceNotFoundException {
+					return err
+				}
+				return nil
+			}
+			return nil
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"deleted function:", name)
 	return nil
 }
