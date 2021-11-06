@@ -14,6 +14,8 @@ def main(vpc_name, sg_name, *rules, quiet=False):
         [sg] = list(aws.resource('ec2').security_groups.filter(GroupIds=[sg_id], Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]))
     delete = {}
     for r in sg.ip_permissions:
+        if r.get('UserIdGroupPairs'):
+            continue
         assert r['FromPort'] == r['ToPort'], r
         for ip in r['IpRanges']:
             if not (r['IpProtocol'] == 'tcp' and r['ToPort'] == 22 and ip['CidrIp'].endswith('/32')):
