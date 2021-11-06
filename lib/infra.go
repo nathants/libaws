@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/apigateway"
@@ -133,21 +134,33 @@ func InfraListCloudwatch(ctx context.Context, triggersChan chan<- InfraLambdaTri
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	errChan := make(chan error)
 	for _, rule := range rules {
-		Logger.Println("cloudwatch list targets for for rule:", *rule.Name)
-		targets, err := EventsListRuleTargets(ctx, *rule.Name)
+		rule := rule
+		go func() {
+			Logger.Println("cloudwatch list targets for for rule:", *rule.Name)
+			targets, err := EventsListRuleTargets(ctx, *rule.Name)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			for _, target := range targets {
+				if strings.HasPrefix(*target.Arn, "arn:aws:lambda:") {
+					triggersChan <- InfraLambdaTrigger{
+						LambdaName:   Last(strings.Split(*target.Arn, ":")),
+						TriggerType:  lambdaTriggerCloudwatch,
+						TriggerAttrs: []string{*rule.ScheduleExpression},
+					}
+				}
+			}
+			errChan <- nil
+		}()
+	}
+	for range rules {
+		err := <-errChan
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
-		}
-		for _, target := range targets {
-			if strings.HasPrefix(*target.Arn, "arn:aws:lambda:") {
-				triggersChan <- InfraLambdaTrigger{
-					LambdaName:   Last(strings.Split(*target.Arn, ":")),
-					TriggerType:  lambdaTriggerCloudwatch,
-					TriggerAttrs: []string{*rule.ScheduleExpression},
-				}
-			}
 		}
 	}
 	return nil, nil
@@ -167,103 +180,116 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 		}
 		fns = append(fns, fn)
 	}
+	errChan := make(chan error)
 	triggers := make(map[string][]InfraLambdaTrigger)
 	res := make(map[string]InfraLambda)
 	for _, fn := range fns {
-		l := InfraLambda{}
-		if *fn.MemorySize != 128 { // default
-			l.Attrs = append(l.Attrs, fmt.Sprintf("memory %d", *fn.MemorySize))
-		}
-		if *fn.Timeout != 3 { // default
-			l.Attrs = append(l.Attrs, fmt.Sprintf("timeout %d", *fn.Timeout))
-		}
-		//
-		Logger.Println("lambda get concurrency for:", *fn.FunctionName)
-		out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
-			FunctionName: aws.String(*fn.FunctionName),
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		if out.ReservedConcurrentExecutions != nil {
-			l.Attrs = append(l.Attrs, fmt.Sprintf("concurrency %d", *out.ReservedConcurrentExecutions))
-		}
-		//
-		roleName := Last(strings.Split(*fn.Role, "/"))
-		//
-		Logger.Println("lambda list roles for:", *fn.FunctionName)
-		policies, err := IamListRolePolicies(ctx, roleName)
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		for _, policy := range policies {
-			l.Policies = append(l.Policies, *policy.PolicyName)
-		}
-		//
-		Logger.Println("lambda list allows for:", *fn.FunctionName)
-		allows, err := IamListRoleAllows(ctx, roleName)
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		for _, allow := range allows {
-			l.Allows = append(l.Allows, allow.String())
-		}
-		//
-		var marker *string
-		for {
-			out, err := LambdaClient().ListEventSourceMappingsWithContext(ctx, &lambda.ListEventSourceMappingsInput{
-				FunctionName: fn.FunctionArn,
-				Marker:       marker,
+		fn := fn
+		go func() {
+			l := InfraLambda{}
+			if *fn.MemorySize != 128 { // default
+				l.Attrs = append(l.Attrs, fmt.Sprintf("memory %d", *fn.MemorySize))
+			}
+			if *fn.Timeout != 3 { // default
+				l.Attrs = append(l.Attrs, fmt.Sprintf("timeout %d", *fn.Timeout))
+			}
+			//
+			Logger.Println("lambda get concurrency for:", *fn.FunctionName)
+			out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
+				FunctionName: aws.String(*fn.FunctionName),
 			})
 			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
+				errChan <- err
+				return
 			}
-			for _, mapping := range out.EventSourceMappings {
-				if Contains([]string{"Disabled", "Disabling"}, *mapping.State) {
-					continue
+			if out.ReservedConcurrentExecutions != nil {
+				l.Attrs = append(l.Attrs, fmt.Sprintf("concurrency %d", *out.ReservedConcurrentExecutions))
+			}
+			//
+			roleName := Last(strings.Split(*fn.Role, "/"))
+			//
+			Logger.Println("lambda list roles for:", *fn.FunctionName)
+			policies, err := IamListRolePolicies(ctx, roleName)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			for _, policy := range policies {
+				l.Policies = append(l.Policies, *policy.PolicyName)
+			}
+			//
+			Logger.Println("lambda list allows for:", *fn.FunctionName)
+			allows, err := IamListRoleAllows(ctx, roleName)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			for _, allow := range allows {
+				l.Allows = append(l.Allows, allow.String())
+			}
+			//
+			var marker *string
+			for {
+				out, err := LambdaClient().ListEventSourceMappingsWithContext(ctx, &lambda.ListEventSourceMappingsInput{
+					FunctionName: fn.FunctionArn,
+					Marker:       marker,
+				})
+				if err != nil {
+					errChan <- err
+					return
 				}
-				infra := ArnToInfraName(*mapping.EventSourceArn)
-				switch infra {
-				case lambdaTriggerSQS, lambdaTriggerDynamoDB:
-					var sourceName string
-					switch infra {
-					case lambdaTriggerSQS:
-						sourceName = SQSArnToName(*mapping.EventSourceArn)
-					case lambdaTriggerDynamoDB:
-						sourceName = DynamoDBStreamArnToTableName(*mapping.EventSourceArn)
-					default:
-						err := fmt.Errorf("unknown infra: %s", infra)
-						Logger.Println("error:", err)
-						return nil, err
+				for _, mapping := range out.EventSourceMappings {
+					if Contains([]string{"Disabled", "Disabling"}, *mapping.State) {
+						continue
 					}
-
-					triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], InfraLambdaTrigger{
-						LambdaName:  *fn.FunctionName,
-						TriggerType: *mapping.EventSourceArn,
-						TriggerAttrs: []string{
-							sourceName,
-							fmt.Sprintf("batch=%d", *mapping.BatchSize),
-							fmt.Sprintf("parallel=%d", *mapping.ParallelizationFactor),
-							fmt.Sprintf("retry=%d", *mapping.MaximumRetryAttempts),
-							fmt.Sprintf("start=%s", *mapping.StartingPosition),
-							fmt.Sprintf("window=%d", *mapping.MaximumBatchingWindowInSeconds),
-						},
-					})
-				default:
-					Logger.Println("ignoring event source mapping:", *mapping.FunctionArn, *mapping.EventSourceArn)
+					infra := ArnToInfraName(*mapping.EventSourceArn)
+					switch infra {
+					case lambdaTriggerSQS, lambdaTriggerDynamoDB:
+						var sourceName string
+						switch infra {
+						case lambdaTriggerSQS:
+							sourceName = SQSArnToName(*mapping.EventSourceArn)
+						case lambdaTriggerDynamoDB:
+							sourceName = DynamoDBStreamArnToTableName(*mapping.EventSourceArn)
+						default:
+							err := fmt.Errorf("unknown infra: %s", infra)
+							errChan <- err
+							return
+						}
+						triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], InfraLambdaTrigger{
+							LambdaName:  *fn.FunctionName,
+							TriggerType: infra,
+							TriggerAttrs: []string{
+								sourceName,
+								fmt.Sprintf("BatchSize=%d", *mapping.BatchSize),
+								fmt.Sprintf("ParallelizationFactor=%d", *mapping.ParallelizationFactor),
+								fmt.Sprintf("MaximumRetryAttempts=%d", *mapping.MaximumRetryAttempts),
+								fmt.Sprintf("StartingPosition=%s", *mapping.StartingPosition),
+								fmt.Sprintf("MaximumBatchingWindowInSeconds=%d", *mapping.MaximumBatchingWindowInSeconds),
+							},
+						})
+					default:
+						Logger.Println("ignoring event source mapping:", *mapping.FunctionArn, *mapping.EventSourceArn)
+					}
 				}
+				if out.NextMarker == nil {
+					break
+				}
+				marker = out.NextMarker
 			}
-			if out.NextMarker == nil {
-				break
-			}
-			marker = out.NextMarker
+			//
+			res[*fn.FunctionName] = l
+			//
+			errChan <- nil
+		}()
+	}
+	//
+	for range fns {
+		err := <-errChan
+		if err != nil {
+			Logger.Println("error:", err)
+		    return nil, err
 		}
-		//
-		res[*fn.FunctionName] = l
 	}
 	//
 	Logger.Println("lambda wait for triggers")
@@ -293,96 +319,128 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 }
 
 func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]InfraApi, error) {
+	lock := &sync.Mutex{}
 	infraApi := make(map[string]InfraApi)
 	apis, err := apiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	errChan := make(chan error)
 	for _, api := range apis {
-		infraApi[*api.Name] = InfraApi{}
-		parentID, err := ApiResourceID(ctx, *api.Id, "/")
+		api := api
+		go func() {
+			lock.Lock()
+			infraApi[*api.Name] = InfraApi{}
+			lock.Unlock()
+			//
+			parentID, err := ApiResourceID(ctx, *api.Id, "/")
+			if err != nil {
+				errChan <- err
+				return
+			}
+			out, err := ApiClient().GetIntegrationWithContext(ctx, &apigateway.GetIntegrationInput{
+				RestApiId:  api.Id,
+				HttpMethod: aws.String(apiHttpMethod),
+				ResourceId: aws.String(parentID),
+			})
+			if err != nil {
+				errChan <- err
+				return
+			}
+			lambdaName := LambdaApiUriToLambdaName(*out.Uri)
+			triggersChan <- InfraLambdaTrigger{
+				LambdaName:  lambdaName,
+				TriggerType: lambdaTriggerApi,
+			}
+			errChan <- nil
+		}()
+	}
+	for range apis {
+		err := <-errChan
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
-		}
-		out, err := ApiClient().GetIntegrationWithContext(ctx, &apigateway.GetIntegrationInput{
-			RestApiId:  api.Id,
-			HttpMethod: aws.String(apiHttpMethod),
-			ResourceId: aws.String(parentID),
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		lambdaName := LambdaApiUriToLambdaName(*out.Uri)
-		triggersChan <- InfraLambdaTrigger{
-			LambdaName:  lambdaName,
-			TriggerType: lambdaTriggerApi,
 		}
 	}
 	return infraApi, nil
 }
 
 func InfraListDynamoDB(ctx context.Context) (map[string]InfraDynamoDB, error) {
+	lock := &sync.Mutex{}
 	infraDynamoDB := make(map[string]InfraDynamoDB)
 	tableNames, err := DynamoDBListTables(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	errChan := make(chan error)
 	for _, tableName := range tableNames {
-		db := InfraDynamoDB{}
-		out, err := DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
-			TableName: aws.String(tableName),
-		})
-		if err != nil {
-			Logger.Fatal("error: ", err)
-		}
-		attrTypes := make(map[string]string)
-		for _, attr := range out.Table.AttributeDefinitions {
-			attrTypes[*attr.AttributeName] = *attr.AttributeType
-		}
-		for _, key := range out.Table.KeySchema {
-			db.Keys = append(db.Keys, fmt.Sprintf("%s:%s:%s", *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
-		}
-		db.Attrs = append(db.Attrs, fmt.Sprintf("ProvisionedThroughput.ReadCapacityUnits=%d", *out.Table.ProvisionedThroughput.ReadCapacityUnits))
-		db.Attrs = append(db.Attrs, fmt.Sprintf("ProvisionedThroughput.WriteCapacityUnits=%d", *out.Table.ProvisionedThroughput.WriteCapacityUnits))
-		if out.Table.StreamSpecification != nil {
-			db.Attrs = append(db.Attrs, fmt.Sprintf("StreamSpecification.StreamViewType=%s", *out.Table.StreamSpecification.StreamViewType))
-		}
-		for i, index := range out.Table.LocalSecondaryIndexes {
-			db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
-			for j, key := range index.KeySchema {
-				db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+		tableName := tableName
+		go func() {
+			db := InfraDynamoDB{}
+			out, err := DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
+				TableName: aws.String(tableName),
+			})
+			if err != nil {
+				errChan <- err
+				return
 			}
-			db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
-			for j, attr := range index.Projection.NonKeyAttributes {
-				db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
+			attrTypes := make(map[string]string)
+			for _, attr := range out.Table.AttributeDefinitions {
+				attrTypes[*attr.AttributeName] = *attr.AttributeType
 			}
-		}
-		for i, index := range out.Table.GlobalSecondaryIndexes {
-			db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
-			for j, key := range index.KeySchema {
-				db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+			for _, key := range out.Table.KeySchema {
+				db.Keys = append(db.Keys, fmt.Sprintf("%s:%s:%s", *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
 			}
-			db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
-			for j, attr := range index.Projection.NonKeyAttributes {
-				db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("ProvisionedThroughput.ReadCapacityUnits=%d", *out.Table.ProvisionedThroughput.ReadCapacityUnits))
+			db.Attrs = append(db.Attrs, fmt.Sprintf("ProvisionedThroughput.WriteCapacityUnits=%d", *out.Table.ProvisionedThroughput.WriteCapacityUnits))
+			if out.Table.StreamSpecification != nil {
+				db.Attrs = append(db.Attrs, fmt.Sprintf("StreamSpecification.StreamViewType=%s", *out.Table.StreamSpecification.StreamViewType))
 			}
-			db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.ReadCapacityUnits=%d", i, *index.ProvisionedThroughput.ReadCapacityUnits))
-			db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.WriteCapacityUnits=%d", i, *index.ProvisionedThroughput.WriteCapacityUnits))
-		}
-		tags, err := DynamoDBListTags(ctx, tableName)
+			for i, index := range out.Table.LocalSecondaryIndexes {
+				db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
+				for j, key := range index.KeySchema {
+					db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+				}
+				db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
+				for j, attr := range index.Projection.NonKeyAttributes {
+					db.Attrs = append(db.Attrs, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
+				}
+			}
+			for i, index := range out.Table.GlobalSecondaryIndexes {
+				db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
+				for j, key := range index.KeySchema {
+					db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+				}
+				db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
+				for j, attr := range index.Projection.NonKeyAttributes {
+					db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
+				}
+				db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.ReadCapacityUnits=%d", i, *index.ProvisionedThroughput.ReadCapacityUnits))
+				db.Attrs = append(db.Attrs, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.WriteCapacityUnits=%d", i, *index.ProvisionedThroughput.WriteCapacityUnits))
+			}
+			tags, err := DynamoDBListTags(ctx, tableName)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			for i, tag := range tags {
+				db.Attrs = append(db.Attrs, fmt.Sprintf("Tags.%d.Key=%s", i, *tag.Key))
+				db.Attrs = append(db.Attrs, fmt.Sprintf("Tags.%d.Value=%s", i, *tag.Value))
+			}
+			lock.Lock()
+			infraDynamoDB[tableName] = db
+			lock.Unlock()
+			errChan <- nil
+		}()
+	}
+	for range tableNames {
+		err := <-errChan
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		for i, tag := range tags {
-			db.Attrs = append(db.Attrs, fmt.Sprintf("Tags.%d.Key=%s", i, *tag.Key))
-			db.Attrs = append(db.Attrs, fmt.Sprintf("Tags.%d.Value=%s", i, *tag.Value))
-		}
-		infraDynamoDB[tableName] = db
 	}
 	return infraDynamoDB, nil
 }
@@ -411,51 +469,72 @@ func InfraListEC2(ctx context.Context) (map[string]InfraEC2, error) {
 }
 
 func InfraListS3(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]InfraS3, error) {
+	lock := &sync.Mutex{}
 	res := make(map[string]InfraS3)
 	buckets, err := S3Client().ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	errChan := make(chan error)
 	for _, bucket := range buckets.Buckets {
-		s := InfraS3{}
-		descr, err := S3GetBucketDescription(ctx, *bucket.Name)
+		bucket := bucket
+		go func() {
+			s := InfraS3{}
+			descr, err := S3GetBucketDescription(ctx, *bucket.Name)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			s3Default := s3EnsureInputDefault()
+			//
+			if descr.Policy == nil && s3Default.acl != "private" {
+				s.Attrs = append(s.Attrs, "acl=private")
+			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.acl != "public" {
+				s.Attrs = append(s.Attrs, "acl=public")
+			}
+			//
+			if descr.Cors == nil && s3Default.cors {
+				s.Attrs = append(s.Attrs, "cors=false")
+			} else if reflect.DeepEqual(s3Cors, descr.Cors) {
+				s.Attrs = append(s.Attrs, "cors=true")
+			}
+			//
+			if descr.Versioning != s3Default.versioning {
+				s.Attrs = append(s.Attrs, fmt.Sprintf("versioning=%t", descr.Versioning))
+			}
+			//
+			encryption := reflect.DeepEqual(descr.Encryption, s3EncryptionConfig)
+			if encryption != s3Default.encryption {
+				s.Attrs = append(s.Attrs, fmt.Sprintf("encryption=%t", encryption))
+			}
+			//
+			metrics := descr.Metrics != nil
+			if s3Default.metrics != metrics {
+				s.Attrs = append(s.Attrs, fmt.Sprintf("metrics=%t", metrics))
+			}
+			//
+			if descr.Notifications != nil {
+				for _, conf := range descr.Notifications.LambdaFunctionConfigurations {
+					triggersChan <- InfraLambdaTrigger{
+						LambdaName:   LambdaArnToLambdaName(*conf.LambdaFunctionArn),
+						TriggerType:  lambdaTrigerS3,
+						TriggerAttrs: []string{*bucket.Name},
+					}
+				}
+			}
+			lock.Lock()
+			res[*bucket.Name] = s
+			lock.Unlock()
+			errChan <- nil
+		}()
+	}
+	for range buckets.Buckets {
+		err := <-errChan
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		s3Default := s3EnsureInputDefault()
-		//
-		if descr.Policy == nil && s3Default.acl != "private" {
-			s.Attrs = append(s.Attrs, "acl=private")
-		} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.acl != "public" {
-			s.Attrs = append(s.Attrs, "acl=public")
-		}
-		//
-		if descr.Versioning != s3Default.versioning {
-			s.Attrs = append(s.Attrs, fmt.Sprintf("versioning=%t", descr.Versioning))
-		}
-		//
-		encryption := reflect.DeepEqual(descr.Encryption, s3EncryptionConfig)
-		if encryption != s3Default.encryption {
-			s.Attrs = append(s.Attrs, fmt.Sprintf("encryption=%t", encryption))
-		}
-		//
-		metrics := descr.Metrics != nil
-		if s3Default.metrics != metrics {
-			s.Attrs = append(s.Attrs, fmt.Sprintf("metrics=%t", metrics))
-		}
-		//
-		if descr.Notifications != nil {
-			for _, conf := range descr.Notifications.LambdaFunctionConfigurations {
-				triggersChan <- InfraLambdaTrigger{
-					LambdaName:   LambdaArnToLambdaName(*conf.LambdaFunctionArn),
-					TriggerType:  lambdaTrigerS3,
-					TriggerAttrs: []string{*bucket.Name},
-				}
-			}
-		}
-		res[*bucket.Name] = s
 	}
 	return res, nil
 }
@@ -466,47 +545,58 @@ func InfraListSQS(ctx context.Context) (map[string]InfraSQS, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	errChan := make(chan error)
+	lock := &sync.Mutex{}
 	res := make(map[string]InfraSQS)
 	for _, url := range urls {
+		url := url
+		go func() {
+			out, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
+				QueueUrl: aws.String(url),
+				AttributeNames: []*string{
+					aws.String("DelaySeconds"),
+					aws.String("MaximumMessageSize"),
+					aws.String("MessageRetentionPeriod"),
+					aws.String("ReceiveMessageWaitTimeSeconds"),
+					aws.String("VisibilityTimeout"),
+					aws.String("KmsDataKeyReusePeriodSeconds"),
+				},
+			})
+			if err != nil {
+				errChan <- err
+				return
+			}
+			s := InfraSQS{}
+			if out.Attributes["DelaySeconds"] != nil && *out.Attributes["DelaySeconds"] != "0" { // default
+				s.Attrs = append(s.Attrs, "DelaySeconds="+*out.Attributes["DelaySeconds"])
+			}
+			if out.Attributes["MaximumMessageSize"] != nil && *out.Attributes["MaximumMessageSize"] != "262144" { // default
+				s.Attrs = append(s.Attrs, "MaximumMessageSize="+*out.Attributes["MaximumMessageSize"])
+			}
+			if out.Attributes["MessageRetentionPeriod"] != nil && *out.Attributes["MessageRetentionPeriod"] != "345600" { // default
+				s.Attrs = append(s.Attrs, "MessageRetentionPeriod="+*out.Attributes["MessageRetentionPeriod"])
+			}
+			if out.Attributes["ReceiveMessageWaitTimeSeconds"] != nil && *out.Attributes["ReceiveMessageWaitTimeSeconds"] != "0" { // default
+				s.Attrs = append(s.Attrs, "ReceiveMessageWaitTimeSeconds="+*out.Attributes["ReceiveMessageWaitTimeSeconds"])
+			}
+			if out.Attributes["VisibilityTimeout"] != nil && *out.Attributes["VisibilityTimeout"] != "30" { // default
+				s.Attrs = append(s.Attrs, "VisibilityTimeout="+*out.Attributes["VisibilityTimeout"])
+			}
+			if out.Attributes["KmsDataKeyReusePeriodSeconds"] != nil && *out.Attributes["KmsDataKeyReusePeriodSeconds"] != "300" { // default
+				s.Attrs = append(s.Attrs, "KmsDataKeyReusePeriodSeconds="+*out.Attributes["KmsDataKeyReusePeriodSeconds"])
+			}
+			lock.Lock()
+			res[SQSUrlToName(url)] = s
+			lock.Unlock()
+			errChan <- nil
+		}()
+	}
+	for range urls {
+		err := <-errChan
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		out, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-			QueueUrl: aws.String(url),
-			AttributeNames: []*string{
-				aws.String("DelaySeconds"),
-				aws.String("MaximumMessageSize"),
-				aws.String("MessageRetentionPeriod"),
-				aws.String("ReceiveMessageWaitTimeSeconds"),
-				aws.String("VisibilityTimeout"),
-				aws.String("KmsDataKeyReusePeriodSeconds"),
-			},
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		s := InfraSQS{}
-		if out.Attributes["DelaySeconds"] != nil && *out.Attributes["DelaySeconds"] != "0" { // default
-			s.Attrs = append(s.Attrs, "DelaySeconds="+*out.Attributes["DelaySeconds"])
-		}
-		if out.Attributes["MaximumMessageSize"] != nil && *out.Attributes["MaximumMessageSize"] != "262144" { // default
-			s.Attrs = append(s.Attrs, "MaximumMessageSize="+*out.Attributes["MaximumMessageSize"])
-		}
-		if out.Attributes["MessageRetentionPeriod"] != nil && *out.Attributes["MessageRetentionPeriod"] != "345600" { // default
-			s.Attrs = append(s.Attrs, "MessageRetentionPeriod="+*out.Attributes["MessageRetentionPeriod"])
-		}
-		if out.Attributes["ReceiveMessageWaitTimeSeconds"] != nil && *out.Attributes["ReceiveMessageWaitTimeSeconds"] != "0" { // default
-			s.Attrs = append(s.Attrs, "ReceiveMessageWaitTimeSeconds="+*out.Attributes["ReceiveMessageWaitTimeSeconds"])
-		}
-		if out.Attributes["VisibilityTimeout"] != nil && *out.Attributes["VisibilityTimeout"] != "30" { // default
-			s.Attrs = append(s.Attrs, "VisibilityTimeout="+*out.Attributes["VisibilityTimeout"])
-		}
-		if out.Attributes["KmsDataKeyReusePeriodSeconds"] != nil && *out.Attributes["KmsDataKeyReusePeriodSeconds"] != "300" { // default
-			s.Attrs = append(s.Attrs, "KmsDataKeyReusePeriodSeconds="+*out.Attributes["KmsDataKeyReusePeriodSeconds"])
-		}
-		res[SQSUrlToName(url)] = s
 	}
 	return res, nil
 }
