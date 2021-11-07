@@ -3,7 +3,7 @@
 // attr: memory 128
 // attr: timeout 60
 // policy: AWSLambdaBasicExecutionRole
-// trigger: api dns=test.dns.nathants.com
+// trigger: api dns=${domain}
 // trigger: cloudwatch rate(15 minutes) # keep lambda warm for fast responses
 
 package main

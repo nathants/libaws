@@ -23,7 +23,7 @@ func Session() *session.Session {
 		}
 		sess = session.Must(session.NewSession(&aws.Config{
 			STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
-			// MaxRetries:          aws.Int(5),
+			MaxRetries:          aws.Int(5),
 		}))
 	}
 	return sess
@@ -41,7 +41,7 @@ func SessionRegion(region string) (*session.Session, error) {
 		sess, err = session.NewSession(&aws.Config{
 			Region:              aws.String(region),
 			STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
-			// MaxRetries:          aws.Int(5),
+			MaxRetries:          aws.Int(5),
 		})
 		if err != nil {
 			return nil, err

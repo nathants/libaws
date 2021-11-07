@@ -313,7 +313,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]InfraApi, error) {
 	lock := &sync.Mutex{}
 	infraApi := make(map[string]InfraApi)
-	apis, err := apiList(ctx)
+	apis, err := ApiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err

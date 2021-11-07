@@ -18,6 +18,7 @@ const (
 	apiPath                  = "/{proxy+}"
 	apiPathPart              = "{proxy+}"
 	apiMappingBasePath       = ""
+	apiMappingBasePathEmpty  = "(none)"
 )
 
 var (
@@ -37,7 +38,7 @@ func ApiClient() *apigateway.APIGateway {
 	return apiClient
 }
 
-func apiList(ctx context.Context) ([]*apigateway.RestApi, error) {
+func ApiList(ctx context.Context) ([]*apigateway.RestApi, error) {
 	var position *string
 	var items []*apigateway.RestApi
 	for {
@@ -61,7 +62,7 @@ func apiList(ctx context.Context) ([]*apigateway.RestApi, error) {
 func Api(ctx context.Context, name string) (*apigateway.RestApi, error) {
 	var count int
 	var result *apigateway.RestApi
-	apis, err := apiList(ctx)
+	apis, err := ApiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err

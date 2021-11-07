@@ -18,6 +18,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/acm"
 	"github.com/aws/aws-sdk-go/service/apigateway"
 	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
 	"github.com/aws/aws-sdk-go/service/lambda"
@@ -150,8 +151,13 @@ func lambdaFilterMetadata(lines []string) []string {
 	var res []string
 	for _, line := range lines {
 		line = strings.Trim(line, "\n")
-		if (strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//")) && strings.Contains(line, ":") {
-			res = append(res, strings.Trim(line, "#/ "))
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			line = strings.Trim(line, "#/ ")
+			line = strings.Split(line, "#")[0]
+			line = strings.Split(line, "//")[0]
+			line = strings.Trim(line, " ")
+			line = regexp.MustCompile(` +`).ReplaceAllString(line, " ")
+			res = append(res, line)
 		}
 		parts := strings.Split(line, " ")
 		if len(parts) > 0 && Contains([]string{"import", "def", "func"}, parts[0]) {
@@ -164,14 +170,19 @@ func lambdaFilterMetadata(lines []string) []string {
 func lambdaParseMetadata(token string, lines []string) ([]string, error) {
 	token = token + ":"
 	var vals [][]string
+	previousMatch := false
 	for _, line := range lambdaFilterMetadata(lines) {
 		if strings.HasPrefix(line, token) {
+			previousMatch = true
 			part := Last(strings.SplitN(line, token, 2))
-			part = strings.Split(part, "#")[0]
-			part = strings.Split(part, "//")[0]
 			part = strings.Trim(part, " ")
-			part = regexp.MustCompile(` +`).ReplaceAllString(part, " ")
 			vals = append(vals, []string{line, part})
+		} else if previousMatch && strings.HasPrefix(line, "- ") && len(vals) > 0 {
+			last := vals[len(vals)-1]
+			last[1] = last[1] + " " + line[2:]
+			vals[len(vals)-1] = last
+		} else {
+			previousMatch = false
 		}
 	}
 	var results []string
@@ -276,8 +287,11 @@ func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 		}
 	}
 	for _, line := range lambdaFilterMetadata(lines) {
+		if strings.Trim(line, " ") == "" {
+			continue
+		}
 		token := strings.SplitN(line, ":", 2)[0]
-		if !Contains([]string{lambdaMetaS3, lambdaMetaDynamoDB, lambdaMetaSQS, lambdaMetaPolicy, lambdaMetaAllow, lambdaMetaInclude, lambdaMetaTrigger, lambdaMetaRequire, lambdaMetaAttr}, token) {
+		if strings.HasPrefix(line, "- ") || !Contains([]string{lambdaMetaS3, lambdaMetaDynamoDB, lambdaMetaSQS, lambdaMetaPolicy, lambdaMetaAllow, lambdaMetaInclude, lambdaMetaTrigger, lambdaMetaRequire, lambdaMetaAttr}, token) {
 			err := fmt.Errorf("unknown configuration comment: %s", line)
 			Logger.Println("error:", err)
 			return nil, err
@@ -676,9 +690,9 @@ func lambdaEnsureTriggerApiDeployment(ctx context.Context, name string, restApi 
 	return nil
 }
 
-func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, preview bool) error {
+func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, subDomain, parentDomain string, preview bool) error {
 	out, err := ApiClient().GetDomainNameWithContext(ctx, &apigateway.GetDomainNameInput{
-		DomainName: aws.String(domain),
+		DomainName: aws.String(subDomain),
 	})
 	if err != nil {
 		aerr, ok := err.(awserr.Error)
@@ -693,20 +707,35 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, 
 		}
 		arnCert := ""
 		for _, cert := range certs {
-			if *cert.DomainName == domain {
+			if *cert.DomainName == parentDomain {
 				arnCert = *cert.CertificateArn
 				break
 			}
 		}
 		if arnCert == "" {
-			err := fmt.Errorf("no acm cert found for: %s", domain)
+			err := fmt.Errorf("no acm cert found for: %s", parentDomain)
 			Logger.Println("error:", err)
 			return err
+		}
+		if subDomain != parentDomain {
+			out, err := AcmClient().DescribeCertificateWithContext(ctx, &acm.DescribeCertificateInput{
+				CertificateArn: aws.String(arnCert),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			wildcard := fmt.Sprintf("*.%s", parentDomain)
+			if !Contains(StringSlice(out.Certificate.SubjectAlternativeNames), wildcard) {
+				err := fmt.Errorf("no wildcard domain for parent domain: %s %s", wildcard, subDomain)
+				Logger.Println("error:", err)
+				return err
+			}
 		}
 		if !preview {
 			_, err = ApiClient().CreateDomainNameWithContext(ctx, &apigateway.CreateDomainNameInput{
 				RegionalCertificateArn: aws.String(arnCert),
-				DomainName:             aws.String(domain),
+				DomainName:             aws.String(subDomain),
 				EndpointConfiguration: &apigateway.EndpointConfiguration{
 					Types: []*string{aws.String(apigateway.EndpointTypeRegional)},
 				},
@@ -717,7 +746,7 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, 
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"created api domain:", name, domain)
+		Logger.Println(PreviewString(preview)+"created api domain:", name, subDomain)
 	} else {
 		if len(out.EndpointConfiguration.Types) != 1 || *out.EndpointConfiguration.Types[0] != apigateway.EndpointTypeRegional {
 			err := fmt.Errorf("api endpoint type misconfigured: %s", Pformat(out.EndpointConfiguration))
@@ -733,9 +762,9 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, 
 	return nil
 }
 
-func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, domain string, zone *route53.HostedZone, preview bool) error {
+func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, subDomain string, zone *route53.HostedZone, preview bool) error {
 	out, err := ApiClient().GetDomainNameWithContext(ctx, &apigateway.GetDomainNameInput{
-		DomainName: aws.String(domain),
+		DomainName: aws.String(subDomain),
 	})
 	if err != nil {
 		aerr, ok := err.(awserr.Error)
@@ -743,7 +772,7 @@ func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, domain string, 
 			Logger.Println("error:", err)
 			return err
 		}
-		Logger.Println(PreviewString(preview)+"created api dns:", name, domain)
+		Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain)
 	} else {
 		records, err := Route53ListRecords(ctx, *zone.Id)
 		if err != nil {
@@ -752,8 +781,7 @@ func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, domain string, 
 		}
 		found := false
 		for _, record := range records {
-			if strings.TrimRight(*record.Name, ".") == domain && *record.Type == route53.RRTypeA {
-				Logger.Println(domain, Pformat(record))
+			if strings.TrimRight(*record.Name, ".") == subDomain && *record.Type == route53.RRTypeA {
 				found = true
 				if strings.TrimRight(*record.AliasTarget.DNSName, ".") != *out.RegionalDomainName {
 					err := fmt.Errorf("alias target misconfigured: %s != %s", *record.AliasTarget.DNSName, *out.RegionalDomainName)
@@ -770,7 +798,7 @@ func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, domain string, 
 						Changes: []*route53.Change{{
 							Action: aws.String(route53.ChangeActionUpsert),
 							ResourceRecordSet: &route53.ResourceRecordSet{
-								Name: aws.String(domain),
+								Name: aws.String(subDomain),
 								Type: aws.String(route53.RRTypeA),
 								AliasTarget: &route53.AliasTarget{
 									DNSName:              out.RegionalDomainName,
@@ -786,7 +814,7 @@ func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, domain string, 
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"created api dns:", name, domain, *out.RegionalDomainName)
+			Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain, *out.RegionalDomainName)
 		}
 	}
 	return nil
@@ -802,33 +830,54 @@ func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, restApi
 	for _, zone := range zones {
 		if domain == strings.TrimRight(*zone.Name, ".") {
 			found = true
-			err := lambdaEnsureTriggerApiDomainName(ctx, name, domain, preview)
+			err := lambdaEnsureTriggerApiDomainName(ctx, name, domain, domain, preview)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			//
 			err = lambdaEnsureTriggerApiDnsRecords(ctx, name, domain, zone, preview)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			//
 			err = lambdaEnsureTriggerApiBasePathMapping(ctx, name, domain, restApi, preview)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			//
 			break
 		}
 	}
 	//
-	// TODO subdomains
-	// if !found {
-	// for _, zone := range zones {
-	// }
-	// }
+	if !found {
+		_, parentDomain, err := splitOnce(domain, ".")
+		subDomain := domain
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		for _, zone := range zones {
+			if parentDomain == strings.TrimRight(*zone.Name, ".") {
+				found = true
+				err := lambdaEnsureTriggerApiDomainName(ctx, name, subDomain, parentDomain, preview)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				err = lambdaEnsureTriggerApiDnsRecords(ctx, name, subDomain, zone, preview)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				err = lambdaEnsureTriggerApiBasePathMapping(ctx, name, subDomain, restApi, preview)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				break
+			}
+		}
+	}
 	if !found {
 		err = fmt.Errorf("no zone found matching: %s", domain)
 		Logger.Println("error:", err)
@@ -837,9 +886,9 @@ func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, restApi
 	return nil
 }
 
-func lambdaEnsureTriggerApiBasePathMapping(ctx context.Context, name, domain string, restApi *apigateway.RestApi, preview bool) error {
+func lambdaEnsureTriggerApiBasePathMapping(ctx context.Context, name, subDomain string, restApi *apigateway.RestApi, preview bool) error {
 	mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
-		DomainName: aws.String(domain),
+		DomainName: aws.String(subDomain),
 		Limit:      aws.Int64(500),
 	})
 	if err != nil || len(mappings.Items) == 500 {
@@ -851,7 +900,7 @@ func lambdaEnsureTriggerApiBasePathMapping(ctx context.Context, name, domain str
 		if !preview {
 			_, err := ApiClient().CreateBasePathMappingWithContext(ctx, &apigateway.CreateBasePathMappingInput{
 				BasePath:   aws.String(apiMappingBasePath),
-				DomainName: aws.String(domain),
+				DomainName: aws.String(subDomain),
 				RestApiId:  restApi.Id,
 				Stage:      aws.String(apiStageName),
 			})
@@ -860,21 +909,21 @@ func lambdaEnsureTriggerApiBasePathMapping(ctx context.Context, name, domain str
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"created api path mapping:", name, domain, *restApi.Id)
+		Logger.Println(PreviewString(preview)+"created api path mapping:", name, subDomain, *restApi.Id)
 	case 1:
 		mapping := mappings.Items[0]
-		if *mapping.BasePath != apiMappingBasePath {
-			err := fmt.Errorf("base path misconfigured: %s", Pformat(mapping))
+		if *mapping.BasePath != apiMappingBasePathEmpty {
+			err := fmt.Errorf("base path misconfigured: %s != %s", *mapping.BasePath, apiMappingBasePath)
 			Logger.Println("error:", err)
 			return err
 		}
 		if *mapping.RestApiId != *restApi.Id {
-			err := fmt.Errorf("restapi id misconfigured: %s", Pformat(mapping))
+			err := fmt.Errorf("restapi id misconfigured: %s != %s", *mapping.RestApiId, *restApi.Id)
 			Logger.Println("error:", err)
 			return err
 		}
 		if *mapping.Stage != apiStageName {
-			err := fmt.Errorf("stage misconfigured: %s", Pformat(mapping))
+			err := fmt.Errorf("stage misconfigured: %s != %s", *mapping.Stage, apiStageName)
 			Logger.Println("error:", err)
 			return err
 		}
@@ -888,6 +937,7 @@ func lambdaEnsureTriggerApiBasePathMapping(ctx context.Context, name, domain str
 
 func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetadata, preview bool) error {
 	hasApi := false
+	domainName := ""
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
 		kind := parts[0]
@@ -912,7 +962,8 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 				}
 				switch k {
 				case "dns":
-					err := lambdaEnsureTriggerApiDns(ctx, name, v, restApi, preview)
+					domainName = v
+					err := lambdaEnsureTriggerApiDns(ctx, name, domainName, restApi, preview)
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
@@ -927,28 +978,38 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 		}
 	}
 	//
-	if !hasApi {
-		apis, err := apiList(ctx)
+	api, err := Api(ctx, name)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if api != nil {
+		domains, err := ApiListDomains(ctx)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		for _, api := range apis {
-			if *api.Name == name {
-				err := lambdaTriggerApiDeleteDns(ctx, name, api, preview)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				err = lambdaTriggerApiDeleteRestApi(ctx, name, api, preview)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				break
+		// delete any unused domains
+		for _, domain := range domains {
+			if *domain.DomainName == domainName {
+				continue
+			}
+			err := lambdaTriggerApiDeleteDns(ctx, name, api, domain, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		// if api trigger unused, delete rest api
+		if !hasApi {
+			err = lambdaTriggerApiDeleteRestApi(ctx, name, api, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
 			}
 		}
 	}
+	//
 	return nil
 }
 
@@ -966,65 +1027,58 @@ func lambdaTriggerApiDeleteRestApi(ctx context.Context, name string, api *apigat
 	return nil
 }
 
-func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apigateway.RestApi, preview bool) error {
-	domains, err := ApiListDomains(ctx)
-	if err != nil {
+func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apigateway.RestApi, domain *apigateway.DomainName, preview bool) error {
+	mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
+		DomainName: domain.DomainName,
+		Limit:      aws.Int64(500),
+	})
+	if err != nil || len(mappings.Items) == 500 {
 		Logger.Println("error:", err)
 		return err
 	}
-	for _, domain := range domains {
-		mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
-			DomainName: domain.DomainName,
-			Limit:      aws.Int64(500),
-		})
-		if err != nil || len(mappings.Items) == 500 {
-			Logger.Println("error:", err)
-			return err
-		}
-		for _, mapping := range mappings.Items {
-			if *mapping.RestApiId == *api.Id {
-				zones, err := Route53ListZones(ctx)
+	for _, mapping := range mappings.Items {
+		if *mapping.RestApiId == *api.Id {
+			zones, err := Route53ListZones(ctx)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			for _, zone := range zones {
+				records, err := Route53ListRecords(ctx, *zone.Id)
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
-				for _, zone := range zones {
-					records, err := Route53ListRecords(ctx, *zone.Id)
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-					for _, record := range records {
-						if record.AliasTarget != nil && record.AliasTarget.DNSName != nil && strings.TrimRight(*record.AliasTarget.DNSName, ".") == *domain.RegionalDomainName {
-							if !preview {
-								_, err := Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
-									HostedZoneId: zone.Id,
-									ChangeBatch: &route53.ChangeBatch{Changes: []*route53.Change{{
-										Action:            aws.String(route53.ChangeActionDelete),
-										ResourceRecordSet: record,
-									}}},
-								})
-								if err != nil {
-									Logger.Println("error:", err)
-									return err
-								}
+				for _, record := range records {
+					if record.AliasTarget != nil && record.AliasTarget.DNSName != nil && strings.TrimRight(*record.AliasTarget.DNSName, ".") == *domain.RegionalDomainName {
+						if !preview {
+							_, err := Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
+								HostedZoneId: zone.Id,
+								ChangeBatch: &route53.ChangeBatch{Changes: []*route53.Change{{
+									Action:            aws.String(route53.ChangeActionDelete),
+									ResourceRecordSet: record,
+								}}},
+							})
+							if err != nil {
+								Logger.Println("error:", err)
+								return err
 							}
-							Logger.Println(PreviewString(preview)+"deleted api dns records:", name, *zone.Name, *zone.Id)
 						}
+						Logger.Println(PreviewString(preview)+"deleted api dns records:", name, *zone.Name, *zone.Id)
 					}
 				}
-				//
-				if !preview {
-					_, err := ApiClient().DeleteDomainNameWithContext(ctx, &apigateway.DeleteDomainNameInput{
-						DomainName: domain.DomainName,
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-				}
-				Logger.Println(PreviewString(preview)+"deleted api domain:", name, *domain.DomainName)
 			}
+			//
+			if !preview {
+				_, err := ApiClient().DeleteDomainNameWithContext(ctx, &apigateway.DeleteDomainNameInput{
+					DomainName: domain.DomainName,
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"deleted api domain:", name, *domain.DomainName)
 		}
 	}
 	return nil

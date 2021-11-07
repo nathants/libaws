@@ -2,8 +2,11 @@ package cliaws
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go/service/acm"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -27,5 +30,13 @@ func acmLs() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	lib.Logger.Println(certs)
+	for _, cert := range certs {
+		out, err := lib.AcmClient().DescribeCertificateWithContext(ctx, &acm.DescribeCertificateInput{
+			CertificateArn: cert.CertificateArn,
+		})
+		if err != nil {
+		    lib.Logger.Fatal("error: ", err)
+		}
+		fmt.Println(strings.Join(lib.StringSlice(out.Certificate.SubjectAlternativeNames), " "))
+	}
 }
