@@ -151,6 +151,9 @@ func lambdaFilterMetadata(lines []string) []string {
 	var res []string
 	for _, line := range lines {
 		line = strings.Trim(line, "\n")
+		if len(line) >= 2 && line[:2] == "#!" {
+			continue
+		}
 		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
 			line = strings.Trim(line, "#/ ")
 			line = strings.Split(line, "#")[0]
@@ -1213,7 +1216,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 						return err
 					}
 				}
-				Logger.Println(PreviewString(preview) + "removed cloudwatch rule")
+				Logger.Println(PreviewString(preview)+"deleted cloudwatch rule:", name)
 				break
 			}
 		}
