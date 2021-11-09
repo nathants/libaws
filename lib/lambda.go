@@ -1809,25 +1809,28 @@ func LambdaIncludeInZip(pth string, includes []string, preview bool) error {
 				return err
 			}
 			for _, pth := range paths {
+				pth, err := filepath.Rel(dir, pth)
+				if err != nil {
+				    panic(err)
+				}
 				if !preview {
-					err := shellAt(dir, "zip %s %s", zipFile, pth)
+					err := shellAt(dir, "zip -r %s '%s'", zipFile, pth)
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
 					}
 				}
-				Logger.Println(PreviewString(preview)+"include in zip for %s: %s", name, pth)
+				Logger.Printf(PreviewString(preview)+"include in zip for %s: %s\n", name, pth)
 			}
 		} else {
-			pth = path.Join(dir, pth)
 			if !preview {
-				err := shellAt(dir, "zip %s %s", zipFile, pth)
+				err := shellAt(dir, "zip -r %s '%s'", zipFile, include)
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"include in zip for %s: %s", name, pth)
+			Logger.Printf(PreviewString(preview)+"include in zip for %s: %s\n", name, include)
 		}
 	}
 	return nil
