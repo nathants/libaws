@@ -225,7 +225,7 @@ var s3Cors = []*s3.CORSRule{{
 	AllowedHeaders: []*string{aws.String("Authorization")},
 	AllowedMethods: []*string{aws.String("GET"), aws.String("PUT"), aws.String("POST"), aws.String("HEAD")},
 	AllowedOrigins: []*string{aws.String("*")},
-	ExposeHeaders:  nil,
+	ExposeHeaders:  []*string{aws.String("Content-Length"), aws.String("Content-Type"), aws.String("ETag")},
 	MaxAgeSeconds:  aws.Int64(int64(3000)),
 }}
 
