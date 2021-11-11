@@ -12,7 +12,6 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
-
 	"strings"
 	"sync"
 
@@ -156,8 +155,8 @@ func lambdaFilterMetadata(lines []string) []string {
 		}
 		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
 			line = strings.Trim(line, "#/ ")
-			line = strings.Split(line, "#")[0]
-			line = strings.Split(line, "//")[0]
+			line = strings.Split(line, " #")[0]
+			line = strings.Split(line, " //")[0]
 			line = strings.Trim(line, " ")
 			line = regexp.MustCompile(` +`).ReplaceAllString(line, " ")
 			res = append(res, line)
@@ -1811,7 +1810,7 @@ func LambdaIncludeInZip(pth string, includes []string, preview bool) error {
 			for _, pth := range paths {
 				pth, err := filepath.Rel(dir, pth)
 				if err != nil {
-				    panic(err)
+					panic(err)
 				}
 				if !preview {
 					err := shellAt(dir, "zip -r %s '%s'", zipFile, pth)
