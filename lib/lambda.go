@@ -1889,6 +1889,26 @@ func LambdaListFunctions(ctx context.Context) ([]*lambda.FunctionConfiguration, 
 	return functions, nil
 }
 
+func lambdaWaitForStatusActive(ctx context.Context, name string) error {
+	for {
+		out, err := LambdaClient().GetFunctionWithContext(ctx, &lambda.GetFunctionInput{
+			FunctionName: aws.String(name),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if *out.Configuration.State == lambda.StateActive {
+			return nil
+		}
+		if *out.Configuration.State != lambda.StatePending {
+			err := fmt.Errorf("while waiting for status active the only other valid state is pending, got: %s", *out.Configuration.State)
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+}
+
 func LambdaEnsure(ctx context.Context, pth string, quick, preview bool) error {
 	if strings.HasSuffix(pth, ".py") {
 		runtime := "python3.9"
@@ -2079,9 +2099,14 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 	}
 	//
 	if !preview {
+		err := lambdaWaitForStatusActive(ctx, name)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		err = Retry(ctx, func() error {
 			_, err := LambdaClient().UpdateFunctionCodeWithContext(ctx, &lambda.UpdateFunctionCodeInput{
-				FunctionName: aws.String(input.name),
+				FunctionName: aws.String(name),
 				ZipFile:      input.zipBytes,
 			})
 			return err
@@ -2129,6 +2154,11 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 	//
 	if needsUpdate {
 		if !preview {
+			err := lambdaWaitForStatusActive(ctx, name)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
 			err = Retry(ctx, func() error {
 				_, err = LambdaClient().UpdateFunctionConfigurationWithContext(ctx, &lambda.UpdateFunctionConfigurationInput{
 					FunctionName: aws.String(input.name),
