@@ -551,7 +551,7 @@ if which apk &>/dev/null; then
      echo w # Write changes
     ) | sudo fdisk $disk
 else
-    disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | head -n1)
+    disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | tail -n1)
     (
      echo g # Create a new empty GPT partition table
      echo n # Add a new partition
@@ -669,7 +669,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 
 func makeInit(config *EC2Config) string {
 	init := config.Init
-	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d", "c6gd", "m6gd", "r6gd", "c5ad"} {
+	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d", "c6gd", "m6gd", "r6gd", "c5ad", "is4gen", "im4gn"} {
 		if instanceType == strings.Split(config.InstanceType, ".")[0] {
 			Logger.Println("add nvme instance store setup to init script")
 			init = nvmeInit + init
