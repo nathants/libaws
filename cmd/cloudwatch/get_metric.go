@@ -48,6 +48,7 @@ func cloudwatchGetMetric() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
+	timesMap := make(map[string]interface{})
 	var times []string
 	vals := make(map[string][]float64)
 	for i, o := range out {
@@ -60,14 +61,23 @@ func cloudwatchGetMetric() {
 		for j, t := range o.Timestamps {
 			v := o.Values[j]
 			t := t.Format(time.RFC3339)
-			times = append(times, t)
+			_, ok := timesMap[t]
+			if !ok {
+				times = append(times, t)
+				timesMap[t] = nil
+			}
 			vals[t] = append(vals[t], *v)
 		}
 	}
 	for _, t := range times {
 		fmt.Print("timestamp="+t, " ")
 		for i, m := range metrics {
-			fmt.Print(m+"="+fmt.Sprint(vals[t][i]), " ")
+			if len(metrics) == 1 {
+				m = ""
+			} else {
+				m = "::" + m
+			}
+			fmt.Print(strings.ReplaceAll(args.Dimension, "=", "-")+m+"="+fmt.Sprint(vals[t][i]), " ")
 		}
 		fmt.Print("\n")
 	}
