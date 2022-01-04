@@ -60,7 +60,7 @@ func ec2Speedtest() {
 	if strings.Contains(strings.Split(args.Type, ".")[0][1:], "g") { // slice first char, since arm64 g is never first char
 		arch = lib.EC2ArchArm64
 	}
-	amiID, sshUser, err := lib.EC2Ami(ctx, lib.EC2AmiAlpine, arch)
+	amiID, sshUser, err := lib.EC2AmiBase(ctx, lib.EC2AmiAlpine, arch)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

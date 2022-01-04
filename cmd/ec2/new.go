@@ -19,7 +19,7 @@ type ec2NewArgs struct {
 	Name           string   `arg:"positional,required"`
 	Num            int      `arg:"-n,--num" default:"1"`
 	Type           string   `arg:"-t,--type,required"`
-	Ami            string   `arg:"-a,--ami,required" help:"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal"`
+	Ami            string   `arg:"-a,--ami,required" help:"ami-ID | arch | alpine | amzn | lambda | deeplearning | bionic | xenial | trusty | focal"`
 	UserName       string   `arg:"-u,--user" help:"ssh user name, otherwise look for 'user' tag on instance or find via ami name lookup"`
 	Key            string   `arg:"-k,--key,required"`
 	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create onDemand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized"`
@@ -92,7 +92,7 @@ func ec2New() {
 		if strings.Contains(strings.Split(args.Type, ".")[0][1:], "g") { // slice first char, since arm64 g is never first char
 			arch = lib.EC2ArchArm64
 		}
-		ami, sshUser, err := lib.EC2Ami(ctx, args.Ami, arch)
+		ami, sshUser, err := lib.EC2AmiBase(ctx, args.Ami, arch)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

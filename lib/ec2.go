@@ -1490,7 +1490,7 @@ func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
 	return *images[0].ImageId, nil
 }
 
-func EC2Ami(ctx context.Context, name, arch string) (amiID string, sshUser string, err error) {
+func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser string, err error) {
 	switch arch {
 	case EC2ArchAmd64:
 	case EC2ArchArm64:
