@@ -31,7 +31,9 @@ func ec2Ls() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Fprintln(os.Stderr, "name", "type", "state", "id", "image", "kind", "security-group", "tags")
+	count := 0
 	for _, instance := range instances {
+		count++
 		fmt.Println(
 			lib.EC2NameColored(instance),
 			*instance.InstanceType,
@@ -42,5 +44,8 @@ func ec2Ls() {
 			lib.EC2SecurityGroups(instance.SecurityGroups),
 			lib.EC2Tags(instance.Tags),
 		)
+	}
+	if count == 0 {
+		os.Exit(1)
 	}
 }
