@@ -29,6 +29,6 @@ func iamLsRoles() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, role := range roles {
-		fmt.Println(lib.Pformat(role))
+		fmt.Println(lib.Json(role))
 	}
 }
