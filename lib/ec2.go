@@ -828,13 +828,14 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 	rsyncCmd := []string{
 		"rsync",
 		"-avh",
-		"-e", "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no",
+	}
+	if input.Key != "" {
+		rsyncCmd = append(rsyncCmd, []string{"-e", fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no", input.Key)}...)
+	} else {
+		rsyncCmd = append(rsyncCmd, []string{"-e", "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"}...)
 	}
 	if os.Getenv("RSYNC_OPTIONS") != "" {
 		rsyncCmd = append(rsyncCmd, strings.Split(os.Getenv("RSYNC_OPTIONS"), " ")...)
-	}
-	if input.Key != "" {
-		rsyncCmd = append(rsyncCmd, []string{"-i", input.Key}...)
 	}
 	target := input.User + "@"
 	if input.PrivateIP {
@@ -1018,7 +1019,7 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 		"-o", "StrictHostKeyChecking=no",
 	}
 	if input.Key != "" {
-		scpCmd = append(scpCmd, []string{"-i", input.Key}...)
+		scpCmd = append(scpCmd, []string{"-o", "IdentitiesOnly=yes", "-i", input.Key}...)
 	}
 	target := input.User + "@"
 	if input.PrivateIP {
@@ -1237,7 +1238,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 		"-o", "StrictHostKeyChecking=no",
 	}
 	if input.Key != "" {
-		sshCmd = append(sshCmd, []string{"-i", input.Key}...)
+		sshCmd = append(sshCmd, []string{"-i", input.Key, "-o", "IdentitiesOnly=yes"}...)
 	}
 	target := input.User + "@"
 	if input.PrivateIP {
