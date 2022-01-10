@@ -11,19 +11,20 @@ import (
 )
 
 func init() {
-	lib.Commands["ec2-ls-amis"] = ec2LsAmis
-	lib.Args["ec2-ls-amis"] = ec2LsAmisArgs{}
+	lib.Commands["ec2-latest-ami"] = ec2LatestAmi
+	lib.Args["ec2-latest-ami"] = ec2LatestAmiArgs{}
 }
 
-type ec2LsAmisArgs struct {
+type ec2LatestAmiArgs struct {
+	Name string `arg:"positional,required"`
 }
 
-func (ec2LsAmisArgs) Description() string {
-	return "\nlist amis\n"
+func (ec2LatestAmiArgs) Description() string {
+	return "\nlatest ami\n"
 }
 
-func ec2LsAmis() {
-	var args ec2LsAmisArgs
+func ec2LatestAmi() {
+	var args ec2LatestAmiArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	account, err := lib.StsAccount(ctx)
@@ -32,12 +33,17 @@ func ec2LsAmis() {
 	}
 	images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String(account)},
+		Filters: []*ec2.Filter{{
+			Name: aws.String("description"),
+			Values: []*string{
+				&args.Name,
+			},
+		}},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 	sort.Slice(images.Images, func(i, j int) bool { return *images.Images[i].CreationDate > *images.Images[j].CreationDate })
-	for _, image := range images.Images {
-		fmt.Println(*image.ImageId, *image.CreationDate, lib.StringOr(image.Description, "-"), lib.EC2Tags(image.Tags), *image.State)
-	}
+	image := images.Images[0]
+	fmt.Println(*image.ImageId)
 }
