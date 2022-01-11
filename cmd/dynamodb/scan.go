@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -19,6 +19,7 @@ func init() {
 
 type dynamodbScanArgs struct {
 	Table string `arg:"positional"`
+	Limit int    `arg:"-l,--limit" default:"0"`
 }
 
 func (dynamodbScanArgs) Description() string {
@@ -30,23 +31,28 @@ func dynamodbScan() {
 	arg.MustParse(&args)
 	ctx := context.Background()
 	var start map[string]*dynamodb.AttributeValue
+	count := 0
 	for {
 		out, err := lib.DynamoDBClient().ScanWithContext(ctx, &dynamodb.ScanInput{
 			TableName:         aws.String(args.Table),
 			ExclusiveStartKey: start,
 		})
 		if err != nil {
-		    panic(err)
+			panic(err)
 		}
 		for _, item := range out.Items {
+			if args.Limit != 0 && args.Limit < count {
+				break
+			}
+			count++
 			val := make(map[string]interface{})
 			err := dynamodbattribute.UnmarshalMap(item, &val)
 			if err != nil {
-			    panic(err)
+				panic(err)
 			}
 			bytes, err := json.Marshal(val)
 			if err != nil {
-			    panic(err)
+				panic(err)
 			}
 			fmt.Println(string(bytes))
 		}
