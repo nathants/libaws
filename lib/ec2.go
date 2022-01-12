@@ -235,21 +235,21 @@ func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]
 		}
 	}
 	sort.SliceStable(instances, func(i, j int) bool { return *instances[i].InstanceId < *instances[j].InstanceId })
-	sort.SliceStable(instances, func(i, j int) bool { return tag(instances[i], "Name", "") < tag(instances[j], "Name", "") })
+	sort.SliceStable(instances, func(i, j int) bool { return EC2GetTag(instances[i].Tags, "Name", "") < EC2GetTag(instances[j].Tags, "Name", "") })
 	sort.SliceStable(instances, func(i, j int) bool { return instances[i].LaunchTime.UnixNano() > instances[j].LaunchTime.UnixNano() })
 	return instances, nil
 }
 
-func tags(instance *ec2.Instance) map[string]string {
+func ec2Tags(tags []*ec2.Tag) map[string]string {
 	val := make(map[string]string)
-	for _, tag := range instance.Tags {
+	for _, tag := range tags {
 		val[*tag.Key] = *tag.Value
 	}
 	return val
 }
 
-func tag(instance *ec2.Instance, key string, defaultValue string) string {
-	val, ok := tags(instance)[key]
+func EC2GetTag(tags []*ec2.Tag, key string, defaultValue string) string {
+	val, ok := ec2Tags(tags)[key]
 	if !ok {
 		val = defaultValue
 	}
@@ -766,16 +766,16 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 		return nil, err
 	}
 	if input.User == "" {
-		input.User = tag(input.Instances[0], "user", "")
+		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
 		for _, instance := range input.Instances[1:] {
-			user := tag(instance, "user", "")
+			user := EC2GetTag(instance.Tags, "user", "")
 			if input.User != user {
 				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
 				Logger.Println("error:", err)
 				return nil, err
 			}
 		}
-		input.User = tag(input.Instances[0], "user", "")
+		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
 		if input.User == "" {
 			err := fmt.Errorf("no user provied and no user tag available")
 			Logger.Println("error:", err)
@@ -954,16 +954,16 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 		return nil, err
 	}
 	if input.User == "" {
-		input.User = tag(input.Instances[0], "user", "")
+		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
 		for _, instance := range input.Instances[1:] {
-			user := tag(instance, "user", "")
+			user := EC2GetTag(instance.Tags, "user", "")
 			if input.User != user {
 				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
 				Logger.Println("error:", err)
 				return nil, err
 			}
 		}
-		input.User = tag(input.Instances[0], "user", "")
+		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
 		if input.User == "" {
 			err := fmt.Errorf("no user provied and no user tag available")
 			Logger.Println("error:", err)
@@ -1163,16 +1163,16 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 		return nil, err
 	}
 	if input.User == "" {
-		input.User = tag(input.Instances[0], "user", "")
+		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
 		for _, instance := range input.Instances[1:] {
-			user := tag(instance, "user", "")
+			user := EC2GetTag(instance.Tags, "user", "")
 			if input.User != user {
 				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
 				Logger.Println("error:", err)
 				return nil, err
 			}
 		}
-		input.User = tag(input.Instances[0], "user", "")
+		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
 		if input.User == "" {
 			err := fmt.Errorf("no user provied and no user tag available")
 			Logger.Println("error:", err)
@@ -1332,7 +1332,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 
 func EC2SshLogin(instance *ec2.Instance, user string) error {
 	if user == "" {
-		user = tag(instance, "user", "")
+		user = EC2GetTag(instance.Tags, "user", "")
 		if user == "" {
 			err := fmt.Errorf("no user provied and no user tag available")
 			Logger.Println("error:", err)

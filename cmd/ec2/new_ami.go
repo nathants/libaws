@@ -43,6 +43,13 @@ func ec2NewAmi() {
 		Description: aws.String(args.Name),
 		InstanceId:  i.InstanceId,
 		NoReboot:    aws.Bool(true),
+		TagSpecifications: []*ec2.TagSpecification{{
+			ResourceType: aws.String(ec2.ResourceTypeImage),
+			Tags: []*ec2.Tag{{
+				Key:   aws.String("user"),
+				Value: aws.String(lib.EC2GetTag(i.Tags, "user", "")),
+			}},
+		}},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

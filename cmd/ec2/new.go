@@ -3,11 +3,13 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/nathants/cli-aws/lib"
 	"math/rand"
 	"strings"
+
+	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/nathants/cli-aws/lib"
 )
 
 func init() {
@@ -87,7 +89,31 @@ func ec2New() {
 		p.Fail("you must specify one of --vpc | --subnets")
 	}
 	useSubnetsFromVpc(ctx, &args)
-	if !strings.HasPrefix(args.Ami, "ami-") {
+	if strings.HasPrefix(args.Ami, "ami-") {
+		account, err := lib.StsAccount(ctx)
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
+		images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+			Owners: []*string{aws.String(account)},
+			Filters: []*ec2.Filter{{
+				Name: aws.String("image-id"),
+				Values: []*string{
+					aws.String(args.Ami),
+				},
+			}},
+		})
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
+		if len(images.Images) != 1 {
+			lib.Logger.Fatal("need exactly one image", lib.Pformat(images))
+		}
+		if args.UserName == "" {
+			args.UserName = lib.EC2GetTag(images.Images[0].Tags, "user", "")
+		}
+
+	} else {
 		arch := lib.EC2ArchAmd64
 		if strings.Contains(strings.Split(args.Type, ".")[0][1:], "g") { // slice first char, since arm64 g is never first char
 			arch = lib.EC2ArchArm64
