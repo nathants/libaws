@@ -42,7 +42,7 @@ func ec2NewAmi() {
 		Name:        aws.String(fmt.Sprintf("%s__%d", args.Name, time.Now().Unix())),
 		Description: aws.String(args.Name),
 		InstanceId:  i.InstanceId,
-		NoReboot:    aws.Bool(true),
+		NoReboot:    aws.Bool(false),
 		TagSpecifications: []*ec2.TagSpecification{{
 			ResourceType: aws.String(ec2.ResourceTypeImage),
 			Tags: []*ec2.Tag{{
