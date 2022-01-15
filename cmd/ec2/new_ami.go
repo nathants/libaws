@@ -30,7 +30,7 @@ func ec2NewAmi() {
 	var args ec2NewAmiArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	out, err := lib.EC2ListInstances(ctx, args.Selectors, "running")
+	out, err := lib.EC2ListInstances(ctx, args.Selectors, "stopped")
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
