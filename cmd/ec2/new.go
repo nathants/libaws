@@ -35,6 +35,7 @@ type ec2NewArgs struct {
 	Tags           []string `arg:"--tags" help:"space separated values like: key=value"`
 	Profile        string   `arg:"-p,--profile" help:"iam instance profile name"`
 	SecondsTimeout int      `arg:"--seconds-timeout" default:"3600" help:"will $(sudo poweroff) after this many seconds.\n                         calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff).\n                         set to 0 to disable.\n                         $(sudo journalctl -f -u timeout.service) to follow logs.\n                        "`
+	Wait           bool     `arg:"-w,--wait" default:"false" help:"wait for ssh"`
 }
 
 func (ec2NewArgs) Description() string {
@@ -166,6 +167,20 @@ func ec2New() {
 	}
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
+	}
+	var ids []string
+	for _, instance := range instances {
+		ids = append(ids, *instance.InstanceId)
+	}
+	if args.Wait {
+		_, err := lib.EC2WaitForSsh(ctx, &lib.EC2WaitForSshInput{
+			Selectors: ids,
+			MaxWaitSeconds: 300,
+			User: lib.EC2GetTag(instances[0].Tags, "user", ""),
+		})
+		if err != nil {
+		    lib.Logger.Fatal("error: ", err)
+		}
 	}
 	for _, instance := range instances {
 		fmt.Println(*instance.InstanceId)
