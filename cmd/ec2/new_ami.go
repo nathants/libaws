@@ -17,9 +17,8 @@ func init() {
 }
 
 type ec2NewAmiArgs struct {
-	Name      string   `arg:"positional"`
 	Selectors []string `arg:"positional" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
-	Wait      bool     `arg:"-w,--wait"`
+	Wait      bool     `arg:"-w,--wait" default:"false"`
 }
 
 func (ec2NewAmiArgs) Description() string {
@@ -38,9 +37,10 @@ func ec2NewAmi() {
 		lib.Logger.Fatal("error: not exactly 1 instance", lib.Pformat(out))
 	}
 	i := out[0]
+	name := lib.EC2Name(i.Tags)
 	image, err := lib.EC2Client().CreateImageWithContext(ctx, &ec2.CreateImageInput{
-		Name:        aws.String(fmt.Sprintf("%s__%d", args.Name, time.Now().Unix())),
-		Description: aws.String(args.Name),
+		Name:        aws.String(fmt.Sprintf("%s__%d", name, time.Now().Unix())),
+		Description: aws.String(name),
 		InstanceId:  i.InstanceId,
 		NoReboot:    aws.Bool(false),
 		TagSpecifications: []*ec2.TagSpecification{{
