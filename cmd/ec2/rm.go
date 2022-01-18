@@ -2,6 +2,8 @@ package cliaws
 
 import (
 	"context"
+	"os"
+
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/cli-aws/lib"
@@ -14,7 +16,7 @@ func init() {
 
 type ec2RmArgs struct {
 	Selectors []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
-	Yes       bool     `arg:"-y,--yes" default:"false"`
+	Preview   bool     `arg:"-p,--preview" default:"false"`
 }
 
 func (ec2RmArgs) Description() string {
@@ -46,11 +48,8 @@ func ec2Rm() {
 			lib.Logger.Println("going to terminate:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
-	if !args.Yes {
-		err = lib.PromptProceed("")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	if args.Preview {
+		os.Exit(0)
 	}
 	_, err = lib.EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: ids,

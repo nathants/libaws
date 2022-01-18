@@ -2,6 +2,7 @@ package cliaws
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -16,7 +17,7 @@ func init() {
 
 type ec2StopArgs struct {
 	Selectors []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
-	Yes       bool     `arg:"-y,--yes" default:"false"`
+	Preview       bool     `arg:"-p,--preview" default:"false"`
 	Wait      bool     `arg:"-w,--wait" default:"false"`
 }
 
@@ -44,16 +45,13 @@ func ec2Stop() {
 	}
 	var ids []*string
 	for _, instance := range instances {
-		ids = append(ids, instance.InstanceId)
-		if *instance.State.Name == ec2.InstanceStateNameRunning || *instance.State.Name == ec2.InstanceStateNameStopped {
+		if *instance.State.Name == ec2.InstanceStateNameRunning {
+			ids = append(ids, instance.InstanceId)
 			lib.Logger.Println("going to stop:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
-	if !args.Yes {
-		err = lib.PromptProceed("")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	if args.Preview {
+		os.Exit(0)
 	}
 	_, err = lib.EC2Client().StopInstancesWithContext(ctx, &ec2.StopInstancesInput{
 		InstanceIds: ids,

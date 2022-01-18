@@ -3,6 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -24,7 +25,7 @@ type ec2WaitSshArgs struct {
 	MaxConcurrency int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent waitssh connections"`
 	Key            string   `arg:"-k,--key" help:"waitssh private key"`
 	MaxWait        int      `arg:"-w,--max-wait" help:"after this many seconds, terminate any instances not ready and return instance-id of all ready instances"`
-	Yes            bool     `arg:"-y,--yes" default:"false"`
+	Preview        bool     `arg:"-p,--preview"`
 }
 
 func (ec2WaitSshArgs) Description() string {
@@ -68,11 +69,8 @@ func ec2WaitSsh() {
 			lib.Logger.Println("going to target:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
-	if !args.Yes {
-		err = lib.PromptProceed("")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	if args.Preview {
+		os.Exit(0)
 	}
 
 	readyIDs, err := lib.EC2WaitForSsh(ctx, &lib.EC2WaitForSshInput{

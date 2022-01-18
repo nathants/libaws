@@ -26,7 +26,7 @@ type ec2SshArgs struct {
 	PrivateIP      bool     `arg:"-p,--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
 	MaxConcurrency int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent ssh connections"`
 	Key            string   `arg:"-k,--key" help:"ssh private key"`
-	Yes            bool     `arg:"-y,--yes" default:"false"`
+	Preview        bool     `arg:"-p,--preview" default:"false"`
 	NoPrint        bool     `arg:"--no-print" default:"false" help:"do not print live output to stdout/stderr"`
 }
 
@@ -55,11 +55,8 @@ func ec2Ssh() {
 	for _, instance := range instances {
 		lib.Logger.Println("going to target:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 	}
-	if !args.Yes {
-		err = lib.PromptProceed("")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	if args.Preview {
+		os.Exit(0)
 	}
 	if args.Cmd != "" && lib.Exists(args.Cmd) {
 		bytes, err := ioutil.ReadFile(args.Cmd)
