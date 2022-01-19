@@ -62,7 +62,7 @@ func ec2Stop() {
 	if args.Wait {
 		for {
 			pass := true
-			instances, err := lib.EC2ListInstances(ctx, args.Selectors, "")
+			instances, err := lib.EC2ListInstances(ctx, lib.StringSlice(ids), "")
 			if err != nil {
 				lib.Logger.Fatal("error: ", err)
 			}
