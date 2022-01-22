@@ -2,6 +2,7 @@ package cliaws
 
 import (
 	"context"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
@@ -15,8 +16,8 @@ func init() {
 }
 
 type ec2RmKeypairArgs struct {
-	Name string `arg:"positional,required"`
-	Yes  bool   `arg:"-y,--yes" default:"false"`
+	Name    string `arg:"positional,required"`
+	Preview bool   `arg:"-p,--preview"`
 }
 
 func (ec2RmKeypairArgs) Description() string {
@@ -27,11 +28,9 @@ func ec2RmKeypair() {
 	var args ec2RmKeypairArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	if !args.Yes {
-		err := lib.PromptProceed("going to delete keypair: " + args.Name)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	lib.Logger.Println("going to delete keypair: " + args.Name)
+	if args.Preview {
+		os.Exit(0)
 	}
 	_, err := lib.EC2Client().DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
 		KeyName: aws.String(args.Name),

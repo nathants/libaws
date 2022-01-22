@@ -24,7 +24,7 @@ type ec2ScpArgs struct {
 	PrivateIP      bool     `arg:"-p,--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
 	MaxConcurrency int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent scp connections"`
 	Key            string   `arg:"-k,--key" help:"scp private key"`
-	Yes            bool     `arg:"-y,--yes" default:"false"`
+	Preview        bool     `arg:"-p,--preview"`
 }
 
 func (ec2ScpArgs) Description() string {
@@ -52,11 +52,8 @@ func ec2Scp() {
 	for _, instance := range instances {
 		lib.Logger.Println("going to target:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 	}
-	if !args.Yes {
-		err = lib.PromptProceed("")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	if args.Preview {
+		os.Exit(0)
 	}
 	if len(instances) == 0 {
 		err = fmt.Errorf("no instances found for those selectors")
