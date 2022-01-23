@@ -168,8 +168,9 @@ func StringOr(s *string, d string) string {
 }
 
 func color(code int) func(string) string {
+	forced := os.Getenv("COLORS") != ""
 	return func(s string) string {
-		if isatty.IsTerminal(os.Stdout.Fd()) {
+		if forced || isatty.IsTerminal(os.Stdout.Fd()) {
 			return fmt.Sprintf("\033[%dm%s\033[0m", code, s)
 		}
 		return s
