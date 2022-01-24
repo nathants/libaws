@@ -51,6 +51,9 @@ func ec2Rm() {
 	if args.Preview {
 		os.Exit(0)
 	}
+	if len(ids) == 0 {
+		os.Exit(0)
+	}
 	_, err = lib.EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: ids,
 	})
