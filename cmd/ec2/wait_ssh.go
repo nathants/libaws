@@ -73,7 +73,7 @@ func ec2WaitSsh() {
 		os.Exit(0)
 	}
 
-	readyIDs, err := lib.EC2WaitForSsh(ctx, &lib.EC2WaitForSshInput{
+	readyIDs, err := lib.EC2WaitSsh(ctx, &lib.EC2WaitForSshInput{
 		Selectors:      args.Selectors,
 		MaxWaitSeconds: args.MaxWait,
 		PrivateIP:      args.PrivateIP,

@@ -1608,6 +1608,9 @@ func EC2SecurityGroups(sgs []*ec2.GroupIdentifier) string {
 			res = append(res, *sg.GroupId)
 		}
 	}
+	if len(res) == 0 {
+		return "-"
+	}
 	return strings.Join(res, ",")
 }
 
@@ -1627,7 +1630,7 @@ type EC2WaitForSshInput struct {
 	MaxConcurrency int
 }
 
-func EC2WaitForSsh(ctx context.Context, input *EC2WaitForSshInput) ([]string, error) {
+func EC2WaitSsh(ctx context.Context, input *EC2WaitForSshInput) ([]string, error) {
 	start := time.Now()
 	for {
 		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")

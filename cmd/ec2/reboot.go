@@ -59,7 +59,7 @@ func ec2Reboot() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	if args.Wait {
-		_, err := lib.EC2WaitForSsh(ctx, &lib.EC2WaitForSshInput{
+		_, err := lib.EC2WaitSsh(ctx, &lib.EC2WaitForSshInput{
 			Selectors: lib.StringSlice(ids),
 			MaxWaitSeconds: 300,
 			User: lib.EC2GetTag(instances[0].Tags, "user", ""),
