@@ -17,6 +17,7 @@ func init() {
 type ec2RebootArgs struct {
 	Selectors []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
 	Preview bool   `arg:"-p,--preview"`
+	Wait           bool     `arg:"-w,--wait" default:"false" help:"wait for ssh"`
 }
 
 func (ec2RebootArgs) Description() string {
@@ -56,5 +57,15 @@ func ec2Reboot() {
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
+	}
+	if args.Wait {
+		_, err := lib.EC2WaitForSsh(ctx, &lib.EC2WaitForSshInput{
+			Selectors: lib.StringSlice(ids),
+			MaxWaitSeconds: 300,
+			User: lib.EC2GetTag(instances[0].Tags, "user", ""),
+		})
+		if err != nil {
+		    lib.Logger.Fatal("error: ", err)
+		}
 	}
 }
