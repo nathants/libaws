@@ -486,7 +486,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"dynamodb created table:", *input.TableName, Pformat(input))
+		Logger.Println(PreviewString(preview)+"dynamodb created table:", *input.TableName)
 		return nil
 	}
 	//
