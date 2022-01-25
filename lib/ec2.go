@@ -1558,6 +1558,7 @@ func EC2Tags(tags []*ec2.Tag) string {
 			res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
 		}
 	}
+	sort.Strings(res)
 	return strings.Join(res, ",")
 }
 
