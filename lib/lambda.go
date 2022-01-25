@@ -1931,7 +1931,10 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		Logger.Println("error:", err)
 		return err
 	}
-	if quick && (runtime != "python3.9" || Exists(zipFile)) {
+	if quick && (runtime != "python3.9" || Exists(zipFile)) { // python requires existing zip for quick
+		if runtime == "go" {
+			_ = os.Remove(zipFile) // go deletes existing zip on quick
+		}
 		err := updateZipFn(pth, preview)
 		if err != nil {
 			Logger.Println("error:", err)
