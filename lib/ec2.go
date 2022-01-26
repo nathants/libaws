@@ -855,7 +855,19 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		Logger.Println("error:", result.Err)
 		return result
 	}
-	rsyncCmd = append(rsyncCmd, []string{source, destination}...)
+	//
+	for _, src := range strings.Split(source, " ") {
+		src = strings.Trim(src, " ")
+		if src != "" {
+			rsyncCmd = append(rsyncCmd, src)
+		}
+	}
+	for _, dst := range strings.Split(destination, " ") {
+		dst = strings.Trim(dst, " ")
+		if dst != "" {
+			rsyncCmd = append(rsyncCmd, dst)
+		}
+	}
 	//
 	cmd := exec.CommandContext(ctx, rsyncCmd[0], rsyncCmd[1:]...)
 	stderr, err := cmd.StderrPipe()
