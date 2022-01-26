@@ -3,6 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
@@ -17,7 +18,7 @@ func init() {
 
 type codeCommitRmArgs struct {
 	Name string `arg:"positional,required"`
-	Yes  bool   `arg:"-y,--yes" default:"false"`
+	Preview bool   `arg:"-p,--preview"`
 }
 
 func (codeCommitRmArgs) Description() string {
@@ -37,11 +38,12 @@ func codeCommitRm() {
 		fmt.Println("repository not found")
 		return
 	}
-	if !args.Yes {
-		err = lib.PromptProceed("going to delete:\n" + lib.Pformat(out.RepositoryMetadata))
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	err = lib.PromptProceed("going to delete:\n" + lib.Pformat(out.RepositoryMetadata))
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+	if args.Preview {
+		os.Exit(0)
 	}
 	_, err = lib.CodeCommitClient().DeleteRepositoryWithContext(ctx, &codecommit.DeleteRepositoryInput{
 		RepositoryName: aws.String(args.Name),

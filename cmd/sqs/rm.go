@@ -2,6 +2,7 @@ package cliaws
 
 import (
 	"context"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
@@ -16,7 +17,7 @@ func init() {
 
 type sqsRmArgs struct {
 	QueueName string `arg:"positional,required"`
-	Yes       bool   `arg:"-y,--yes" default:"false"`
+	Preview bool   `arg:"-p,--preview"`
 }
 
 func (sqsRmArgs) Description() string {
@@ -32,11 +33,8 @@ func sqsRm() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	lib.Logger.Println("going to delete:", queueUrl)
-	if !args.Yes {
-		err = lib.PromptProceed("")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	if args.Preview {
+		os.Exit(0)
 	}
 	_, err = lib.SQSClient().DeleteQueueWithContext(ctx, &sqs.DeleteQueueInput{
 		QueueUrl: aws.String(queueUrl),

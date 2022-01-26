@@ -20,7 +20,7 @@ type s3EnsureArgs struct {
 
 func (s3EnsureArgs) Description() string {
 	return `
-ensure a dynamodb table
+ensure a s3 bucket
 
 example:
  - cli-aws s3-ensure test-bucket acl=PUBLIC versioning=TRUE
