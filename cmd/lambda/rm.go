@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -48,21 +46,14 @@ func lambdaRm() {
 		lib.Logger.Fatal("error: ", err)
 	}
 
-	arnLambda, err := lib.LambdaArn(ctx, name)
-	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if ok && aerr.Code() == lambda.ErrCodeResourceNotFoundException {
-			return
-		}
-		lib.Logger.Fatal("error: ", err)
-	}
-
 	metadata, err := lib.LambdaParseFile(args.Path)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 
-	if args.Everything || args.Trigger {
+	arnLambda, _ := lib.LambdaArn(ctx, name)
+
+	if arnLambda != "" && args.Everything || args.Trigger {
 		metadata.Trigger = []string{}
 		err := lib.LambdaEnsureTriggerApi(ctx, name, metadata, args.Preview)
 		if err != nil {
@@ -86,14 +77,7 @@ func lambdaRm() {
 		}
 	}
 
-	if args.Everything || args.Function {
-		err := lib.LambdaDeleteFunction(ctx, name, args.Preview)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-	}
-
-	if args.Everything || args.Role {
+	if arnLambda != "" && args.Everything || args.Role {
 		err := lib.IamDeleteRolePolicies(ctx, name, args.Preview)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
@@ -103,6 +87,13 @@ func lambdaRm() {
 			lib.Logger.Fatal("error: ", err)
 		}
 		err = lib.IamDeleteRole(ctx, name, args.Preview)
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
+	}
+
+	if arnLambda != "" && args.Everything || args.Function {
+		err := lib.LambdaDeleteFunction(ctx, name, args.Preview)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
