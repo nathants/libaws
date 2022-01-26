@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -17,6 +16,7 @@ func init() {
 
 type ec2IdArgs struct {
 	Selectors []string `arg:"positional" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
+	State     string   `arg:"-s,--state" help:"running | pending | terminated | stopped" default:"running"`
 }
 
 func (ec2IdArgs) Description() string {
@@ -27,7 +27,7 @@ func ec2Id() {
 	var args ec2IdArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)
+	instances, err := lib.EC2ListInstances(ctx, args.Selectors, args.State)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
