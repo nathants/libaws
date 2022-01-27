@@ -144,10 +144,12 @@ func InfraListCloudwatch(ctx context.Context, triggersChan chan<- InfraLambdaTri
 			}
 			for _, target := range targets {
 				if strings.HasPrefix(*target.Arn, "arn:aws:lambda:") {
-					triggersChan <- InfraLambdaTrigger{
-						LambdaName:   Last(strings.Split(*target.Arn, ":")),
-						TriggerType:  lambdaTriggerCloudwatch,
-						TriggerAttrs: []string{*rule.ScheduleExpression},
+					if rule.ScheduleExpression != nil {
+						triggersChan <- InfraLambdaTrigger{
+							LambdaName:   Last(strings.Split(*target.Arn, ":")),
+							TriggerType:  lambdaTriggerCloudwatch,
+							TriggerAttrs: []string{*rule.ScheduleExpression},
+						}
 					}
 				}
 			}
