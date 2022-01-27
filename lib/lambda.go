@@ -27,6 +27,7 @@ import (
 
 const (
 	//
+	lambdaAttrName        = "name"
 	lambdaAttrConcurrency = "concurrency"
 	lambdaAttrMemory      = "memory"
 	lambdaAttrTimeout     = "timeout"
@@ -50,6 +51,7 @@ const (
 	lambdaMetaTrigger  = "trigger"
 	lambdaMetaRequire  = "require"
 	lambdaMetaAttr     = "attr"
+	lambdaMetaEnv     = "env"
 )
 
 var lambdaClient *lambda.Lambda
@@ -169,7 +171,7 @@ func lambdaFilterMetadata(lines []string) []string {
 	return res
 }
 
-func lambdaParseMetadata(token string, lines []string) ([]string, error) {
+func lambdaParseMetadata(token string, lines []string) ([]string, []string, error) {
 	token = token + ":"
 	var vals [][]string
 	previousMatch := false
@@ -188,6 +190,7 @@ func lambdaParseMetadata(token string, lines []string) ([]string, error) {
 		}
 	}
 	var results []string
+	var envVars []string
 	for _, val := range vals {
 		line := val[0]
 		part := val[1]
@@ -197,13 +200,14 @@ func lambdaParseMetadata(token string, lines []string) ([]string, error) {
 			if variableValue == "" {
 				err := fmt.Errorf("missing environment variable: %s", line)
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
+			envVars = append(envVars, fmt.Sprintf("%s=%s", variableName, variableValue))
 			part = strings.Replace(part, variable, variableValue, 1)
 		}
 		results = append(results, part)
 	}
-	return results, nil
+	return results, envVars, nil
 }
 
 type LambdaMetadata struct {
@@ -216,66 +220,95 @@ type LambdaMetadata struct {
 	Trigger  []string
 	Require  []string
 	Attr     []string
+	EnvVars  []string
 }
 
 func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 	var err error
 	meta := &LambdaMetadata{}
-	meta.S3, err = lambdaParseMetadata(lambdaMetaS3, lines)
+	var envVars []string
+	meta.S3, envVars, err = lambdaParseMetadata(lambdaMetaS3, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.DynamoDB, err = lambdaParseMetadata(lambdaMetaDynamoDB, lines)
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	meta.DynamoDB, envVars, err = lambdaParseMetadata(lambdaMetaDynamoDB, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Sqs, err = lambdaParseMetadata(lambdaMetaSQS, lines)
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	meta.Sqs, envVars, err = lambdaParseMetadata(lambdaMetaSQS, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Policy, err = lambdaParseMetadata(lambdaMetaPolicy, lines)
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	meta.Policy, envVars, err = lambdaParseMetadata(lambdaMetaPolicy, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Allow, err = lambdaParseMetadata(lambdaMetaAllow, lines)
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	meta.Allow, envVars, err = lambdaParseMetadata(lambdaMetaAllow, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Include, err = lambdaParseMetadata(lambdaMetaInclude, lines)
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	meta.Include, envVars, err = lambdaParseMetadata(lambdaMetaInclude, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Trigger, err = lambdaParseMetadata(lambdaMetaTrigger, lines)
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	meta.Trigger, envVars, err = lambdaParseMetadata(lambdaMetaTrigger, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Require, err = lambdaParseMetadata(lambdaMetaRequire, lines)
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	meta.Require, envVars, err = lambdaParseMetadata(lambdaMetaRequire, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.Attr, err = lambdaParseMetadata(lambdaMetaAttr, lines)
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	meta.Attr, envVars, err = lambdaParseMetadata(lambdaMetaAttr, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	//
+	var extraEnv []string
+	extraEnv, envVars, err = lambdaParseMetadata(lambdaMetaEnv, lines)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.EnvVars = append(meta.EnvVars, extraEnv...)
+	//
 	for _, conf := range meta.Attr {
 		parts := strings.SplitN(conf, " ", 2)
 		k := parts[0]
 		v := parts[1]
-		if !Contains([]string{lambdaAttrConcurrency, lambdaAttrMemory, lambdaAttrTimeout}, k) {
+		if !Contains([]string{lambdaAttrName, lambdaAttrConcurrency, lambdaAttrMemory, lambdaAttrTimeout}, k) {
 			err := fmt.Errorf("unknown attr: %s", k)
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		if !IsDigit(v) {
+		if !IsDigit(v) && k != lambdaAttrName {
 			err := fmt.Errorf("conf value should be digits: %s %s", k, v)
 			Logger.Println("error:", err)
 			return nil, err
@@ -293,7 +326,7 @@ func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 			continue
 		}
 		token := strings.SplitN(line, ":", 2)[0]
-		if strings.HasPrefix(line, "- ") || !Contains([]string{lambdaMetaS3, lambdaMetaDynamoDB, lambdaMetaSQS, lambdaMetaPolicy, lambdaMetaAllow, lambdaMetaInclude, lambdaMetaTrigger, lambdaMetaRequire, lambdaMetaAttr}, token) {
+		if strings.HasPrefix(line, "- ") || !Contains([]string{lambdaMetaS3, lambdaMetaDynamoDB, lambdaMetaSQS, lambdaMetaPolicy, lambdaMetaAllow, lambdaMetaInclude, lambdaMetaTrigger, lambdaMetaRequire, lambdaMetaAttr, lambdaMetaEnv}, token) {
 			err := fmt.Errorf("unknown configuration comment: %s", line)
 			Logger.Println("error:", err)
 			return nil, err
@@ -1926,6 +1959,31 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		Logger.Println("error:", err)
 		return err
 	}
+	//
+	concurrency := lambdaAttrConcurrencyDefault
+	memory := lambdaAttrMemoryDefault
+	timeout := lambdaAttrTimeoutDefault
+	//
+	for _, attr := range metadata.Attr {
+		parts := strings.SplitN(attr, " ", 2)
+		k := parts[0]
+		v := parts[1]
+		switch k {
+		case lambdaAttrName:
+			name = v
+		case lambdaAttrConcurrency:
+			concurrency = atoi(v)
+		case lambdaAttrMemory:
+			memory = atoi(v)
+		case lambdaAttrTimeout:
+			timeout = atoi(v)
+		default:
+			err := fmt.Errorf("unknown attr: %s", k)
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	//
 	zipFile, err := LambdaZipFile(pth)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1998,27 +2056,6 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		return err
 	}
 	//
-	concurrency := lambdaAttrConcurrencyDefault
-	memory := lambdaAttrMemoryDefault
-	timeout := lambdaAttrTimeoutDefault
-	//
-	for _, attr := range metadata.Attr {
-		parts := strings.SplitN(attr, " ", 2)
-		k := parts[0]
-		v := parts[1]
-		switch k {
-		case lambdaAttrConcurrency:
-			concurrency = atoi(v)
-		case lambdaAttrMemory:
-			memory = atoi(v)
-		case lambdaAttrTimeout:
-			timeout = atoi(v)
-		default:
-			err := fmt.Errorf("unknown attr: %s", k)
-			Logger.Println("error:", err)
-			return err
-		}
-	}
 	arnRole, err := IamRoleArn(ctx, "lambda", name)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2097,6 +2134,13 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 	Logger.Println(PreviewString(preview)+"updated function code:", name)
 	//
 	env := &lambda.Environment{Variables: make(map[string]*string)}
+	for _, val := range metadata.EnvVars {
+		k, v, err := splitOnce(val, "=")
+		if err != nil {
+			Logger.Fatal("error: ", err)
+		}
+		env.Variables[k] = aws.String(v)
+	}
 	//
 	out, err := LambdaClient().GetFunctionConfigurationWithContext(ctx, &lambda.GetFunctionConfigurationInput{
 		FunctionName: aws.String(input.name),

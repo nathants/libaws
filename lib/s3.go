@@ -687,8 +687,6 @@ type S3BucketDescription struct {
 }
 
 func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescription, error) {
-	Logger.Println("s3 get bucket description:", bucket)
-
 	var descr S3BucketDescription
 
 	s3Client, err := S3ClientBucketRegion(bucket)
