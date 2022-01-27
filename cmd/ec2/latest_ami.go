@@ -3,11 +3,13 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"os"
+	"sort"
+
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/cli-aws/lib"
-	"sort"
 )
 
 func init() {
@@ -42,6 +44,9 @@ func ec2LatestAmi() {
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
+	}
+	if len(images.Images) == 0 {
+		os.Exit(1)
 	}
 	sort.Slice(images.Images, func(i, j int) bool { return *images.Images[i].CreationDate > *images.Images[j].CreationDate })
 	image := images.Images[0]
