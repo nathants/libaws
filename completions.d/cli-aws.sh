@@ -37,6 +37,8 @@ _cli_aws () {
         elif [ ${COMP_WORDS[1]} = lambda-ensure    ]; then COMPREPLY=($(find -type f 2>/dev/null | grep -Ev -e '/\.' -e '\.pyc$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = lambda-rm    ]; then COMPREPLY=($(find -type f 2>/dev/null | grep -Ev -e '/\.' -e '\.pyc$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
 
+        elif [ ${COMP_WORDS[1]} = logs-tail ]; then COMPREPLY=($(cli-aws logs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}" | awk '{print $1}'))
+
         elif [ ${COMP_WORDS[1]} = sqs-stats ]; then COMPREPLY=($(cli-aws sqs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = sqs-purge ]; then COMPREPLY=($(cli-aws sqs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = sqs-rm    ]; then COMPREPLY=($(cli-aws sqs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
