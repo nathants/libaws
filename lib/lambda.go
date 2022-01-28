@@ -51,7 +51,7 @@ const (
 	lambdaMetaTrigger  = "trigger"
 	lambdaMetaRequire  = "require"
 	lambdaMetaAttr     = "attr"
-	lambdaMetaEnv     = "env"
+	lambdaMetaEnv      = "env"
 )
 
 var lambdaClient *lambda.Lambda

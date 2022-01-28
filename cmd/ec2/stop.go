@@ -17,7 +17,7 @@ func init() {
 
 type ec2StopArgs struct {
 	Selectors []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
-	Preview       bool     `arg:"-p,--preview" default:"false"`
+	Preview   bool     `arg:"-p,--preview" default:"false"`
 	Wait      bool     `arg:"-w,--wait" default:"false"`
 }
 

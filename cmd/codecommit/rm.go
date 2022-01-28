@@ -17,7 +17,7 @@ func init() {
 }
 
 type codeCommitRmArgs struct {
-	Name string `arg:"positional,required"`
+	Name    string `arg:"positional,required"`
 	Preview bool   `arg:"-p,--preview"`
 }
 

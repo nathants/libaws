@@ -47,7 +47,7 @@ func apiLsDomains() {
 				if err != nil {
 					lib.Logger.Fatal("error: ", err)
 				}
-				api = "api="+*out.Name
+				api = "api=" + *out.Name
 			}
 		}
 		fmt.Println(*domain.DomainName, api)

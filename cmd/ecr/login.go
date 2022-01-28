@@ -29,11 +29,11 @@ func ecrLogin() {
 	arg.MustParse(&args)
 	token, err := lib.EcrClient().GetAuthorizationToken(&ecr.GetAuthorizationTokenInput{})
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	bytes, err := base64.StdEncoding.DecodeString(*token.AuthorizationData[0].AuthorizationToken)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	parts := strings.Split(string(bytes), ":")
 	if len(parts) != 2 {
@@ -47,6 +47,6 @@ func ecrLogin() {
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }

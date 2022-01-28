@@ -26,7 +26,7 @@ func apiLs() {
 	ctx := context.Background()
 	apis, err := lib.ApiList(ctx)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, api := range apis {
 		fmt.Println(*api.Name)

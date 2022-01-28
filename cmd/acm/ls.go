@@ -35,9 +35,9 @@ func acmLs() {
 			CertificateArn: cert.CertificateArn,
 		})
 		if err != nil {
-		    lib.Logger.Fatal("error: ", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 
-		fmt.Println(strings.Join(lib.StringSlice(out.Certificate.SubjectAlternativeNames), " "), "renewal=" + *out.Certificate.RenewalEligibility)
+		fmt.Println(strings.Join(lib.StringSlice(out.Certificate.SubjectAlternativeNames), " "), "renewal="+*out.Certificate.RenewalEligibility)
 	}
 }

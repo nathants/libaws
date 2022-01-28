@@ -17,7 +17,7 @@ func init() {
 
 type sqsRmArgs struct {
 	QueueName string `arg:"positional,required"`
-	Preview bool   `arg:"-p,--preview"`
+	Preview   bool   `arg:"-p,--preview"`
 }
 
 func (sqsRmArgs) Description() string {

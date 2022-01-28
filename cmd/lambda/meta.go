@@ -35,11 +35,11 @@ func lambdaMeta() {
 	}
 	data, err := ioutil.ReadFile(args.Path)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	meta, err := lib.LambdaGetMetadata(strings.Split(string(data), "\n"))
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(lib.Pformat(meta))
 }

@@ -235,7 +235,9 @@ func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]
 		}
 	}
 	sort.SliceStable(instances, func(i, j int) bool { return *instances[i].InstanceId < *instances[j].InstanceId })
-	sort.SliceStable(instances, func(i, j int) bool { return EC2GetTag(instances[i].Tags, "Name", "") < EC2GetTag(instances[j].Tags, "Name", "") })
+	sort.SliceStable(instances, func(i, j int) bool {
+		return EC2GetTag(instances[i].Tags, "Name", "") < EC2GetTag(instances[j].Tags, "Name", "")
+	})
 	sort.SliceStable(instances, func(i, j int) bool { return instances[i].LaunchTime.UnixNano() > instances[j].LaunchTime.UnixNano() })
 	return instances, nil
 }

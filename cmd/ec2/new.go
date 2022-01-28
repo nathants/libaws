@@ -174,12 +174,12 @@ func ec2New() {
 	}
 	if args.Wait {
 		_, err := lib.EC2WaitSsh(ctx, &lib.EC2WaitForSshInput{
-			Selectors: ids,
+			Selectors:      ids,
 			MaxWaitSeconds: 300,
-			User: lib.EC2GetTag(instances[0].Tags, "user", ""),
+			User:           lib.EC2GetTag(instances[0].Tags, "user", ""),
 		})
 		if err != nil {
-		    lib.Logger.Fatal("error: ", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 	}
 	for _, instance := range instances {
