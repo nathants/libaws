@@ -31,6 +31,7 @@ optional attrs:
  - encryption=VALUE (values = "true" | "false",     default = "true")
  - metrics=VALUE    (values = "true" | "false",     default = "true")
  - cors=VALUE       (values = "true" | "false",     default = "true")
+ - ttldays=VALUE (values = "0" | "n",            default = "0")
 `
 }
 

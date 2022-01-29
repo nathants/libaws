@@ -130,6 +130,7 @@ type s3EnsureInput struct {
 	encryption bool
 	metrics    bool
 	cors       bool
+	ttlDays    int
 }
 
 func s3EnsureInputDefault() *s3EnsureInput {
@@ -139,6 +140,7 @@ func s3EnsureInputDefault() *s3EnsureInput {
 		encryption: true,
 		metrics:    true,
 		cors:       false,
+		ttlDays:    0,
 	}
 }
 
@@ -153,6 +155,8 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 			return nil, err
 		}
 		switch attr {
+		case "ttldays":
+			input.ttlDays = atoi(value)
 		case "cors":
 			switch value {
 			case "true", "false":
@@ -535,6 +539,90 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				}
 			}
 			Logger.Println(PreviewString(preview)+"s3 delete bucket metrics for:", input.name)
+		}
+	}
+	//
+	ttlOut, err := S3Client().GetBucketLifecycleConfigurationWithContext(ctx, &s3.GetBucketLifecycleConfigurationInput{
+		Bucket:              aws.String(input.name),
+		ExpectedBucketOwner: aws.String(account),
+	})
+	_ = ttlOut
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "NoSuchLifecycleConfiguration" {
+			Logger.Println("error:", err)
+			return err
+		}
+		if input.ttlDays != 0 {
+			if !preview {
+				_, err := S3Client().PutBucketLifecycleConfigurationWithContext(ctx, &s3.PutBucketLifecycleConfigurationInput{
+					Bucket:              aws.String(input.name),
+					ExpectedBucketOwner: aws.String(account),
+					LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
+						Rules: []*s3.LifecycleRule{{
+							Expiration: &s3.LifecycleExpiration{
+								Days: aws.Int64(int64(input.ttlDays)),
+							},
+							ID:     aws.String(fmt.Sprintf("ttlDays=%d", input.ttlDays)),
+							Prefix: aws.String(""),
+							Status: aws.String("Enabled"),
+						}},
+					},
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"put bucket ttl for:", input.name, input.ttlDays)
+		}
+	} else {
+		if input.ttlDays == 0 {
+			if !preview {
+				_, err := S3Client().DeleteBucketLifecycleWithContext(ctx, &s3.DeleteBucketLifecycleInput{
+					Bucket:              aws.String(input.name),
+					ExpectedBucketOwner: aws.String(account),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"deleted bucket ttl for:", input.name)
+		} else {
+			if len(ttlOut.Rules) != 1 {
+				err := fmt.Errorf("expected exactly 1 ttl rule: %s %s", input.name, Pformat(ttlOut.Rules))
+				Logger.Println("error:", err)
+				return err
+			}
+			ttlDays := ttlOut.Rules[0].Expiration.Days
+			if ttlDays == nil || *ttlDays != int64(input.ttlDays) {
+				if !preview {
+					_, err := S3Client().PutBucketLifecycleConfigurationWithContext(ctx, &s3.PutBucketLifecycleConfigurationInput{
+						Bucket:              aws.String(input.name),
+						ExpectedBucketOwner: aws.String(account),
+						LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
+							Rules: []*s3.LifecycleRule{
+								{
+									Prefix: aws.String(""),
+									Expiration: &s3.LifecycleExpiration{
+										Days: aws.Int64(int64(input.ttlDays)),
+									},
+									Status: aws.String("Enabled"),
+								},
+							},
+						},
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+				if ttlDays == nil {
+					*ttlDays = 0
+				}
+				Logger.Printf(PreviewString(preview)+"updated bucket ttl for %s: %d => %d\n", input.name, *ttlDays, input.ttlDays)
+			}
 		}
 	}
 	//
