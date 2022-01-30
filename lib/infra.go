@@ -558,6 +558,11 @@ func InfraListS3(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (m
 				s.Attrs = append(s.Attrs, fmt.Sprintf("metrics=%t", metrics))
 			}
 			//
+			ttl := descr.Lifecycle
+			if len(ttl) == 1 && int64(s3Default.ttlDays) != *ttl[0].Expiration.Days {
+				s.Attrs = append(s.Attrs, fmt.Sprintf("ttldays=%d", *ttl[0].Expiration.Days))
+			}
+			//
 			if descr.Notifications != nil {
 				for _, conf := range descr.Notifications.LambdaFunctionConfigurations {
 					triggersChan <- InfraLambdaTrigger{
