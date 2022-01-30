@@ -3,7 +3,7 @@
 all: cli-aws
 
 cli-aws:
-	go build
+	CGO_ENABLED=0 go build -ldflags='-s -w' -tags 'netgo osusergo'
 
 check: check-deps check-static check-ineff check-err check-vet check-lint check-bodyclose check-nargs check-fmt check-hasdefault
 
