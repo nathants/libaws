@@ -3,11 +3,8 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -29,45 +26,12 @@ func ec2NewAmi() {
 	var args ec2NewAmiArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	out, err := lib.EC2ListInstances(ctx, args.Selectors, "stopped")
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
-	if len(out) != 1 {
-		lib.Logger.Fatal("error: not exactly 1 instance", lib.Pformat(out))
-	}
-	i := out[0]
-	name := lib.EC2Name(i.Tags)
-	image, err := lib.EC2Client().CreateImageWithContext(ctx, &ec2.CreateImageInput{
-		Name:        aws.String(fmt.Sprintf("%s__%d", name, time.Now().Unix())),
-		Description: aws.String(name),
-		InstanceId:  i.InstanceId,
-		NoReboot:    aws.Bool(false),
-		TagSpecifications: []*ec2.TagSpecification{{
-			ResourceType: aws.String(ec2.ResourceTypeImage),
-			Tags: []*ec2.Tag{{
-				Key:   aws.String("user"),
-				Value: aws.String(lib.EC2GetTag(i.Tags, "user", "")),
-			}},
-		}},
+	amiID, err := lib.EC2NewAmi(ctx, &lib.EC2NewAmiInput{
+		Selectors: args.Selectors,
+		Wait: args.Wait,
 	})
 	if err != nil {
-		lib.Logger.Fatal("error: ", err)
+	    lib.Logger.Fatal("error: ", err)
 	}
-	if args.Wait {
-		for {
-			status, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-				ImageIds: []*string{image.ImageId},
-			})
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-			if *status.Images[0].State == ec2.ImageStateAvailable {
-				break
-			}
-			lib.Logger.Println("wait for image", time.Now())
-			time.Sleep(1 * time.Second)
-		}
-	}
-	fmt.Println(*image.ImageId)
+	fmt.Println(amiID)
 }

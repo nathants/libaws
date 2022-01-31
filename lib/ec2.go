@@ -1728,3 +1728,57 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitForSshInput) ([]string, error
 		time.Sleep(5 * time.Second)
 	}
 }
+
+type EC2NewAmiInput struct {
+	Selectors []string
+	Wait      bool
+}
+
+func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
+	out, err := EC2ListInstances(ctx, input.Selectors, "stopped")
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	if len(out) != 1 {
+		err := fmt.Errorf("not exactly 1 instance %s", Pformat(out))
+		Logger.Println("error:", err)
+		return "", err
+	}
+	i := out[0]
+	name := EC2Name(i.Tags)
+	image, err := EC2Client().CreateImageWithContext(ctx, &ec2.CreateImageInput{
+		Name:        aws.String(fmt.Sprintf("%s__%d", name, time.Now().Unix())),
+		Description: aws.String(name),
+		InstanceId:  i.InstanceId,
+		NoReboot:    aws.Bool(false),
+		TagSpecifications: []*ec2.TagSpecification{{
+			ResourceType: aws.String(ec2.ResourceTypeImage),
+			Tags: []*ec2.Tag{{
+				Key:   aws.String("user"),
+				Value: aws.String(EC2GetTag(i.Tags, "user", "")),
+			}},
+		}},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	if input.Wait {
+		for {
+			status, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+				ImageIds: []*string{image.ImageId},
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return "", err
+			}
+			if *status.Images[0].State == ec2.ImageStateAvailable {
+				break
+			}
+			Logger.Println("wait for image", time.Now())
+			time.Sleep(1 * time.Second)
+		}
+	}
+	return *image.ImageId, nil
+}
