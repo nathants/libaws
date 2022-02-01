@@ -45,7 +45,7 @@ func ec2Rm() {
 	for _, instance := range instances {
 		ids = append(ids, instance.InstanceId)
 		if *instance.State.Name == ec2.InstanceStateNameRunning || *instance.State.Name == ec2.InstanceStateNameStopped {
-			lib.Logger.Println("going to terminate:", lib.EC2Name(instance.Tags), *instance.InstanceId)
+			lib.Logger.Println(lib.PreviewString(args.Preview)+"terminating:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
 	if args.Preview {

@@ -32,7 +32,7 @@ func sqsRm() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	lib.Logger.Println("going to delete:", queueUrl)
+	lib.Logger.Println(lib.PreviewString(args.Preview)+"deleted:", queueUrl)
 	if args.Preview {
 		os.Exit(0)
 	}

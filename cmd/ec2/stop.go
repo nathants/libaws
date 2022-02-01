@@ -47,7 +47,7 @@ func ec2Stop() {
 	for _, instance := range instances {
 		if *instance.State.Name == ec2.InstanceStateNameRunning {
 			ids = append(ids, instance.InstanceId)
-			lib.Logger.Println("going to stop:", lib.EC2Name(instance.Tags), *instance.InstanceId)
+			lib.Logger.Println(lib.PreviewString(args.Preview)+"stopping:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
 	if args.Preview {

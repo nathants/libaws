@@ -1,12 +1,14 @@
 package lib
 
 import (
+	"context"
 	"os"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 var sess *session.Session
@@ -54,4 +56,13 @@ func SessionRegion(region string) (*session.Session, error) {
 func Region() string {
 	sess := Session()
 	return *sess.Config.Region
+}
+
+func Zones(ctx context.Context) ([]*ec2.AvailabilityZone, error) {
+	out, err := EC2Client().DescribeAvailabilityZonesWithContext(ctx, &ec2.DescribeAvailabilityZonesInput{})
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	return out.AvailabilityZones, nil
 }

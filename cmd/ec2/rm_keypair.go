@@ -28,7 +28,7 @@ func ec2RmKeypair() {
 	var args ec2RmKeypairArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	lib.Logger.Println("going to delete keypair: " + args.Name)
+	lib.Logger.Println(lib.PreviewString(args.Preview) + "deleting: " + args.Name)
 	if args.Preview {
 		os.Exit(0)
 	}

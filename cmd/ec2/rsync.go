@@ -50,7 +50,7 @@ func ec2Rsync() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, instance := range instances {
-		lib.Logger.Println("going to target:", lib.EC2Name(instance.Tags), *instance.InstanceId)
+		lib.Logger.Println(lib.PreviewString(args.Preview)+"targeting:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 	}
 	if args.Preview {
 		os.Exit(0)

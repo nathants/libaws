@@ -46,7 +46,7 @@ func ec2Reboot() {
 	for _, instance := range instances {
 		ids = append(ids, instance.InstanceId)
 		if *instance.State.Name == ec2.InstanceStateNameRunning || *instance.State.Name == ec2.InstanceStateNameStopped {
-			lib.Logger.Println("going to reboot:", lib.EC2Name(instance.Tags), *instance.InstanceId)
+			lib.Logger.Println(lib.PreviewString(args.Preview)+"rebooting:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
 	if args.Preview {

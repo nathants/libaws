@@ -66,13 +66,12 @@ func ec2WaitSsh() {
 	}
 	for _, instance := range instances {
 		if lib.Contains([]string{ec2.InstanceStateNamePending, ec2.InstanceStateNameRunning}, *instance.State.Name) {
-			lib.Logger.Println("going to target:", lib.EC2Name(instance.Tags), *instance.InstanceId)
+			lib.Logger.Println(lib.PreviewString(args.Preview)+"targeting:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
 	if args.Preview {
 		os.Exit(0)
 	}
-
 	readyIDs, err := lib.EC2WaitSsh(ctx, &lib.EC2WaitForSshInput{
 		Selectors:      args.Selectors,
 		MaxWaitSeconds: args.MaxWait,

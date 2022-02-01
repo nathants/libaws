@@ -28,10 +28,10 @@ func ec2NewAmi() {
 	ctx := context.Background()
 	amiID, err := lib.EC2NewAmi(ctx, &lib.EC2NewAmiInput{
 		Selectors: args.Selectors,
-		Wait: args.Wait,
+		Wait:      args.Wait,
 	})
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(amiID)
 }
