@@ -116,7 +116,7 @@ func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*rou
 	}
 	input.change.ResourceRecordSet.Name = aws.String(recordName)
 	for _, attr := range attrs {
-		head, value, err := splitOnce(attr, "=")
+		head, value, err := SplitOnce(attr, "=")
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
@@ -125,7 +125,7 @@ func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*rou
 		var tail string
 		if strings.Contains(head, ".") {
 			var err error
-			head, tail, err = splitOnce(head, ".")
+			head, tail, err = SplitOnce(head, ".")
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err

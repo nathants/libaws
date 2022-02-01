@@ -885,7 +885,7 @@ func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, restApi
 	}
 	//
 	if !found {
-		_, parentDomain, err := splitOnce(domain, ".")
+		_, parentDomain, err := SplitOnce(domain, ".")
 		subDomain := domain
 		if err != nil {
 			Logger.Println("error:", err)
@@ -990,7 +990,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 				return err
 			}
 			for _, attr := range attrs {
-				k, v, err := splitOnce(attr, "=")
+				k, v, err := SplitOnce(attr, "=")
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
@@ -1297,7 +1297,7 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, name, arnLambda string, me
 				Enabled:        aws.Bool(true),
 			}
 			for _, line := range triggerAttrs {
-				attr, value, err := splitOnce(line, "=")
+				attr, value, err := SplitOnce(line, "=")
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
@@ -1516,7 +1516,7 @@ func LambdaEnsureTriggerSQS(ctx context.Context, name, arnLambda string, meta *L
 				Enabled:        aws.Bool(true),
 			}
 			for _, line := range triggerAttrs {
-				attr, value, err := splitOnce(line, "=")
+				attr, value, err := SplitOnce(line, "=")
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
@@ -1972,11 +1972,11 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		case lambdaAttrName:
 			name = v
 		case lambdaAttrConcurrency:
-			concurrency = atoi(v)
+			concurrency = Atoi(v)
 		case lambdaAttrMemory:
-			memory = atoi(v)
+			memory = Atoi(v)
 		case lambdaAttrTimeout:
-			timeout = atoi(v)
+			timeout = Atoi(v)
 		default:
 			err := fmt.Errorf("unknown attr: %s", k)
 			Logger.Println("error:", err)
@@ -2135,7 +2135,7 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 	//
 	env := &lambda.Environment{Variables: make(map[string]*string)}
 	for _, val := range metadata.EnvVars {
-		k, v, err := splitOnce(val, "=")
+		k, v, err := SplitOnce(val, "=")
 		if err != nil {
 			Logger.Fatal("error: ", err)
 		}

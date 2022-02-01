@@ -149,14 +149,14 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 	input.name = name
 	for _, line := range attrs {
 		line = strings.ToLower(line)
-		attr, value, err := splitOnce(line, "=")
+		attr, value, err := SplitOnce(line, "=")
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 		switch attr {
 		case "ttldays":
-			input.ttlDays = atoi(value)
+			input.ttlDays = Atoi(value)
 		case "cors":
 			switch value {
 			case "true", "false":

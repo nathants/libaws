@@ -38,12 +38,20 @@ func dynamoDBTableAttrShortcut(s string) string {
 	return s
 }
 
-func splitOnce(s string, sep string) (head, tail string, err error) {
+func SplitOnce(s string, sep string) (head, tail string, err error) {
 	parts := strings.SplitN(s, sep, 2)
 	if len(parts) == 2 {
 		return parts[0], parts[1], nil
 	}
-	return "", "", fmt.Errorf("cannot attrSplitOnce: %s", s)
+	return "", "", fmt.Errorf("cannot split once: %s", s)
+}
+
+func SplitTwice(s string, sep string) (head, mid, tail string, err error) {
+	parts := strings.SplitN(s, sep, 3)
+	if len(parts) == 3 {
+		return parts[0], parts[1], parts[2], nil
+	}
+	return "", "", "", fmt.Errorf("cannot split twice: %s", s)
 }
 
 func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.CreateTableInput, error) {
@@ -80,13 +88,13 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 	}
 	// unpack attrs
 	for _, line := range attrs {
-		attr, value, err := splitOnce(line, "=")
+		attr, value, err := SplitOnce(line, "=")
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 		attr = dynamoDBTableAttrShortcut(attr)
-		head, tail, err := splitOnce(attr, ".")
+		head, tail, err := SplitOnce(attr, ".")
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
@@ -159,7 +167,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			}
 		//
 		case "LocalSecondaryIndexes":
-			head, tail, err := splitOnce(tail, ".")
+			head, tail, err := SplitOnce(tail, ".")
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
@@ -185,7 +193,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			case "IndexName":
 				input.LocalSecondaryIndexes[i].IndexName = aws.String(value)
 			default:
-				head, tail, err = splitOnce(tail, ".")
+				head, tail, err = SplitOnce(tail, ".")
 				if err != nil {
 					Logger.Println("error:", err)
 					return nil, err
@@ -239,7 +247,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					case "ProjectionType":
 						input.LocalSecondaryIndexes[i].Projection.ProjectionType = aws.String(strings.ToUpper(value))
 					default:
-						head, tail, err = splitOnce(tail, ".")
+						head, tail, err = SplitOnce(tail, ".")
 						if err != nil {
 							Logger.Println("error:", err)
 							return nil, err
@@ -276,7 +284,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			}
 		//
 		case "GlobalSecondaryIndexes":
-			head, tail, err := splitOnce(tail, ".")
+			head, tail, err := SplitOnce(tail, ".")
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
@@ -305,7 +313,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 			case "IndexName":
 				input.GlobalSecondaryIndexes[i].IndexName = aws.String(value)
 			default:
-				head, tail, err = splitOnce(tail, ".")
+				head, tail, err = SplitOnce(tail, ".")
 				if err != nil {
 					Logger.Println("error:", err)
 					return nil, err
@@ -380,7 +388,7 @@ func DynamoDBEnsureInput(name string, keys []string, attrs []string) (*dynamodb.
 					case "ProjectionType":
 						input.GlobalSecondaryIndexes[i].Projection.ProjectionType = aws.String(strings.ToUpper(value))
 					default:
-						head, tail, err = splitOnce(tail, ".")
+						head, tail, err = SplitOnce(tail, ".")
 						if err != nil {
 							Logger.Println("error:", err)
 							return nil, err

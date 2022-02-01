@@ -25,7 +25,7 @@ func TestAttrSplitOnce(t *testing.T) {
 		{"a.b.c", "a", "b.c", false},
 	}
 	for _, test := range tests {
-		head, tail, err := splitOnce(test.input, ".")
+		head, tail, err := SplitOnce(test.input, ".")
 		if test.err {
 			if err == nil {
 				t.Errorf("\nexpected error")

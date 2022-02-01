@@ -73,7 +73,7 @@ func SQSListQueueUrls(ctx context.Context) ([]string, error) {
 	return queues, nil
 }
 
-func atoi(a string) int {
+func Atoi(a string) int {
 	i, err := strconv.Atoi(a)
 	if err != nil {
 		panic(err)
@@ -123,9 +123,9 @@ func SQSNumMessages(ctx context.Context, queueUrl string) (*SQSNumMessageOutput,
 		return nil, err
 	}
 	return &SQSNumMessageOutput{
-		atoi(*out.Attributes[sqs.QueueAttributeNameApproximateNumberOfMessages]),
-		atoi(*out.Attributes[sqs.QueueAttributeNameApproximateNumberOfMessagesNotVisible]),
-		atoi(*out.Attributes[sqs.QueueAttributeNameApproximateNumberOfMessagesDelayed]),
+		Atoi(*out.Attributes[sqs.QueueAttributeNameApproximateNumberOfMessages]),
+		Atoi(*out.Attributes[sqs.QueueAttributeNameApproximateNumberOfMessagesNotVisible]),
+		Atoi(*out.Attributes[sqs.QueueAttributeNameApproximateNumberOfMessagesDelayed]),
 	}, nil
 }
 
@@ -179,7 +179,7 @@ func SQSEnsureInput(name string, attrs []string) (*sqsEnsureInput, error) {
 	}
 	for _, line := range attrs {
 		line = strings.ToLower(line)
-		attr, value, err := splitOnce(line, "=")
+		attr, value, err := SplitOnce(line, "=")
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
@@ -278,28 +278,28 @@ func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 		}
 		needsUpdate := false
 		attrs := attrsOut.Attributes
-		if input.delaySeconds != -1 && attrs["DelaySeconds"] != nil && input.delaySeconds != atoi(*attrs["DelaySeconds"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "DelaySeconds", input.name, atoi(*attrs["DelaySeconds"]), input.delaySeconds)
+		if input.delaySeconds != -1 && attrs["DelaySeconds"] != nil && input.delaySeconds != Atoi(*attrs["DelaySeconds"]) {
+			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "DelaySeconds", input.name, Atoi(*attrs["DelaySeconds"]), input.delaySeconds)
 			needsUpdate = true
 		}
-		if input.maximumMessageSize != -1 && attrs["MaximumMessageSize"] != nil && input.maximumMessageSize != atoi(*attrs["MaximumMessageSize"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "MaximumMessageSize", input.name, atoi(*attrs["MaximumMessageSize"]), input.maximumMessageSize)
+		if input.maximumMessageSize != -1 && attrs["MaximumMessageSize"] != nil && input.maximumMessageSize != Atoi(*attrs["MaximumMessageSize"]) {
+			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "MaximumMessageSize", input.name, Atoi(*attrs["MaximumMessageSize"]), input.maximumMessageSize)
 			needsUpdate = true
 		}
-		if input.messageRetentionPeriod != -1 && attrs["MessageRetentionPeriod"] != nil && input.messageRetentionPeriod != atoi(*attrs["MessageRetentionPeriod"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "MessageRetentionPeriod", input.name, atoi(*attrs["MessageRetentionPeriod"]), input.messageRetentionPeriod)
+		if input.messageRetentionPeriod != -1 && attrs["MessageRetentionPeriod"] != nil && input.messageRetentionPeriod != Atoi(*attrs["MessageRetentionPeriod"]) {
+			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "MessageRetentionPeriod", input.name, Atoi(*attrs["MessageRetentionPeriod"]), input.messageRetentionPeriod)
 			needsUpdate = true
 		}
-		if input.receiveMessageWaitTimeSeconds != -1 && attrs["ReceiveMessageWaitTimeSeconds"] != nil && input.receiveMessageWaitTimeSeconds != atoi(*attrs["ReceiveMessageWaitTimeSeconds"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "ReceiveMessageWaitTimeSeconds", input.name, atoi(*attrs["ReceiveMessageWaitTimeSeconds"]), input.receiveMessageWaitTimeSeconds)
+		if input.receiveMessageWaitTimeSeconds != -1 && attrs["ReceiveMessageWaitTimeSeconds"] != nil && input.receiveMessageWaitTimeSeconds != Atoi(*attrs["ReceiveMessageWaitTimeSeconds"]) {
+			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "ReceiveMessageWaitTimeSeconds", input.name, Atoi(*attrs["ReceiveMessageWaitTimeSeconds"]), input.receiveMessageWaitTimeSeconds)
 			needsUpdate = true
 		}
-		if input.visibilityTimeout != -1 && attrs["VisibilityTimeout"] != nil && input.visibilityTimeout != atoi(*attrs["VisibilityTimeout"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "VisibilityTimeout", input.name, atoi(*attrs["VisibilityTimeout"]), input.visibilityTimeout)
+		if input.visibilityTimeout != -1 && attrs["VisibilityTimeout"] != nil && input.visibilityTimeout != Atoi(*attrs["VisibilityTimeout"]) {
+			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "VisibilityTimeout", input.name, Atoi(*attrs["VisibilityTimeout"]), input.visibilityTimeout)
 			needsUpdate = true
 		}
-		if input.kmsDataKeyReusePeriodSeconds != -1 && attrs["KmsDataKeyReusePeriodSeconds"] != nil && input.kmsDataKeyReusePeriodSeconds != atoi(*attrs["KmsDataKeyReusePeriodSeconds"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "KmsDataKeyReusePeriodSeconds", input.name, atoi(*attrs["KmsDataKeyReusePeriodSeconds"]), input.kmsDataKeyReusePeriodSeconds)
+		if input.kmsDataKeyReusePeriodSeconds != -1 && attrs["KmsDataKeyReusePeriodSeconds"] != nil && input.kmsDataKeyReusePeriodSeconds != Atoi(*attrs["KmsDataKeyReusePeriodSeconds"]) {
+			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "KmsDataKeyReusePeriodSeconds", input.name, Atoi(*attrs["KmsDataKeyReusePeriodSeconds"]), input.kmsDataKeyReusePeriodSeconds)
 			needsUpdate = true
 		}
 		if needsUpdate {
