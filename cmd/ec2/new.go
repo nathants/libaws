@@ -3,6 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"strings"
 
@@ -86,6 +87,13 @@ func ec2New() {
 	p := arg.MustParse(&args)
 	ctx, cancel := context.WithCancel(context.Background())
 	lib.SignalHandler(cancel)
+	if lib.Exists(args.Init) {
+		data, err := ioutil.ReadFile(args.Init)
+		if err != nil {
+		    lib.Logger.Fatal("error: ", err)
+		}
+		args.Init = string(data)
+	}
 	if args.Vpc == "" && len(args.SubnetIds) == 0 {
 		p.Fail("you must specify one of --vpc | --subnets")
 	}
