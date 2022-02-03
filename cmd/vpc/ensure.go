@@ -2,7 +2,7 @@ package cliaws
 
 import (
 	"context"
-	"fmt"
+
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
 )
@@ -18,16 +18,19 @@ type vpcEnsureArgs struct {
 }
 
 func (vpcEnsureArgs) Description() string {
-	return "\nensure vpcs\n"
+	return `
+setup a default-like vpc, with cidr 10.xx.0.0/16 and a
+subnet for each zone like 10.xx.yy.0/20. add a security
+group with the same name. public ipv4 is turned on.
+`
 }
 
 func vpcEnsure() {
 	var args vpcEnsureArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	vpcId, err := lib.VpcEnsure(ctx, args.Name, args.XX)
+	_, err := lib.VpcEnsure(ctx, args.Name, args.XX)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Println(vpcId)
 }

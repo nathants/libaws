@@ -2,10 +2,10 @@ package cliaws
 
 import (
 	"context"
-	// "fmt"
+	"fmt"
+
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
-	// "os"
 )
 
 func init() {
@@ -14,8 +14,6 @@ func init() {
 }
 
 type vpcLsArgs struct {
-	// Selectors []string `arg:"positional" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
-	// State     string   `arg:"-s,--state" default:"" help:"running | pending | terminated | stopped"`
 }
 
 func (vpcLsArgs) Description() string {
@@ -26,5 +24,11 @@ func vpcLs() {
 	var args vpcLsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	_ = ctx
+	vpcs, err := lib.VpcList(ctx)
+	if err != nil {
+	    lib.Logger.Fatal("error: ", err)
+	}
+	for _, vpc := range vpcs {
+		fmt.Println(lib.EC2Name(vpc.Tags), *vpc.VpcId)
+	}
 }

@@ -594,6 +594,11 @@ func makeBlockDeviceMapping(config *EC2Config) []*ec2.BlockDeviceMapping {
 }
 
 func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Config) ([]*ec2.Instance, error) {
+	if config.UserName == "" {
+		err := fmt.Errorf("user name is required %v", *config)
+		Logger.Println("error:", err)
+		return nil, err
+	}
 	config = ec2ConfigDefaults(config)
 	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
@@ -672,6 +677,9 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 }
 
 func makeInit(config *EC2Config) string {
+	if config.UserName == "" {
+		panic("makeInit needs a username")
+	}
 	init := config.Init
 	for _, instanceType := range []string{"i3", "i3en", "c5d", "m5d", "r5d", "z1d", "c6gd", "m6gd", "r6gd", "c5ad", "is4gen", "im4gn"} {
 		if instanceType == strings.Split(config.InstanceType, ".")[0] {
@@ -718,6 +726,11 @@ func ec2ConfigDefaults(config *EC2Config) *EC2Config {
 }
 
 func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, error) {
+	if config.UserName == "" {
+		err := fmt.Errorf("user name is required %v", *config)
+		Logger.Println("error:", err)
+		return nil, err
+	}
 	config = ec2ConfigDefaults(config)
 	if len(config.SubnetIds) != 1 {
 		err := fmt.Errorf("must specify exactly one subnet, got: %v", config.SubnetIds)
@@ -1825,12 +1838,27 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 	sgID, err := EC2SgID(ctx, input.SgName)
 	if err != nil {
 		out, err := EC2Client().CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
-			GroupName: aws.String(input.SgName),
-			VpcId:     aws.String(vpcID),
+			GroupName:   aws.String(input.SgName),
+			Description: aws.String(input.SgName),
+			VpcId:       aws.String(vpcID),
 		})
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
+		}
+		err = Retry(ctx, func() error {
+			_, err := EC2Client().CreateTagsWithContext(ctx, &ec2.CreateTagsInput{
+				Resources: []*string{out.GroupId},
+				Tags: []*ec2.Tag{{
+					Key:   aws.String("Name"),
+					Value: aws.String(input.SgName),
+				}},
+			})
+			return err
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+		    return err
 		}
 		sgID = *out.GroupId
 	}

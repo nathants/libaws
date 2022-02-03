@@ -23,6 +23,7 @@ import (
 	_ "github.com/nathants/cli-aws/cmd/route53"
 	_ "github.com/nathants/cli-aws/cmd/s3"
 	_ "github.com/nathants/cli-aws/cmd/sqs"
+	_ "github.com/nathants/cli-aws/cmd/vpc"
 	"github.com/nathants/cli-aws/lib"
 )
 
