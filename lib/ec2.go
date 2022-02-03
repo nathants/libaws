@@ -1385,6 +1385,25 @@ func EC2SshLogin(instance *ec2.Instance, user string) error {
 	return nil
 }
 
+func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Filters: []*ec2.Filter{
+			{Name: aws.String("image-id"), Values: []*string{aws.String(amiID)}},
+		},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+	    return "", err
+	}
+	user := EC2GetTag(out.Images[0].Tags, "user", "")
+	if user == "" {
+		err := fmt.Errorf("no user for: %s", amiID)
+		Logger.Println("error:", err)
+		return "", err
+	}
+	return user, nil
+}
+
 func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
 	resp, err := http.Get("https://docs.aws.amazon.com/lambda/latest/dg/current-supported-versions.html")
 	if err != nil {
