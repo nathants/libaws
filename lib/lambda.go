@@ -117,6 +117,23 @@ func LambdaName(pth string) (string, error) {
 	name = strings.ReplaceAll(name, " ", "-")
 	name = strings.ReplaceAll(name, "_", "-")
 	name = strings.Split(name, ".")[0]
+	//
+	metadata, err := LambdaParseFile(pth)
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	//
+	for _, attr := range metadata.Attr {
+		parts := strings.SplitN(attr, " ", 2)
+		k := parts[0]
+		v := parts[1]
+		switch k {
+		case lambdaAttrName:
+			return v, nil
+		}
+	}
+	//
 	return name, nil
 }
 
