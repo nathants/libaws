@@ -14,10 +14,10 @@ func VpcList(ctx context.Context) ([]*ec2.Vpc, error) {
 	var res []*ec2.Vpc
 	for {
 		out, err := EC2Client().DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
-		NextToken: token,
-	})
+			NextToken: token,
+		})
 		if err != nil {
-		    return nil, err
+			return nil, err
 		}
 		res = append(res, out.Vpcs...)
 		if out.NextToken == nil {

@@ -27,7 +27,7 @@ func ec2AmiUser() {
 	ctx := context.Background()
 	amiID, err := lib.EC2AmiUser(ctx, args.AmiID)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(amiID)
 }

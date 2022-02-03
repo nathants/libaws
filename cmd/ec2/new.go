@@ -90,7 +90,7 @@ func ec2New() {
 	if lib.Exists(args.Init) {
 		data, err := ioutil.ReadFile(args.Init)
 		if err != nil {
-		    lib.Logger.Fatal("error: ", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		args.Init = string(data)
 	}

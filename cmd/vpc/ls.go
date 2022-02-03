@@ -26,7 +26,7 @@ func vpcLs() {
 	ctx := context.Background()
 	vpcs, err := lib.VpcList(ctx)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, vpc := range vpcs {
 		fmt.Println(lib.EC2Name(vpc.Tags), *vpc.VpcId)

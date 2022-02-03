@@ -1393,7 +1393,7 @@ func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
 	})
 	if err != nil {
 		Logger.Println("error:", err)
-	    return "", err
+		return "", err
 	}
 	user := EC2GetTag(out.Images[0].Tags, "user", "")
 	if user == "" {
@@ -1877,7 +1877,7 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 		})
 		if err != nil {
 			Logger.Println("error:", err)
-		    return err
+			return err
 		}
 		sgID = *out.GroupId
 	}
