@@ -32,7 +32,9 @@ _cli_aws () {
         elif [ ${COMP_WORDS[1]} = ec2-dns-private ]; then COMPREPLY=($(cli-aws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-wait-ssh    ]; then COMPREPLY=($(cli-aws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
-        elif   [ ${COMP_WORDS[1]} = dynamodb-scan ]; then COMPREPLY=($(cli-aws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif   [ ${COMP_WORDS[1]} = dynamodb-item-scan ]; then COMPREPLY=($(cli-aws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif   [ ${COMP_WORDS[1]} = dynamodb-item-rm ]; then COMPREPLY=($(cli-aws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif   [ ${COMP_WORDS[1]} = dynamodb-item-put ]; then COMPREPLY=($(cli-aws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
         elif [ ${COMP_WORDS[1]} = lambda-ensure    ]; then COMPREPLY=($(find -type f 2>/dev/null | grep -Ev -e '/\.' -e '\.pyc$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = lambda-rm    ]; then COMPREPLY=($(find -type f 2>/dev/null | grep -Ev -e '/\.' -e '\.pyc$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
