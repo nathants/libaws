@@ -13,21 +13,21 @@ import (
 )
 
 func init() {
-	lib.Commands["dynamodb-scan"] = dynamodbScan
-	lib.Args["dynamodb-scan"] = dynamodbScanArgs{}
+	lib.Commands["dynamodb-item-scan"] = dynamodbItemScan
+	lib.Args["dynamodb-item-scan"] = dynamodbItemScanArgs{}
 }
 
-type dynamodbScanArgs struct {
+type dynamodbItemScanArgs struct {
 	Table string `arg:"positional"`
 	Limit int    `arg:"-l,--limit" default:"0"`
 }
 
-func (dynamodbScanArgs) Description() string {
+func (dynamodbItemScanArgs) Description() string {
 	return "\nscan dynamodb table\n"
 }
 
-func dynamodbScan() {
-	var args dynamodbScanArgs
+func dynamodbItemScan() {
+	var args dynamodbItemScanArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
 	var start map[string]*dynamodb.AttributeValue
