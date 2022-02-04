@@ -10,6 +10,7 @@ require (
 	github.com/buger/goterm v1.0.4
 	github.com/dustin/go-humanize v1.0.0
 	github.com/mattn/go-isatty v0.0.14
+	github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a
 	github.com/pkg/term v1.1.0
 	github.com/r3labs/diff/v2 v2.14.8
 	github.com/satori/go.uuid v1.2.0

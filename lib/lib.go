@@ -3,7 +3,12 @@ package lib
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,9 +22,11 @@ import (
 
 	"github.com/avast/retry-go"
 	"github.com/mattn/go-isatty"
+	"github.com/mikesmitty/edkey"
 	"github.com/pkg/term"
 	"github.com/r3labs/diff/v2"
 	"github.com/tidwall/pretty"
+	"golang.org/x/crypto/ssh"
 )
 
 var Commands = make(map[string]func())
@@ -394,4 +401,34 @@ func diffMapStringInt64Pointers(a, b map[string]*int64) (bool, error) {
 		}
 	}
 	return len(changes) > 0, nil
+}
+
+func SshKeygenEd25519() (string, string, error) {
+	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
+	publicKey, _ := ssh.NewPublicKey(pubKey)
+	pemKey := &pem.Block{
+		Type:  "OPENSSH PRIVATE KEY",
+		Bytes: edkey.MarshalED25519PrivateKey(privKey),
+	}
+	privKeyBytes := pem.EncodeToMemory(pemKey)
+	pubKeyBytes := bytes.Trim(ssh.MarshalAuthorizedKey(publicKey), "\n")
+	return string(pubKeyBytes), string(privKeyBytes), nil
+}
+
+func SshKeygenRsa() (string, string, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", "", err
+	}
+	var privKeyBuf bytes.Buffer
+	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
+	err = pem.Encode(&privKeyBuf, privateKeyPEM)
+	if err != nil {
+		return "", "", err
+	}
+	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return "", "", err
+	}
+	return string(ssh.MarshalAuthorizedKey(pub)), privKeyBuf.String(), nil
 }
