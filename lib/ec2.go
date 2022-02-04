@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -1763,6 +1765,68 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitForSshInput) ([]string, error
 	}
 }
 
+type EC2WaitForGoSshInput struct {
+	Selectors      []string
+	MaxWaitSeconds int
+	User           string
+	MaxConcurrency int
+	RsaPrivKey     string
+	Ed25519PrivKey string
+}
+
+func EC2WaitGoSsh(ctx context.Context, input *EC2WaitForGoSshInput) ([]string, error) {
+	for {
+		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")
+		if err != nil {
+			return nil, err
+		}
+		//
+		var instances []*ec2.Instance
+		var pendingInstances []*ec2.Instance
+		for _, instance := range allInstances {
+			switch *instance.State.Name {
+			case ec2.InstanceStateNameRunning:
+				instances = append(instances, instance)
+			case ec2.InstanceStateNamePending:
+				pendingInstances = append(pendingInstances, instance)
+			default:
+			}
+		}
+		//
+		var ips []string
+		for _, instance := range instances {
+			ips = append(ips, *instance.PublicDnsName)
+		}
+		// add an executable on PATH named `aws-ec2-ip-callback` which
+		// will be invoked with the ipv4 of all instances to be waited
+		// before each attempt
+		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(ips, " "))).Run()
+		//
+		err = EC2GoSsh(context.Background(), &EC2GoSshInput{
+			User:           input.User,
+			TimeoutSeconds: 10,
+			Instances:      instances,
+			Cmd:            "whoami >/dev/null",
+			MaxConcurrency: input.MaxConcurrency,
+			Stdout:         os.Stdout,
+			Stderr:         os.Stderr,
+			RsaPrivKey:     input.RsaPrivKey,
+			Ed25519PrivKey: input.Ed25519PrivKey,
+		})
+		for _, instance := range pendingInstances {
+			fmt.Fprintf(os.Stderr, "unready: %s\n", Red(*instance.InstanceId))
+		}
+		if err == nil && len(pendingInstances) == 0 {
+			var ids []string
+			for _, instance := range instances {
+				ids = append(ids, *instance.InstanceId)
+			}
+			return ids, nil
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
 type EC2NewAmiInput struct {
 	Selectors []string
 	Wait      bool
@@ -1954,6 +2018,172 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 			Logger.Println("error:", err)
 			return err
 		}
+	}
+	return nil
+}
+
+type EC2GoSshInput struct {
+	NoTTY          bool
+	Instances      []*ec2.Instance
+	Cmd            string
+	TimeoutSeconds int
+	MaxConcurrency int
+	User           string
+	Stdout         io.WriteCloser
+	Stderr         io.WriteCloser
+	Stdin          string
+	RsaPrivKey     string
+	Ed25519PrivKey string
+}
+
+func pubKey(privKey string) (ssh.AuthMethod, error) {
+	signer, err := ssh.ParsePrivateKey([]byte(privKey))
+	if err != nil {
+		return nil, err
+	}
+	return ssh.PublicKeys(signer), nil
+}
+
+func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) error {
+	if len(input.Instances) == 0 {
+		err := fmt.Errorf("no instances")
+		Logger.Println("error:", err)
+		return err
+	}
+	if input.User == "" {
+		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
+		for _, instance := range input.Instances[1:] {
+			user := EC2GetTag(instance.Tags, "user", "")
+			if input.User != user {
+				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
+		if input.User == "" {
+			err := fmt.Errorf("no user provied and no user tag available")
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	//
+	auth := []ssh.AuthMethod{}
+	//
+	if input.RsaPrivKey != "" {
+		key, err := pubKey(input.RsaPrivKey)
+		if err == nil {
+			auth = append(auth, key)
+		}
+	} else if input.Ed25519PrivKey != "" {
+		key, err := pubKey(input.Ed25519PrivKey)
+		if err == nil {
+			auth = append(auth, key)
+		}
+	} else {
+		err := fmt.Errorf("one of RsaPrivKey or Ed25519PrivKey must be provided")
+		Logger.Println("error:", err)
+		return err
+	}
+	//
+	config := &ssh.ClientConfig{
+		User:            input.User,
+		Auth:            auth,
+		Timeout:         5 * time.Second,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+	//
+	if input.MaxConcurrency == 0 {
+		input.MaxConcurrency = 32
+	}
+	if input.TimeoutSeconds != 0 {
+		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, time.Duration(input.TimeoutSeconds)*time.Second)
+		defer timeoutCancel()
+		ctx = timeoutCtx
+	}
+	done := make(chan error, len(input.Instances))
+	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for _, instance := range input.Instances {
+		go func(instance *ec2.Instance) {
+			err := concurrency.Acquire(cancelCtx, 1)
+			if err != nil {
+				done <- err
+				return
+			}
+			defer concurrency.Release(1)
+			done <- ec2GoSsh(cancelCtx, config, instance, input)
+		}(instance)
+	}
+	var errLast error
+	for range input.Instances {
+		err := <-done
+		if err != nil {
+			cancel()
+			errLast = err
+		}
+	}
+	//
+	return errLast
+}
+
+func sshDialContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	var d net.Dialer
+	dialContext, dialCancel := context.WithTimeout(ctx, config.Timeout)
+	defer dialCancel()
+	conn, err := d.DialContext(dialContext, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewClient(c, chans, reqs), nil
+}
+
+func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, instance *ec2.Instance, input *EC2GoSshInput) error {
+	sshConn, err := sshDialContext(ctx, "tcp", fmt.Sprintf("%s:22", *instance.PublicDnsName), config)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	defer func() { _ = sshConn.Close() }()
+	//
+	sshSession, err := sshConn.NewSession()
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	defer func() { _ = sshSession.Close() }()
+	//
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	sshSession.Stdout = input.Stdout
+	sshSession.Stderr = input.Stderr
+	//
+	if !input.NoTTY {
+		err = sshSession.RequestPty("xterm", 80, 24, ssh.TerminalModes{})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	cmd := ec2SshRemoteCmd(input.Cmd, input.Stdin, *instance.InstanceId)
+	runContext, runCancel := context.WithCancel(ctx)
+	defer runCancel()
+	go func() {
+		<-runContext.Done()
+		_ = sshSession.Close()
+		_ = sshConn.Close()
+	}()
+	err = sshSession.Run(cmd)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
 	return nil
 }
