@@ -1740,7 +1740,7 @@ func lambdaCreateZipGo(pth string, _ []string, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		err = shellAt(dir, "zip %s ./main", zipFile)
+		err = shellAt(dir, "zip -9 %s ./main", zipFile)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -1814,7 +1814,7 @@ func lambdaCreateZipPy(pth string, requires []string, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		err = shellAt(site_package, "zip -r %s .", zipFile)
+		err = shellAt(site_package, "zip -9 -r %s .", zipFile)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -1863,7 +1863,7 @@ func LambdaIncludeInZip(pth string, includes []string, preview bool) error {
 					panic(err)
 				}
 				if !preview {
-					err := shellAt(dir, "zip -r %s '%s'", zipFile, pth)
+					err := shellAt(dir, "zip -9 -r %s '%s'", zipFile, pth)
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
@@ -1877,7 +1877,7 @@ func LambdaIncludeInZip(pth string, includes []string, preview bool) error {
 				if strings.HasPrefix(include, "/") {
 					args = "--junk-paths"
 				}
-				err := shellAt(dir, "zip %s -r %s '%s'", args, zipFile, include)
+				err := shellAt(dir, "zip -9 %s -r %s '%s'", args, zipFile, include)
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
@@ -1913,7 +1913,7 @@ func lambdaUpdateZipPy(pth string, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		err = shellAt(site_package, "zip %s %s", zipFile, path.Base(pth))
+		err = shellAt(site_package, "zip -9 %s %s", zipFile, path.Base(pth))
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
