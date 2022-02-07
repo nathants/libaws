@@ -15,7 +15,8 @@ func init() {
 }
 
 type logsTailArgs struct {
-	Name string `arg:"positional,required"`
+	Name      string `arg:"positional,required"`
+	FromHours int    `arg:"-f,--from-hours" default:"0" help:"get data no older than this"`
 }
 
 func (logsTailArgs) Description() string {
@@ -26,7 +27,8 @@ func logsTail() {
 	var args logsTailArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.LogsTail(ctx, args.Name, func(timestamp time.Time, line string) {
+	minAge := time.Now().Add(-1 * time.Hour * time.Duration(args.FromHours))
+	err := lib.LogsTail(ctx, args.Name, minAge, func(timestamp time.Time, line string) {
 		fmt.Println(timestamp, line)
 	})
 	if err != nil {

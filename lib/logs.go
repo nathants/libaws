@@ -94,6 +94,18 @@ func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
 }
 
 func LogsMostRecentStreams(ctx context.Context, name string) ([]*cloudwatchlogs.LogStream, error) {
+	out, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
+		LogGroupName: aws.String(name),
+		Descending:   aws.Bool(true),
+		OrderBy:      aws.String(cloudwatchlogs.OrderByLastEventTime),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out.LogStreams, nil
+}
+
+func LogsStreams(ctx context.Context, name string) ([]*cloudwatchlogs.LogStream, error) {
 	var res []*cloudwatchlogs.LogStream
 	var token *string
 	for {
@@ -115,9 +127,9 @@ func LogsMostRecentStreams(ctx context.Context, name string) ([]*cloudwatchlogs.
 	return res, nil
 }
 
-func LogsTail(ctx context.Context, name string, callback func(timestamp time.Time, line string)) error {
+func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(timestamp time.Time, line string)) error {
 	tokens := make(map[string]*string)
-	started := make(map[string]bool)
+	minAges := make(map[string]time.Time)
 	for {
 		streams, err := LogsMostRecentStreams(ctx, name)
 		if err != nil {
@@ -138,12 +150,16 @@ func LogsTail(ctx context.Context, name string, callback func(timestamp time.Tim
 			if len(out.Events) != 0 {
 				tokens[streamName] = out.NextForwardToken
 			}
-			if !started[streamName] {
-				started[streamName] = true
-				data = true
-				continue
+			min, ok := minAges[streamName]
+			if !ok {
+				min = minAge
 			}
 			for _, log := range out.Events {
+				ts := time.UnixMilli(*log.IngestionTime)
+				if !ts.After(min) {
+					continue
+				}
+				minAges[streamName] = ts
 				data = true
 				callback(time.UnixMilli(*log.Timestamp), strings.TrimRight(strings.ReplaceAll(*log.Message, "\t", " "), "\n"))
 			}
