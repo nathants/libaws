@@ -81,7 +81,22 @@ func Json(i interface{}) string {
 	return string(val)
 }
 
+func PformatAlways(i interface{}) string {
+	val, err := json.MarshalIndent(i, "", "    ")
+	if err != nil {
+		panic(err)
+	}
+	return string(val)
+}
+
 func Pformat(i interface{}) string {
+	if !isatty.IsTerminal(os.Stdout.Fd()) {
+		val, err := json.Marshal(i)
+		if err != nil {
+			panic(err)
+		}
+		return string(val)
+	}
 	val, err := json.MarshalIndent(i, "", "    ")
 	if err != nil {
 		panic(err)
