@@ -49,6 +49,9 @@ func useSubnetsFromVpc(ctx context.Context, args *ec2NewArgs) {
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
+		if len(zones) == 0 {
+			lib.Logger.Fatal("error: no zones contain instance type " + args.Type)
+		}
 		vpcID := args.Vpc
 		if !strings.HasPrefix("vpc-", args.Vpc) {
 			vpcID, err = lib.VpcID(ctx, args.Vpc)
