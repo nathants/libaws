@@ -17,6 +17,7 @@ var Logger = &LoggerStruct{
 	Print: func(args ...interface{}) {
 		fmt.Fprint(os.Stderr, args...)
 	},
+	Flush: func() {},
 	disabled: strings.ToLower(os.Getenv("LOGGING") + " ")[:1] == "n",
 }
 
