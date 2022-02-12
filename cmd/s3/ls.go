@@ -71,25 +71,32 @@ func s3Ls() {
 			lib.Logger.Fatal("error: ", err)
 		}
 		var delimiter *string
-		if !args.Recursive {
+		var startAfter *string
+		var prefix *string
+		if args.Recursive {
+			startAfter = aws.String(key)
+		} else {
+			prefix = aws.String(key)
 			delimiter = aws.String("/")
 		}
 		var token *string
 		for {
-			out, err := s3Client.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
+			input := &s3.ListObjectsV2Input{
 				Bucket:            aws.String(bucket),
-				Prefix:            aws.String(key),
+				StartAfter:        startAfter,
+				Prefix:            prefix,
 				Delimiter:         delimiter,
 				ContinuationToken: token,
-			})
+			}
+			out, err := s3Client.ListObjectsV2WithContext(ctx, input)
 			if err != nil {
 				lib.Logger.Fatal("error: ", err)
 			}
 
 			for _, pre := range out.CommonPrefixes {
-				prefix := *pre.Prefix
+				p := *pre.Prefix
 				if splitKey != "" {
-					prefix = strings.SplitN(prefix, splitKey, 2)[1]
+					p = strings.SplitN(p, splitKey, 2)[1]
 				}
 				if args.Quiet {
 					path := args.Path
@@ -97,9 +104,9 @@ func s3Ls() {
 						parts := strings.Split(args.Path, "/")
 						path = strings.Join(parts[:len(parts)-1], "/") + "/"
 					}
-					fmt.Println(path + prefix)
+					fmt.Println(path + p)
 				} else {
-					fmt.Println(" PRE", prefix)
+					fmt.Println(" PRE", p)
 				}
 			}
 
