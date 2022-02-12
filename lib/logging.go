@@ -8,13 +8,13 @@ import (
 )
 
 type LoggerStruct struct {
-	PrintFn  func(args ...interface{})
-	FlushFn  func()
+	Print    func(args ...interface{})
+	Flush    func()
 	disabled bool
 }
 
 var Logger = &LoggerStruct{
-	PrintFn: func(args ...interface{}) {
+	Print: func(args ...interface{}) {
 		fmt.Fprint(os.Stderr, args...)
 	},
 	disabled: strings.ToLower(os.Getenv("LOGGING") + " ")[:1] == "n",
@@ -41,13 +41,13 @@ func (l *LoggerStruct) Println(v ...interface{}) {
 		}
 		r = append(r, strings.Join(xs, " "))
 		r = append(r, "\n")
-		l.PrintFn(r...)
+		l.Print(r...)
 	}
 }
 
 func (l *LoggerStruct) Printf(format string, v ...interface{}) {
 	if !l.disabled {
-		l.PrintFn(fmt.Sprintf(caller()+format, v...))
+		l.Print(fmt.Sprintf(caller()+format, v...))
 	}
 }
 
@@ -60,13 +60,13 @@ func (l *LoggerStruct) Fatal(v ...interface{}) {
 	}
 	r = append(r, strings.Join(xs, " "))
 	r = append(r, "\n")
-	l.PrintFn(r...)
-	l.FlushFn()
+	l.Print(r...)
+	l.Flush()
 	os.Exit(1)
 }
 
 func (l *LoggerStruct) Fatalf(format string, v ...interface{}) {
-	l.PrintFn(fmt.Sprintf(caller()+format, v...))
-	l.FlushFn()
+	l.Print(fmt.Sprintf(caller()+format, v...))
+	l.Flush()
 	os.Exit(1)
 }
