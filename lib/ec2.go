@@ -2146,20 +2146,17 @@ func sshDialContext(ctx context.Context, network, addr string, config *ssh.Clien
 func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, instance *ec2.Instance, input *EC2GoSshInput) error {
 	sshConn, err := sshDialContext(ctx, "tcp", fmt.Sprintf("%s:22", *instance.PublicDnsName), config)
 	if err != nil {
-		Logger.Println("error:", err)
 		return err
 	}
 	defer func() { _ = sshConn.Close() }()
 	//
 	sshSession, err := sshConn.NewSession()
 	if err != nil {
-		Logger.Println("error:", err)
 		return err
 	}
 	defer func() { _ = sshSession.Close() }()
 	//
 	if err != nil {
-		Logger.Println("error:", err)
 		return err
 	}
 	sshSession.Stdout = input.Stdout
@@ -2168,7 +2165,6 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, instance *ec2.Insta
 	if !input.NoTTY {
 		err = sshSession.RequestPty("xterm", 80, 24, ssh.TerminalModes{})
 		if err != nil {
-			Logger.Println("error:", err)
 			return err
 		}
 	}
@@ -2182,7 +2178,6 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, instance *ec2.Insta
 	}()
 	err = sshSession.Run(cmd)
 	if err != nil {
-		Logger.Println("error:", err)
 		return err
 	}
 	return nil
