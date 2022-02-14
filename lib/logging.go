@@ -5,12 +5,16 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
 )
 
 type LoggerStruct struct {
 	Print    func(args ...interface{})
 	Flush    func()
 	disabled bool
+	start    *time.Time
 }
 
 var Logger = &LoggerStruct{
@@ -34,7 +38,11 @@ func caller() string {
 
 func (l *LoggerStruct) Println(v ...interface{}) {
 	if !l.disabled {
+		if l.start == nil {
+			l.start = aws.Time(time.Now())
+		}
 		var r []interface{}
+		r = append(r, fmt.Sprintf("t+%d", int(time.Since(*l.start).Seconds())))
 		r = append(r, caller())
 		var xs []string
 		for _, x := range v {
