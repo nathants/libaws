@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -62,29 +64,40 @@ func S3BucketRegion(bucket string) (string, error) {
 	defer s3BucketRegionLock.Unlock()
 	region, ok := s3BucketRegion[bucket]
 	if !ok {
-		resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
-		if err != nil {
-			return "", err
-		}
-		err = resp.Body.Close()
-		if err != nil {
-			return "", err
-		}
-		switch resp.StatusCode {
-		case 200:
-		case 400:
-		case 403:
-		case 404:
-			err := awserr.New(s3.ErrCodeNoSuchBucket, bucket, nil)
-			return "", err
-		default:
-			err := fmt.Errorf("http %d for %s", resp.StatusCode, bucket)
-			Logger.Println("error:", err)
-			return "", err
-		}
-		region = resp.Header.Get("x-amz-bucket-region")
-		if region == "" {
-			return "", fmt.Errorf("empty x-amz-bucket-region for bucket: %s", bucket)
+		cacheFile := "/tmp/aws.s3.bucket.region=" + bucket
+		data, err := ioutil.ReadFile(cacheFile)
+		if err == nil {
+			region = string(data)
+		} else {
+			resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
+			if err != nil {
+				return "", err
+			}
+			err = resp.Body.Close()
+			if err != nil {
+				return "", err
+			}
+			switch resp.StatusCode {
+			case 200:
+			case 400:
+			case 403:
+			case 404:
+				err := awserr.New(s3.ErrCodeNoSuchBucket, bucket, nil)
+				return "", err
+			default:
+				err := fmt.Errorf("http %d for %s", resp.StatusCode, bucket)
+				Logger.Println("error:", err)
+				return "", err
+			}
+			region = resp.Header.Get("x-amz-bucket-region")
+			if region == "" {
+				return "", fmt.Errorf("empty x-amz-bucket-region for bucket: %s", bucket)
+			}
+			err = ioutil.WriteFile(cacheFile, []byte(region), os.ModePerm)
+			if err != nil {
+				Logger.Println("error:", err)
+				return "", err
+			}
 		}
 		s3BucketRegion[bucket] = region
 	}

@@ -19,7 +19,7 @@ func init() {
 }
 
 type s3GetArgs struct {
-	Path    string `arg:"positional"`
+	Path string `arg:"positional"`
 }
 
 func (s3GetArgs) Description() string {
@@ -49,8 +49,8 @@ func s3Get() {
 	}
 
 	out, err := s3Client.GetObjectWithContext(ctx, &s3.GetObjectInput{
-		Bucket:    aws.String(bucket),
-		Key:       aws.String(key),
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
