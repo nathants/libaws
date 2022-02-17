@@ -60,7 +60,7 @@ func (l *LoggerStruct) Println(v ...interface{}) {
 
 func (l *LoggerStruct) Printf(format string, v ...interface{}) {
 	if !l.disabled {
-		l.Print(fmt.Sprintf(caller()+format, v...))
+		l.Print(fmt.Sprintf(l.seconds()+caller()+format, v...))
 	}
 }
 
