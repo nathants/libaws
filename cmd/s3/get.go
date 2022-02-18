@@ -31,10 +31,6 @@ func s3Get() {
 	arg.MustParse(&args)
 	ctx := context.Background()
 
-	if !strings.HasPrefix(args.Path, "s3://") {
-		lib.Logger.Fatalf("path must begin with s3://, got: %s", args.Path)
-	}
-
 	path := lib.Last(strings.Split(args.Path, "s3://"))
 	parts := strings.Split(path, "/")
 	bucket := parts[0]

@@ -26,17 +26,13 @@ type s3RmVersionsArgs struct {
 }
 
 func (s3RmVersionsArgs) Description() string {
-	return "\nlist s3 content versions\n"
+	return "\nrm s3 content versions\n"
 }
 
 func s3RmVersions() {
 	var args s3RmVersionsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-
-	if !strings.HasPrefix(args.Path, "s3://") {
-		lib.Logger.Fatalf("path must begin with s3://, got: %s", args.Path)
-	}
 
 	path := lib.Last(strings.Split(args.Path, "s3://"))
 	parts := strings.Split(path, "/")

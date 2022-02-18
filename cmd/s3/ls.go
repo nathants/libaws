@@ -138,7 +138,7 @@ func s3Ls() {
 				}
 			}
 
-			if !*out.IsTruncated {
+			if out.ContinuationToken == nil {
 				break
 			}
 
