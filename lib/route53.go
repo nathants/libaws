@@ -320,7 +320,7 @@ func Route53ListRecords(ctx context.Context, zoneId string) ([]*route53.Resource
 			return nil, err
 		}
 		records = append(records, out.ResourceRecordSets...)
-		if !*out.IsTruncated {
+		if out.NextRecordIdentifier == nil && out.NextRecordName == nil && out.NextRecordType == nil {
 			break
 		}
 		nextId = out.NextRecordIdentifier
@@ -344,7 +344,7 @@ func Route53ListZones(ctx context.Context) ([]*route53.HostedZone, error) {
 			return nil, err
 		}
 		zones = append(zones, out.HostedZones...)
-		if !*out.IsTruncated {
+		if out.NextDNSName == nil && out.NextHostedZoneId == nil {
 			break
 		}
 		nextDns = out.NextDNSName

@@ -151,7 +151,7 @@ func s3RmVersions() {
 				}
 
 			}
-			if !*out.IsTruncated {
+			if out.NextKeyMarker == nil && out.NextVersionIdMarker == nil {
 				break
 			}
 

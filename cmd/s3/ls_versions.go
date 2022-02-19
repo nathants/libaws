@@ -153,7 +153,7 @@ func s3LsVersions() {
 				)
 			}
 
-			if !*out.IsTruncated {
+			if out.NextKeyMarker == nil && out.NextVersionIdMarker == nil {
 				break
 			}
 			keyMarker = out.NextKeyMarker

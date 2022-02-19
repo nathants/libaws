@@ -691,7 +691,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 				return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, errs)
 			}
 		}
-		if !*out.IsTruncated {
+		if out.NextMarker == nil {
 			break
 		}
 		marker = out.NextMarker
@@ -756,7 +756,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 			}
 			Logger.Println(PreviewString(preview)+"s3 deleted:", *obj.Key, version)
 		}
-		if !*out.IsTruncated {
+		if out.NextKeyMarker == nil && out.NextVersionIdMarker == nil {
 			break
 		}
 		keyMarker = out.NextKeyMarker

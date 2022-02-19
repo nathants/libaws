@@ -94,7 +94,7 @@ func IamListPolicies(ctx context.Context) ([]*iam.Policy, error) {
 			return nil, err
 		}
 		policies = append(policies, out.Policies...)
-		if !*out.IsTruncated {
+		if out.Marker == nil {
 			break
 		}
 		marker = out.Marker
@@ -117,7 +117,7 @@ func IamListRoles(ctx context.Context, pathPrefix string) ([]*iam.Role, error) {
 			return nil, err
 		}
 		roles = append(roles, out.Roles...)
-		if !*out.IsTruncated {
+		if out.Marker == nil {
 			break
 		}
 		marker = out.Marker
@@ -372,7 +372,7 @@ func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*iam.In
 			return nil, err
 		}
 		profiles = append(profiles, out.InstanceProfiles...)
-		if !*out.IsTruncated {
+		if out.Marker == nil {
 			break
 		}
 		marker = out.Marker
@@ -477,7 +477,7 @@ func IamListSSHPublicKeys(ctx context.Context) ([]*iam.SSHPublicKeyMetadata, err
 			return nil, err
 		}
 		keys = append(keys, out.SSHPublicKeys...)
-		if !*out.IsTruncated {
+		if out.Marker == nil {
 			break
 		}
 		marker = out.Marker
@@ -572,9 +572,10 @@ func IamListUserPolicies(ctx context.Context, username string) ([]string, error)
 			return nil, err
 		}
 		policies = append(policies, StringSlice(out.PolicyNames)...)
-		if !*out.IsTruncated {
+		if out.Marker == nil {
 			break
 		}
+		marker = out.Marker
 	}
 	return policies, nil
 }
@@ -678,7 +679,7 @@ func IamListRolePolicies(ctx context.Context, roleName string) ([]*iam.AttachedP
 			return nil, err
 		}
 		policies = append(policies, out.AttachedPolicies...)
-		if !*out.IsTruncated {
+		if out.Marker == nil {
 			break
 		}
 		marker = out.Marker
@@ -719,7 +720,7 @@ func IamListRoleAllows(ctx context.Context, roleName string) ([]*iamAllow, error
 			}
 			iamAllows = append(iamAllows, allow)
 		}
-		if !*out.IsTruncated {
+		if out.Marker == nil {
 			break
 		}
 		marker = out.Marker
@@ -739,7 +740,7 @@ func IamListUsers(ctx context.Context) ([]*iam.User, error) {
 			return nil, err
 		}
 		result = append(result, out.Users...)
-		if !*out.IsTruncated {
+		if out.Marker == nil {
 			break
 		}
 		marker = out.Marker
