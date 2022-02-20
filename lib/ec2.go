@@ -2050,6 +2050,9 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) error {
 		Logger.Println("error:", err)
 		return err
 	}
+	if !strings.HasPrefix(input.Cmd, "#!") && !strings.HasPrefix(input.Cmd, "set ") {
+		input.Cmd = "#!/bin/bash\nset -eou pipefail\n" + input.Cmd
+	}
 	if input.User == "" {
 		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
 		for _, instance := range input.Instances[1:] {
