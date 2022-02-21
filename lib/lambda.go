@@ -1862,6 +1862,9 @@ func LambdaIncludeInZip(pth string, includes []string, preview bool) error {
 				if err != nil {
 					panic(err)
 				}
+				if !Exists(path.Join(dir, pth)) {
+					continue
+				}
 				if !preview {
 					err := shellAt(dir, "zip -9 -r %s '%s'", zipFile, pth)
 					if err != nil {
@@ -1872,6 +1875,9 @@ func LambdaIncludeInZip(pth string, includes []string, preview bool) error {
 				Logger.Printf(PreviewString(preview)+"include in zip for %s: %s\n", name, pth)
 			}
 		} else {
+			if !Exists(path.Join(dir, include)) {
+				continue
+			}
 			if !preview {
 				args := ""
 				if strings.HasPrefix(include, "/") {
