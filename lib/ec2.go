@@ -847,6 +847,7 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 	rsyncCmd := []string{
 		"rsync",
 		"-avh",
+		"--delete",
 	}
 	if input.Key != "" {
 		rsyncCmd = append(rsyncCmd, []string{"-e", fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no", input.Key)}...)
