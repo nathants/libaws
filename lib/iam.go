@@ -816,3 +816,62 @@ func IamDeleteRole(ctx context.Context, name string, preview bool) error {
 	Logger.Println(PreviewString(preview)+"deleted role:", name)
 	return nil
 }
+
+func IamEnsureEC2Roles(ctx context.Context) error {
+	roleName := "aws-ec2-spot-fleet-tagging-role"
+	doc := IamPolicyDocument{
+		Version: "2012-10-17",
+		Id:      roleName,
+		Statement: []IamStatementEntry{{
+			Sid:       roleName,
+			Effect:    "Allow",
+			Principal: map[string]string{"Service": "spotfleet.amazonaws.com"},
+			Action:    "sts:AssumeRole",
+		}},
+	}
+	bytes, err := json.Marshal(doc)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	_, err = IamClient().CreateRoleWithContext(ctx, &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
+		AssumeRolePolicyDocument: aws.String(string(bytes)),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeEntityAlreadyExistsException {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	_, err = IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
+		RoleName:  aws.String(roleName),
+		PolicyArn: aws.String("arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	_, err = IamClient().CreateServiceLinkedRoleWithContext(ctx, &iam.CreateServiceLinkedRoleInput{
+		AWSServiceName: aws.String("spot.amazonaws.com"),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "InvalidInput" { // already exists
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	_, err = IamClient().CreateServiceLinkedRoleWithContext(ctx, &iam.CreateServiceLinkedRoleInput{
+		AWSServiceName: aws.String("spotfleet.amazonaws.com"),
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "InvalidInput" { // already exists
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	return nil
+}
