@@ -447,3 +447,15 @@ func SshKeygenRsa() (string, string, error) {
 	}
 	return string(ssh.MarshalAuthorizedKey(pub)), privKeyBuf.String(), nil
 }
+
+func FromUnixMilli(msec int64) time.Time {
+	return time.Unix(msec/1e3, (msec%1e3)*1e6)
+}
+
+func NowUnixMilli() int64 {
+	return time.Now().UTC().UnixNano() / int64(time.Millisecond)
+}
+
+func ToUnixMilli(t time.Time) int64 {
+	return t.UnixNano() / int64(time.Millisecond)
+}

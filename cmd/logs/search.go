@@ -36,10 +36,10 @@ func logsSearch() {
 	var toTime *int64
 	if args.ToHours != 0 {
 		offset := time.Hour * time.Duration(args.ToHours)
-		toTime = aws.Int64(time.Now().UTC().UnixMilli() - offset.Milliseconds())
+		toTime = aws.Int64(lib.NowUnixMilli() - offset.Milliseconds())
 	}
 	offset := time.Hour * time.Duration(args.FromHours)
-	fromTime := aws.Int64(time.Now().UTC().UnixMilli() - offset.Milliseconds())
+	fromTime := aws.Int64(lib.NowUnixMilli() - offset.Milliseconds())
 	count := 0
 	var token *string
 

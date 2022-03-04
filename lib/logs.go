@@ -155,13 +155,13 @@ func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(
 				min = minAge
 			}
 			for _, log := range out.Events {
-				ts := time.UnixMilli(*log.IngestionTime)
+				ts := FromUnixMilli(*log.IngestionTime)
 				if !ts.After(min) {
 					continue
 				}
 				minAges[streamName] = ts
 				data = true
-				callback(time.UnixMilli(*log.Timestamp), strings.TrimRight(strings.ReplaceAll(*log.Message, "\t", " "), "\n"))
+				callback(FromUnixMilli(*log.Timestamp), strings.TrimRight(strings.ReplaceAll(*log.Message, "\t", " "), "\n"))
 			}
 		}
 		if !data {
