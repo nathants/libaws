@@ -365,7 +365,7 @@ func diffMapStringStringPointers(a, b map[string]*string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	changes, err := d.Diff(a, b)
+	changes, err := d.Diff(b, a)
 	if err != nil {
 		return false, err
 	}
@@ -399,7 +399,7 @@ func diffMapStringInt64Pointers(a, b map[string]*int64) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	changes, err := d.Diff(a, b)
+	changes, err := d.Diff(b, a)
 	if err != nil {
 		return false, err
 	}
