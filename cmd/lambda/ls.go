@@ -3,6 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/alexflint/go-arg"
@@ -29,6 +30,9 @@ func lambdaLs() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
+	sort.Slice(fns, func(i, j int) bool {
+		return *fns[i].FunctionName < *fns[j].FunctionName
+	})
 	for _, fn := range fns {
 		name := "-"
 		if fn.FunctionName != nil {
