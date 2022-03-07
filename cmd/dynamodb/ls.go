@@ -33,7 +33,11 @@ func dynamodbLs() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Fprintln(os.Stderr, "name status")
+	if args.Status {
+		fmt.Fprintln(os.Stderr, "name status")
+	} else {
+		fmt.Fprintln(os.Stderr, "name")
+	}
 	for _, table := range tables {
 		if args.Status {
 			description, err := lib.DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
