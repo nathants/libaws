@@ -15,6 +15,13 @@ var sess *session.Session
 var sessLock sync.RWMutex
 var sessRegional = make(map[string]*session.Session)
 
+func SessionClear() {
+	sessLock.Lock()
+	defer sessLock.Unlock()
+	sess = nil
+	sessRegional = make(map[string]*session.Session)
+}
+
 func Session() *session.Session {
 	sessLock.Lock()
 	defer sessLock.Unlock()
