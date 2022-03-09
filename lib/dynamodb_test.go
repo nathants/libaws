@@ -343,12 +343,12 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		[]string{},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	//
@@ -362,13 +362,13 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(table.Table.KeySchema) != 1 ||
@@ -389,23 +389,23 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		[]string{},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(table.Table.KeySchema) != 1 ||
@@ -426,23 +426,23 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		[]string{},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(table.Table.KeySchema) != 1 ||
@@ -472,12 +472,12 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	//
@@ -491,13 +491,13 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 10 {
@@ -538,23 +538,23 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 5 {
@@ -594,23 +594,23 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 5 {
@@ -648,12 +648,12 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 		[]string{},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	//
@@ -667,13 +667,13 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
@@ -695,7 +695,7 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 	}
 	tags, err := DynamoDBListTags(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(tags) != 0 {
@@ -714,23 +714,23 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
@@ -752,7 +752,7 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 	}
 	tags, err = DynamoDBListTags(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(tags) != 2 {
@@ -778,23 +778,23 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
@@ -816,7 +816,7 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 	}
 	tags, err = DynamoDBListTags(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(tags) != 1 {
@@ -846,12 +846,12 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	//
@@ -865,13 +865,13 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(table.Table.GlobalSecondaryIndexes) != 1 {
@@ -909,23 +909,23 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 			[]string{},
 		)
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 			return
 		}
 		err = DynamoDBEnsure(ctx, input, false)
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 			return
 		}
 		err = DynamoDBWaitForReady(ctx, name)
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 		}
 		table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 			TableName: aws.String(name),
 		})
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 			return
 		}
 		if len(table.Table.GlobalSecondaryIndexes) != 0 {
@@ -950,23 +950,23 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 			},
 		)
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 			return
 		}
 		err = DynamoDBEnsure(ctx, input, false)
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 			return
 		}
 		err = DynamoDBWaitForReady(ctx, name)
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 		}
 		table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 			TableName: aws.String(name),
 		})
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 			return
 		}
 		if len(table.Table.GlobalSecondaryIndexes) != 2 {
@@ -1037,12 +1037,12 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	//
@@ -1056,13 +1056,13 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(table.Table.GlobalSecondaryIndexes) != 1 {
@@ -1082,12 +1082,12 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		[]string{},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	//
@@ -1097,7 +1097,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 			TableName: aws.String(name),
 		})
 		if err != nil {
-			t.Errorf("%w", err)
+			t.Errorf("%v", err)
 			return
 		}
 		if len(table.Table.GlobalSecondaryIndexes) == 0 {
@@ -1132,12 +1132,12 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	//
@@ -1151,13 +1151,13 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(table.Table.LocalSecondaryIndexes) != 1 {
@@ -1213,12 +1213,12 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	//
@@ -1232,13 +1232,13 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 	}
 	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
 		TableName: aws.String(name),
 	})
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	if len(table.Table.LocalSecondaryIndexes) != 1 {
@@ -1259,7 +1259,7 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		[]string{},
 	)
 	if err != nil {
-		t.Errorf("%w", err)
+		t.Errorf("%v", err)
 		return
 	}
 	err = DynamoDBEnsure(ctx, input, false)
