@@ -57,6 +57,13 @@ const (
 var lambdaClient *lambda.Lambda
 var lambdaClientLock sync.RWMutex
 
+func LambdaClientClear() {
+	lambdaClientLock.Lock()
+	defer lambdaClientLock.Unlock()
+	lambdaClient = nil
+	sessionClear()
+}
+
 func LambdaClient() *lambda.Lambda {
 	lambdaClientLock.Lock()
 	defer lambdaClientLock.Unlock()

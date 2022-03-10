@@ -10,6 +10,13 @@ import (
 var acmClient *acm.ACM
 var acmClientLock sync.RWMutex
 
+func AcmClientClear() {
+	acmClientLock.Lock()
+	defer acmClientLock.Unlock()
+	acmClient = nil
+	sessionClear()
+}
+
 func AcmClient() *acm.ACM {
 	acmClientLock.Lock()
 	defer acmClientLock.Unlock()

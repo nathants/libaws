@@ -10,6 +10,13 @@ import (
 var codeCommitClient *codecommit.CodeCommit
 var codeCommitClientLock sync.RWMutex
 
+func CodeCommitClientClear() {
+	codeCommitClientLock.Lock()
+	defer codeCommitClientLock.Unlock()
+	codeCommitClient = nil
+	sessionClear()
+}
+
 func CodeCommitClient() *codecommit.CodeCommit {
 	codeCommitClientLock.Lock()
 	defer codeCommitClientLock.Unlock()

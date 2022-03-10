@@ -14,6 +14,13 @@ import (
 var ecrClient *ecr.ECR
 var ecrClientLock sync.RWMutex
 
+func EcrClientClear() {
+	ecrClientLock.Lock()
+	defer ecrClientLock.Unlock()
+	ecrClient = nil
+	sessionClear()
+}
+
 func EcrClient() *ecr.ECR {
 	ecrClientLock.Lock()
 	defer ecrClientLock.Unlock()

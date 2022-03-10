@@ -17,6 +17,13 @@ import (
 var dynamoDBClient *dynamodb.DynamoDB
 var dynamoDBClientLock sync.RWMutex
 
+func DynamoDBClientClear() {
+	dynamoDBClientLock.Lock()
+	defer dynamoDBClientLock.Unlock()
+	dynamoDBClient = nil
+	sessionClear()
+}
+
 func DynamoDBClient() *dynamodb.DynamoDB {
 	dynamoDBClientLock.Lock()
 	defer dynamoDBClientLock.Unlock()

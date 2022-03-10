@@ -14,6 +14,13 @@ import (
 var cloudwatchClient *cloudwatch.CloudWatch
 var cloudwatchClientLock sync.RWMutex
 
+func CloudwatchClientClear() {
+	cloudwatchClientLock.Lock()
+	defer cloudwatchClientLock.Unlock()
+	cloudwatchClient = nil
+	sessionClear()
+}
+
 func CloudwatchClient() *cloudwatch.CloudWatch {
 	cloudwatchClientLock.Lock()
 	defer cloudwatchClientLock.Unlock()

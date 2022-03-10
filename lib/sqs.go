@@ -15,6 +15,13 @@ import (
 var sqsClient *sqs.SQS
 var sqsClientLock sync.RWMutex
 
+func SQSClientClear() {
+	sqsClientLock.Lock()
+	defer sqsClientLock.Unlock()
+	sqsClient = nil
+	sessionClear()
+}
+
 func SQSClient() *sqs.SQS {
 	sqsClientLock.Lock()
 	defer sqsClientLock.Unlock()

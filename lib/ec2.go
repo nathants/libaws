@@ -45,6 +45,13 @@ const (
 var ec2Client *ec2.EC2
 var ec2ClientLock sync.RWMutex
 
+func EC2ClientClear() {
+	ec2ClientLock.Lock()
+	defer ec2ClientLock.Unlock()
+	ec2Client = nil
+	sessionClear()
+}
+
 func EC2Client() *ec2.EC2 {
 	ec2ClientLock.Lock()
 	defer ec2ClientLock.Unlock()

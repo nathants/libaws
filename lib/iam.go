@@ -17,6 +17,13 @@ import (
 var iamClient *iam.IAM
 var iamClientLock sync.RWMutex
 
+func IamClientClear() {
+	iamClientLock.Lock()
+	defer iamClientLock.Unlock()
+	iamClient = nil
+	sessionClear()
+}
+
 func IamClient() *iam.IAM {
 	iamClientLock.Lock()
 	defer iamClientLock.Unlock()

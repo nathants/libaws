@@ -29,6 +29,13 @@ var (
 var apiClient *apigateway.APIGateway
 var apiClientLock sync.RWMutex
 
+func ApiClientClear() {
+	apiClientLock.Lock()
+	defer apiClientLock.Unlock()
+	apiClient = nil
+	sessionClear()
+}
+
 func ApiClient() *apigateway.APIGateway {
 	apiClientLock.Lock()
 	defer apiClientLock.Unlock()

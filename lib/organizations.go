@@ -13,6 +13,13 @@ import (
 var organizationsClient *organizations.Organizations
 var organizationsClientLock sync.RWMutex
 
+func OrganizationsClientClear() {
+	organizationsClientLock.Lock()
+	defer organizationsClientLock.Unlock()
+	organizationsClient = nil
+	sessionClear()
+}
+
 func OrganizationsClient() *organizations.Organizations {
 	organizationsClientLock.Lock()
 	defer organizationsClientLock.Unlock()

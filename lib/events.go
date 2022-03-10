@@ -11,6 +11,13 @@ import (
 var eventsClient *cloudwatchevents.CloudWatchEvents
 var eventsClientLock sync.RWMutex
 
+func EventsClientClear() {
+	eventsClientLock.Lock()
+	defer eventsClientLock.Unlock()
+	eventsClient = nil
+	sessionClear()
+}
+
 func EventsClient() *cloudwatchevents.CloudWatchEvents {
 	eventsClientLock.Lock()
 	defer eventsClientLock.Unlock()

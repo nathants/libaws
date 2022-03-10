@@ -11,6 +11,13 @@ import (
 var ecsClient *ecs.ECS
 var ecsClientLock sync.RWMutex
 
+func ECSClientClear() {
+	ecsClientLock.Lock()
+	defer ecsClientLock.Unlock()
+	ecsClient = nil
+	sessionClear()
+}
+
 func ECSClient() *ecs.ECS {
 	ecsClientLock.Lock()
 	defer ecsClientLock.Unlock()

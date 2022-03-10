@@ -11,6 +11,13 @@ import (
 var stsClient *sts.STS
 var stsClientLock sync.RWMutex
 
+func STSClientClear() {
+	stsClientLock.Lock()
+	defer stsClientLock.Unlock()
+	stsClient = nil
+	sessionClear()
+}
+
 func STSClient() *sts.STS {
 	stsClientLock.Lock()
 	defer stsClientLock.Unlock()
