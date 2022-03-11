@@ -24,12 +24,8 @@ var s3Client *s3.S3
 var s3ClientLock sync.RWMutex
 var s3ClientsRegional = make(map[string]*s3.S3)
 
-func S3ClientClear() {
-	s3ClientLock.Lock()
-	defer s3ClientLock.Unlock()
-	s3Client = nil
-	s3ClientsRegional = make(map[string]*s3.S3)
-	sessionClear()
+func S3ClientExplicit(accessKeyID, accessKeySecret, region string) *s3.S3 {
+	return s3.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func S3Client() *s3.S3 {

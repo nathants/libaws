@@ -17,11 +17,8 @@ import (
 var dynamoDBClient *dynamodb.DynamoDB
 var dynamoDBClientLock sync.RWMutex
 
-func DynamoDBClientClear() {
-	dynamoDBClientLock.Lock()
-	defer dynamoDBClientLock.Unlock()
-	dynamoDBClient = nil
-	sessionClear()
+func DynamoDBClientExplicit(accessKeyID, accessKeySecret, region string) *dynamodb.DynamoDB {
+	return dynamodb.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func DynamoDBClient() *dynamodb.DynamoDB {

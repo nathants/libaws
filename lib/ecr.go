@@ -14,11 +14,8 @@ import (
 var ecrClient *ecr.ECR
 var ecrClientLock sync.RWMutex
 
-func EcrClientClear() {
-	ecrClientLock.Lock()
-	defer ecrClientLock.Unlock()
-	ecrClient = nil
-	sessionClear()
+func EcrClientExplicit(accessKeyID, accessKeySecret, region string) *ecr.ECR {
+	return ecr.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func EcrClient() *ecr.ECR {

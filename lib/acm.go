@@ -10,11 +10,8 @@ import (
 var acmClient *acm.ACM
 var acmClientLock sync.RWMutex
 
-func AcmClientClear() {
-	acmClientLock.Lock()
-	defer acmClientLock.Unlock()
-	acmClient = nil
-	sessionClear()
+func AcmClientExplicit(accessKeyID, accessKeySecret, region string) *acm.ACM {
+	return acm.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func AcmClient() *acm.ACM {

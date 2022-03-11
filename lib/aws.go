@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -15,11 +16,17 @@ var sess *session.Session
 var sessLock sync.RWMutex
 var sessRegional = make(map[string]*session.Session)
 
-func sessionClear() {
-	sessLock.Lock()
-	defer sessLock.Unlock()
-	sess = nil
-	sessRegional = make(map[string]*session.Session)
+func SessionExplicit(accessKeyID, accessKeySecret, region string) *session.Session {
+	sess, err := session.NewSession(&aws.Config{
+		Region:              aws.String(region),
+		STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
+		MaxRetries:          aws.Int(5),
+		Credentials:         credentials.NewStaticCredentials(accessKeyID, accessKeySecret, ""),
+	})
+	if err != nil {
+		panic(err)
+	}
+	return sess
 }
 
 func Session() *session.Session {

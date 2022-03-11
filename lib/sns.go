@@ -13,11 +13,8 @@ import (
 var snsClient *sns.SNS
 var snsClientLock sync.RWMutex
 
-func SNSClientClear() {
-	snsClientLock.Lock()
-	defer snsClientLock.Unlock()
-	snsClient = nil
-	sessionClear()
+func SNSClientExplicit(accessKeyID, accessKeySecret, region string) *sns.SNS {
+	return sns.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func SNSClient() *sns.SNS {

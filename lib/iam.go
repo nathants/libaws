@@ -17,11 +17,8 @@ import (
 var iamClient *iam.IAM
 var iamClientLock sync.RWMutex
 
-func IamClientClear() {
-	iamClientLock.Lock()
-	defer iamClientLock.Unlock()
-	iamClient = nil
-	sessionClear()
+func IamClientExplicit(accessKeyID, accessKeySecret, region string) *iam.IAM {
+	return iam.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func IamClient() *iam.IAM {

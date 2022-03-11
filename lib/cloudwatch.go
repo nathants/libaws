@@ -14,11 +14,8 @@ import (
 var cloudwatchClient *cloudwatch.CloudWatch
 var cloudwatchClientLock sync.RWMutex
 
-func CloudwatchClientClear() {
-	cloudwatchClientLock.Lock()
-	defer cloudwatchClientLock.Unlock()
-	cloudwatchClient = nil
-	sessionClear()
+func CloudwatchClientExplicit(accessKeyID, accessKeySecret, region string) *cloudwatch.CloudWatch {
+	return cloudwatch.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func CloudwatchClient() *cloudwatch.CloudWatch {

@@ -17,11 +17,8 @@ import (
 var r53Client *route53.Route53
 var r53ClientLock sync.RWMutex
 
-func Route53ClientClear() {
-	r53ClientLock.Lock()
-	defer r53ClientLock.Unlock()
-	r53Client = nil
-	sessionClear()
+func Route53ClientExplicit(accessKeyID, accessKeySecret, region string) *route53.Route53 {
+	return route53.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func Route53Client() *route53.Route53 {

@@ -13,11 +13,8 @@ import (
 var organizationsClient *organizations.Organizations
 var organizationsClientLock sync.RWMutex
 
-func OrganizationsClientClear() {
-	organizationsClientLock.Lock()
-	defer organizationsClientLock.Unlock()
-	organizationsClient = nil
-	sessionClear()
+func OrganizationsClientExplicit(accessKeyID, accessKeySecret, region string) *organizations.Organizations {
+	return organizations.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func OrganizationsClient() *organizations.Organizations {

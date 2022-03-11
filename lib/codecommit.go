@@ -10,11 +10,8 @@ import (
 var codeCommitClient *codecommit.CodeCommit
 var codeCommitClientLock sync.RWMutex
 
-func CodeCommitClientClear() {
-	codeCommitClientLock.Lock()
-	defer codeCommitClientLock.Unlock()
-	codeCommitClient = nil
-	sessionClear()
+func CodeCommitClientExplicit(accessKeyID, accessKeySecret, region string) *codecommit.CodeCommit {
+	return codecommit.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func CodeCommitClient() *codecommit.CodeCommit {

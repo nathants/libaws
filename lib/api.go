@@ -29,11 +29,8 @@ var (
 var apiClient *apigateway.APIGateway
 var apiClientLock sync.RWMutex
 
-func ApiClientClear() {
-	apiClientLock.Lock()
-	defer apiClientLock.Unlock()
-	apiClient = nil
-	sessionClear()
+func ApiClientExplicit(accessKeyID, accessKeySecret, region string) *apigateway.APIGateway {
+	return apigateway.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func ApiClient() *apigateway.APIGateway {

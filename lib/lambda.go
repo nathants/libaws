@@ -57,11 +57,8 @@ const (
 var lambdaClient *lambda.Lambda
 var lambdaClientLock sync.RWMutex
 
-func LambdaClientClear() {
-	lambdaClientLock.Lock()
-	defer lambdaClientLock.Unlock()
-	lambdaClient = nil
-	sessionClear()
+func LambdaClientExplicit(accessKeyID, accessKeySecret, region string) *lambda.Lambda {
+	return lambda.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
 func LambdaClient() *lambda.Lambda {
