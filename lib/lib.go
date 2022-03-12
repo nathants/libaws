@@ -350,7 +350,7 @@ var PrettyStyle = &pretty.Style{
 	},
 }
 
-func diffMapStringStringPointers(a, b map[string]*string) (bool, error) {
+func diffMapStringStringPointers(a, b map[string]*string, logValues bool) (bool, error) {
 	for k, v := range a {
 		if v == nil {
 			delete(a, k)
@@ -372,11 +372,23 @@ func diffMapStringStringPointers(a, b map[string]*string) (bool, error) {
 	for _, c := range changes {
 		switch c.Type {
 		case diff.DELETE:
-			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From))
+			if logValues {
+				Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From))
+			} else {
+				Logger.Println("diff:", c.Type, c.Path[0])
+			}
 		case diff.CREATE:
-			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.To))
+			if logValues {
+				Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.To))
+			} else {
+				Logger.Println("diff:", c.Type, c.Path[0])
+			}
 		case diff.UPDATE:
-			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From), "->", c.Path[0]+"="+fmt.Sprint(c.To))
+			if logValues {
+				Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From), "->", c.Path[0]+"="+fmt.Sprint(c.To))
+			} else {
+				Logger.Println("diff:", c.Type, c.Path[0])
+			}
 		default:
 			return false, fmt.Errorf("unknown diff type: %s", c.Type)
 		}

@@ -2187,7 +2187,8 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		}
 	}
 	needsUpdate := false
-	diff, err := diffMapStringStringPointers(env.Variables, out.Environment.Variables)
+	logValues := false // because lambda env vars often contain secrets
+	diff, err := diffMapStringStringPointers(env.Variables, out.Environment.Variables, logValues)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
