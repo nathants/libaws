@@ -767,13 +767,16 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 		versionMarker = out.NextVersionIdMarker
 	}
 	// rm bucket
-	_, err = S3Client().DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
-		Bucket: aws.String(bucket),
-	})
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
+	if !preview {
+		_, err = S3Client().DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+			Bucket: aws.String(bucket),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 	}
+	Logger.Println(PreviewString(preview)+"deleted bucket:", bucket)
 	return nil
 }
 
