@@ -31,10 +31,12 @@ const (
 	lambdaAttrConcurrency = "concurrency"
 	lambdaAttrMemory      = "memory"
 	lambdaAttrTimeout     = "timeout"
+	lambdaAttrLogsTTLDays = "logs-ttl-days"
 	//
 	lambdaAttrConcurrencyDefault = 0
 	lambdaAttrMemoryDefault      = 128
 	lambdaAttrTimeoutDefault     = 300
+	lambdaAttrLogsTTLDaysDefault = 7
 	//
 	lambdaTriggerSQS        = "sqs"
 	lambdaTrigerS3          = "s3"
@@ -324,7 +326,7 @@ func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 		parts := strings.SplitN(conf, " ", 2)
 		k := parts[0]
 		v := parts[1]
-		if !Contains([]string{lambdaAttrName, lambdaAttrConcurrency, lambdaAttrMemory, lambdaAttrTimeout}, k) {
+		if !Contains([]string{lambdaAttrName, lambdaAttrConcurrency, lambdaAttrMemory, lambdaAttrTimeout, lambdaAttrLogsTTLDays}, k) {
 			err := fmt.Errorf("unknown attr: %s", k)
 			Logger.Println("error:", err)
 			return nil, err
@@ -1962,8 +1964,6 @@ func LambdaEnsure(ctx context.Context, pth string, quick, preview bool) error {
 		runtime := "go1.x"
 		handler := "main"
 		return lambdaEnsure(ctx, runtime, handler, pth, quick, preview, lambdaUpdateZipGo, lambdaCreateZipGo)
-	} else if strings.Contains(strings.ToLower(path.Base(pth)), "dockerfile") {
-		return lambdaEnsureDockerfile(ctx, pth, quick, preview)
 	} else {
 		return fmt.Errorf("lambda unknown file type: %s", pth)
 	}
@@ -1994,6 +1994,7 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 	concurrency := lambdaAttrConcurrencyDefault
 	memory := lambdaAttrMemoryDefault
 	timeout := lambdaAttrTimeoutDefault
+	logsTTLDays := lambdaAttrLogsTTLDaysDefault
 	//
 	for _, attr := range metadata.Attr {
 		parts := strings.SplitN(attr, " ", 2)
@@ -2008,6 +2009,8 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 			memory = Atoi(v)
 		case lambdaAttrTimeout:
 			timeout = Atoi(v)
+		case lambdaAttrLogsTTLDays:
+			logsTTLDays = Atoi(v)
 		default:
 			err := fmt.Errorf("unknown attr: %s", k)
 			Logger.Println("error:", err)
@@ -2041,7 +2044,7 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		}
 		return nil
 	}
-	err = LogsEnsureGroup(ctx, name, preview)
+	err = LogsEnsureGroup(ctx, "/aws/lambda/"+name, logsTTLDays, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -2327,14 +2330,6 @@ func LambdaUpdateFunctionZip(ctx context.Context, name, pth string, preview bool
 		}
 	}
 	Logger.Println(PreviewString(preview) + "lambda updated code zipfile for: " + name)
-	return nil
-}
-
-func lambdaEnsureDockerfile(ctx context.Context, pth string, quick, preview bool) error {
-	_ = ctx
-	_ = pth
-	_ = quick
-	_ = preview
 	return nil
 }
 

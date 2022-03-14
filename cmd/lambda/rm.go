@@ -100,7 +100,7 @@ func lambdaRm() {
 	}
 
 	if args.Everything || args.Log {
-		err := lib.LogsDeleteGroup(ctx, name, args.Preview)
+		err := lib.LogsDeleteGroup(ctx, "/aws/lambda/"+name, args.Preview)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

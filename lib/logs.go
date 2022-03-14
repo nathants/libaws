@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -27,15 +28,17 @@ func LogsClient() *cloudwatchlogs.CloudWatchLogs {
 	return logsClient
 }
 
-func LogsEnsureGroup(ctx context.Context, name string, preview bool) error {
-	_, err := LogsClient().GetLogGroupFieldsWithContext(ctx, &cloudwatchlogs.GetLogGroupFieldsInput{
+func LogsEnsureGroup(ctx context.Context, name string, ttlDays int, preview bool) error {
+	out, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(name),
 	})
-	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != cloudwatchlogs.ErrCodeResourceNotFoundException {
-			Logger.Println("error:", err)
-			return err
+	if err != nil || out.LogStreams == nil {
+		if err != nil {
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != cloudwatchlogs.ErrCodeResourceNotFoundException {
+				Logger.Println("error:", err)
+				return err
+			}
 		}
 		if !preview {
 			_, err := LogsClient().CreateLogGroupWithContext(ctx, &cloudwatchlogs.CreateLogGroupInput{
@@ -47,6 +50,39 @@ func LogsEnsureGroup(ctx context.Context, name string, preview bool) error {
 			}
 		}
 		Logger.Println(PreviewString(preview)+"created log group:", name)
+	}
+	outGroups, err := LogsClient().DescribeLogGroupsWithContext(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+		LogGroupNamePrefix: aws.String(name),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+	    return err
+	}
+	var logGroup *cloudwatchlogs.LogGroup
+	for _, lg := range outGroups.LogGroups {
+		if name == *lg.LogGroupName {
+			logGroup = lg
+			break
+		}
+	}
+	if logGroup == nil {
+		err := fmt.Errorf("expected exactly 1 logGroup with name: %s", name)
+		Logger.Println("error:", err)
+		return err
+	}
+	if logGroup.RetentionInDays == nil {
+		logGroup.RetentionInDays = aws.Int64(0)
+	}
+	if ttlDays != int(*logGroup.RetentionInDays) {
+		Logger.Printf(PreviewString(preview)+"updated log ttl days for %s: %d => %d\n", name, *logGroup.RetentionInDays, ttlDays)
+		_, err = LogsClient().PutRetentionPolicyWithContext(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
+			LogGroupName:    aws.String(name),
+			RetentionInDays: aws.Int64(int64(ttlDays)),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 	}
 	return nil
 }
@@ -87,10 +123,12 @@ func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
 		_, err := LogsClient().DeleteLogGroupWithContext(ctx, &cloudwatchlogs.DeleteLogGroupInput{
 			LogGroupName: aws.String(name),
 		})
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "ResourceNotFoundException" {
-			Logger.Println("error:", err)
-			return err
+		if err != nil {
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != "ResourceNotFoundException" {
+				Logger.Println("error:", err)
+				return err
+			}
 		}
 	}
 	Logger.Println(PreviewString(preview)+"deleted log group:", name)
