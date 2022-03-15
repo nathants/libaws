@@ -56,7 +56,7 @@ func LogsEnsureGroup(ctx context.Context, name string, ttlDays int, preview bool
 	})
 	if err != nil {
 		Logger.Println("error:", err)
-	    return err
+		return err
 	}
 	var logGroup *cloudwatchlogs.LogGroup
 	for _, lg := range outGroups.LogGroups {
