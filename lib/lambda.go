@@ -41,8 +41,11 @@ const (
 	lambdaTriggerSQS        = "sqs"
 	lambdaTrigerS3          = "s3"
 	lambdaTriggerDynamoDB   = "dynamodb"
-	lambdaTriggerApi        = "api"
 	lambdaTriggerCloudwatch = "cloudwatch"
+	lambdaTriggerApi        = "api"
+	//
+	lambdaTriggerApiAttrDns    = "dns"
+	lambdaTriggerApiAttrDomain = "domain"
 	//
 	lambdaMetaS3       = "s3"
 	lambdaMetaDynamoDB = "dynamodb"
@@ -1019,9 +1022,21 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 					return err
 				}
 				switch k {
-				case "dns":
+				case lambdaTriggerApiAttrDns: // apigateway custom domain + route53
 					domainName = v
 					err := lambdaEnsureTriggerApiDns(ctx, name, domainName, restApi, preview)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				case lambdaTriggerApiAttrDomain: // apigateway custom domain
+					domainName = v
+					err := lambdaEnsureTriggerApiDomainName(ctx, name, domainName, domainName, preview)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					err = lambdaEnsureTriggerApiBasePathMapping(ctx, name, domainName, restApi, preview)
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
