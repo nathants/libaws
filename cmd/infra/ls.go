@@ -19,7 +19,6 @@ func init() {
 
 type infraLsArgs struct {
 	Filter      string `arg:"positional" help:"filter by name substring"`
-	SplitArrays bool   `arg:"-s,--split-spaces" help:"split arrays so values are one per line"`
 }
 
 func (infraLsArgs) Description() string {
@@ -40,9 +39,6 @@ func infraLs() {
 	}
 	options := &pretty.Options{
 		Indent: "    ",
-	}
-	if !args.SplitArrays {
-		options.Width = 250
 	}
 	bytes = pretty.PrettyOptions(bytes, options)
 	if isatty.IsTerminal(os.Stdout.Fd()) {
