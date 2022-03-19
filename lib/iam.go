@@ -510,7 +510,7 @@ func IamGetSSHPublicKey(ctx context.Context, keyID string) (*iam.SSHPublicKey, e
 type IamStatementEntry struct {
 	Sid       string
 	Effect    string
-	Resource  interface{}
+	Resource  interface{} `json:",omitempty"`
 	Principal interface{}
 	Action    interface{}
 }
@@ -827,7 +827,6 @@ func IamEnsureEC2Roles(ctx context.Context) error {
 		Version: "2012-10-17",
 		Id:      roleName,
 		Statement: []IamStatementEntry{{
-			Sid:       roleName,
 			Effect:    "Allow",
 			Principal: map[string]string{"Service": "spotfleet.amazonaws.com"},
 			Action:    "sts:AssumeRole",
