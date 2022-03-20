@@ -1595,12 +1595,10 @@ func EC2SgID(ctx context.Context, name string) (string, error) {
 		Filters: []*ec2.Filter{{Name: aws.String("group-name"), Values: []*string{aws.String(name)}}},
 	})
 	if err != nil {
-		Logger.Println("error:", err)
 		return "", err
 	}
 	if len(out.SecurityGroups) != 1 {
 		err = fmt.Errorf("didn't find exactly 1 security group for name: %s %s", name, Pformat(out.SecurityGroups))
-		Logger.Println("error:", err)
 		return "", err
 	}
 	return *out.SecurityGroups[0].GroupId, nil

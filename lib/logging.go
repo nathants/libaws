@@ -5,16 +5,12 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"time"
-
-	"github.com/aws/aws-sdk-go/aws"
 )
 
 type LoggerStruct struct {
 	Print    func(args ...interface{})
 	Flush    func()
 	disabled bool
-	start    *time.Time
 }
 
 var Logger = &LoggerStruct{
@@ -36,17 +32,10 @@ func caller() string {
 	return fmt.Sprintf("%s:%d: ", file, line)
 }
 
-func (l *LoggerStruct) seconds() string {
-	if l.start == nil {
-		l.start = aws.Time(time.Now())
-	}
-	return fmt.Sprintf("t+%d ", int(time.Since(*l.start).Seconds()))
-}
 
 func (l *LoggerStruct) Println(v ...interface{}) {
 	if !l.disabled {
 		var r []interface{}
-		r = append(r, l.seconds())
 		r = append(r, caller())
 		var xs []string
 		for _, x := range v {
@@ -60,13 +49,12 @@ func (l *LoggerStruct) Println(v ...interface{}) {
 
 func (l *LoggerStruct) Printf(format string, v ...interface{}) {
 	if !l.disabled {
-		l.Print(fmt.Sprintf(l.seconds()+caller()+format, v...))
+		l.Print(fmt.Sprintf(caller()+format, v...))
 	}
 }
 
 func (l *LoggerStruct) Fatal(v ...interface{}) {
 	var r []interface{}
-	r = append(r, l.seconds())
 	r = append(r, caller())
 	var xs []string
 	for _, x := range v {
@@ -80,7 +68,7 @@ func (l *LoggerStruct) Fatal(v ...interface{}) {
 }
 
 func (l *LoggerStruct) Fatalf(format string, v ...interface{}) {
-	l.Print(fmt.Sprintf(l.seconds()+caller()+format, v...))
+	l.Print(fmt.Sprintf(caller()+format, v...))
 	l.Flush()
 	os.Exit(1)
 }
