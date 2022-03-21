@@ -1675,7 +1675,7 @@ func EC2Kind(instance *ec2.Instance) string {
 	return "ondemand"
 }
 
-type EC2WaitForSshInput struct {
+type EC2WaitSshInput struct {
 	Selectors      []string
 	MaxWaitSeconds int
 	PrivateIP      bool
@@ -1684,7 +1684,7 @@ type EC2WaitForSshInput struct {
 	MaxConcurrency int
 }
 
-func EC2WaitSsh(ctx context.Context, input *EC2WaitForSshInput) ([]string, error) {
+func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 	start := time.Now()
 	for {
 		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")
@@ -1768,7 +1768,7 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitForSshInput) ([]string, error
 	}
 }
 
-type EC2WaitForGoSshInput struct {
+type EC2WaitGoSshInput struct {
 	Selectors      []string
 	MaxWaitSeconds int
 	User           string
@@ -1777,7 +1777,7 @@ type EC2WaitForGoSshInput struct {
 	Ed25519PrivKey string
 }
 
-func EC2WaitGoSsh(ctx context.Context, input *EC2WaitForGoSshInput) ([]string, error) {
+func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, error) {
 	for {
 		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")
 		if err != nil {

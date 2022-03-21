@@ -83,7 +83,7 @@ func ec2Speedtest() {
 	for _, instance := range instances {
 		selectors = append(selectors, *instance.InstanceId)
 	}
-	_, err = lib.EC2WaitSsh(ctx, &lib.EC2WaitForSshInput{
+	_, err = lib.EC2WaitSsh(ctx, &lib.EC2WaitSshInput{
 		Selectors:      selectors,
 		MaxWaitSeconds: 300,
 		User:           sshUser,

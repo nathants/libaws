@@ -68,7 +68,7 @@ func ec2WaitGoSsh() {
 	}
 	rsaBytes, _ := ioutil.ReadFile(args.RsaPrivKeyFile)
 	edBytes, _ := ioutil.ReadFile(args.Ed25519PrivKeyFile)
-	readyIDs, err := lib.EC2WaitGoSsh(ctx, &lib.EC2WaitForGoSshInput{
+	readyIDs, err := lib.EC2WaitGoSsh(ctx, &lib.EC2WaitGoSshInput{
 		Selectors:      args.Selectors,
 		MaxWaitSeconds: args.MaxWait,
 		User:           args.User,

@@ -184,7 +184,7 @@ func ec2New() {
 		ids = append(ids, *instance.InstanceId)
 	}
 	if args.Wait {
-		_, err := lib.EC2WaitSsh(ctx, &lib.EC2WaitForSshInput{
+		_, err := lib.EC2WaitSsh(ctx, &lib.EC2WaitSshInput{
 			Selectors:      ids,
 			MaxWaitSeconds: 300,
 			User:           lib.EC2GetTag(instances[0].Tags, "user", ""),
