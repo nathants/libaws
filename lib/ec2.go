@@ -298,7 +298,7 @@ var ec2FailedStates = []string{
 	ec2.BatchStateCancelledTerminating,
 }
 
-func EC2WaitForState(ctx context.Context, instanceIDs []string, state string) error {
+func EC2WaitState(ctx context.Context, instanceIDs []string, state string) error {
 	Logger.Println("wait for state", state, "for", len(instanceIDs), "instanceIDs")
 	for i := 0; i < 300; i++ {
 		instances, err := EC2DescribeInstances(ctx, instanceIDs)
@@ -362,7 +362,7 @@ func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 	if len(ids) == 0 {
 		return nil
 	}
-	err = EC2WaitForState(ctx, ids, ec2.InstanceStateNameRunning)
+	err = EC2WaitState(ctx, ids, ec2.InstanceStateNameRunning)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -401,7 +401,7 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 	return nil
 }
 
-func EC2WaitForSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) error {
+func EC2WaitSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) error {
 	Logger.Println("wait for spot fleet", *spotFleetRequestId, "with", num, "instances")
 	for i := 0; i < 300; i++ {
 		config, err := EC2DescribeSpotFleet(ctx, spotFleetRequestId)
@@ -651,7 +651,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	err = EC2WaitForSpotFleet(ctx, spotFleet.SpotFleetRequestId, config.NumInstances)
+	err = EC2WaitSpotFleet(ctx, spotFleet.SpotFleetRequestId, config.NumInstances)
 	if err != nil {
 		Logger.Println("error:", err)
 		err2 := EC2TeardownSpotFleet(context.Background(), spotFleet.SpotFleetRequestId)

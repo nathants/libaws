@@ -18,7 +18,7 @@ func init() {
 }
 
 type infraLsArgs struct {
-	Filter      string `arg:"positional" help:"filter by name substring"`
+	Filter string `arg:"positional" help:"filter by name substring"`
 }
 
 func (infraLsArgs) Description() string {

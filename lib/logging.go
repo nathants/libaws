@@ -32,7 +32,6 @@ func caller() string {
 	return fmt.Sprintf("%s:%d: ", file, line)
 }
 
-
 func (l *LoggerStruct) Println(v ...interface{}) {
 	if !l.disabled {
 		var r []interface{}
