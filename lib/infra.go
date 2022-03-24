@@ -15,7 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
-type InfraApi struct{}
+type InfraApi struct {
+	Dns    string `json:"dns,omitempty"`
+	Domain string `json:"domain,omitempty"`
+}
 
 type InfraDynamoDB struct {
 	Keys  []string `json:"keys,omitempty"`
@@ -314,7 +317,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 
 func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]InfraApi, error) {
 	lock := &sync.Mutex{}
-	infraApi := make(map[string]InfraApi)
+	infraApis := make(map[string]InfraApi)
 	apis, err := ApiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -327,8 +330,27 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 		return nil, err
 	}
 	domainNames := make(map[string]string)
+	restApiToDomain := make(map[string]string)
 	for _, domain := range domains {
 		domainNames[*domain.RegionalDomainName] = *domain.DomainName
+		mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
+			DomainName: domain.DomainName,
+			Limit:      aws.Int64(500),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		if len(mappings.Items) == 500 {
+			err := fmt.Errorf("api overflow without pagination")
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		for _, mapping := range mappings.Items {
+			if *mapping.BasePath == apiMappingBasePathEmpty && *mapping.Stage == apiStageName {
+				restApiToDomain[*mapping.RestApiId] = *domain.DomainName
+			}
+		}
 	}
 	zones, err := Route53ListZones(ctx)
 	if err != nil {
@@ -350,12 +372,17 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 						DomainName: aws.String(domain),
 						Limit:      aws.Int64(500),
 					})
-					if err != nil || len(mappings.Items) == 500 {
+					if err != nil {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+					if len(mappings.Items) == 500 {
+						err := fmt.Errorf("api overflow without pagination")
 						Logger.Println("error:", err)
 						return nil, err
 					}
 					for _, mapping := range mappings.Items {
-						if *mapping.BasePath == "(none)" && *mapping.Stage == apiStageName {
+						if *mapping.BasePath == apiMappingBasePathEmpty && *mapping.Stage == apiStageName {
 							restApiToDns[*mapping.RestApiId] = domain
 						}
 					}
@@ -368,10 +395,7 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 	for _, api := range apis {
 		api := api
 		go func() {
-			lock.Lock()
-			infraApi[*api.Name] = InfraApi{}
-			lock.Unlock()
-			//
+			infraApi := InfraApi{}
 			parentID, err := ApiResourceID(ctx, *api.Id, "/")
 			if err != nil {
 				errChan <- err
@@ -390,6 +414,13 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 			dns, ok := restApiToDns[*api.Id]
 			if ok {
 				attrs = append(attrs, fmt.Sprintf("dns=%s", dns))
+				infraApi.Dns = dns
+			} else {
+				domain, ok := restApiToDomain[*api.Id]
+				if ok {
+					attrs = append(attrs, fmt.Sprintf("domain=%s", domain))
+					infraApi.Domain = domain
+				}
 			}
 			lambdaName := LambdaApiUriToLambdaName(*out.Uri)
 			triggersChan <- InfraLambdaTrigger{
@@ -397,6 +428,10 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 				TriggerType:  lambdaTriggerApi,
 				TriggerAttrs: attrs,
 			}
+			lock.Lock()
+			infraApis[*api.Name] = infraApi
+			lock.Unlock()
+			//
 			errChan <- nil
 		}()
 	}
@@ -407,7 +442,7 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 			return nil, err
 		}
 	}
-	return infraApi, nil
+	return infraApis, nil
 }
 
 func InfraListDynamoDB(ctx context.Context) (map[string]InfraDynamoDB, error) {
