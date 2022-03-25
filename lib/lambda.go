@@ -1137,7 +1137,7 @@ func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apigateway
 								return err
 							}
 						}
-						Logger.Println(PreviewString(preview)+"deleted api dns records:", name, *zone.Name, *zone.Id)
+						Logger.Println(PreviewString(preview)+"deleted api dns records:", name, *record.AliasTarget.DNSName)
 					}
 				}
 			}
