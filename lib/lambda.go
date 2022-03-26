@@ -875,7 +875,7 @@ func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, subDomain strin
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain, *out.RegionalDomainName)
+			Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain)
 		}
 	}
 	return nil
@@ -970,7 +970,7 @@ func lambdaEnsureTriggerApiBasePathMapping(ctx context.Context, name, subDomain 
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"created api path mapping:", name, subDomain, *restApi.Id)
+		Logger.Println(PreviewString(preview)+"created api path mapping:", name, subDomain)
 	case 1:
 		mapping := mappings.Items[0]
 		if *mapping.BasePath != apiMappingBasePathEmpty {
