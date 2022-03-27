@@ -1503,6 +1503,32 @@ func ec2AmiAmzn(ctx context.Context, arch string) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
+// uplinklabs has stopped publishing these images, so make sure no
+// ami-ID other than the following is ever used, as they are the last published.
+// final release of: Release 2021.06.02 ebs hvm x86_64 stable
+var ec2AmiArchFinalPublishedImages = []string{
+	"ami-0aa7dbd2db78fa7fb",
+	"ami-008ef391bf64d8b7f",
+	"ami-0bc142e116312d7e6",
+	"ami-023693ce180f3adb1",
+	"ami-07b08bb244fc72525",
+	"ami-0f0259bc20bcc0114",
+	"ami-0209cf5105e3a5872",
+	"ami-0a10dbf824c9cc3fc",
+	"ami-0b46d60197650c7b2",
+	"ami-0622746594aec927a",
+	"ami-0668288fd748abc0a",
+	"ami-0f472c7bb5ef62781",
+	"ami-058d618623e52c423",
+	"ami-00894b4c7df5dbb94",
+	"ami-0fae3a42c0f7438ee",
+	"ami-016f15543452da599",
+	"ami-00cfc0bbf81a9d32c",
+	"ami-0343ae980006cdd80",
+	"ami-0745450a9dd2e9595",
+	"ami-0abb8c3a6b6e5e6f3",
+}
+
 func ec2AmiArch(ctx context.Context, arch string) (string, error) {
 	if arch != EC2ArchAmd64 {
 		err := fmt.Errorf("ec2 archlinux only supports amd64")
@@ -1521,7 +1547,11 @@ func ec2AmiArch(ctx context.Context, arch string) (string, error) {
 		return "", err
 	}
 	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
-	return *out.Images[0].ImageId, nil
+	amiID := *out.Images[0].ImageId
+	if !Contains(ec2AmiArchFinalPublishedImages, amiID) {
+		return "", fmt.Errorf("ami-id %s was not in the list of the final published images from https://www.uplinklabs.net/projects/arch-linux-on-ec2/ %v", ec2AmiArchFinalPublishedImages)
+	}
+	return amiID, nil
 }
 
 func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
