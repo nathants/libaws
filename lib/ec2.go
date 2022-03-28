@@ -636,7 +636,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 	}
 	Logger.Println("type:", config.InstanceType)
 	Logger.Println("subnets:", config.SubnetIds)
-	Logger.Println("requst spot fleet", DropLinesWithAny(Pformat(launchSpecs[0]), "null", "SubnetId", "UserData"))
+	Logger.Println("requst spot fleet", DropLinesWithAny(PformatAlways(launchSpecs[0]), "null", "SubnetId", "UserData"))
 	spotFleet, err := EC2Client().RequestSpotFleetWithContext(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2.SpotFleetRequestConfigData{
 		IamFleetRole:                     role.Role.Arn,
 		LaunchSpecifications:             launchSpecs,
@@ -760,7 +760,7 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, e
 			Tags:         makeTags(config),
 		}},
 	}
-	Logger.Println("run instances", DropLinesWithAny(Pformat(runInstancesInput), "null", "UserData"))
+	Logger.Println("run instances", DropLinesWithAny(PformatAlways(runInstancesInput), "null", "UserData"))
 	reservation, err := EC2Client().RunInstancesWithContext(ctx, runInstancesInput)
 	if err != nil {
 		Logger.Println("error:", err)
