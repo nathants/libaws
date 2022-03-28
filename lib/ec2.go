@@ -2079,9 +2079,7 @@ func pubKey(privKey string) (ssh.AuthMethod, error) {
 
 func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) error {
 	if len(input.Instances) == 0 {
-		err := fmt.Errorf("no instances")
-		Logger.Println("error:", err)
-		return err
+		return fmt.Errorf("no instances")
 	}
 	if !strings.HasPrefix(input.Cmd, "#!") && !strings.HasPrefix(input.Cmd, "set ") {
 		input.Cmd = "#!/bin/bash\nset -eou pipefail\n" + input.Cmd
