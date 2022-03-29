@@ -1617,6 +1617,11 @@ func EC2ZonesWithInstance(ctx context.Context, instanceType string) (zones []str
 	for _, offer := range out.InstanceTypeOfferings {
 		zones = append(zones, *offer.Location)
 	}
+	if len(zones) == 0 {
+		err := fmt.Errorf("no zones with instance type: %s", instanceType)
+		Logger.Println("error:", err)
+		return nil, err
+	}
 	return zones, nil
 }
 
