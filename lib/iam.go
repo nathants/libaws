@@ -130,9 +130,6 @@ func IamListRoles(ctx context.Context, pathPrefix string) ([]*iam.Role, error) {
 }
 
 func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, preview bool) error {
-	if len(allows) == 0 {
-		return nil
-	}
 	var allowNames []string
 	for _, allowStr := range allows {
 		parts := strings.SplitN(allowStr, " ", 2)
@@ -222,9 +219,6 @@ func iamPolicyEqual(a, b string) (bool, error) {
 }
 
 func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []string, preview bool) error {
-	if len(policyNames) == 0 {
-		return nil
-	}
 	policies, err := IamListPolicies(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
