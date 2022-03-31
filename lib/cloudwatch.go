@@ -8,7 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/satori/go.uuid"
+	"github.com/gofrs/uuid"
 )
 
 var cloudwatchClient *cloudwatch.CloudWatch
@@ -64,7 +64,7 @@ func CloudwatchGetMetricData(ctx context.Context, period int, stat string, fromT
 
 		for _, metric := range metrics {
 			input.MetricDataQueries = append(input.MetricDataQueries, &cloudwatch.MetricDataQuery{
-				Id: aws.String("a" + strings.ReplaceAll(uuid.NewV4().String(), "-", "")),
+				Id: aws.String("a" + strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
 				MetricStat: &cloudwatch.MetricStat{
 					Period: aws.Int64(int64(period)),
 					Stat:   aws.String(stat),

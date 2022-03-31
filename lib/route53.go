@@ -11,7 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/satori/go.uuid"
+	"github.com/gofrs/uuid"
 )
 
 var r53Client *route53.Route53
@@ -281,7 +281,7 @@ func Route53EnsureZone(ctx context.Context, name string, preview bool) error {
 	if !preview {
 		_, err = Route53Client().CreateHostedZoneWithContext(ctx, &route53.CreateHostedZoneInput{
 			Name:            aws.String(name),
-			CallerReference: aws.String(uuid.NewV4().String()),
+			CallerReference: aws.String(uuid.Must(uuid.NewV4()).String()),
 		})
 		if err != nil {
 			Logger.Println("error:", err)

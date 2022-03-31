@@ -6,13 +6,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/satori/go.uuid"
+	"github.com/gofrs/uuid"
 	"reflect"
 	"testing"
 )
 
 func TestS3Ensure(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput(bucket, []string{})
 	if err != nil {
 		t.Error(err)
@@ -33,7 +33,7 @@ func TestS3Ensure(t *testing.T) {
 }
 
 func TestS3EnsureVersioningOffByDefault(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput(bucket, []string{})
 	if err != nil {
 		t.Error(err)
@@ -65,7 +65,7 @@ func TestS3EnsureVersioningOffByDefault(t *testing.T) {
 }
 
 func TestS3EnsureVersioning(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput(bucket, []string{"versioning=true"})
 	if err != nil {
 		t.Error(err)
@@ -97,7 +97,7 @@ func TestS3EnsureVersioning(t *testing.T) {
 }
 
 func TestS3EnsureUpdateVersioning(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := S3EnsureInput(bucket, []string{})
 	if err != nil {
@@ -173,7 +173,7 @@ func TestS3EnsureUpdateVersioning(t *testing.T) {
 }
 
 func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput(bucket, []string{})
 	if err != nil {
 		t.Error(err)
@@ -214,7 +214,7 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 }
 
 func TestS3EnsureEncryptionOff(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput(bucket, []string{"encryption=false"})
 	if err != nil {
 		t.Error(err)
@@ -247,7 +247,7 @@ func TestS3EnsureEncryptionOff(t *testing.T) {
 }
 
 func TestS3EnsureUpdateEncryption(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	//
 	input, err := S3EnsureInput(bucket, []string{})
@@ -334,7 +334,7 @@ func TestS3EnsureUpdateEncryption(t *testing.T) {
 }
 
 func TestS3EnsurePrivateByDefault(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput(bucket, []string{})
 	if err != nil {
 		t.Error(err)
@@ -371,7 +371,7 @@ func TestS3EnsurePrivateByDefault(t *testing.T) {
 }
 
 func TestS3EnsurePublic(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput(bucket, []string{"acl=public"})
 	if err != nil {
 		t.Error(err)
@@ -420,7 +420,7 @@ func TestS3EnsurePublic(t *testing.T) {
 }
 
 func TestS3EnsurePrivateToPublicNotAllowed(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	//
 	input, err := S3EnsureInput(bucket, []string{"acl=private"})
@@ -453,7 +453,7 @@ func TestS3EnsurePrivateToPublicNotAllowed(t *testing.T) {
 }
 
 func TestS3EnsurePublicToPrivateNotAllowed(t *testing.T) {
-	bucket := "cli-aws-s3-test-" + uuid.NewV4().String()
+	bucket := "cli-aws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	//
 	input, err := S3EnsureInput(bucket, []string{"acl=public"})

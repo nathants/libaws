@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/satori/go.uuid"
+	"github.com/gofrs/uuid"
 	"os"
 	"reflect"
 	"testing"
@@ -333,7 +333,7 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 
 func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 	ctx := context.Background()
-	name := "test-table-" + uuid.NewV4().String()
+	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	//
 	input, err := DynamoDBEnsureInput(
 		name,
@@ -458,7 +458,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 
 func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 	ctx := context.Background()
-	name := "test-table-" + uuid.NewV4().String()
+	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	//
 	input, err := DynamoDBEnsureInput(
 		name,
@@ -638,7 +638,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 
 func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 	ctx := context.Background()
-	name := "test-table-" + uuid.NewV4().String()
+	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	//
 	input, err := DynamoDBEnsureInput(
 		name,
@@ -831,7 +831,7 @@ func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
 
 func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 	ctx := context.Background()
-	name := "test-table-" + uuid.NewV4().String()
+	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	//
 	input, err := DynamoDBEnsureInput(
 		name,
@@ -1022,7 +1022,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 
 func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 	ctx := context.Background()
-	name := "test-table-" + uuid.NewV4().String()
+	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	//
 	input, err := DynamoDBEnsureInput(
 		name,
@@ -1115,7 +1115,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 
 func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 	ctx := context.Background()
-	name := "test-table-" + uuid.NewV4().String()
+	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	//
 	input, err := DynamoDBEnsureInput(
 		name,
@@ -1196,7 +1196,7 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 
 func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 	ctx := context.Background()
-	name := "test-table-" + uuid.NewV4().String()
+	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	//
 	input, err := DynamoDBEnsureInput(
 		name,

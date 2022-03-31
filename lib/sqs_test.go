@@ -4,12 +4,12 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/satori/go.uuid"
+	"github.com/gofrs/uuid"
 	"testing"
 )
 
 func TestSQSEnsure(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.NewV4().String()
+	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := SQSEnsureInput(queue, []string{})
 	if err != nil {
 		t.Error(err)
@@ -30,7 +30,7 @@ func TestSQSEnsure(t *testing.T) {
 }
 
 func TestSQSEnsureDelaySeconds(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.NewV4().String()
+	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput(queue, []string{"DelaySeconds=7"})
 	if err != nil {
@@ -91,7 +91,7 @@ func TestSQSEnsureDelaySeconds(t *testing.T) {
 }
 
 func TestSQSEnsureMaximumMessageSize(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.NewV4().String()
+	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput(queue, []string{"MaximumMessageSize=2048"})
 	if err != nil {
@@ -152,7 +152,7 @@ func TestSQSEnsureMaximumMessageSize(t *testing.T) {
 }
 
 func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.NewV4().String()
+	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput(queue, []string{"MessageRetentionPeriod=90"})
 	if err != nil {
@@ -213,7 +213,7 @@ func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
 }
 
 func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.NewV4().String()
+	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput(queue, []string{"ReceiveMessageWaitTimeSeconds=7"})
 	if err != nil {
@@ -274,7 +274,7 @@ func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
 }
 
 func TestSQSEnsureVisibilityTimeout(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.NewV4().String()
+	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput(queue, []string{"VisibilityTimeout=7"})
 	if err != nil {
