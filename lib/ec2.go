@@ -1549,7 +1549,7 @@ func ec2AmiArch(ctx context.Context, arch string) (string, error) {
 	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
 	amiID := *out.Images[0].ImageId
 	if !Contains(ec2AmiArchFinalPublishedImages, amiID) {
-		return "", fmt.Errorf("ami-id %s was not in the list of the final published images from https://www.uplinklabs.net/projects/arch-linux-on-ec2/ %v", ec2AmiArchFinalPublishedImages)
+		return "", fmt.Errorf("ami-id %s was not in the list of the final published images from https://www.uplinklabs.net/projects/arch-linux-on-ec2/ %v", amiID, ec2AmiArchFinalPublishedImages)
 	}
 	return amiID, nil
 }
@@ -1722,6 +1722,7 @@ type EC2WaitSshInput struct {
 func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 	start := time.Now()
 	for {
+		now := time.Now()
 		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")
 		if err != nil {
 			return nil, err
@@ -1754,7 +1755,7 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 		//
 		results, err := EC2Ssh(context.Background(), &EC2SshInput{
 			User:           input.User,
-			TimeoutSeconds: 10,
+			TimeoutSeconds: 5,
 			Instances:      instances,
 			Cmd:            "whoami >/dev/null",
 			PrivateIP:      input.PrivateIP,
@@ -1799,7 +1800,10 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 			}
 			return ready, nil
 		}
-		time.Sleep(5 * time.Second)
+		secondsToWait := 5 - (time.Since(now).Seconds())
+		if secondsToWait > 0 {
+			time.Sleep(time.Duration(secondsToWait) * time.Second)
+		}
 	}
 }
 
@@ -1842,7 +1846,7 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 		//
 		err = EC2GoSsh(context.Background(), &EC2GoSshInput{
 			User:           input.User,
-			TimeoutSeconds: 10,
+			TimeoutSeconds: 5,
 			Instances:      instances,
 			Cmd:            "whoami >/dev/null",
 			MaxConcurrency: input.MaxConcurrency,
