@@ -835,7 +835,6 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 	for range input.Instances {
 		sshResult := <-resultChan
 		if sshResult.Err != nil {
-			Logger.Println("error:", sshResult.Err)
 			errLast = sshResult.Err
 		}
 		result = append(result, sshResult)
@@ -1772,7 +1771,7 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 			}
 		}
 		for _, instance := range pendingInstances {
-			fmt.Fprintf(os.Stderr, "unready: %s\n", Red(*instance.InstanceId))
+			fmt.Fprintf(os.Stderr, "pending: %s\n", Cyan(*instance.InstanceId))
 		}
 		if err == nil && len(pendingInstances) == 0 {
 			var ids []string
@@ -1817,7 +1816,9 @@ type EC2WaitGoSshInput struct {
 }
 
 func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, error) {
+	start := time.Now()
 	for {
+		now := time.Now()
 		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")
 		if err != nil {
 			return nil, err
@@ -1844,7 +1845,7 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 		// before each attempt
 		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(ips, " "))).Run()
 		//
-		err = EC2GoSsh(context.Background(), &EC2GoSshInput{
+		results, err := EC2GoSsh(context.Background(), &EC2GoSshInput{
 			User:           input.User,
 			TimeoutSeconds: 5,
 			Instances:      instances,
@@ -1855,8 +1856,15 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			RsaPrivKey:     input.RsaPrivKey,
 			Ed25519PrivKey: input.Ed25519PrivKey,
 		})
+		for _, result := range results {
+			if result.Err == nil {
+				fmt.Fprintf(os.Stderr, "ready: %s\n", Green(result.InstanceID))
+			} else {
+				fmt.Fprintf(os.Stderr, "unready: %s\n", Red(result.InstanceID))
+			}
+		}
 		for _, instance := range pendingInstances {
-			fmt.Fprintf(os.Stderr, "unready: %s\n", Red(*instance.InstanceId))
+			fmt.Fprintf(os.Stderr, "pending: %s\n", Cyan(*instance.InstanceId))
 		}
 		if err == nil && len(pendingInstances) == 0 {
 			var ids []string
@@ -1865,7 +1873,29 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			}
 			return ids, nil
 		}
-		time.Sleep(5 * time.Second)
+		if len(pendingInstances) == 0 && input.MaxWaitSeconds != 0 && time.Since(start) > time.Duration(input.MaxWaitSeconds)*time.Second {
+			var ready []string
+			var terminate []string
+			for _, result := range results {
+				if result.Err != nil {
+					fmt.Fprintln(os.Stderr, "terminating unready instance:", result.InstanceID)
+					terminate = append(terminate, result.InstanceID)
+				} else {
+					ready = append(ready, result.InstanceID)
+				}
+			}
+			_, err = EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
+				InstanceIds: aws.StringSlice(terminate),
+			})
+			if err != nil {
+				return nil, err
+			}
+			return ready, nil
+		}
+		secondsToWait := 5 - (time.Since(now).Seconds())
+		if secondsToWait > 0 {
+			time.Sleep(time.Duration(secondsToWait) * time.Second)
+		}
 	}
 }
 
@@ -2078,6 +2108,11 @@ type EC2GoSshInput struct {
 	Ed25519PrivKey string
 }
 
+type ec2GoSshResult struct {
+	Err        error
+	InstanceID string
+}
+
 func pubKey(privKey string) (ssh.AuthMethod, error) {
 	signer, err := ssh.ParsePrivateKey([]byte(privKey))
 	if err != nil {
@@ -2086,9 +2121,9 @@ func pubKey(privKey string) (ssh.AuthMethod, error) {
 	return ssh.PublicKeys(signer), nil
 }
 
-func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) error {
+func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, error) {
 	if len(input.Instances) == 0 {
-		return fmt.Errorf("no instances")
+		return nil, fmt.Errorf("no instances")
 	}
 	if !strings.HasPrefix(input.Cmd, "#!") && !strings.HasPrefix(input.Cmd, "set ") {
 		input.Cmd = "#!/bin/bash\nset -eou pipefail\n" + input.Cmd
@@ -2100,14 +2135,14 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) error {
 			if input.User != user {
 				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		}
 		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
 		if input.User == "" {
 			err := fmt.Errorf("no user provied and no user tag available")
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 	}
 	//
@@ -2126,7 +2161,7 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) error {
 	} else {
 		err := fmt.Errorf("one of RsaPrivKey or Ed25519PrivKey must be provided")
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	//
 	config := &ssh.ClientConfig{
@@ -2144,7 +2179,8 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) error {
 		defer timeoutCancel()
 		ctx = timeoutCtx
 	}
-	done := make(chan error, len(input.Instances))
+	// done := make(chan error, len(input.Instances))
+	resultChan := make(chan *ec2GoSshResult, len(input.Instances))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -2152,23 +2188,24 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) error {
 		go func(instance *ec2.Instance) {
 			err := concurrency.Acquire(cancelCtx, 1)
 			if err != nil {
-				done <- err
+				resultChan <- &ec2GoSshResult{Err: err, InstanceID: *instance.InstanceId}
 				return
 			}
 			defer concurrency.Release(1)
-			done <- ec2GoSsh(cancelCtx, config, instance, input)
+			err = ec2GoSsh(cancelCtx, config, instance, input)
+			resultChan <- &ec2GoSshResult{Err: err, InstanceID: *instance.InstanceId}
 		}(instance)
 	}
 	var errLast error
+	var result []*ec2GoSshResult
 	for range input.Instances {
-		err := <-done
-		if err != nil {
-			cancel()
-			errLast = err
+		sshResult := <-resultChan
+		if sshResult.Err != nil {
+			errLast = sshResult.Err
 		}
+		result = append(result, sshResult)
 	}
-	//
-	return errLast
+	return result, errLast
 }
 
 func sshDialContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {

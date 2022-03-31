@@ -77,7 +77,7 @@ func ec2Gossh() {
 		rsaPrivKey := string(rsaBytes)
 		edBytes, _ := ioutil.ReadFile(args.Ed25519PrivKeyFile)
 		ed25519PrivKey := string(edBytes)
-		err := lib.EC2GoSsh(context.Background(), &lib.EC2GoSshInput{
+		_, err := lib.EC2GoSsh(context.Background(), &lib.EC2GoSshInput{
 			User:           args.User,
 			TimeoutSeconds: args.Timeout,
 			Instances:      instances,
