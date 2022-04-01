@@ -20,9 +20,10 @@ func init() {
 }
 
 type s3LsArgs struct {
-	Path      string `arg:"positional"`
-	Quiet     bool   `arg:"-q,--quiet" help:"print key only"`
-	Recursive bool   `arg:"-r,--recursive"`
+	Path       string `arg:"positional"`
+	Quiet      bool   `arg:"-q,--quiet" help:"print key only"`
+	Recursive  bool   `arg:"-r,--recursive" help:"list all keys with prefix path"`
+	StartAfter bool   `arg:"-s,--start-after" help:"list all keys that lexically appear after path"`
 }
 
 func (s3LsArgs) Description() string {
@@ -70,11 +71,14 @@ func s3Ls() {
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
+
 		var delimiter *string
 		var startAfter *string
 		var prefix *string
-		if args.Recursive {
+		if args.StartAfter {
 			startAfter = aws.String(key)
+		} else if args.Recursive {
+			prefix = aws.String(key)
 		} else {
 			prefix = aws.String(key)
 			delimiter = aws.String("/")
@@ -118,7 +122,7 @@ func s3Ls() {
 
 			for _, obj := range out.Contents {
 				objKey := *obj.Key
-				if !args.Recursive && splitKey != "" {
+				if delimiter != nil && splitKey != "" {
 					objKey = strings.SplitN(objKey, splitKey, 2)[1]
 				}
 				if args.Quiet {
