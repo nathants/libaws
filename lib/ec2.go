@@ -1297,7 +1297,6 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		Logger.Println("error:", err)
 		result.Err = err
 		return result
 	}
@@ -1344,21 +1343,18 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 	go tail("stderr", bufio.NewReader(stderr))
 	err = cmd.Start()
 	if err != nil {
-		Logger.Println("error:", err)
 		result.Err = err
 		return result
 	}
 	for i := 0; i < 2; i++ {
 		err := <-done
 		if err != nil {
-			Logger.Println("error:", err)
 			result.Err = err
 			return result
 		}
 	}
 	err = cmd.Wait()
 	if err != nil {
-		Logger.Println("error:", err)
 		result.Err = err
 		return result
 	}
