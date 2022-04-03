@@ -718,7 +718,7 @@ func lambdaEnsureTriggerApiDeployment(ctx context.Context, name string, restApi 
 			Logger.Println("error:", err)
 			return err
 		}
-		if len(deploymentsOut.Items) != 0 && len(deploymentsOut.Items) != 1 {
+		if len(deploymentsOut.Items) != 0 && len(deploymentsOut.Items) != 1 && !preview {
 			err := fmt.Errorf("impossible result for get deployments: %s %d", *restApi.Id, len(deploymentsOut.Items))
 			Logger.Println("error:", err)
 			return err
@@ -1212,6 +1212,10 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 			err = Retry(ctx, func() error {
 				var err error
 				targets, err = EventsListRuleTargets(ctx, scheduleName)
+				aerr, ok := err.(awserr.Error)
+				if ok && aerr.Code() == "ResourceNotFoundException" {
+					return nil
+				}
 				return err
 			})
 			if err != nil {

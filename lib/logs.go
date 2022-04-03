@@ -65,23 +65,25 @@ func LogsEnsureGroup(ctx context.Context, name string, ttlDays int, preview bool
 			break
 		}
 	}
-	if logGroup == nil {
+	if logGroup == nil && !preview {
 		err := fmt.Errorf("expected exactly 1 logGroup with name: %s", name)
 		Logger.Println("error:", err)
 		return err
 	}
-	if logGroup.RetentionInDays == nil {
-		logGroup.RetentionInDays = aws.Int64(0)
-	}
-	if ttlDays != int(*logGroup.RetentionInDays) {
-		Logger.Printf(PreviewString(preview)+"updated log ttl days for %s: %d => %d\n", name, *logGroup.RetentionInDays, ttlDays)
-		_, err = LogsClient().PutRetentionPolicyWithContext(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
-			LogGroupName:    aws.String(name),
-			RetentionInDays: aws.Int64(int64(ttlDays)),
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
+	if logGroup != nil {
+		if logGroup.RetentionInDays == nil {
+			logGroup.RetentionInDays = aws.Int64(0)
+		}
+		if ttlDays != int(*logGroup.RetentionInDays) {
+			Logger.Printf(PreviewString(preview)+"updated log ttl days for %s: %d => %d\n", name, *logGroup.RetentionInDays, ttlDays)
+			_, err = LogsClient().PutRetentionPolicyWithContext(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
+				LogGroupName:    aws.String(name),
+				RetentionInDays: aws.Int64(int64(ttlDays)),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
 		}
 	}
 	return nil
