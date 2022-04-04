@@ -27,16 +27,26 @@ func (ecrLsTagsArgs) Description() string {
 func ecrLsTags() {
 	var args ecrLsTagsArgs
 	arg.MustParse(&args)
-	images, err := lib.EcrClient().DescribeImages(&ecr.DescribeImagesInput{
-		RepositoryName: aws.String(args.Image),
-	})
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
+	var imageDetails []*ecr.ImageDetail
+	var token *string
+	for {
+		out, err := lib.EcrClient().DescribeImages(&ecr.DescribeImagesInput{
+			RepositoryName: aws.String(args.Image),
+			NextToken:      token,
+		})
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
+		imageDetails = append(imageDetails, out.ImageDetails...)
+		if out.NextToken == nil {
+			break
+		}
+		token = out.NextToken
 	}
-	sort.Slice(images.ImageDetails, func(a, b int) bool {
-		return images.ImageDetails[a].ImagePushedAt.After(*images.ImageDetails[b].ImagePushedAt)
+	sort.Slice(imageDetails, func(a, b int) bool {
+		return imageDetails[a].ImagePushedAt.After(*imageDetails[b].ImagePushedAt)
 	})
-	for _, image := range images.ImageDetails {
+	for _, image := range imageDetails {
 		for _, tag := range image.ImageTags {
 			fmt.Println(args.Image+":"+*tag, *image.ImageDigest, image.ImagePushedAt.Format(time.RFC3339))
 		}
