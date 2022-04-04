@@ -9,15 +9,17 @@ COMP_WORDBREAKS=" '><;|&(:" # removed = so the we can complete cloudwatch dimens
 
 _cli_aws () {
 
-    if [ $COMP_CWORD = 1 ]; then
+    if [ ${COMP_WORDS[1]} = s3-ls ]; then
+        arg=""
+        for i in $(seq 2 $COMP_CWORD); do
+            arg="${arg}${COMP_WORDS[$i]}"
+        done
+        COMPREPLY=($(cli-aws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
+
+
+    elif [ $COMP_CWORD = 1 ]; then
         if [ -z "${COMP_WORDS[1]}" ]; then
             COMPREPLY=($(cli-aws -h | awk '{print $1}'))
-        elif [ ${COMP_WORDS[1]} = s3-ls ]; then
-            arg=""
-            for i in $(seq 2 $COMP_CWORD); do
-                arg="${arg}${COMP_WORDS[$i]}"
-            done
-            COMPREPLY=($(cli-aws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
         else
 	        COMPREPLY=($(cli-aws -h 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[$COMP_CWORD]}"))
         fi
