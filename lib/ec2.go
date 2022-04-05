@@ -1864,11 +1864,7 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			fmt.Fprintf(os.Stderr, "pending: %s\n", Cyan(*instance.InstanceId))
 		}
 		if err == nil && len(pendingInstances) == 0 {
-			var ids []string
-			for _, instance := range instances {
-				ids = append(ids, *instance.InstanceId)
-			}
-			return ids, nil
+			return targetAddrs, nil
 		}
 		if len(pendingInstances) == 0 && input.MaxWaitSeconds != 0 && time.Since(start) > time.Duration(input.MaxWaitSeconds)*time.Second {
 			var ready []string
