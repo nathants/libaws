@@ -1832,19 +1832,20 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			}
 		}
 		//
-		var ips []string
+		var targetAddrs []string
 		for _, instance := range instances {
-			ips = append(ips, *instance.PublicDnsName)
+			targetAddrs = append(targetAddrs, *instance.PublicDnsName)
 		}
 		// add an executable on PATH named `aws-ec2-ip-callback` which
 		// will be invoked with the ipv4 of all instances to be waited
 		// before each attempt
-		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(ips, " "))).Run()
+		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(targetAddrs, " "))).Run()
 		//
 		results, err := EC2GoSsh(context.Background(), &EC2GoSshInput{
+			NoTTY:          true,
 			User:           input.User,
 			TimeoutSeconds: 5,
-			Instances:      instances,
+			TargetAddrs:    targetAddrs,
 			Cmd:            "whoami >/dev/null",
 			MaxConcurrency: input.MaxConcurrency,
 			Stdout:         os.Stdout,
@@ -1854,9 +1855,9 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 		})
 		for _, result := range results {
 			if result.Err == nil {
-				fmt.Fprintf(os.Stderr, "ready: %s\n", Green(result.InstanceID))
+				fmt.Fprintf(os.Stderr, "ready: %s\n", Green(result.TargetAddr))
 			} else {
-				fmt.Fprintf(os.Stderr, "unready: %s\n", Red(result.InstanceID))
+				fmt.Fprintf(os.Stderr, "unready: %s\n", Red(result.TargetAddr))
 			}
 		}
 		for _, instance := range pendingInstances {
@@ -1874,10 +1875,10 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			var terminate []string
 			for _, result := range results {
 				if result.Err != nil {
-					fmt.Fprintln(os.Stderr, "terminating unready instance:", result.InstanceID)
-					terminate = append(terminate, result.InstanceID)
+					fmt.Fprintln(os.Stderr, "terminating unready instance:", result.TargetAddr)
+					terminate = append(terminate, result.TargetAddr)
 				} else {
-					ready = append(ready, result.InstanceID)
+					ready = append(ready, result.TargetAddr)
 				}
 			}
 			_, err = EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
@@ -2092,7 +2093,7 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 
 type EC2GoSshInput struct {
 	NoTTY          bool
-	Instances      []*ec2.Instance
+	TargetAddrs    []string
 	Cmd            string
 	TimeoutSeconds int
 	MaxConcurrency int
@@ -2106,7 +2107,7 @@ type EC2GoSshInput struct {
 
 type ec2GoSshResult struct {
 	Err        error
-	InstanceID string
+	TargetAddr string
 }
 
 func pubKey(privKey string) (ssh.AuthMethod, error) {
@@ -2118,28 +2119,14 @@ func pubKey(privKey string) (ssh.AuthMethod, error) {
 }
 
 func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, error) {
-	if len(input.Instances) == 0 {
+	if len(input.TargetAddrs) == 0 {
 		return nil, fmt.Errorf("no instances")
 	}
 	if !strings.HasPrefix(input.Cmd, "#!") && !strings.HasPrefix(input.Cmd, "set ") {
 		input.Cmd = "#!/bin/bash\nset -eou pipefail\n" + input.Cmd
 	}
 	if input.User == "" {
-		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
-		for _, instance := range input.Instances[1:] {
-			user := EC2GetTag(instance.Tags, "user", "")
-			if input.User != user {
-				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
-				Logger.Println("error:", err)
-				return nil, err
-			}
-		}
-		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
-		if input.User == "" {
-			err := fmt.Errorf("no user provied and no user tag available")
-			Logger.Println("error:", err)
-			return nil, err
-		}
+		return nil, fmt.Errorf("expected user")
 	}
 	//
 	auth := []ssh.AuthMethod{}
@@ -2176,25 +2163,26 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 		ctx = timeoutCtx
 	}
 	// done := make(chan error, len(input.Instances))
-	resultChan := make(chan *ec2GoSshResult, len(input.Instances))
+	resultChan := make(chan *ec2GoSshResult, len(input.TargetAddrs))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	for _, instance := range input.Instances {
-		go func(instance *ec2.Instance) {
+	for _, addr := range input.TargetAddrs {
+		addr := addr
+		go func() {
 			err := concurrency.Acquire(cancelCtx, 1)
 			if err != nil {
-				resultChan <- &ec2GoSshResult{Err: err, InstanceID: *instance.InstanceId}
+				resultChan <- &ec2GoSshResult{Err: err, TargetAddr: addr}
 				return
 			}
 			defer concurrency.Release(1)
-			err = ec2GoSsh(cancelCtx, config, instance, input)
-			resultChan <- &ec2GoSshResult{Err: err, InstanceID: *instance.InstanceId}
-		}(instance)
+			err = ec2GoSsh(cancelCtx, config, addr, input)
+			resultChan <- &ec2GoSshResult{Err: err, TargetAddr: addr}
+		}()
 	}
 	var errLast error
 	var result []*ec2GoSshResult
-	for range input.Instances {
+	for range input.TargetAddrs {
 		sshResult := <-resultChan
 		if sshResult.Err != nil {
 			errLast = sshResult.Err
@@ -2219,8 +2207,8 @@ func sshDialContext(ctx context.Context, network, addr string, config *ssh.Clien
 	return ssh.NewClient(c, chans, reqs), nil
 }
 
-func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, instance *ec2.Instance, input *EC2GoSshInput) error {
-	sshConn, err := sshDialContext(ctx, "tcp", fmt.Sprintf("%s:22", *instance.PublicDnsName), config)
+func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, input *EC2GoSshInput) error {
+	sshConn, err := sshDialContext(ctx, "tcp", fmt.Sprintf("%s:22", targetAddr), config)
 	if err != nil {
 		return err
 	}
@@ -2244,7 +2232,7 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, instance *ec2.Insta
 			return err
 		}
 	}
-	cmd := ec2SshRemoteCmd(input.Cmd, input.Stdin, *instance.InstanceId)
+	cmd := ec2SshRemoteCmd(input.Cmd, input.Stdin, targetAddr)
 	runContext, runCancel := context.WithCancel(ctx)
 	defer runCancel()
 	go func() {

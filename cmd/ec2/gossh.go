@@ -77,10 +77,15 @@ func ec2Gossh() {
 		rsaPrivKey := string(rsaBytes)
 		edBytes, _ := ioutil.ReadFile(args.Ed25519PrivKeyFile)
 		ed25519PrivKey := string(edBytes)
+		var targetAddrs []string
+		for _, instance := range instances {
+			targetAddrs = append(targetAddrs, *instance.PublicDnsName)
+		}
 		_, err := lib.EC2GoSsh(context.Background(), &lib.EC2GoSshInput{
+			NoTTY:          true,
 			User:           args.User,
 			TimeoutSeconds: args.Timeout,
-			Instances:      instances,
+			TargetAddrs:    targetAddrs,
 			Cmd:            args.Cmd,
 			Stdin:          stdin,
 			MaxConcurrency: args.MaxConcurrency,
