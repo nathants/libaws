@@ -2098,8 +2098,8 @@ type EC2GoSshInput struct {
 	TimeoutSeconds int
 	MaxConcurrency int
 	User           string
-	Stdout         io.WriteCloser
-	Stderr         io.WriteCloser
+	Stdout         io.Writer
+	Stderr         io.Writer
 	Stdin          string
 	RsaPrivKey     string
 	Ed25519PrivKey string
