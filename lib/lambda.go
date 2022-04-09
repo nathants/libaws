@@ -237,16 +237,16 @@ func lambdaParseMetadata(token string, lines []string) ([]string, []string, erro
 }
 
 type LambdaMetadata struct {
-	S3       []string
-	DynamoDB []string
-	Sqs      []string
-	Policy   []string
-	Allow    []string
-	Include  []string
-	Trigger  []string
-	Require  []string
-	Attr     []string
-	EnvVars  []string
+	S3       []string `json:"s3,omitempty"`
+	DynamoDB []string `json:"dynamodb,omitempty"`
+	Sqs      []string `json:"sqs,omitempty"`
+	Policy   []string `json:"policy,omitempty"`
+	Allow    []string `json:"allow,omitempty"`
+	Include  []string `json:"include,omitempty"`
+	Trigger  []string `json:"trigger,omitempty"`
+	Require  []string `json:"require,omitempty"`
+	Attr     []string `json:"attr,omitempty"`
+	Env      []string `json:"env,omitempty"`
 }
 
 func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
@@ -258,63 +258,63 @@ func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	meta.DynamoDB, envVars, err = lambdaParseMetadata(lambdaMetaDynamoDB, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	meta.Sqs, envVars, err = lambdaParseMetadata(lambdaMetaSQS, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	meta.Policy, envVars, err = lambdaParseMetadata(lambdaMetaPolicy, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	meta.Allow, envVars, err = lambdaParseMetadata(lambdaMetaAllow, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	meta.Include, envVars, err = lambdaParseMetadata(lambdaMetaInclude, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	meta.Trigger, envVars, err = lambdaParseMetadata(lambdaMetaTrigger, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	meta.Require, envVars, err = lambdaParseMetadata(lambdaMetaRequire, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	meta.Attr, envVars, err = lambdaParseMetadata(lambdaMetaAttr, lines)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
+	meta.Env = append(meta.Env, envVars...)
 	//
 	var extraEnv []string
 	extraEnv, envVars, err = lambdaParseMetadata(lambdaMetaEnv, lines)
@@ -322,8 +322,8 @@ func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	meta.EnvVars = append(meta.EnvVars, envVars...)
-	meta.EnvVars = append(meta.EnvVars, extraEnv...)
+	meta.Env = append(meta.Env, envVars...)
+	meta.Env = append(meta.Env, extraEnv...)
 	//
 	for _, conf := range meta.Attr {
 		parts := strings.SplitN(conf, " ", 2)
@@ -2187,7 +2187,7 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 	Logger.Println(PreviewString(preview)+"updated function code:", name)
 	//
 	env := &lambda.Environment{Variables: make(map[string]*string)}
-	for _, val := range metadata.EnvVars {
+	for _, val := range metadata.Env {
 		k, v, err := SplitOnce(val, "=")
 		if err != nil {
 			Logger.Fatal("error: ", err)
