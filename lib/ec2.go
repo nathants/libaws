@@ -618,21 +618,24 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 	}
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
 	for _, subnetId := range config.SubnetIds {
-		launchSpecs = append(launchSpecs, &ec2.SpotFleetLaunchSpecification{
+		launchSpec := &ec2.SpotFleetLaunchSpecification{
 			ImageId:             aws.String(config.AmiID),
 			KeyName:             aws.String(config.Key),
 			SubnetId:            aws.String(subnetId),
 			InstanceType:        aws.String(config.InstanceType),
 			UserData:            aws.String(makeInit(config)),
 			EbsOptimized:        aws.Bool(true),
-			IamInstanceProfile:  &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)},
 			SecurityGroups:      []*ec2.GroupIdentifier{{GroupId: aws.String(config.SgID)}},
 			BlockDeviceMappings: makeBlockDeviceMapping(config),
 			TagSpecifications: []*ec2.SpotFleetTagSpecification{{
 				ResourceType: aws.String(ec2.ResourceTypeInstance),
 				Tags:         makeTags(config),
 			}},
-		})
+		}
+		if config.Profile != "" {
+			launchSpec.IamInstanceProfile = &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
+		}
+		launchSpecs = append(launchSpecs, launchSpec)
 	}
 	Logger.Println("type:", config.InstanceType)
 	Logger.Println("subnets:", config.SubnetIds)
@@ -750,7 +753,6 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, e
 		InstanceType:        aws.String(config.InstanceType),
 		UserData:            aws.String(makeInit(config)),
 		EbsOptimized:        aws.Bool(true),
-		IamInstanceProfile:  &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)},
 		SecurityGroupIds:    []*string{&config.SgID},
 		BlockDeviceMappings: makeBlockDeviceMapping(config),
 		MinCount:            aws.Int64(int64(config.NumInstances)),
@@ -759,6 +761,9 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, e
 			ResourceType: aws.String(ec2.ResourceTypeInstance),
 			Tags:         makeTags(config),
 		}},
+	}
+	if config.Profile != "" {
+		runInstancesInput.IamInstanceProfile = &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
 	}
 	Logger.Println("run instances", DropLinesWithAny(PformatAlways(runInstancesInput), "null", "UserData"))
 	reservation, err := EC2Client().RunInstancesWithContext(ctx, runInstancesInput)
