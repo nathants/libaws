@@ -1172,7 +1172,7 @@ type EC2SshInput struct {
 	NoPrint          bool
 }
 
-const remoteCmdTemplate = `
+const remoteCmdTemplateFailureMessage = `
 fail_msg="%s"
 mkdir -p /dev/shm/.cmds || echo $fail_msg
 path=/dev/shm/.cmds/$(cat /proc/sys/kernel/random/uuid)
@@ -1187,10 +1187,31 @@ if [ $code != 0 ]; then
 fi
 `
 
-func ec2SshRemoteCmd(cmd, stdin, failureMessage string) string {
+const remoteCmdTemplate = `
+mkdir -p /dev/shm/.cmds || echo $fail_msg
+path=/dev/shm/.cmds/$(cat /proc/sys/kernel/random/uuid)
+input=$path.input
+echo %s | base64 -d > $path  || echo $fail_msg
+echo %s | base64 -d > $input || echo $fail_msg
+cat $input | bash $path
+code=$?
+if [ $code != 0 ]; then
+    exit $code
+fi
+`
+
+func ec2SshRemoteCmdFailureMessage(cmd, stdin, failureMessage string) string {
+	return fmt.Sprintf(
+		remoteCmdTemplateFailureMessage,
+		failureMessage,
+		base64.StdEncoding.EncodeToString([]byte(cmd)),
+		base64.StdEncoding.EncodeToString([]byte(stdin)),
+	)
+}
+
+func ec2SshRemoteCmd(cmd, stdin string) string {
 	return fmt.Sprintf(
 		remoteCmdTemplate,
-		failureMessage,
 		base64.StdEncoding.EncodeToString([]byte(cmd)),
 		base64.StdEncoding.EncodeToString([]byte(stdin)),
 	)
@@ -1291,7 +1312,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 	if len(input.Instances) == 1 {
 		failureMessage = fmt.Sprintf("failure on %s", *instance.InstanceId)
 	}
-	sshCmd = append(sshCmd, ec2SshRemoteCmd(input.Cmd, input.Stdin, failureMessage))
+	sshCmd = append(sshCmd, ec2SshRemoteCmdFailureMessage(input.Cmd, input.Stdin, failureMessage))
 	//
 	cmd := exec.CommandContext(ctx, sshCmd[0], sshCmd[1:]...)
 	stderr, err := cmd.StderrPipe()
@@ -2233,7 +2254,7 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, 
 			return err
 		}
 	}
-	cmd := ec2SshRemoteCmd(input.Cmd, input.Stdin, targetAddr)
+	cmd := ec2SshRemoteCmd(input.Cmd, input.Stdin)
 	runContext, runCancel := context.WithCancel(ctx)
 	defer runCancel()
 	go func() {
