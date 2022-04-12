@@ -470,7 +470,7 @@ func InfraListDynamoDB(ctx context.Context) (map[string]InfraDynamoDB, error) {
 				attrTypes[*attr.AttributeName] = *attr.AttributeType
 			}
 			for _, key := range out.Table.KeySchema {
-				db.Keys = append(db.Keys, fmt.Sprintf("%s:%s:%s", *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+				db.Keys = append(db.Keys, fmt.Sprintf("%s:%s:%s", *key.AttributeName, strings.ToLower(attrTypes[*key.AttributeName]), strings.ToLower(*key.KeyType)))
 			}
 			db.Attrs = append(db.Attrs, fmt.Sprintf("ProvisionedThroughput.ReadCapacityUnits=%d", *out.Table.ProvisionedThroughput.ReadCapacityUnits))
 			db.Attrs = append(db.Attrs, fmt.Sprintf("ProvisionedThroughput.WriteCapacityUnits=%d", *out.Table.ProvisionedThroughput.WriteCapacityUnits))
