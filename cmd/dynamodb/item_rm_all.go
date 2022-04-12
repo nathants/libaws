@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
@@ -38,7 +39,7 @@ func dynamodbItemRmAll() {
 			Limit:             aws.Int64(25),
 		})
 		if err != nil {
-			panic(err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		reqs := []*dynamodb.WriteRequest{}
 		for _, item := range out.Items {
@@ -55,17 +56,19 @@ func dynamodbItemRmAll() {
 		}
 		_, err = lib.DynamoDBClient().BatchWriteItemWithContext(ctx, input)
 		if err != nil {
-			panic(err)
+			if !strings.Contains(err.Error(), "[Member must have length less than or equal to 25, Member must have length greater than or equal to 1]") { // table already empty
+				lib.Logger.Fatal("error: ", err)
+			}
 		}
 		for _, req := range reqs {
 			val := make(map[string]interface{})
 			err := dynamodbattribute.UnmarshalMap(req.DeleteRequest.Key, &val)
 			if err != nil {
-				panic(err)
+				lib.Logger.Fatal("error: ", err)
 			}
 			bytes, err := json.Marshal(val)
 			if err != nil {
-				panic(err)
+				lib.Logger.Fatal("error: ", err)
 			}
 			fmt.Println(string(bytes))
 		}
