@@ -243,7 +243,7 @@ func s3PublicPolicy(bucket string) IamPolicyDocument {
 }
 
 var s3Cors = []*s3.CORSRule{{
-	AllowedHeaders: []*string{aws.String("Authorization")},
+	AllowedHeaders: []*string{aws.String("Authorization"), aws.String("Range")},
 	AllowedMethods: []*string{aws.String("GET"), aws.String("PUT"), aws.String("POST"), aws.String("HEAD")},
 	AllowedOrigins: []*string{aws.String("*")},
 	ExposeHeaders:  []*string{aws.String("Content-Length"), aws.String("Content-Type"), aws.String("ETag")},
