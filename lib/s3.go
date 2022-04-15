@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -935,4 +936,32 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	}
 
 	return &descr, nil
+}
+
+func S3PresignPut(bucket, key string, expire time.Duration) string {
+	req, _ := S3Client().PutObjectRequest(&s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	url, err := req.Presign(expire)
+	if err != nil {
+		panic(err)
+	}
+	return url
+}
+
+func S3PresignGet(bucket, key, byterange string, expire time.Duration) string {
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}
+	if byterange != "" {
+		input.Range = aws.String(byterange)
+	}
+	req, _ := S3Client().GetObjectRequest(input)
+	url, err := req.Presign(expire)
+	if err != nil {
+		panic(err)
+	}
+	return url
 }
