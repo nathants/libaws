@@ -15,13 +15,13 @@ def main(event, context):
     >>> path = __file__
     >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'aws-lambda-rm -ey {path}')
+    >>> _ = run(f'cli-aws lambda-rm -ey {path}')
 
-    >>> _ = run(f'aws-lambda-deploy {path} UUID={uid} -y && sleep 5 # iam is slow')
+    >>> _ = run(f'cli-aws lambda-ensure {path} UUID={uid} -y && sleep 5 # iam is slow')
 
-    >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
+    >>> assert uid == run(f'cli-aws lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
 
-    >>> _ = run('aws-lambda-rm -ey', path)
+    >>> _ = run('cli-aws lambda-rm -ey', path)
 
     """
     print(os.environ['UUID'])

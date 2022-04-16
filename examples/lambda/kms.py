@@ -19,13 +19,13 @@ def main(event, context):
     >>> path = __file__
     >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'aws-lambda-rm -ey {path}')
+    >>> _ = run(f'cli-aws lambda-rm -ey {path}')
 
-    >>> _ = run(f'aws-lambda-deploy {path} UUID={uid} -y --kms && sleep 5 # iam is slow')
+    >>> _ = run(f'cli-aws lambda-ensure {path} UUID={uid} -y --kms && sleep 5 # iam is slow')
 
-    >>> assert f'"{uid}"' == run('aws-lambda-invoke', path)
+    >>> assert f'"{uid}"' == run('cli-aws lambda-invoke', path)
 
-    >>> _ = run('aws-lambda-rm -ey', path)
+    >>> _ = run('cli-aws lambda-rm -ey', path)
 
     """
     return decrypt(os.environ['UUID'])

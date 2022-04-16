@@ -19,11 +19,11 @@ def main(event, context):
 
     >>> _ = run("head -c 64 /dev/urandom >", infile)
 
-    >>> _ = run(f'aws-lambda-rm -ey {path}')
+    >>> _ = run(f'cli-aws lambda-rm -ey {path}')
 
-    >>> _ = run(f'aws-lambda-deploy {path} -y && sleep 5 # iam is slow')
+    >>> _ = run(f'cli-aws lambda-ensure {path} -y && sleep 5 # iam is slow')
 
-    >>> api = run('aws-lambda-api', path)
+    >>> api = run('cli-aws lambda-api', path)
 
     >>> _ = run(f'for i in $(seq 10); do curl -f {api} 2>/dev/null && exit 0; sleep 1; done; exit 1')
 
@@ -31,7 +31,7 @@ def main(event, context):
 
     >>> _ = run(f'[ "$(cat {infile} | md5sum)" = "$(cat {outfile} | md5sum)" ]')
 
-    >>> _ = run('aws-lambda-rm -ey', path)
+    >>> _ = run('cli-aws lambda-rm -ey', path)
 
     >>> _ = run("rm", infile, outfile)
 

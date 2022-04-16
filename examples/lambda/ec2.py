@@ -22,26 +22,26 @@ def main(event, context):
     >>> path = __file__
     >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'aws-lambda-deploy -y {path} $(env | grep -e ^AWS_EC2_KEY -e ^AWS_EC2_VPC -e ^AWS_EC2_SG)')
+    >>> _ = run(f'cli-aws lambda-ensure -y {path} $(env | grep -e ^AWS_EC2_KEY -e ^AWS_EC2_VPC -e ^AWS_EC2_SG)')
 
-    >>> _ = run(f'aws-lambda-invoke {path} -es', "'%s'" % json.dumps({"uid": uid})).replace('"', '')
+    >>> _ = run(f'cli-aws lambda-invoke {path} -es', "'%s'" % json.dumps({"uid": uid})).replace('"', '')
 
-    >>> _ = run(f'for i in {{1..300}}; do sleep 1; aws-ec2-ls {uid} && break; done')
+    >>> _ = run(f'for i in {{1..300}}; do sleep 1; cli-aws ec2-ls {uid} && break; done')
 
-    >>> _ = run('aws-ec2-wait-for-ssh -y', uid)
+    >>> _ = run('cli-aws ec2-wait-for-ssh -y', uid)
 
-    >>> _ = run('aws-ec2-ssh', uid, '-yc "for i in {1..60}; do ls /tmp/name.txt && break; sleep 1; done"')
+    >>> _ = run('cli-aws ec2-ssh', uid, '-yc "for i in {1..60}; do ls /tmp/name.txt && break; sleep 1; done"')
 
-    >>> assert uid == run(f'aws-ec2-ssh {uid} -yc "cat /tmp/name.txt"')
+    >>> assert uid == run(f'cli-aws ec2-ssh {uid} -yc "cat /tmp/name.txt"')
 
-    >>> _ = shell.run('aws-ec2-rm -y', uid)
+    >>> _ = shell.run('cli-aws ec2-rm -y', uid)
 
-    >>> _ = run('aws-lambda-rm -ey', path)
+    >>> _ = run('cli-aws lambda-rm -ey', path)
     """
 
     name = event['uid']
     os.environ['PATH'] += f':{os.getcwd()}'
-    instance_id = sh.run('aws-ec2-new',
+    instance_id = sh.run('cli-aws ec2-new',
                          name,
                          '--ami arch',
                          '--type t3.nano',

@@ -19,15 +19,15 @@ def main(event, context):
     >>> bucket = f'cli-aws-{str(uuid.uuid4())[-12:]}'
     >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'aws-lambda-rm -ey {path}')
+    >>> _ = run(f'cli-aws lambda-rm -ey {path}')
 
-    >>> _ = run(f'bucket={bucket} aws-lambda-deploy -y {path} && sleep 5 # iam is slow')
+    >>> _ = run(f'bucket={bucket} cli-aws lambda-ensure -y {path} && sleep 5 # iam is slow')
 
     >>> _ = run(f'echo | aws s3 cp - s3://{bucket}/{uid}')
 
-    >>> assert uid == run(f'aws-lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
+    >>> assert uid == run(f'cli-aws lambda-logs {path} -f -e {uid} | tail -n1').split()[-1]
 
-    >>> _ = run(f'bucket={bucket} aws-lambda-rm -ey', path)
+    >>> _ = run(f'bucket={bucket} cli-aws lambda-rm -ey', path)
 
     """
     for record in event['Records']:

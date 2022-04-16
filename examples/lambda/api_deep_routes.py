@@ -17,11 +17,11 @@ def main(event, context):
     >>> path = __file__
     >>> uid = str(uuid.uuid4())[-12:]
 
-    >>> _ = run(f'aws-lambda-rm -ey {path}')
+    >>> _ = run(f'cli-aws lambda-rm -ey {path}')
 
-    >>> _ = run(f'aws-lambda-deploy {path} -y && sleep 5 # iam is slow')
+    >>> _ = run(f'cli-aws lambda-ensure {path} -y && sleep 5 # iam is slow')
 
-    >>> api = run('aws-lambda-api', path)
+    >>> api = run('cli-aws lambda-api', path)
 
     >>> _ = run(f'for i in $(seq 10); do curl -f {api} 2>/dev/null && exit 0; sleep 1; done; exit 1')
 
@@ -29,7 +29,7 @@ def main(event, context):
 
     >>> assert '["POST", "/a/b/c/d/e/f/g", "%s"]' % uid == run(f'curl {api}/a/b/c/d/e/f/g -d {uid} 2>/dev/null')
 
-    >>> _ = run('aws-lambda-rm -ey', path)
+    >>> _ = run('cli-aws lambda-rm -ey', path)
 
     """
     body = event['body']

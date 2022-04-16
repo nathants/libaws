@@ -26,7 +26,7 @@ func (dynamodbItemPutArgs) Description() string {
 put item
 describe vals like: $name:s|n|b:$value
 
->> aws-dynamodb-put test-table user:s:john
+>> cli-aws dynamodb-item-put test-table user:s:john
 
 `
 }

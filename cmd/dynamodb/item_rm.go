@@ -26,7 +26,7 @@ func (dynamodbItemRmArgs) Description() string {
 delete item
 describe keys like: $name:s|n:$value
 
->> aws-dynamodb-delete test-table user:s:john
+>> cli-aws dynamodb-item-rm test-table user:s:john
 
 `
 }
