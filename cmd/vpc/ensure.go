@@ -18,11 +18,7 @@ type vpcEnsureArgs struct {
 }
 
 func (vpcEnsureArgs) Description() string {
-	return `
-setup a default-like vpc, with cidr 10.xx.0.0/16 and a
-subnet for each zone like 10.xx.yy.0/20. add a security
-group with the same name. public ipv4 is turned on.
-`
+	return `setup a default-like vpc, with cidr 10.xx.0.0/16, a subnet for each zone like 10.xx.yy.0/20, and public ip on.`
 }
 
 func vpcEnsure() {

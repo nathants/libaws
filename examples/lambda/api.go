@@ -11,8 +11,8 @@ package main
 import (
 	"context"
 
-	"github.com/aws/cli-aws lambda-go/events"
-	"github.com/aws/cli-aws lambda-go/lambda"
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 )
 
 func handleRequest(_ context.Context, _ events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
