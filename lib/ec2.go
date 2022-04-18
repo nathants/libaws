@@ -1646,15 +1646,25 @@ func EC2ZonesWithInstance(ctx context.Context, instanceType string) (zones []str
 	return zones, nil
 }
 
-func EC2SgID(ctx context.Context, name string) (string, error) {
+func EC2SgID(ctx context.Context, vpcName, sgName string) (string, error) {
+	if strings.HasPrefix(sgName, "sg-") {
+		return sgName, nil
+	}
+	vpcID, err := VpcID(ctx, vpcName)
+	if err != nil {
+		return "", err
+	}
 	out, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-		Filters: []*ec2.Filter{{Name: aws.String("group-name"), Values: []*string{aws.String(name)}}},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("group-name"), Values: []*string{aws.String(sgName)}},
+			{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+		},
 	})
 	if err != nil {
 		return "", err
 	}
 	if len(out.SecurityGroups) != 1 {
-		err = fmt.Errorf("didn't find exactly 1 security group for name: %s %s", name, Pformat(out.SecurityGroups))
+		err = fmt.Errorf("%s security group for name: %s %s", ErrPrefixDidntFindExactlyOne, sgName, Pformat(out.SecurityGroups))
 		return "", err
 	}
 	return *out.SecurityGroups[0].GroupId, nil
@@ -1993,83 +2003,110 @@ func EC2ListSg(ctx context.Context) ([]*ec2.SecurityGroup, error) {
 
 type EC2SgRule struct {
 	Proto string
-	Port  int
+	Port  *int64
 	Cidr  string
+}
+
+func (r EC2SgRule) String() string {
+	proto := ""
+	if r.Proto != "-1" {
+		proto = r.Proto
+	}
+	port := ""
+	if r.Port != nil {
+		port = fmt.Sprint(*r.Port)
+	}
+	cidr := r.Cidr
+	return fmt.Sprintf("%s:%s:%s", proto, port, cidr)
 }
 
 type EC2EnsureSgInput struct {
 	VpcName string
 	SgName  string
 	Rules   []EC2SgRule
+	Preview bool
 }
 
 func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
-	vpcID, err := VpcEnsure(ctx, input.VpcName, 0)
+	vpcID, err := VpcID(ctx, input.VpcName)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	sgID, err := EC2SgID(ctx, input.SgName)
+	sgID, err := EC2SgID(ctx, input.VpcName, input.SgName)
 	if err != nil {
-		out, err := EC2Client().CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
-			GroupName:   aws.String(input.SgName),
-			Description: aws.String(input.SgName),
-			VpcId:       aws.String(vpcID),
-		})
-		if err != nil {
-			Logger.Println("error:", err)
+		if strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
 			return err
 		}
-		err = Retry(ctx, func() error {
-			_, err := EC2Client().CreateTagsWithContext(ctx, &ec2.CreateTagsInput{
-				Resources: []*string{out.GroupId},
-				Tags: []*ec2.Tag{{
-					Key:   aws.String("Name"),
-					Value: aws.String(input.SgName),
-				}},
+		if !input.Preview {
+			out, err := EC2Client().CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
+				GroupName:   aws.String(input.SgName),
+				Description: aws.String(input.SgName),
+				VpcId:       aws.String(vpcID),
 			})
-			return err
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			err = Retry(ctx, func() error {
+				_, err := EC2Client().CreateTagsWithContext(ctx, &ec2.CreateTagsInput{
+					Resources: []*string{out.GroupId},
+					Tags: []*ec2.Tag{{
+						Key:   aws.String("Name"),
+						Value: aws.String(input.SgName),
+					}},
+				})
+				return err
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			sgID = *out.GroupId
 		}
-		sgID = *out.GroupId
+		Logger.Println(PreviewString(input.Preview)+"created security group:", input.VpcName, input.SgName)
 	}
 	sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-		Filters: []*ec2.Filter{{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}}},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}},
+			{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	if len(sgs.SecurityGroups) != 1 {
+	if !input.Preview && len(sgs.SecurityGroups) != 1 {
 		err := fmt.Errorf("expected exactly 1 sg: %s", Pformat(sgs))
 		Logger.Println("error:", err)
 		return err
 	}
-	sg := sgs.SecurityGroups[0]
+	if input.Preview && len(sgs.SecurityGroups) > 1 {
+		err := fmt.Errorf("expected exactly 1 sg: %s", Pformat(sgs))
+		Logger.Println("error:", err)
+		return err
+	}
 	delete := make(map[EC2SgRule]bool)
-	for _, r := range sg.IpPermissions {
-		if len(r.UserIdGroupPairs) > 0 {
-			continue
-		}
-		if *r.FromPort != *r.ToPort {
-			err := fmt.Errorf("expected ports to match: %s", Pformat(r))
-			Logger.Println("error:", err)
-			return err
-		}
-		for _, ip := range r.IpRanges {
-			delete[EC2SgRule{*r.IpProtocol, int(*r.ToPort), *ip.CidrIp}] = true
-		}
-		for _, ip := range r.Ipv6Ranges {
-			delete[EC2SgRule{*r.IpProtocol, int(*r.ToPort), *ip.CidrIpv6}] = true
-		}
-		for _, ip := range r.UserIdGroupPairs {
-			delete[EC2SgRule{*r.IpProtocol, int(*r.ToPort), *ip.GroupId}] = true
-		}
-		for _, ip := range r.PrefixListIds {
-			delete[EC2SgRule{*r.IpProtocol, int(*r.ToPort), *ip.PrefixListId}] = true
+	if len(sgs.SecurityGroups) == 1 {
+		sg := sgs.SecurityGroups[0]
+		for _, r := range sg.IpPermissions {
+			if !(r.FromPort == nil && r.ToPort == nil) && *r.FromPort != *r.ToPort {
+				err := fmt.Errorf("expected ports to match: %s", Pformat(r))
+				Logger.Println("error:", err)
+				return err
+			}
+			for _, ip := range r.IpRanges {
+				delete[EC2SgRule{*r.IpProtocol, r.ToPort, *ip.CidrIp}] = true
+			}
+			for _, ip := range r.Ipv6Ranges {
+				delete[EC2SgRule{*r.IpProtocol, r.ToPort, *ip.CidrIpv6}] = true
+			}
+			for _, ip := range r.UserIdGroupPairs {
+				delete[EC2SgRule{*r.IpProtocol, r.ToPort, *ip.GroupId}] = true
+			}
+			for _, ip := range r.PrefixListIds {
+				delete[EC2SgRule{*r.IpProtocol, r.ToPort, *ip.PrefixListId}] = true
+			}
 		}
 	}
 	for _, r := range input.Rules {
@@ -2078,37 +2115,71 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 		if ok {
 			delete[key] = false
 		} else {
-			_, err := EC2Client().AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
-				CidrIp:     aws.String(r.Cidr),
-				FromPort:   aws.Int64(int64(r.Port)),
-				ToPort:     aws.Int64(int64(r.Port)),
-				IpProtocol: aws.String(r.Proto),
-				GroupId:    sg.GroupId,
-			})
-			if err != nil {
-				aerr, ok := err.(awserr.Error)
-				if !ok || aerr.Code() != "InvalidPermission.Duplicate" {
-					Logger.Println("error:", err)
-					return err
+			if !input.Preview {
+				sg := sgs.SecurityGroups[0]
+				permissions := []*ec2.IpPermission{}
+				if strings.HasPrefix(r.Cidr, "sg-") {
+					permissions = append(permissions, &ec2.IpPermission{
+						UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(r.Cidr)}},
+						FromPort:         r.Port,
+						ToPort:           r.Port,
+						IpProtocol:       aws.String(r.Proto),
+					})
+				} else {
+					permissions = append(permissions, &ec2.IpPermission{
+						IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(r.Cidr)}},
+						FromPort:   r.Port,
+						ToPort:     r.Port,
+						IpProtocol: aws.String(r.Proto),
+					})
+				}
+				_, err := EC2Client().AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+					GroupId:       sg.GroupId,
+					IpPermissions: permissions,
+				})
+				if err != nil {
+					aerr, ok := err.(awserr.Error)
+					if !ok || aerr.Code() != "InvalidPermission.Duplicate" {
+						Logger.Println("error:", err)
+						return err
+					}
 				}
 			}
+			Logger.Println(PreviewString(input.Preview)+"authorize ingress:", key)
 		}
 	}
 	for k, v := range delete {
 		if !v {
 			continue
 		}
-		_, err := EC2Client().RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
-			CidrIp:     aws.String(k.Cidr),
-			FromPort:   aws.Int64(int64(k.Port)),
-			ToPort:     aws.Int64(int64(k.Port)),
-			IpProtocol: aws.String(k.Proto),
-			GroupId:    sg.GroupId,
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
+		if !input.Preview {
+			sg := sgs.SecurityGroups[0]
+			permissions := []*ec2.IpPermission{}
+			if strings.HasPrefix(k.Cidr, "sg-") {
+				permissions = append(permissions, &ec2.IpPermission{
+					UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(k.Cidr)}},
+					FromPort:         k.Port,
+					ToPort:           k.Port,
+					IpProtocol:       aws.String(k.Proto),
+				})
+			} else {
+				permissions = append(permissions, &ec2.IpPermission{
+					IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(k.Cidr)}},
+					FromPort:   k.Port,
+					ToPort:     k.Port,
+					IpProtocol: aws.String(k.Proto),
+				})
+			}
+			_, err := EC2Client().RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
+				GroupId:       sg.GroupId,
+				IpPermissions: permissions,
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
 		}
+		Logger.Println(PreviewString(input.Preview)+"deauthorize ingress:", k)
 	}
 	return nil
 }

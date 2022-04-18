@@ -29,6 +29,9 @@ func VpcList(ctx context.Context) ([]*ec2.Vpc, error) {
 }
 
 func VpcID(ctx context.Context, name string) (string, error) {
+	if strings.HasPrefix(name, "vpc-") {
+		return name, nil
+	}
 	out, err := EC2Client().DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{{Name: aws.String("tag:Name"), Values: []*string{aws.String(name)}}},
 	})
@@ -37,7 +40,7 @@ func VpcID(ctx context.Context, name string) (string, error) {
 		return "", err
 	}
 	if len(out.Vpcs) != 1 {
-		err := fmt.Errorf("didn't find exactly one vpc for name %s: %d", name, len(out.Vpcs))
+		err := fmt.Errorf("%s vpc for name %s: %d", ErrPrefixDidntFindExactlyOne, name, len(out.Vpcs))
 		return "", err
 	}
 	return *out.Vpcs[0].VpcId, nil
@@ -59,6 +62,9 @@ func VpcEnsure(ctx context.Context, name string, xx int) (string, error) {
 	if err == nil {
 		// TODO assert vpc state
 		return id, nil
+	}
+	if strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
+		return "", err
 	}
 	tags := []*ec2.Tag{{
 		Key:   aws.String("Name"),
@@ -253,7 +259,7 @@ func VpcEnsure(ctx context.Context, name string, xx int) (string, error) {
 func VpcRm(ctx context.Context, name string) error {
 	vpcID, err := VpcID(ctx, name)
 	if err != nil {
-		if strings.HasPrefix(err.Error(), "didn't find exactly one vpc for name") {
+		if strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
 			return nil
 		}
 		Logger.Println("error:", err)

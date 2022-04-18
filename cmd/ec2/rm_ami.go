@@ -40,7 +40,7 @@ func ec2RmAmi() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	if len(images.Images) != 1 {
-		lib.Logger.Fatal("didn't find an image for id:", args.AmiID)
+		lib.Logger.Fatal("didn't find image for id:", args.AmiID)
 	}
 	// find backing snapshot
 	snaps, err := lib.EC2Client().DescribeSnapshotsWithContext(ctx, &ec2.DescribeSnapshotsInput{

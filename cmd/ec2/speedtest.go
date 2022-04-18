@@ -35,7 +35,7 @@ func ec2Speedtest() {
 	arg.MustParse(&args)
 	ctx := context.Background()
 	if !strings.HasPrefix(args.Sg, "sg-") {
-		sgID, err := lib.EC2SgID(ctx, args.Sg)
+		sgID, err := lib.EC2SgID(ctx, args.Vpc, args.Sg)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

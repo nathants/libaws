@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -15,12 +16,13 @@ func init() {
 type ec2EnsureSgArgs struct {
 	VpcName string   `arg:"positional,required"`
 	SgName  string   `arg:"positional,required"`
-	Rules   []string `arg:"positional,required"`
+	Rules   []string `arg:"positional"`
+	Preview bool     `arg:"-p,--preview"`
 }
 
 func (ec2EnsureSgArgs) Description() string {
 	return "\nensure a sg\n" + `
-cli-aws ec2-ensure-sg $vpc $sg tcp:22:0.0.0.0/0 tcp:443:0.0.0.0/0
+cli-aws ec2-ensure-sg $vpc $sg tcp:22:0.0.0.0/0 tcp:443:0.0.0.0/0 ::sg-XXXX
 `
 }
 
@@ -34,16 +36,23 @@ func ec2EnsureSg() {
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
-		rules = append(rules, lib.EC2SgRule{
+		if proto == "" {
+			proto = "-1" // all proto
+		}
+		rule := lib.EC2SgRule{
 			Proto: proto,
-			Port:  lib.Atoi(port),
 			Cidr:  cidr,
-		})
+		}
+		if port != "" {
+			rule.Port = aws.Int64(int64(lib.Atoi(port)))
+		}
+		rules = append(rules, rule)
 	}
 	err := lib.EC2EnsureSg(ctx, &lib.EC2EnsureSgInput{
 		VpcName: args.VpcName,
 		SgName:  args.SgName,
 		Rules:   rules,
+		Preview: args.Preview,
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

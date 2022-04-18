@@ -3,7 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"strings"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
@@ -17,7 +17,8 @@ func init() {
 }
 
 type ec2DescribeSgArgs struct {
-	Sg string `arg:"positional,required"`
+	Vpc string `arg:"positional,required"`
+	Sg  string `arg:"positional,required"`
 }
 
 func (ec2DescribeSgArgs) Description() string {
@@ -41,21 +42,24 @@ func ec2DescribeSg() {
 	var args ec2DescribeSgArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	if !strings.HasPrefix(args.Sg, "sg-") {
-		var err error
-		args.Sg, err = lib.EC2SgID(ctx, args.Sg)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+	sgID, err := lib.EC2SgID(ctx, args.Vpc, args.Sg)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
 	}
 	out, err := lib.EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-		GroupIds: []*string{aws.String(args.Sg)},
+		GroupIds: []*string{aws.String(sgID)},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	lib.Logger.Println("protocol port source description")
+	fmt.Fprintln(os.Stderr, "protocol port source description")
 	for _, perm := range out.SecurityGroups[0].IpPermissions {
+		if perm.FromPort == nil {
+			perm.FromPort = aws.Int64(0)
+		}
+		if perm.ToPort == nil {
+			perm.ToPort = aws.Int64(65535)
+		}
 		for _, ip := range perm.IpRanges {
 			printSg(*perm.IpProtocol, int(*perm.FromPort), int(*perm.ToPort), *ip.CidrIp)
 		}

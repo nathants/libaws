@@ -27,8 +27,8 @@ type ec2NewArgs struct {
 	Key            string   `arg:"-k,--key,required"`
 	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create onDemand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized"`
 	Sg             string   `arg:"--sg,required" help:"security group name or id"`
-	SubnetIds      []string `arg:"--subnets" help:"subnet-ids as space separated values. specify instead of --vpc"`
-	Vpc            string   `arg:"-v,--vpc" help:"vpc name or id. specify instead of --subnet-ids"`
+	SubnetIds      []string `arg:"--subnets" help:"subnet-ids as space separated values"`
+	Vpc            string   `arg:"-v,--vpc" help:"vpc name or id"`
 	Gigs           int      `arg:"-g,--gigs" help:"ebs gigabytes\n                        " default:"16"`
 	Iops           int      `arg:"--iops" help:"gp3 iops\n                        " default:"3000"`
 	Throughput     int      `arg:"--throughput" help:"gp3 throughput mb/s\n                        " default:"125"`
@@ -124,7 +124,6 @@ func ec2New() {
 		if args.UserName == "" {
 			args.UserName = lib.EC2GetTag(images.Images[0].Tags, "user", "")
 		}
-
 	} else {
 		arch := lib.EC2ArchAmd64
 		if strings.Contains(strings.Split(args.Type, ".")[0][1:], "g") { // slice first char, since arm64 g is never first char
@@ -138,7 +137,7 @@ func ec2New() {
 		args.UserName = sshUser
 	}
 	if !strings.HasPrefix(args.Sg, "sg-") {
-		sgID, err := lib.EC2SgID(ctx, args.Sg)
+		sgID, err := lib.EC2SgID(ctx, args.Vpc, args.Sg)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
