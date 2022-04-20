@@ -362,7 +362,10 @@ func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 }
 
 func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *LambdaMetadata, preview bool) error {
-	events := []*string{aws.String("s3:ObjectCreated:*"), aws.String("s3:ObjectRemoved:*")}
+	events := []*string{
+		aws.String("s3:ObjectCreated:*"),
+		aws.String("s3:ObjectRemoved:*"),
+	}
 	var triggers []string
 	for _, trigger := range meta.Trigger {
 		parts := strings.Split(trigger, " ")
@@ -420,7 +423,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 						return err
 					}
 				}
-				Logger.Printf(PreviewString(preview)+"updated bucket notifications for %s %s: %s => %s\n", bucket, name, existingEvents, events)
+				Logger.Printf(PreviewString(preview)+"updated bucket notifications for %s %s: %s => %s\n", bucket, name, StringSlice(existingEvents), StringSlice(events))
 			}
 		}
 	}
