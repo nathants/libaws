@@ -717,6 +717,9 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 		}
 		var objects []*s3.ObjectIdentifier
 		for _, obj := range out.Versions {
+			if obj.VersionId != nil && *obj.VersionId == "null" {
+				continue // "null" means unversioned
+			}
 			objects = append(objects, &s3.ObjectIdentifier{
 				Key:       obj.Key,
 				VersionId: obj.VersionId,
