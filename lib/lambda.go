@@ -403,15 +403,14 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 			if !reflect.DeepEqual(existingEvents, events) {
 				var confs []*s3.LambdaFunctionConfiguration
 				for _, conf := range out.LambdaFunctionConfigurations {
-					if *conf.LambdaFunctionArn == arnLambda {
-						confs = append(confs, &s3.LambdaFunctionConfiguration{
-							LambdaFunctionArn: aws.String(arnLambda),
-							Events:            events,
-						})
-					} else {
+					if *conf.LambdaFunctionArn != arnLambda {
 						confs = append(confs, conf)
 					}
 				}
+				confs = append(confs, &s3.LambdaFunctionConfiguration{
+					LambdaFunctionArn: aws.String(arnLambda),
+					Events:            events,
+				})
 				out.LambdaFunctionConfigurations = confs
 				if !preview {
 					_, err := s3Client.PutBucketNotificationConfigurationWithContext(ctx, &s3.PutBucketNotificationConfigurationInput{
