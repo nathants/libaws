@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -36,15 +35,12 @@ func ec2EnsureSg() {
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
-		if proto == "" {
-			proto = "-1" // all proto
-		}
 		rule := lib.EC2SgRule{
 			Proto: proto,
 			Cidr:  cidr,
 		}
 		if port != "" {
-			rule.Port = aws.Int64(int64(lib.Atoi(port)))
+			rule.Port = lib.Atoi(port)
 		}
 		rules = append(rules, rule)
 	}

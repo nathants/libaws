@@ -2013,7 +2013,7 @@ func EC2ListSg(ctx context.Context) ([]*ec2.SecurityGroup, error) {
 
 type EC2SgRule struct {
 	Proto string
-	Port  *int64
+	Port  int
 	Cidr  string
 }
 
@@ -2023,8 +2023,8 @@ func (r EC2SgRule) String() string {
 		proto = r.Proto
 	}
 	port := ""
-	if r.Port != nil {
-		port = fmt.Sprint(*r.Port)
+	if r.Port != 0 {
+		port = fmt.Sprint(r.Port)
 	}
 	cidr := r.Cidr
 	return fmt.Sprintf("%s:%s:%s", proto, port, cidr)
@@ -2038,6 +2038,13 @@ type EC2EnsureSgInput struct {
 }
 
 func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
+	for _, rule := range input.Rules {
+		if rule.Port == 0 && rule.Proto != "" {
+			err := fmt.Errorf("you must specify both port and proto or neither, got: %#v", rule)
+			Logger.Println("error:", err)
+			return err
+		}
+	}
 	vpcID, err := VpcID(ctx, input.VpcName)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2105,42 +2112,57 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 				Logger.Println("error:", err)
 				return err
 			}
+			toPort := 0
+			if r.ToPort != nil {
+				toPort = int(*r.ToPort)
+			}
+			proto := ""
+			if *r.IpProtocol != "-1" {
+				proto = *r.IpProtocol
+			}
 			for _, ip := range r.IpRanges {
-				delete[EC2SgRule{*r.IpProtocol, r.ToPort, *ip.CidrIp}] = true
+				delete[EC2SgRule{proto, toPort, *ip.CidrIp}] = true
 			}
 			for _, ip := range r.Ipv6Ranges {
-				delete[EC2SgRule{*r.IpProtocol, r.ToPort, *ip.CidrIpv6}] = true
+				delete[EC2SgRule{proto, toPort, *ip.CidrIpv6}] = true
 			}
 			for _, ip := range r.UserIdGroupPairs {
-				delete[EC2SgRule{*r.IpProtocol, r.ToPort, *ip.GroupId}] = true
+				delete[EC2SgRule{proto, toPort, *ip.GroupId}] = true
 			}
 			for _, ip := range r.PrefixListIds {
-				delete[EC2SgRule{*r.IpProtocol, r.ToPort, *ip.PrefixListId}] = true
+				delete[EC2SgRule{proto, toPort, *ip.PrefixListId}] = true
 			}
 		}
 	}
 	for _, r := range input.Rules {
-		key := EC2SgRule{r.Proto, r.Port, r.Cidr}
-		_, ok := delete[key]
+		_, ok := delete[r]
 		if ok {
-			delete[key] = false
+			delete[r] = false
 		} else {
 			if !input.Preview {
 				sg := sgs.SecurityGroups[0]
 				permissions := []*ec2.IpPermission{}
+				var port *int64
+				if r.Port != 0 {
+					port = aws.Int64(int64(r.Port))
+				}
+				proto := "-1" // all ports
+				if r.Proto != "" {
+					proto = r.Proto
+				}
 				if strings.HasPrefix(r.Cidr, "sg-") {
 					permissions = append(permissions, &ec2.IpPermission{
 						UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(r.Cidr)}},
-						FromPort:         r.Port,
-						ToPort:           r.Port,
-						IpProtocol:       aws.String(r.Proto),
+						FromPort:         port,
+						ToPort:           port,
+						IpProtocol:       aws.String(proto),
 					})
 				} else {
 					permissions = append(permissions, &ec2.IpPermission{
 						IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(r.Cidr)}},
-						FromPort:   r.Port,
-						ToPort:     r.Port,
-						IpProtocol: aws.String(r.Proto),
+						FromPort:   port,
+						ToPort:     port,
+						IpProtocol: aws.String(proto),
 					})
 				}
 				_, err := EC2Client().AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
@@ -2155,7 +2177,7 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 					}
 				}
 			}
-			Logger.Println(PreviewString(input.Preview)+"authorize ingress:", key)
+			Logger.Println(PreviewString(input.Preview)+"authorize ingress:", r)
 		}
 	}
 	for k, v := range delete {
@@ -2163,21 +2185,29 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 			continue
 		}
 		if !input.Preview {
+			var port *int64
+			if k.Port != 0 {
+				port = aws.Int64(int64(k.Port))
+			}
+			proto := "-1" // all ports
+			if k.Proto != "" {
+				proto = k.Proto
+			}
 			sg := sgs.SecurityGroups[0]
 			permissions := []*ec2.IpPermission{}
 			if strings.HasPrefix(k.Cidr, "sg-") {
 				permissions = append(permissions, &ec2.IpPermission{
 					UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(k.Cidr)}},
-					FromPort:         k.Port,
-					ToPort:           k.Port,
-					IpProtocol:       aws.String(k.Proto),
+					FromPort:         port,
+					ToPort:           port,
+					IpProtocol:       aws.String(proto),
 				})
 			} else {
 				permissions = append(permissions, &ec2.IpPermission{
 					IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(k.Cidr)}},
-					FromPort:   k.Port,
-					ToPort:     k.Port,
-					IpProtocol: aws.String(k.Proto),
+					FromPort:   port,
+					ToPort:     port,
+					IpProtocol: aws.String(proto),
 				})
 			}
 			_, err := EC2Client().RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
