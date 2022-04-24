@@ -59,7 +59,7 @@ func (l *LoggerStruct) Fatal(v ...interface{}) {
 	for _, x := range v {
 		xs = append(xs, fmt.Sprint(x))
 	}
-	r = append(r, strings.Join(xs, " "))
+	r = append(r, strings.Join(xs, ""))
 	r = append(r, "\n")
 	l.Print(r...)
 	l.Flush()
