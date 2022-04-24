@@ -52,7 +52,7 @@ func ec2DescribeSg() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Fprintln(os.Stderr, "protocol port source description")
+	fmt.Fprintln(os.Stderr, "protocol port source")
 	for _, perm := range out.SecurityGroups[0].IpPermissions {
 		if perm.FromPort == nil {
 			perm.FromPort = aws.Int64(0)
