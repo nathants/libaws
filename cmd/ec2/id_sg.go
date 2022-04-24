@@ -14,8 +14,8 @@ func init() {
 }
 
 type ec2IdSgArgs struct {
-	VpcName string   `arg:"positional,required"`
-	SgName string   `arg:"positional,required"`
+	VpcName string `arg:"positional,required"`
+	SgName  string `arg:"positional,required"`
 }
 
 func (ec2IdSgArgs) Description() string {
@@ -28,7 +28,7 @@ func ec2IdSg() {
 	ctx := context.Background()
 	id, err := lib.EC2SgID(ctx, args.VpcName, args.SgName)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(id)
 }
