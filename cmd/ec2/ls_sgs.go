@@ -29,6 +29,6 @@ func ec2LsSgs() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, sg := range out {
-		fmt.Println(*sg.GroupName, *sg.GroupId)
+		fmt.Println(*sg.GroupName, *sg.GroupId, *sg.VpcId)
 	}
 }
