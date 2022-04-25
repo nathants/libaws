@@ -24,7 +24,7 @@ func ec2LsSgs() {
 	var args ec2LsSgsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	out, err := lib.EC2ListSg(ctx)
+	out, err := lib.EC2ListSgs(ctx)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

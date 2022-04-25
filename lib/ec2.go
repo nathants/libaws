@@ -1992,7 +1992,7 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 	return *image.ImageId, nil
 }
 
-func EC2ListSg(ctx context.Context) ([]*ec2.SecurityGroup, error) {
+func EC2ListSgs(ctx context.Context) ([]*ec2.SecurityGroup, error) {
 	var res []*ec2.SecurityGroup
 	var token *string
 	for {
@@ -2012,9 +2012,39 @@ func EC2ListSg(ctx context.Context) ([]*ec2.SecurityGroup, error) {
 }
 
 type EC2SgRule struct {
-	Proto string
-	Port  int
-	Cidr  string
+	Proto  string `json:"proto"`
+	Port   int    `json:"port"`
+	Source string `json:"source"`
+}
+
+func EC2SgRules(p *ec2.IpPermission) ([]EC2SgRule, error) {
+	var rules []EC2SgRule
+	if !(p.FromPort == nil && p.ToPort == nil) && *p.FromPort != *p.ToPort {
+		err := fmt.Errorf("expected ports to match: %s", Pformat(p))
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	toPort := 0
+	if p.ToPort != nil {
+		toPort = int(*p.ToPort)
+	}
+	proto := ""
+	if *p.IpProtocol != "-1" {
+		proto = *p.IpProtocol
+	}
+	for _, ip := range p.IpRanges {
+		rules = append(rules, EC2SgRule{proto, toPort, *ip.CidrIp})
+	}
+	for _, ip := range p.Ipv6Ranges {
+		rules = append(rules, EC2SgRule{proto, toPort, *ip.CidrIpv6})
+	}
+	for _, ip := range p.UserIdGroupPairs {
+		rules = append(rules, EC2SgRule{proto, toPort, *ip.GroupId})
+	}
+	for _, ip := range p.PrefixListIds {
+		rules = append(rules, EC2SgRule{proto, toPort, *ip.PrefixListId})
+	}
+	return rules, nil
 }
 
 func (r EC2SgRule) String() string {
@@ -2026,8 +2056,8 @@ func (r EC2SgRule) String() string {
 	if r.Port != 0 {
 		port = fmt.Sprint(r.Port)
 	}
-	cidr := r.Cidr
-	return fmt.Sprintf("%s:%s:%s", proto, port, cidr)
+	source := r.Source
+	return fmt.Sprintf("%s:%s:%s", proto, port, source)
 }
 
 type EC2EnsureSgInput struct {
@@ -2052,7 +2082,7 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 	}
 	sgID, err := EC2SgID(ctx, input.VpcName, input.SgName)
 	if err != nil {
-		if strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
+		if !strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
 			return err
 		}
 		if !input.Preview {
@@ -2107,30 +2137,13 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 	if len(sgs.SecurityGroups) == 1 {
 		sg := sgs.SecurityGroups[0]
 		for _, r := range sg.IpPermissions {
-			if !(r.FromPort == nil && r.ToPort == nil) && *r.FromPort != *r.ToPort {
-				err := fmt.Errorf("expected ports to match: %s", Pformat(r))
+			rules, err := EC2SgRules(r)
+			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			toPort := 0
-			if r.ToPort != nil {
-				toPort = int(*r.ToPort)
-			}
-			proto := ""
-			if *r.IpProtocol != "-1" {
-				proto = *r.IpProtocol
-			}
-			for _, ip := range r.IpRanges {
-				delete[EC2SgRule{proto, toPort, *ip.CidrIp}] = true
-			}
-			for _, ip := range r.Ipv6Ranges {
-				delete[EC2SgRule{proto, toPort, *ip.CidrIpv6}] = true
-			}
-			for _, ip := range r.UserIdGroupPairs {
-				delete[EC2SgRule{proto, toPort, *ip.GroupId}] = true
-			}
-			for _, ip := range r.PrefixListIds {
-				delete[EC2SgRule{proto, toPort, *ip.PrefixListId}] = true
+			for _, rule := range rules {
+				delete[rule] = true
 			}
 		}
 	}
@@ -2150,16 +2163,16 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 				if r.Proto != "" {
 					proto = r.Proto
 				}
-				if strings.HasPrefix(r.Cidr, "sg-") {
+				if strings.HasPrefix(r.Source, "sg-") {
 					permissions = append(permissions, &ec2.IpPermission{
-						UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(r.Cidr)}},
+						UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(r.Source)}},
 						FromPort:         port,
 						ToPort:           port,
 						IpProtocol:       aws.String(proto),
 					})
 				} else {
 					permissions = append(permissions, &ec2.IpPermission{
-						IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(r.Cidr)}},
+						IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(r.Source)}},
 						FromPort:   port,
 						ToPort:     port,
 						IpProtocol: aws.String(proto),
@@ -2195,16 +2208,16 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 			}
 			sg := sgs.SecurityGroups[0]
 			permissions := []*ec2.IpPermission{}
-			if strings.HasPrefix(k.Cidr, "sg-") {
+			if strings.HasPrefix(k.Source, "sg-") {
 				permissions = append(permissions, &ec2.IpPermission{
-					UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(k.Cidr)}},
+					UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(k.Source)}},
 					FromPort:         port,
 					ToPort:           port,
 					IpProtocol:       aws.String(proto),
 				})
 			} else {
 				permissions = append(permissions, &ec2.IpPermission{
-					IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(k.Cidr)}},
+					IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(k.Source)}},
 					FromPort:   port,
 					ToPort:     port,
 					IpProtocol: aws.String(proto),

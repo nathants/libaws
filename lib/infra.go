@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/apigateway"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sqs"
@@ -24,6 +25,11 @@ type InfraApi struct {
 type InfraDynamoDB struct {
 	Keys  []string `json:"keys,omitempty"`
 	Attrs []string `json:"attrs,omitempty"`
+}
+
+type InfraVpc struct {
+	name string
+	Sgs  map[string][]string `json:"sgs"`
 }
 
 type InfraEC2 struct {
@@ -53,6 +59,7 @@ type Infra struct {
 	Region   string                   `json:"region"`
 	Api      map[string]InfraApi      `json:"api,omitempty"`
 	DynamoDB map[string]InfraDynamoDB `json:"dynamodb,omitempty"`
+	Vpc      map[string]InfraVpc      `json:"vpc,omitempty"`
 	EC2      map[string]InfraEC2      `json:"ec2,omitempty"`
 	Lambda   map[string]InfraLambda   `json:"lambda,omitempty"`
 	SQS      map[string]InfraSQS      `json:"sqs,omitempty"`
@@ -91,6 +98,11 @@ func InfraList(ctx context.Context, filter string) (*Infra, error) {
 
 	run(func() {
 		infra.DynamoDB, err = InfraListDynamoDB(ctx)
+		errs <- err
+	})
+
+	run(func() {
+		infra.Vpc, err = InfraListVpc(ctx)
 		errs <- err
 	})
 
@@ -528,6 +540,44 @@ func InfraListDynamoDB(ctx context.Context) (map[string]InfraDynamoDB, error) {
 		}
 	}
 	return infraDynamoDB, nil
+}
+
+func InfraListVpc(ctx context.Context) (map[string]InfraVpc, error) {
+	infraVpc := make(map[string]InfraVpc)
+	sgsByVpcId := make(map[string][]*ec2.SecurityGroup)
+	vpcs, err := VpcList(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	sgs, err := EC2ListSgs(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	for _, sg := range sgs {
+		sgsByVpcId[*sg.VpcId] = append(sgsByVpcId[*sg.VpcId], sg)
+	}
+	for _, vpc := range vpcs {
+		val := InfraVpc{}
+		val.name = EC2Name(vpc.Tags)
+		val.Sgs = make(map[string][]string)
+		for _, sg := range sgsByVpcId[*vpc.VpcId] {
+			sgName := *sg.GroupName
+			for _, p := range sg.IpPermissions {
+				rs, err := EC2SgRules(p)
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				for _, r := range rs {
+					val.Sgs[sgName] = append(val.Sgs[sgName], r.String())
+				}
+			}
+		}
+		infraVpc[val.name] = val
+	}
+	return infraVpc, nil
 }
 
 func InfraListEC2(ctx context.Context) (map[string]InfraEC2, error) {

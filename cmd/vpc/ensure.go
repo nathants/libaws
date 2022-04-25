@@ -2,6 +2,7 @@ package cliaws
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"
@@ -25,8 +26,9 @@ func vpcEnsure() {
 	var args vpcEnsureArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	_, err := lib.VpcEnsure(ctx, args.Name, args.XX)
+	vpc, err := lib.VpcEnsure(ctx, args.Name, args.XX)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
+	fmt.Println(vpc)
 }

@@ -39,6 +39,10 @@ func VpcID(ctx context.Context, name string) (string, error) {
 		Logger.Println("error:", err)
 		return "", err
 	}
+	if len(out.Vpcs) == 0 {
+		err := fmt.Errorf("no vpc for name %s", name)
+		return "", err
+	}
 	if len(out.Vpcs) != 1 {
 		err := fmt.Errorf("%s vpc for name %s: %d", ErrPrefixDidntFindExactlyOne, name, len(out.Vpcs))
 		return "", err
@@ -63,7 +67,7 @@ func VpcEnsure(ctx context.Context, name string, xx int) (string, error) {
 		// TODO assert vpc state
 		return id, nil
 	}
-	if strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
+	if !strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
 		return "", err
 	}
 	tags := []*ec2.Tag{{

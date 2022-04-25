@@ -31,13 +31,13 @@ func ec2EnsureSg() {
 	ctx := context.Background()
 	rules := []lib.EC2SgRule{}
 	for _, r := range args.Rules {
-		proto, port, cidr, err := lib.SplitTwice(r, ":")
+		proto, port, source, err := lib.SplitTwice(r, ":")
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
 		rule := lib.EC2SgRule{
-			Proto: proto,
-			Cidr:  cidr,
+			Proto:  proto,
+			Source: source,
 		}
 		if port != "" {
 			rule.Port = lib.Atoi(port)
