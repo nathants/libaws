@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 
@@ -26,7 +27,10 @@ type InfraDynamoDB struct {
 }
 
 type InfraEC2 struct {
-	Attrs []string `json:"attrs,omitempty"`
+	name       string
+	instanceID string
+	Attrs      []string `json:"attrs,omitempty"`
+	Count      int      `json:"count,omitempty"`
 }
 
 type InfraLambda struct {
@@ -46,6 +50,7 @@ type InfraS3 struct {
 
 type Infra struct {
 	Account  string                   `json:"account"`
+	Region   string                   `json:"region"`
 	Api      map[string]InfraApi      `json:"api,omitempty"`
 	DynamoDB map[string]InfraDynamoDB `json:"dynamodb,omitempty"`
 	EC2      map[string]InfraEC2      `json:"ec2,omitempty"`
@@ -68,6 +73,7 @@ func InfraList(ctx context.Context, filter string) (*Infra, error) {
 		Logger.Fatal("error: ", err)
 	}
 	infra.Account = account
+	infra.Region = Region()
 
 	errs := make(chan error)
 	count := 0
@@ -531,18 +537,45 @@ func InfraListEC2(ctx context.Context) (map[string]InfraEC2, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	ec2s := make(map[string][]InfraEC2)
 	for _, instance := range instances {
 		ec2 := InfraEC2{}
+		ec2.name = EC2Name(instance.Tags)
+		ec2.instanceID = *instance.InstanceId
+		ec2.Count = 1
 		ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Type=%s", *instance.InstanceType))
 		ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Image=%s", *instance.ImageId))
 		ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Kind=%s", EC2Kind(instance)))
 		ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Vpc=%s", *instance.VpcId))
 		for _, tag := range instance.Tags {
-			if *tag.Key != "creation-date" && *tag.Key != "Name" {
+			if *tag.Key != "creation-date" && *tag.Key != "Name" && *tag.Key != "aws:ec2spot:fleet-request-id" {
 				ec2.Attrs = append(ec2.Attrs, fmt.Sprintf("Tags.%s=%s", *tag.Key, *tag.Value))
 			}
 		}
-		infraEC2[EC2Name(instance.Tags)] = ec2
+		key := ec2.name + "::" + strings.Join(ec2.Attrs, "::")
+		ec2s[key] = append(ec2s[key], ec2)
+	}
+	var keys []string
+	for k := range ec2s {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return len(ec2s[keys[i]]) > len(ec2s[keys[j]])
+	})
+	for _, k := range keys {
+		vs := ec2s[k]
+		ec2 := vs[0]
+		ec2.Count = len(vs)
+		name := strings.Split(k, "::")[0]
+		_, ok := infraEC2[name]
+		if !ok {
+			infraEC2[name] = ec2
+		} else {
+			attrs := []string{fmt.Sprintf("Name=%s", name)}
+			attrs = append(attrs, ec2.Attrs...)
+			ec2.Attrs = attrs
+			infraEC2[ec2.instanceID] = ec2
+		}
 	}
 	return infraEC2, nil
 }
