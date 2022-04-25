@@ -45,6 +45,9 @@ func credsLs() {
 		if entry.Name() == "_temp_creds.sh" {
 			continue
 		}
+		if entry.Name()[:1] == "." {
+			continue
+		}
 		bytes, err := ioutil.ReadFile(path.Join(root, entry.Name()))
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
