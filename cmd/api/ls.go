@@ -1,8 +1,9 @@
 package cliaws
 
 import (
-	"context"
 	"fmt"
+
+	"context"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/cli-aws/lib"

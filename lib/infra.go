@@ -9,7 +9,8 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/apigateway"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/apigatewayv2"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/lambda"
@@ -81,57 +82,46 @@ func InfraList(ctx context.Context, filter string) (*Infra, error) {
 	}
 	infra.Account = account
 	infra.Region = Region()
-
 	errs := make(chan error)
 	count := 0
 	triggersChan := make(chan InfraLambdaTrigger, 1024)
-
 	run := func(fn func()) {
 		go fn()
 		count++
 	}
-
 	run(func() {
 		infra.Api, err = InfraListApi(ctx, triggersChan)
 		errs <- err
 	})
-
 	run(func() {
 		infra.DynamoDB, err = InfraListDynamoDB(ctx)
 		errs <- err
 	})
-
 	run(func() {
 		infra.Vpc, err = InfraListVpc(ctx)
 		errs <- err
 	})
-
 	run(func() {
 		infra.EC2, err = InfraListEC2(ctx)
 		errs <- err
 	})
-
 	run(func() {
 		infra.SQS, err = InfraListSQS(ctx)
 		errs <- err
 	})
-
 	run(func() {
 		infra.S3, err = InfraListS3(ctx, triggersChan)
 		errs <- err
 	})
-
 	run(func() {
 		_, err = InfraListCloudwatch(ctx, triggersChan)
 		errs <- err
 	})
-
 	lambdaErr := make(chan error)
 	go func() {
 		infra.Lambda, err = InfraListLambda(ctx, triggersChan, filter)
 		lambdaErr <- err
 	}()
-
 	for i := 0; i < count; i++ {
 		err := <-errs
 		if err != nil {
@@ -139,12 +129,10 @@ func InfraList(ctx context.Context, filter string) (*Infra, error) {
 		}
 	}
 	close(triggersChan)
-
 	err = <-lambdaErr
 	if err != nil {
 		Logger.Fatal("error: ", err)
 	}
-
 	return infra, nil
 }
 
@@ -213,7 +201,6 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 			if *fn.Timeout != 3 { // default
 				l.Attrs = append(l.Attrs, fmt.Sprintf("timeout %d", *fn.Timeout))
 			}
-			//
 			out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
 				FunctionName: aws.String(*fn.FunctionName),
 			})
@@ -224,9 +211,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 			if out.ReservedConcurrentExecutions != nil {
 				l.Attrs = append(l.Attrs, fmt.Sprintf("concurrency %d", *out.ReservedConcurrentExecutions))
 			}
-			//
 			roleName := Last(strings.Split(*fn.Role, "/"))
-			//
 			policies, err := IamListRolePolicies(ctx, roleName)
 			if err != nil {
 				errChan <- err
@@ -235,7 +220,6 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 			for _, policy := range policies {
 				l.Policies = append(l.Policies, *policy.PolicyName)
 			}
-			//
 			allows, err := IamListRoleAllows(ctx, roleName)
 			if err != nil {
 				errChan <- err
@@ -244,7 +228,6 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 			for _, allow := range allows {
 				l.Allows = append(l.Allows, allow.String())
 			}
-			//
 			var marker *string
 			for {
 				out, err := LambdaClient().ListEventSourceMappingsWithContext(ctx, &lambda.ListEventSourceMappingsInput{
@@ -294,13 +277,10 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 				}
 				marker = out.NextMarker
 			}
-			//
 			res[*fn.FunctionName] = l
-			//
 			errChan <- nil
 		}()
 	}
-	//
 	for range fns {
 		err := <-errChan
 		if err != nil {
@@ -308,7 +288,6 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 			return nil, err
 		}
 	}
-	//
 	for trigger := range triggersChan {
 		triggers[trigger.LambdaName] = append(triggers[trigger.LambdaName], trigger)
 	}
@@ -329,31 +308,27 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan InfraLambdaTrigger
 			}
 		}
 	}
-	//
 	return res, nil
 }
 
 func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (map[string]InfraApi, error) {
-	lock := &sync.Mutex{}
 	infraApis := make(map[string]InfraApi)
+	lock := &sync.Mutex{}
 	apis, err := ApiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	//
 	domains, err := ApiListDomains(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	domainNames := make(map[string]string)
-	restApiToDomain := make(map[string]string)
+	apiToDomain := make(map[string]string)
 	for _, domain := range domains {
-		domainNames[*domain.RegionalDomainName] = *domain.DomainName
-		mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
+		mappings, err := ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
 			DomainName: domain.DomainName,
-			Limit:      aws.Int64(500),
+			MaxResults: aws.String(fmt.Sprint(500)),
 		})
 		if err != nil {
 			Logger.Println("error:", err)
@@ -365,17 +340,18 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 			return nil, err
 		}
 		for _, mapping := range mappings.Items {
-			if *mapping.BasePath == apiMappingBasePathEmpty && *mapping.Stage == apiStageName {
-				restApiToDomain[*mapping.RestApiId] = *domain.DomainName
+			if *mapping.Stage == "$default" {
+				apiToDomain[*mapping.ApiId] = *domain.DomainName
 			}
 		}
 	}
+	// Logger.Println(domains)
 	zones, err := Route53ListZones(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	restApiToDns := make(map[string]string)
+	apiToDns := make(map[string]string)
 	for _, zone := range zones {
 		records, err := Route53ListRecords(ctx, *zone.Id)
 		if err != nil {
@@ -383,64 +359,62 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 			return nil, err
 		}
 		for _, record := range records {
-			if record.AliasTarget != nil && record.AliasTarget.DNSName != nil {
-				domain, ok := domainNames[strings.TrimRight(*record.AliasTarget.DNSName, ".")]
-				if ok {
-					mappings, err := ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
-						DomainName: aws.String(domain),
-						Limit:      aws.Int64(500),
-					})
-					if err != nil {
+			if record.Name != nil {
+				domain := strings.TrimRight(*record.Name, ".")
+				mappings, err := ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
+					DomainName: aws.String(domain),
+					MaxResults: aws.String(fmt.Sprint(500)),
+				})
+				if err != nil {
+					aerr, ok := err.(awserr.Error)
+					if !ok || aerr.Code() != apigatewayv2.ErrCodeNotFoundException {
 						Logger.Println("error:", err)
 						return nil, err
 					}
-					if len(mappings.Items) == 500 {
-						err := fmt.Errorf("api overflow without pagination")
-						Logger.Println("error:", err)
-						return nil, err
-					}
-					for _, mapping := range mappings.Items {
-						if *mapping.BasePath == apiMappingBasePathEmpty && *mapping.Stage == apiStageName {
-							restApiToDns[*mapping.RestApiId] = domain
-						}
+				}
+				if len(mappings.Items) == 500 {
+					err := fmt.Errorf("api overflow without pagination")
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				for _, mapping := range mappings.Items {
+					if *mapping.Stage == "$default" {
+						apiToDns[*mapping.ApiId] = domain
 					}
 				}
 			}
 		}
 	}
-	//
 	errChan := make(chan error)
 	for _, api := range apis {
 		api := api
 		go func() {
 			infraApi := InfraApi{}
-			parentID, err := ApiResourceID(ctx, *api.Id, "/")
-			if err != nil {
-				errChan <- err
-				return
-			}
-			out, err := ApiClient().GetIntegrationWithContext(ctx, &apigateway.GetIntegrationInput{
-				RestApiId:  api.Id,
-				HttpMethod: aws.String(apiHttpMethod),
-				ResourceId: aws.String(parentID),
+			out, err := ApiClient().GetIntegrationsWithContext(ctx, &apigatewayv2.GetIntegrationsInput{
+				ApiId:      api.ApiId,
+				MaxResults: aws.String(fmt.Sprint(500)),
 			})
 			if err != nil {
 				errChan <- err
 				return
 			}
+			if len(out.Items) != 1 {
+				errChan <- nil
+				return
+			}
 			attrs := []string{}
-			dns, ok := restApiToDns[*api.Id]
+			dns, ok := apiToDns[*api.ApiId]
 			if ok {
 				attrs = append(attrs, fmt.Sprintf("dns=%s", dns))
 				infraApi.Dns = dns
 			} else {
-				domain, ok := restApiToDomain[*api.Id]
+				domain, ok := apiToDomain[*api.ApiId]
 				if ok {
 					attrs = append(attrs, fmt.Sprintf("domain=%s", domain))
 					infraApi.Domain = domain
 				}
 			}
-			lambdaName := LambdaApiUriToLambdaName(*out.Uri)
+			lambdaName := *api.Name
 			triggersChan <- InfraLambdaTrigger{
 				LambdaName:   lambdaName,
 				TriggerType:  lambdaTriggerApi,
@@ -449,7 +423,6 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 			lock.Lock()
 			infraApis[*api.Name] = infraApi
 			lock.Unlock()
-			//
 			errChan <- nil
 		}()
 	}
@@ -649,38 +622,31 @@ func InfraListS3(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (m
 				return
 			}
 			s3Default := s3EnsureInputDefault()
-			//
 			if descr.Policy == nil && s3Default.acl != "private" {
 				s.Attrs = append(s.Attrs, "acl=private")
 			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.acl != "public" {
 				s.Attrs = append(s.Attrs, "acl=public")
 			}
-			//
 			if descr.Cors == nil && s3Default.cors {
 				s.Attrs = append(s.Attrs, "cors=false")
 			} else if reflect.DeepEqual(s3Cors, descr.Cors) {
 				s.Attrs = append(s.Attrs, "cors=true")
 			}
-			//
 			if descr.Versioning != s3Default.versioning {
 				s.Attrs = append(s.Attrs, fmt.Sprintf("versioning=%t", descr.Versioning))
 			}
-			//
 			encryption := reflect.DeepEqual(descr.Encryption, s3EncryptionConfig)
 			if encryption != s3Default.encryption {
 				s.Attrs = append(s.Attrs, fmt.Sprintf("encryption=%t", encryption))
 			}
-			//
 			metrics := descr.Metrics != nil
 			if s3Default.metrics != metrics {
 				s.Attrs = append(s.Attrs, fmt.Sprintf("metrics=%t", metrics))
 			}
-			//
 			ttl := descr.Lifecycle
 			if len(ttl) == 1 && int64(s3Default.ttlDays) != *ttl[0].Expiration.Days {
 				s.Attrs = append(s.Attrs, fmt.Sprintf("ttldays=%d", *ttl[0].Expiration.Days))
 			}
-			//
 			if descr.Notifications != nil {
 				for _, conf := range descr.Notifications.LambdaFunctionConfigurations {
 					triggersChan <- InfraLambdaTrigger{

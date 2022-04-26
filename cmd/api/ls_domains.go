@@ -6,7 +6,7 @@ import (
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/apigateway"
+	"github.com/aws/aws-sdk-go/service/apigatewayv2"
 	"github.com/nathants/cli-aws/lib"
 )
 
@@ -32,17 +32,17 @@ func apiLsDomains() {
 	}
 	for _, domain := range domains {
 		api := ""
-		mappings, err := lib.ApiClient().GetBasePathMappingsWithContext(ctx, &apigateway.GetBasePathMappingsInput{
+		mappings, err := lib.ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
 			DomainName: domain.DomainName,
-			Limit:      aws.Int64(500),
+			MaxResults: aws.String(fmt.Sprint(500)),
 		})
 		if err != nil || len(mappings.Items) == 500 {
 			lib.Logger.Fatal("error: ", err)
 		}
 		for _, mapping := range mappings.Items {
-			if *mapping.BasePath == "(none)" {
-				out, err := lib.ApiClient().GetRestApiWithContext(ctx, &apigateway.GetRestApiInput{
-					RestApiId: mapping.RestApiId,
+			if *mapping.Stage == "$default" {
+				out, err := lib.ApiClient().GetApiWithContext(ctx, &apigatewayv2.GetApiInput{
+					ApiId: mapping.ApiId,
 				})
 				if err != nil {
 					lib.Logger.Fatal("error: ", err)

@@ -182,7 +182,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 		Logger.Println(PreviewString(preview)+"attach role allow:", roleName, allow)
 	}
 	attachedAllows, err := IamListRoleAllows(ctx, roleName)
-	if err != nil {
+	if err != nil && !preview {
 		Logger.Println("error:", err)
 		return err
 	}
@@ -239,7 +239,7 @@ outer:
 			return err
 		case 1:
 			rolePolicies, err := IamListRolePolicies(ctx, roleName)
-			if err != nil {
+			if err != nil && !preview {
 				Logger.Println("error:", err)
 				return err
 			}
@@ -269,7 +269,7 @@ outer:
 		}
 	}
 	attachedPolicies, err := IamListRolePolicies(ctx, roleName)
-	if err != nil {
+	if err != nil && !preview {
 		Logger.Println("error:", err)
 		return err
 	}
@@ -673,7 +673,6 @@ func IamListRolePolicies(ctx context.Context, roleName string) ([]*iam.AttachedP
 			Marker:   marker,
 		})
 		if err != nil {
-			Logger.Println("error:", err)
 			return nil, err
 		}
 		policies = append(policies, out.AttachedPolicies...)
@@ -694,7 +693,6 @@ func IamListRoleAllows(ctx context.Context, roleName string) ([]*iamAllow, error
 			Marker:   marker,
 		})
 		if err != nil {
-			Logger.Println("error:", err)
 			return nil, err
 		}
 		for _, policyName := range out.PolicyNames {

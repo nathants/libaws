@@ -5,67 +5,48 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/apigateway"
+	"github.com/aws/aws-sdk-go/service/apigatewayv2"
 )
 
-const (
-	apiStageName             = "main"
-	apiAuthType              = "NONE"
-	apiHttpMethod            = "ANY"
-	apiType                  = "AWS_PROXY"
-	apiIntegrationHttpMethod = "POST"
-	apiPath                  = "/{proxy+}"
-	apiPathPart              = "{proxy+}"
-	apiMappingBasePath       = ""
-	apiMappingBasePathEmpty  = "(none)"
-)
-
-var (
-	apiBinaryMediaTypes           = []*string{aws.String("*/*")}
-	apiEndpointConfigurationTypes = []*string{aws.String("REGIONAL")}
-)
-
-var apiClient *apigateway.APIGateway
+var apiClient *apigatewayv2.ApiGatewayV2
 var apiClientLock sync.RWMutex
 
-func ApiClientExplicit(accessKeyID, accessKeySecret, region string) *apigateway.APIGateway {
-	return apigateway.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func ApiClientExplicit(accessKeyID, accessKeySecret, region string) *apigatewayv2.ApiGatewayV2 {
+	return apigatewayv2.New(SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func ApiClient() *apigateway.APIGateway {
+func ApiClient() *apigatewayv2.ApiGatewayV2 {
 	apiClientLock.Lock()
 	defer apiClientLock.Unlock()
 	if apiClient == nil {
-		apiClient = apigateway.New(Session())
+		apiClient = apigatewayv2.New(Session())
 	}
 	return apiClient
 }
 
-func ApiList(ctx context.Context) ([]*apigateway.RestApi, error) {
-	var position *string
-	var items []*apigateway.RestApi
+func ApiList(ctx context.Context) ([]*apigatewayv2.Api, error) {
+	var token *string
+	var items []*apigatewayv2.Api
 	for {
-		out, err := ApiClient().GetRestApisWithContext(ctx, &apigateway.GetRestApisInput{
-			Position: position,
+		out, err := ApiClient().GetApisWithContext(ctx, &apigatewayv2.GetApisInput{
+			NextToken: token,
 		})
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 		items = append(items, out.Items...)
-		if out.Position == nil {
+		if out.NextToken == nil {
 			break
 		}
-		position = out.Position
-
+		token = out.NextToken
 	}
 	return items, nil
 }
 
-func Api(ctx context.Context, name string) (*apigateway.RestApi, error) {
+func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
 	var count int
-	var result *apigateway.RestApi
+	var result *apigatewayv2.Api
 	apis, err := ApiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -89,28 +70,24 @@ func Api(ctx context.Context, name string) (*apigateway.RestApi, error) {
 	}
 }
 
-func ApiResourceID(ctx context.Context, restApiID, path string) (string, error) {
-	var position *string
+func ApiListDomains(ctx context.Context) ([]*apigatewayv2.DomainName, error) {
+	var token *string
+	var result []*apigatewayv2.DomainName
 	for {
-		out, err := ApiClient().GetResourcesWithContext(ctx, &apigateway.GetResourcesInput{
-			RestApiId: aws.String(restApiID),
-			Position:  position,
+		out, err := ApiClient().GetDomainNamesWithContext(ctx, &apigatewayv2.GetDomainNamesInput{
+			NextToken: token,
 		})
 		if err != nil {
 			Logger.Println("error:", err)
-			return "", err
+			return nil, err
 		}
-		for _, resource := range out.Items {
-			if path == *resource.Path {
-				return *resource.Id, nil
-			}
-		}
-		if out.Position == nil {
+		result = append(result, out.Items...)
+		if out.NextToken == nil {
 			break
 		}
-		position = out.Position
+		token = out.NextToken
 	}
-	return "", nil
+	return result, nil
 }
 
 func ApiUrl(ctx context.Context, name string) (string, error) {
@@ -120,30 +97,9 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 		return "", err
 	}
 	url := fmt.Sprintf(
-		"https://%s.execute-api.%s.amazonaws.com/%s",
-		*api.Id,
+		"https://%s.execute-api.%s.amazonaws.com",
+		*api.ApiId,
 		Region(),
-		apiStageName,
 	)
 	return url, nil
-}
-
-func ApiListDomains(ctx context.Context) ([]*apigateway.DomainName, error) {
-	var position *string
-	var result []*apigateway.DomainName
-	for {
-		out, err := ApiClient().GetDomainNamesWithContext(ctx, &apigateway.GetDomainNamesInput{
-			Position: position,
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		result = append(result, out.Items...)
-		if out.Position == nil {
-			break
-		}
-		position = out.Position
-	}
-	return result, nil
 }
