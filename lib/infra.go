@@ -340,12 +340,11 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 			return nil, err
 		}
 		for _, mapping := range mappings.Items {
-			if *mapping.Stage == "$default" {
+			if *mapping.Stage == lambdaDollarDefault {
 				apiToDomain[*mapping.ApiId] = *domain.DomainName
 			}
 		}
 	}
-	// Logger.Println(domains)
 	zones, err := Route53ListZones(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -378,7 +377,7 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 					return nil, err
 				}
 				for _, mapping := range mappings.Items {
-					if *mapping.Stage == "$default" {
+					if *mapping.Stage == lambdaDollarDefault {
 						apiToDns[*mapping.ApiId] = domain
 					}
 				}
@@ -414,10 +413,19 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 					infraApi.Domain = domain
 				}
 			}
+			triggerType := lambdaTriggerApi
 			lambdaName := *api.Name
+			if api.RouteSelectionExpression != nil && *api.RouteSelectionExpression == lambdaRouteSelection { // websocket uses a suffix in addition to the lambda name
+				if !strings.HasSuffix(lambdaName, lambdaWebsocketSuffix) {
+					Logger.Println(*api.RouteSelectionExpression)
+					panic(lambdaName)
+				}
+				lambdaName = lambdaName[:len(lambdaName)-len(lambdaWebsocketSuffix)]
+				triggerType = lambdaTriggerWebsocket
+			}
 			triggersChan <- InfraLambdaTrigger{
 				LambdaName:   lambdaName,
-				TriggerType:  lambdaTriggerApi,
+				TriggerType:  triggerType,
 				TriggerAttrs: attrs,
 			}
 			lock.Lock()

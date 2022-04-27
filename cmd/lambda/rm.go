@@ -53,13 +53,17 @@ func lambdaRm() {
 
 	arnLambda, _ := lib.LambdaArn(ctx, name)
 
-	if arnLambda != "" && args.Everything || args.Trigger {
-		metadata.Trigger = []string{}
+	metadata.Trigger = []string{}
+
+	if args.Everything || args.Trigger {
 		err := lib.LambdaEnsureTriggerApi(ctx, name, metadata, args.Preview)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
-		err = lib.LambdaEnsureTriggerS3(ctx, name, arnLambda, metadata, args.Preview)
+	}
+
+	if arnLambda != "" && args.Everything || args.Trigger {
+		err := lib.LambdaEnsureTriggerS3(ctx, name, arnLambda, metadata, args.Preview)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

@@ -28,6 +28,6 @@ func lambdaEnsure() {
 	ctx := context.Background()
 	err := lib.LambdaEnsure(ctx, args.Path, args.Quick, args.Preview)
 	if err != nil {
-		lib.Logger.Fatal("error:", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }
