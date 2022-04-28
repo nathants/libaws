@@ -67,6 +67,9 @@ const (
 	lambdaIntegrationMethod = "POST"
 	lambdaPayloadVersion    = "1.0"
 	lambdaWebsocketSuffix   = "-websocket"
+
+	lambdaEnvVarApiID       = "API_ID"
+	lambdaEnvVarWebsocketID = "WEBSOCKET_ID"
 )
 
 var lambdaClient *lambda.Lambda
@@ -227,20 +230,38 @@ func lambdaParseMetadata(token string, lines []string) ([]string, []string, erro
 	for _, val := range vals {
 		line := val[0]
 		part := val[1]
-		for _, variable := range regexp.MustCompile(`(\$\{[^\}]+})`).FindAllString(part, -1) {
-			variableName := variable[2 : len(variable)-1]
-			variableValue := os.Getenv(variableName)
-			if variableValue == "" {
-				err := fmt.Errorf("missing environment variable: %s", line)
-				Logger.Println("error:", err)
-				return nil, nil, err
+		vars, part, err := resolveEnvVars(part, []string{lambdaEnvVarApiID, lambdaEnvVarWebsocketID}) // these to vars are defined and resolved at deploy time
+		if err != nil {
+			Logger.Println("error:", line, err)
+			return nil, nil, err
+		}
+		for _, v := range vars {
+			if !strings.HasPrefix(v, "AWS_DEFAULT_REGION=") { // this env var cannot be set for a lambda since it is set automatically
+				envVars = append(envVars, v)
 			}
-			envVars = append(envVars, fmt.Sprintf("%s=%s", variableName, variableValue))
-			part = strings.Replace(part, variable, variableValue, 1)
 		}
 		results = append(results, part)
 	}
 	return results, envVars, nil
+}
+
+func resolveEnvVars(s string, ignore []string) ([]string, string, error) {
+	var vars []string
+	for _, variable := range regexp.MustCompile(`(\$\{[^\}]+})`).FindAllString(s, -1) {
+		variableName := variable[2 : len(variable)-1]
+		variableValue := os.Getenv(variableName)
+		if Contains(ignore, variableName) {
+			continue
+		}
+		if variableValue == "" {
+			err := fmt.Errorf("missing environment variable: %s", s)
+			Logger.Println("error:", err)
+			return nil, "", err
+		}
+		vars = append(vars, fmt.Sprintf("%s=%s", variableName, variableValue))
+		s = strings.Replace(s, variable, variableValue, 1)
+	}
+	return vars, s, nil
 }
 
 type LambdaMetadata struct {
@@ -614,6 +635,19 @@ func lambdaEnsureTriggerApi(ctx context.Context, name, arnLambda string, protoco
 		err := fmt.Errorf("api protocol type misconfigured for %s %s: %v != %v", name, *api.ApiId, *api.ProtocolType, protocolType)
 		Logger.Println("error:", err)
 		return nil, err
+	}
+	if protocolType == apigatewayv2.ProtocolTypeHttp {
+		err := os.Setenv(lambdaEnvVarApiID, *api.ApiId)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+	} else if protocolType == apigatewayv2.ProtocolTypeWebsocket {
+		err := os.Setenv(lambdaEnvVarWebsocketID, *api.ApiId)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
 	}
 	return api, nil
 }
@@ -2200,11 +2234,6 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		Logger.Println("error:", err)
 		return err
 	}
-	err = IamEnsureRoleAllows(ctx, name, metadata.Allow, preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
 	err = createZipFn(pth, metadata.Require, preview)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2270,6 +2299,11 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		return err
 	}
 	err = LambdaSetConcurrency(ctx, name, concurrency, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	err = IamEnsureRoleAllows(ctx, name, metadata.Allow, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err

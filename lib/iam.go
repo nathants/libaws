@@ -132,6 +132,11 @@ func IamListRoles(ctx context.Context, pathPrefix string) ([]*iam.Role, error) {
 func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, preview bool) error {
 	var allowNames []string
 	for _, allowStr := range allows {
+		_, allowStr, err := resolveEnvVars(allowStr, []string{}) // resolve again since lambdaEnvVarApiID and lambdaEnvVarWebsocketID are not set
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		parts := strings.SplitN(allowStr, " ", 2)
 		if len(parts) != 2 {
 			err := fmt.Errorf("allow format should be: 'SERVICE:ACTION RESOURCE', got: %s", allowStr)
@@ -179,7 +184,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"attach role allow:", roleName, allow)
+		Logger.Println(PreviewString(preview)+"attached role allow:", roleName, allow)
 	}
 	attachedAllows, err := IamListRoleAllows(ctx, roleName)
 	if err != nil && !preview {
