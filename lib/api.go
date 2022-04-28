@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go/service/apigatewayv2"
 )
 
@@ -102,4 +105,26 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 		Region(),
 	)
 	return url, nil
+}
+
+func apiWebsocketApi(ctx context.Context, event *events.APIGatewayWebsocketProxyRequest) *apigatewaymanagementapi.ApiGatewayManagementApi {
+	return apigatewaymanagementapi.New(
+		Session(),
+		aws.NewConfig().WithEndpoint("https://"+event.RequestContext.DomainName),
+	)
+}
+
+func ApiWebsocketSend(ctx context.Context, event *events.APIGatewayWebsocketProxyRequest, data []byte) error {
+	_, err := apiWebsocketApi(ctx, event).PostToConnectionWithContext(ctx, &apigatewaymanagementapi.PostToConnectionInput{
+		ConnectionId: aws.String(event.RequestContext.ConnectionID),
+		Data:         data,
+	})
+	return err
+}
+
+func ApiWebsocketClose(ctx context.Context, event *events.APIGatewayWebsocketProxyRequest, data []byte) error {
+	_, err := apiWebsocketApi(ctx, event).DeleteConnectionWithContext(ctx, &apigatewaymanagementapi.DeleteConnectionInput{
+		ConnectionId: aws.String(event.RequestContext.ConnectionID),
+	})
+	return err
 }
