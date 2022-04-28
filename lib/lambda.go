@@ -621,12 +621,12 @@ func lambdaEnsureTriggerApi(ctx context.Context, name, arnLambda string, protoco
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			httpApi, err := Api(ctx, name)
+			api, err := Api(ctx, name)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			return httpApi, nil
+			return api, nil
 		}
 		Logger.Println(PreviewString(preview)+"created api:", name)
 		return nil, nil
@@ -635,19 +635,6 @@ func lambdaEnsureTriggerApi(ctx context.Context, name, arnLambda string, protoco
 		err := fmt.Errorf("api protocol type misconfigured for %s %s: %v != %v", name, *api.ApiId, *api.ProtocolType, protocolType)
 		Logger.Println("error:", err)
 		return nil, err
-	}
-	if protocolType == apigatewayv2.ProtocolTypeHttp {
-		err := os.Setenv(lambdaEnvVarApiID, *api.ApiId)
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-	} else if protocolType == apigatewayv2.ProtocolTypeWebsocket {
-		err := os.Setenv(lambdaEnvVarWebsocketID, *api.ApiId)
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
 	}
 	return api, nil
 }
@@ -1135,6 +1122,19 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
+			}
+			if protocolType == apigatewayv2.ProtocolTypeHttp {
+				err := os.Setenv(lambdaEnvVarApiID, *api.ApiId)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			} else if protocolType == apigatewayv2.ProtocolTypeWebsocket {
+				err := os.Setenv(lambdaEnvVarWebsocketID, *api.ApiId)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
 			}
 			err = lambdaEnsureTriggerApiIntegrationStageRoute(ctx, apiName, arnLambda, protocolType, api, timeoutMillis, preview)
 			if err != nil {
