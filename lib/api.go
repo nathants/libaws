@@ -122,9 +122,9 @@ func ApiWebsocketSend(ctx context.Context, event *events.APIGatewayWebsocketProx
 	return err
 }
 
-func ApiWebsocketClose(ctx context.Context, event *events.APIGatewayWebsocketProxyRequest, data []byte) error {
+func ApiWebsocketClose(ctx context.Context, event *events.APIGatewayWebsocketProxyRequest, connectionID string) error {
 	_, err := apiWebsocketApi(ctx, event).DeleteConnectionWithContext(ctx, &apigatewaymanagementapi.DeleteConnectionInput{
-		ConnectionId: aws.String(event.RequestContext.ConnectionID),
+		ConnectionId: aws.String(connectionID),
 	})
 	return err
 }
