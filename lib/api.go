@@ -107,23 +107,23 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 	return url, nil
 }
 
-func apiWebsocketApi(ctx context.Context, event *events.APIGatewayWebsocketProxyRequest) *apigatewaymanagementapi.ApiGatewayManagementApi {
+func apiWebsocketApi(ctx context.Context, domain string) *apigatewaymanagementapi.ApiGatewayManagementApi {
 	return apigatewaymanagementapi.New(
 		Session(),
-		aws.NewConfig().WithEndpoint("https://"+event.RequestContext.DomainName),
+		aws.NewConfig().WithEndpoint("https://"+domain),
 	)
 }
 
-func ApiWebsocketSend(ctx context.Context, event *events.APIGatewayWebsocketProxyRequest, data []byte) error {
-	_, err := apiWebsocketApi(ctx, event).PostToConnectionWithContext(ctx, &apigatewaymanagementapi.PostToConnectionInput{
-		ConnectionId: aws.String(event.RequestContext.ConnectionID),
+func ApiWebsocketSend(ctx context.Context, domain, connectionID string, data []byte) error {
+	_, err := apiWebsocketApi(ctx, domain).PostToConnectionWithContext(ctx, &apigatewaymanagementapi.PostToConnectionInput{
+		ConnectionId: aws.String(connectionID),
 		Data:         data,
 	})
 	return err
 }
 
-func ApiWebsocketClose(ctx context.Context, event *events.APIGatewayWebsocketProxyRequest, connectionID string) error {
-	_, err := apiWebsocketApi(ctx, event).DeleteConnectionWithContext(ctx, &apigatewaymanagementapi.DeleteConnectionInput{
+func ApiWebsocketClose(ctx context.Context, domain, connectionID string) error {
+	_, err := apiWebsocketApi(ctx, domain).DeleteConnectionWithContext(ctx, &apigatewaymanagementapi.DeleteConnectionInput{
 		ConnectionId: aws.String(connectionID),
 	})
 	return err
