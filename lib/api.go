@@ -106,7 +106,7 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 	return url, nil
 }
 
-func apiWebsocketApi(ctx context.Context, domain string) *apigatewaymanagementapi.ApiGatewayManagementApi {
+func apiWebsocketApi(domain string) *apigatewaymanagementapi.ApiGatewayManagementApi {
 	return apigatewaymanagementapi.New(
 		Session(),
 		aws.NewConfig().WithEndpoint("https://"+domain),
@@ -114,7 +114,7 @@ func apiWebsocketApi(ctx context.Context, domain string) *apigatewaymanagementap
 }
 
 func ApiWebsocketSend(ctx context.Context, domain, connectionID string, data []byte) error {
-	_, err := apiWebsocketApi(ctx, domain).PostToConnectionWithContext(ctx, &apigatewaymanagementapi.PostToConnectionInput{
+	_, err := apiWebsocketApi(domain).PostToConnectionWithContext(ctx, &apigatewaymanagementapi.PostToConnectionInput{
 		ConnectionId: aws.String(connectionID),
 		Data:         data,
 	})
@@ -122,7 +122,7 @@ func ApiWebsocketSend(ctx context.Context, domain, connectionID string, data []b
 }
 
 func ApiWebsocketClose(ctx context.Context, domain, connectionID string) error {
-	_, err := apiWebsocketApi(ctx, domain).DeleteConnectionWithContext(ctx, &apigatewaymanagementapi.DeleteConnectionInput{
+	_, err := apiWebsocketApi(domain).DeleteConnectionWithContext(ctx, &apigatewaymanagementapi.DeleteConnectionInput{
 		ConnectionId: aws.String(connectionID),
 	})
 	return err

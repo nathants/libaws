@@ -657,11 +657,11 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 		return nil
 	}
 	// rm objects
-	var marker *string
+	var token *string
 	for {
-		out, err := S3Client().ListObjectsWithContext(ctx, &s3.ListObjectsInput{
-			Bucket: aws.String(bucket),
-			Marker: marker,
+		out, err := S3Client().ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(bucket),
+			ContinuationToken: token,
 		})
 		if err != nil {
 			Logger.Println("error:", err)
@@ -696,10 +696,10 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 				return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, errs)
 			}
 		}
-		if out.NextMarker == nil {
+		if !*out.IsTruncated {
 			break
 		}
-		marker = out.NextMarker
+		token = out.NextContinuationToken
 	}
 	// rm versions
 	var keyMarker *string
@@ -764,7 +764,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 			}
 			Logger.Println(PreviewString(preview)+"s3 deleted:", *obj.Key, version)
 		}
-		if out.NextKeyMarker == nil && out.NextVersionIdMarker == nil {
+		if !*out.IsTruncated {
 			break
 		}
 		keyMarker = out.NextKeyMarker

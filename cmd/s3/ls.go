@@ -142,11 +142,11 @@ func s3Ls() {
 				}
 			}
 
-			if out.ContinuationToken == nil {
+			if !*out.IsTruncated {
 				break
 			}
 
-			token = out.ContinuationToken
+			token = out.NextContinuationToken
 		}
 	}
 }

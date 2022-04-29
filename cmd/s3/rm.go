@@ -52,13 +52,13 @@ func s3Rm() {
 		delimiter = aws.String("/")
 	}
 
-	var marker *string
+	var token *string
 	for {
 		out, err := s3Client.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
 			Bucket:            aws.String(bucket),
 			Prefix:            aws.String(key),
 			Delimiter:         delimiter,
-			ContinuationToken: marker,
+			ContinuationToken: token,
 		})
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
@@ -98,11 +98,11 @@ func s3Rm() {
 			}
 
 		}
-		if out.NextContinuationToken == nil {
+		if !*out.IsTruncated {
 			break
 		}
 
-		marker = out.NextContinuationToken
+		token = out.NextContinuationToken
 	}
 
 }
