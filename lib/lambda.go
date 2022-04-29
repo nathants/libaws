@@ -66,7 +66,7 @@ const (
 	lambdaRouteSelection    = "${request.body.action}"
 	lambdaIntegrationMethod = "POST"
 	lambdaPayloadVersion    = "1.0"
-	lambdaWebsocketSuffix   = "-websocket"
+	LambdaWebsocketSuffix   = "-websocket"
 
 	lambdaEnvVarApiID       = "API_ID"
 	lambdaEnvVarWebsocketID = "WEBSOCKET_ID"
@@ -454,6 +454,10 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 			Bucket: bucket.Name,
 		})
 		if err != nil {
+			aerr, ok := err.(awserr.Error)
+			if ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
+				continue // recently delete buckets can still show up in listbuckets but fail with 404
+			}
 			Logger.Println("error:", err)
 			return err
 		}
@@ -1108,7 +1112,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 				protocolType = apigatewayv2.ProtocolTypeHttp
 				timeoutMillis = 30000
 			} else if kind == lambdaTriggerWebsocket {
-				apiName = name + lambdaWebsocketSuffix
+				apiName = name + LambdaWebsocketSuffix
 				if hasWebsocket {
 					err := fmt.Errorf("cannot have more than one websocket trigger")
 					Logger.Println("error:", err)
@@ -1190,7 +1194,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 			apiDomain = domainApi
 			apiEnsured = hasApi
 		} else if kind == lambdaTriggerWebsocket {
-			apiName = name + lambdaWebsocketSuffix
+			apiName = name + LambdaWebsocketSuffix
 			apiDomain = domainWebsocket
 			apiEnsured = hasWebsocket
 		}

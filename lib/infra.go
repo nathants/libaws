@@ -416,11 +416,11 @@ func InfraListApi(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (
 			triggerType := lambdaTriggerApi
 			lambdaName := *api.Name
 			if api.RouteSelectionExpression != nil && *api.RouteSelectionExpression == lambdaRouteSelection { // websocket uses a suffix in addition to the lambda name
-				if !strings.HasSuffix(lambdaName, lambdaWebsocketSuffix) {
+				if !strings.HasSuffix(lambdaName, LambdaWebsocketSuffix) {
 					Logger.Println(*api.RouteSelectionExpression)
 					panic(lambdaName)
 				}
-				lambdaName = lambdaName[:len(lambdaName)-len(lambdaWebsocketSuffix)]
+				lambdaName = lambdaName[:len(lambdaName)-len(LambdaWebsocketSuffix)]
 				triggerType = lambdaTriggerWebsocket
 			}
 			triggersChan <- InfraLambdaTrigger{
