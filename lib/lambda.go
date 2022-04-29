@@ -42,6 +42,7 @@ const (
 	lambdaTrigerS3          = "s3"
 	lambdaTriggerDynamoDB   = "dynamodb"
 	lambdaTriggerCloudwatch = "cloudwatch"
+	lambdaTriggerEcr        = "ecr"
 	lambdaTriggerApi        = "api"
 	lambdaTriggerWebsocket  = "websocket"
 
@@ -359,7 +360,7 @@ func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 		}
 	}
 	for _, trigger := range meta.Trigger {
-		if !Contains([]string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerCloudwatch, lambdaTriggerWebsocket}, strings.Split(trigger, " ")[0]) {
+		if !Contains([]string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerCloudwatch, lambdaTriggerWebsocket}, strings.Split(trigger, " ")[0]) {
 			err := fmt.Errorf("unknown trigger: %s", trigger)
 			Logger.Println("error:", err)
 			return nil, err
@@ -379,7 +380,152 @@ func LambdaGetMetadata(lines []string) (*LambdaMetadata, error) {
 	return meta, nil
 }
 
-func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *LambdaMetadata, preview bool) error {
+const lambdaEcrEventPattern = `{
+  "source": ["aws.ecr"],
+  "detail-type": ["ECR Image Action"],
+  "detail": {
+    "result": ["SUCCESS"]
+  }
+}`
+
+func LambdaEnsureTriggerEcr(ctx context.Context, name, arnLambda string, meta *LambdaMetadata, preview bool) ([]string, error) {
+	ruleName := fmt.Sprintf("%s-trigger-ecr", name)
+	var permissionSids []string
+	var triggers []string
+	for _, trigger := range meta.Trigger {
+		if trigger == lambdaTriggerEcr {
+			triggers = append(triggers, trigger)
+			break
+		}
+	}
+	if len(triggers) > 0 {
+		var ruleArn string
+		out, err := EventsClient().DescribeRuleWithContext(ctx, &cloudwatchevents.DescribeRuleInput{
+			Name: aws.String(ruleName),
+		})
+		if err != nil {
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != cloudwatchevents.ErrCodeResourceNotFoundException {
+				return nil, err
+			}
+			if !preview {
+				out, err := EventsClient().PutRuleWithContext(ctx, &cloudwatchevents.PutRuleInput{
+					Name:         aws.String(ruleName),
+					EventPattern: aws.String(lambdaEcrEventPattern),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				ruleArn = *out.RuleArn
+			}
+			Logger.Println(PreviewString(preview)+"created ecr rule:", ruleName)
+		} else {
+			if *out.EventPattern != lambdaEcrEventPattern {
+				err := fmt.Errorf("ecr rule misconfigured: %s %s != %s", ruleName, lambdaEcrEventPattern, *out.EventPattern)
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			ruleArn = *out.Arn
+		}
+		sid, err := lambdaEnsurePermission(ctx, name, "events.amazonaws.com", ruleArn, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		permissionSids = append(permissionSids, sid)
+		var targets []*cloudwatchevents.Target
+		err = Retry(ctx, func() error {
+			var err error
+			targets, err = EventsListRuleTargets(ctx, ruleName)
+			aerr, ok := err.(awserr.Error)
+			if ok && aerr.Code() == "ResourceNotFoundException" {
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		switch len(targets) {
+		case 0:
+			if !preview {
+				_, err := EventsClient().PutTargetsWithContext(ctx, &cloudwatchevents.PutTargetsInput{
+					Rule: aws.String(ruleName),
+					Targets: []*cloudwatchevents.Target{{
+						Id:  aws.String("1"),
+						Arn: aws.String(arnLambda),
+						// RetryPolicy: *cloudwatchevents.RetryPolicy,
+					}},
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"created ecr rule target:", ruleName, arnLambda)
+		case 1:
+			if *targets[0].Arn != arnLambda {
+				err := fmt.Errorf("ecr rule is misconfigured with unknown target: %s %s", arnLambda, *targets[0].Arn)
+				Logger.Println("error:", err)
+				return nil, err
+			}
+		default:
+			var targetArns []string
+			for _, target := range targets {
+				targetArns = append(targetArns, *target.Arn)
+			}
+			err := fmt.Errorf("ecr rule is misconfigured with unknown targets: %s %v", arnLambda, targetArns)
+			Logger.Println("error:", err)
+			return nil, err
+		}
+	} else {
+		rules, err := EventsListRules(ctx)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		for _, rule := range rules {
+			targets, err := EventsListRuleTargets(ctx, *rule.Name)
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			for _, target := range targets {
+				if *target.Arn == arnLambda && rule.EventPattern != nil && *rule.EventPattern == lambdaEcrEventPattern {
+					if !preview {
+						ids := []*string{}
+						for _, target := range targets {
+							ids = append(ids, target.Id)
+						}
+						_, err := EventsClient().RemoveTargetsWithContext(ctx, &cloudwatchevents.RemoveTargetsInput{
+							Rule: rule.Name,
+							Ids:  ids,
+						})
+						if err != nil {
+							Logger.Println("error:", err)
+							return nil, err
+						}
+						_, err = EventsClient().DeleteRuleWithContext(ctx, &cloudwatchevents.DeleteRuleInput{
+							Name: rule.Name,
+						})
+						if err != nil {
+							Logger.Println("error:", err)
+							return nil, err
+						}
+					}
+					Logger.Println(PreviewString(preview)+"deleted ecr rule:", name)
+					break
+				}
+			}
+		}
+	}
+	return permissionSids, nil
+}
+
+func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *LambdaMetadata, preview bool) ([]string, error) {
+	var permissionSids []string
 	events := []*string{
 		aws.String("s3:ObjectCreated:*"),
 		aws.String("s3:ObjectRemoved:*"),
@@ -395,22 +541,23 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 	}
 	if len(triggers) > 0 {
 		for _, bucket := range triggers {
-			err := lambdaEnsurePermission(ctx, name, "s3.amazonaws.com", "arn:aws:s3:::"+bucket, preview)
+			sid, err := lambdaEnsurePermission(ctx, name, "s3.amazonaws.com", "arn:aws:s3:::"+bucket, preview)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
+			permissionSids = append(permissionSids, sid)
 			s3Client, err := S3ClientBucketRegion(bucket)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 			out, err := s3Client.GetBucketNotificationConfigurationWithContext(ctx, &s3.GetBucketNotificationConfigurationRequest{
 				Bucket: aws.String(bucket),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 			var existingEvents []*string
 			for _, conf := range out.LambdaFunctionConfigurations {
@@ -437,7 +584,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 					})
 					if err != nil {
 						Logger.Println("error:", err)
-						return err
+						return nil, err
 					}
 				}
 				Logger.Printf(PreviewString(preview)+"updated bucket notifications for %s %s: %s => %s\n", bucket, name, StringSlice(existingEvents), StringSlice(events))
@@ -447,7 +594,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 	buckets, err := S3Client().ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	for _, bucket := range buckets.Buckets {
 		out, err := S3ClientBucketRegionMust(*bucket.Name).GetBucketNotificationConfigurationWithContext(ctx, &s3.GetBucketNotificationConfigurationRequest{
@@ -459,7 +606,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 				continue // recently delete buckets can still show up in listbuckets but fail with 404
 			}
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 		var confs []*s3.LambdaFunctionConfiguration
 		for _, conf := range out.LambdaFunctionConfigurations {
@@ -477,8 +624,40 @@ func LambdaEnsureTriggerS3(ctx context.Context, name, arnLambda string, meta *La
 			})
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
+		}
+	}
+	return permissionSids, nil
+}
+
+func lambdaRemoveUnusedPermissions(ctx context.Context, name string, permissionSids []string, preview bool) error {
+	out, err := LambdaClient().GetPolicyWithContext(ctx, &lambda.GetPolicyInput{
+		FunctionName: aws.String(name),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	policy := IamPolicyDocument{}
+	err = json.Unmarshal([]byte(*out.Policy), &policy)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	for _, statement := range policy.Statement {
+		if !Contains(permissionSids, statement.Sid) {
+			if !preview {
+				_, err := LambdaClient().RemovePermissionWithContext(ctx, &lambda.RemovePermissionInput{
+					FunctionName: aws.String(name),
+					StatementId:  aws.String(statement.Sid),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"deleted unused lambda permissions:", name, statement.Sid)
 		}
 	}
 	return nil
@@ -501,7 +680,7 @@ func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, caller
 	return err
 }
 
-func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerArn string, preview bool) error {
+func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerArn string, preview bool) (string, error) {
 	sid := strings.ReplaceAll(callerPrincipal, ".", "-") + "__" + Last(strings.Split(callerArn, ":"))
 	sid = strings.ReplaceAll(sid, "$", "DOLLAR")
 	sid = strings.ReplaceAll(sid, "*", "ALL")
@@ -526,18 +705,18 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAr
 	})
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return "", err
 	}
 	if expectedErr != nil {
 		if !preview {
 			err := lambdaAddPermission(ctx, sid, name, callerPrincipal, callerArn)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return "", err
 			}
 		}
 		Logger.Println(PreviewString(preview)+"created lambda permission:", name, callerPrincipal, callerArn)
-		return nil
+		return sid, nil
 	}
 	needsUpdate := true
 	if policyString != "" {
@@ -545,7 +724,7 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAr
 		err := json.Unmarshal([]byte(policyString), &policy)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 		for _, statement := range policy.Statement {
 			if statement.Sid == sid {
@@ -559,13 +738,13 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAr
 			err := lambdaAddPermission(ctx, sid, name, callerPrincipal, callerArn)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return "", err
 			}
 		}
 		Logger.Println(PreviewString(preview)+"updated lambda permission:", name, callerPrincipal, callerArn)
-		return nil
+		return sid, nil
 	}
-	return nil
+	return sid, nil
 }
 
 func LambdaApiUri(ctx context.Context, lambdaName string) (string, error) {
@@ -643,17 +822,17 @@ func lambdaEnsureTriggerApi(ctx context.Context, name, arnLambda string, protoco
 	return api, nil
 }
 
-func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnLambda, protocolType string, api *apigatewayv2.Api, timeoutMillis int64, preview bool) error {
+func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnLambda, protocolType string, api *apigatewayv2.Api, timeoutMillis int64, preview bool) (string, error) {
 	if api == nil && preview {
 		Logger.Println(PreviewString(preview)+"created api integration:", name)
 		Logger.Println(PreviewString(preview)+"created api stage:", name)
 		Logger.Println(PreviewString(preview)+"created api route:", name)
-		return nil
+		return "", nil
 	}
 	account, err := StsAccount(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return "", err
 	}
 	var integrationId string
 	getIntegrationsOut, err := ApiClient().GetIntegrationsWithContext(ctx, &apigatewayv2.GetIntegrationsInput{
@@ -662,7 +841,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 	})
 	if err != nil || len(getIntegrationsOut.Items) == 500 {
 		Logger.Println("error:", err)
-		return err
+		return "", err
 	}
 	switch len(getIntegrationsOut.Items) {
 	case 0:
@@ -678,7 +857,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 			})
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return "", err
 			}
 			integrationId = *out.IntegrationId
 		}
@@ -689,32 +868,32 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 		if *integration.ConnectionType != apigatewayv2.ConnectionTypeInternet {
 			err := fmt.Errorf("api connection type misconfigured for %s %s: %s != %s", name, *api.ApiId, *integration.ConnectionType, apigatewayv2.ConnectionTypeInternet)
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 		if *integration.IntegrationType != apigatewayv2.IntegrationTypeAwsProxy {
 			err := fmt.Errorf("api integration type misconfigured for %s %s: %s != %s", name, *api.ApiId, *integration.IntegrationType, apigatewayv2.IntegrationTypeAwsProxy)
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 		if *integration.IntegrationMethod != lambdaIntegrationMethod {
 			err := fmt.Errorf("api integration method misconfigured for %s %s: %s != %s", name, *api.ApiId, *integration.IntegrationMethod, lambdaIntegrationMethod)
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 		if *integration.TimeoutInMillis != timeoutMillis {
 			err := fmt.Errorf("api timeout misconfigured for %s %s: %d != %d", name, *api.ApiId, *integration.TimeoutInMillis, timeoutMillis)
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 		if *integration.PayloadFormatVersion != lambdaPayloadVersion {
 			err := fmt.Errorf("api payload format version misconfigured for %s %s: %s != %s", name, *api.ApiId, *integration.PayloadFormatVersion, lambdaPayloadVersion)
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 	default:
 		err := fmt.Errorf("api has more than one integration: %s %v", name, Pformat(getIntegrationsOut.Items))
 		Logger.Println("error:", err)
-		return err
+		return "", err
 	}
 	getStageOut, err := ApiClient().GetStageWithContext(ctx, &apigatewayv2.GetStageInput{
 		ApiId:     api.ApiId,
@@ -724,7 +903,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 		aerr, ok := err.(awserr.Error)
 		if !ok || aerr.Code() != apigatewayv2.ErrCodeNotFoundException {
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 		if !preview {
 			_, err := ApiClient().CreateStageWithContext(ctx, &apigatewayv2.CreateStageInput{
@@ -734,7 +913,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 			})
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return "", err
 			}
 		}
 		Logger.Println(PreviewString(preview)+"created api stage:", name)
@@ -742,12 +921,12 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 		if *getStageOut.StageName != lambdaDollarDefault {
 			err := fmt.Errorf("api stage name misconfigured for %s %s: %s != %s", name, *api.ApiId, *getStageOut.StageName, lambdaDollarDefault)
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 		if !*getStageOut.AutoDeploy {
 			err := fmt.Errorf("api stage auto deploy misconfigured for %s %s, should be enabled", name, *api.ApiId)
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 	}
 	getRoutesOut, err := ApiClient().GetRoutesWithContext(ctx, &apigatewayv2.GetRoutesInput{
@@ -756,7 +935,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 	})
 	if err != nil || len(getRoutesOut.Items) == 500 {
 		Logger.Println("error:", err)
-		return err
+		return "", err
 	}
 	var routeKeys []string
 	if protocolType == apigatewayv2.ProtocolTypeHttp {
@@ -783,7 +962,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 				})
 				if err != nil {
 					Logger.Println("error:", err)
-					return err
+					return "", err
 				}
 			}
 			Logger.Println(PreviewString(preview)+"created api route:", name, routeKey)
@@ -792,37 +971,37 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 			if *route.Target != fmt.Sprintf("integrations/%s", integrationId) {
 				err := fmt.Errorf("api route target misconfigured for %s %s: %s != %s", name, *api.ApiId, *route.Target, fmt.Sprintf("integrations/%s", integrationId))
 				Logger.Println("error:", err)
-				return err
+				return "", err
 			}
 			if *route.RouteKey != routeKey {
 				err := fmt.Errorf("api route key misconfigured for %s %s: %s != %s", name, *api.ApiId, *route.RouteKey, routeKey)
 				Logger.Println("error:", err)
-				return err
+				return "", err
 			}
 			if *route.AuthorizationType != lambdaAuthorizationType {
 				err := fmt.Errorf("api route authorization type misconfigured for %s %s: %s != %s", name, *api.ApiId, *route.AuthorizationType, lambdaAuthorizationType)
 				Logger.Println("error:", err)
-				return err
+				return "", err
 			}
 			if *route.ApiKeyRequired {
 				err := fmt.Errorf("api route apiKeyRequired misconfigured for %s %s, should be disabled", name, *api.ApiId)
 				Logger.Println("error:", err)
-				return err
+				return "", err
 			}
 		default:
 			err := fmt.Errorf("api has more than one route: %s %s %v", name, routeKey, Pformat(routes))
 			Logger.Println("error:", err)
-			return err
+			return "", err
 		}
 	}
 	arn := fmt.Sprintf("arn:aws:execute-api:%s:%s:%s/*/*", Region(), account, *api.ApiId)
 	lambdaName := Last(strings.Split(arnLambda, ":"))
-	err = lambdaEnsurePermission(ctx, lambdaName, "apigateway.amazonaws.com", arn, preview)
+	sid, err := lambdaEnsurePermission(ctx, lambdaName, "apigateway.amazonaws.com", arn, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return "", err
 	}
-	return nil
+	return sid, nil
 }
 
 func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, preview bool) error {
@@ -1078,7 +1257,8 @@ func lambdaEnsureTriggerApiMapping(ctx context.Context, name, subDomain string, 
 	return nil
 }
 
-func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetadata, preview bool) error {
+func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetadata, preview bool) ([]string, error) {
+	var permissionSids []string
 	hasApi := false
 	hasWebsocket := false
 	domainApi := ""
@@ -1086,7 +1266,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 	account, err := StsAccount(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	arnLambda := fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", Region(), account, name)
 	count := 0
@@ -1106,7 +1286,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 				if hasApi {
 					err := fmt.Errorf("cannot have more than one api trigger")
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 				hasApi = true
 				protocolType = apigatewayv2.ProtocolTypeHttp
@@ -1116,7 +1296,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 				if hasWebsocket {
 					err := fmt.Errorf("cannot have more than one websocket trigger")
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 				hasWebsocket = true
 				protocolType = apigatewayv2.ProtocolTypeWebsocket
@@ -1125,31 +1305,32 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 			api, err := lambdaEnsureTriggerApi(ctx, apiName, arnLambda, protocolType, preview)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 			if protocolType == apigatewayv2.ProtocolTypeHttp {
 				err := os.Setenv(lambdaEnvVarApiID, *api.ApiId)
 				if err != nil {
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 			} else if protocolType == apigatewayv2.ProtocolTypeWebsocket {
 				err := os.Setenv(lambdaEnvVarWebsocketID, *api.ApiId)
 				if err != nil {
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 			}
-			err = lambdaEnsureTriggerApiIntegrationStageRoute(ctx, apiName, arnLambda, protocolType, api, timeoutMillis, preview)
+			sid, err := lambdaEnsureTriggerApiIntegrationStageRoute(ctx, apiName, arnLambda, protocolType, api, timeoutMillis, preview)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
+			permissionSids = append(permissionSids, sid)
 			for _, attr := range attrs {
 				k, v, err := SplitOnce(attr, "=")
 				if err != nil {
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 				switch k {
 				case lambdaTriggerApiAttrDns: // apigateway custom domain + route53
@@ -1157,24 +1338,24 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 					err := lambdaEnsureTriggerApiDns(ctx, apiName, domainName, api, preview)
 					if err != nil {
 						Logger.Println("error:", err)
-						return err
+						return nil, err
 					}
 				case lambdaTriggerApiAttrDomain: // apigateway custom domain
 					domainName = v
 					err := lambdaEnsureTriggerApiDomainName(ctx, apiName, domainName, preview)
 					if err != nil {
 						Logger.Println("error:", err)
-						return err
+						return nil, err
 					}
 					err = lambdaEnsureTriggerApiMapping(ctx, apiName, domainName, api, preview)
 					if err != nil {
 						Logger.Println("error:", err)
-						return err
+						return nil, err
 					}
 				default:
 					err := fmt.Errorf("unknown attr: %s", attr)
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 				if kind == lambdaTriggerApi {
 					domainApi = domainName
@@ -1201,7 +1382,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 		api, err := Api(ctx, apiName)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 		if api != nil {
 			time.Sleep(time.Duration(count) * 5 * time.Second) // very low api limits on apigateway delete domain, sleep here is we are adding more than 1
@@ -1209,7 +1390,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 			domains, err := ApiListDomains(ctx)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 			// delete any unused domains
 			for _, domain := range domains {
@@ -1219,7 +1400,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 				err := lambdaTriggerApiDeleteDns(ctx, apiName, api, domain, preview)
 				if err != nil {
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 			}
 			// if api trigger unused, delete rest api
@@ -1227,12 +1408,12 @@ func LambdaEnsureTriggerApi(ctx context.Context, name string, meta *LambdaMetada
 				err = lambdaTriggerApiDeleteApi(ctx, apiName, api, preview)
 				if err != nil {
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 			}
 		}
 	}
-	return nil
+	return permissionSids, nil
 }
 
 func lambdaTriggerApiDeleteApi(ctx context.Context, name string, api *apigatewayv2.Api, preview bool) error {
@@ -1314,7 +1495,8 @@ func lambdaScheduleName(name, schedule string) string {
 	return name + "_" + strings.ReplaceAll(base64.StdEncoding.EncodeToString([]byte(schedule)), "=", "")
 }
 
-func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, meta *LambdaMetadata, preview bool) error {
+func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, meta *LambdaMetadata, preview bool) ([]string, error) {
+	var permissionSids []string
 	var triggers []string
 	for _, trigger := range meta.Trigger {
 		parts := strings.SplitN(trigger, " ", 2)
@@ -1334,7 +1516,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 			if err != nil {
 				aerr, ok := err.(awserr.Error)
 				if !ok || aerr.Code() != cloudwatchevents.ErrCodeResourceNotFoundException {
-					return err
+					return nil, err
 				}
 				if !preview {
 					out, err := EventsClient().PutRuleWithContext(ctx, &cloudwatchevents.PutRuleInput{
@@ -1343,7 +1525,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 					})
 					if err != nil {
 						Logger.Println("error:", err)
-						return err
+						return nil, err
 					}
 					scheduleArn = *out.RuleArn
 				}
@@ -1352,15 +1534,16 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 				if *out.ScheduleExpression != schedule {
 					err := fmt.Errorf("cloudwatch rule misconfigured: %s %s != %s", scheduleName, schedule, *out.ScheduleExpression)
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 				scheduleArn = *out.Arn
 			}
-			err = lambdaEnsurePermission(ctx, name, "events.amazonaws.com", scheduleArn, preview)
+			sid, err := lambdaEnsurePermission(ctx, name, "events.amazonaws.com", scheduleArn, preview)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
+			permissionSids = append(permissionSids, sid)
 			var targets []*cloudwatchevents.Target
 			err = Retry(ctx, func() error {
 				var err error
@@ -1373,7 +1556,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 			})
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 			switch len(targets) {
 			case 0:
@@ -1387,7 +1570,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 					})
 					if err != nil {
 						Logger.Println("error:", err)
-						return err
+						return nil, err
 					}
 				}
 				Logger.Println(PreviewString(preview)+"created cloudwatch rule target:", scheduleName, arnLambda)
@@ -1395,7 +1578,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 				if *targets[0].Arn != arnLambda {
 					err := fmt.Errorf("cloudwatch rule is misconfigured with unknown target: %s %s", arnLambda, *targets[0].Arn)
 					Logger.Println("error:", err)
-					return err
+					return nil, err
 				}
 			default:
 				var targetArns []string
@@ -1404,23 +1587,23 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 				}
 				err := fmt.Errorf("cloudwatch rule is misconfigured with unknown targets: %s %v", arnLambda, targetArns)
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		}
 	}
 	rules, err := EventsListRules(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	for _, rule := range rules {
 		targets, err := EventsListRuleTargets(ctx, *rule.Name)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 		for _, target := range targets {
-			if *target.Arn == arnLambda && !Contains(triggers, *rule.ScheduleExpression) {
+			if *target.Arn == arnLambda && rule.ScheduleExpression != nil && !Contains(triggers, *rule.ScheduleExpression) {
 				if !preview {
 					ids := []*string{}
 					for _, target := range targets {
@@ -1432,14 +1615,14 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 					})
 					if err != nil {
 						Logger.Println("error:", err)
-						return err
+						return nil, err
 					}
 					_, err = EventsClient().DeleteRuleWithContext(ctx, &cloudwatchevents.DeleteRuleInput{
 						Name: rule.Name,
 					})
 					if err != nil {
 						Logger.Println("error:", err)
-						return err
+						return nil, err
 					}
 				}
 				Logger.Println(PreviewString(preview)+"deleted cloudwatch rule:", name)
@@ -1447,7 +1630,7 @@ func LambdaEnsureTriggerCloudwatch(ctx context.Context, name, arnLambda string, 
 			}
 		}
 	}
-	return nil
+	return permissionSids, nil
 }
 
 func lambdaDynamoDBTriggerAttrShortcut(s string) string {
@@ -2272,6 +2455,7 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		envVars:  []string{},
 		zipBytes: zipBytes,
 	}
+	var permissionSids []string
 	arnLambda, err := lambdaGetOrCreateFunction(ctx, input, preview)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2282,21 +2466,30 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		Logger.Println("error:", err)
 		return err
 	}
-	err = LambdaEnsureTriggerCloudwatch(ctx, name, arnLambda, metadata, preview)
+	sids, err := LambdaEnsureTriggerCloudwatch(ctx, name, arnLambda, metadata, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	err = LambdaEnsureTriggerApi(ctx, name, metadata, preview)
+	permissionSids = append(permissionSids, sids...)
+	sids, err = LambdaEnsureTriggerEcr(ctx, name, arnLambda, metadata, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	err = LambdaEnsureTriggerS3(ctx, name, arnLambda, metadata, preview)
+	permissionSids = append(permissionSids, sids...)
+	sids, err = LambdaEnsureTriggerApi(ctx, name, metadata, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
+	permissionSids = append(permissionSids, sids...)
+	sids, err = LambdaEnsureTriggerS3(ctx, name, arnLambda, metadata, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	permissionSids = append(permissionSids, sids...)
 	err = LambdaEnsureTriggerSQS(ctx, name, arnLambda, metadata, preview)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2308,6 +2501,11 @@ func lambdaEnsure(ctx context.Context, runtime, handler, pth string, quick, prev
 		return err
 	}
 	err = IamEnsureRoleAllows(ctx, name, metadata.Allow, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	err = lambdaRemoveUnusedPermissions(ctx, name, permissionSids, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err

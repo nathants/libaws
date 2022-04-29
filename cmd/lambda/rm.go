@@ -56,18 +56,22 @@ func lambdaRm() {
 	metadata.Trigger = []string{}
 
 	if args.Everything || args.Trigger {
-		err := lib.LambdaEnsureTriggerApi(ctx, name, metadata, args.Preview)
+		_, err := lib.LambdaEnsureTriggerApi(ctx, name, metadata, args.Preview)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
 	}
 
 	if arnLambda != "" && args.Everything || args.Trigger {
-		err := lib.LambdaEnsureTriggerS3(ctx, name, arnLambda, metadata, args.Preview)
+		_, err := lib.LambdaEnsureTriggerS3(ctx, name, arnLambda, metadata, args.Preview)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
-		err = lib.LambdaEnsureTriggerCloudwatch(ctx, name, arnLambda, metadata, args.Preview)
+		_, err = lib.LambdaEnsureTriggerEcr(ctx, name, arnLambda, metadata, args.Preview)
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
+		_, err = lib.LambdaEnsureTriggerCloudwatch(ctx, name, arnLambda, metadata, args.Preview)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
