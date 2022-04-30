@@ -21,7 +21,7 @@ type vpcEnsureFlowlogsArgs struct {
 }
 
 func (vpcEnsureFlowlogsArgs) Description() string {
-	return `ensure vpc flow logs for monitoring ec2 outbound bandwidth`
+	return "\nensure vpc flow logs for monitoring ec2 outbound bandwidth\n"
 }
 
 const flowLogsPolicyTemplate = `{
