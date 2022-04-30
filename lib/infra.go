@@ -630,29 +630,29 @@ func InfraListS3(ctx context.Context, triggersChan chan<- InfraLambdaTrigger) (m
 				return
 			}
 			s3Default := s3EnsureInputDefault()
-			if descr.Policy == nil && s3Default.acl != "private" {
+			if descr.Policy == nil && s3Default.Acl != "private" {
 				s.Attrs = append(s.Attrs, "acl=private")
-			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.acl != "public" {
+			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.Acl != "public" {
 				s.Attrs = append(s.Attrs, "acl=public")
 			}
-			if descr.Cors == nil && s3Default.cors {
+			if descr.Cors == nil && s3Default.Cors {
 				s.Attrs = append(s.Attrs, "cors=false")
 			} else if reflect.DeepEqual(s3Cors, descr.Cors) {
 				s.Attrs = append(s.Attrs, "cors=true")
 			}
-			if descr.Versioning != s3Default.versioning {
+			if descr.Versioning != s3Default.Versioning {
 				s.Attrs = append(s.Attrs, fmt.Sprintf("versioning=%t", descr.Versioning))
 			}
 			encryption := reflect.DeepEqual(descr.Encryption, s3EncryptionConfig)
-			if encryption != s3Default.encryption {
+			if encryption != s3Default.Encryption {
 				s.Attrs = append(s.Attrs, fmt.Sprintf("encryption=%t", encryption))
 			}
 			metrics := descr.Metrics != nil
-			if s3Default.metrics != metrics {
+			if s3Default.Metrics != metrics {
 				s.Attrs = append(s.Attrs, fmt.Sprintf("metrics=%t", metrics))
 			}
 			ttl := descr.Lifecycle
-			if len(ttl) == 1 && int64(s3Default.ttlDays) != *ttl[0].Expiration.Days {
+			if len(ttl) == 1 && int64(s3Default.TtlDays) != *ttl[0].Expiration.Days {
 				s.Attrs = append(s.Attrs, fmt.Sprintf("ttldays=%d", *ttl[0].Expiration.Days))
 			}
 			if descr.Notifications != nil {

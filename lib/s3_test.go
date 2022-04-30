@@ -353,7 +353,7 @@ func TestS3EnsurePrivateByDefault(t *testing.T) {
 		}
 	}()
 	pabOut, err := S3Client().GetPublicAccessBlockWithContext(ctx, &s3.GetPublicAccessBlockInput{
-		Bucket: aws.String(input.name),
+		Bucket: aws.String(input.Name),
 	})
 	if err != nil {
 		t.Error(err)

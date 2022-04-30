@@ -141,30 +141,33 @@ func S3ClientBucketRegionMust(bucket string) *s3.S3 {
 	return client
 }
 
-type s3EnsureInput struct {
-	name       string
-	acl        string
-	versioning bool
-	encryption bool
-	metrics    bool
-	cors       bool
-	ttlDays    int
+type S3EnsureInputData struct {
+	Name       string
+	Acl        string
+	Versioning bool
+	Encryption bool
+	Metrics    bool
+	Cors       bool
+	TtlDays    int
+
+	// NOTE: you almost never want this, danger close. currently used in cmd/vpc/ensure_flowlogs.go
+	CustomPolicy *string // use this when you need to specify a custom bucket policy
 }
 
-func s3EnsureInputDefault() *s3EnsureInput {
-	return &s3EnsureInput{
-		acl:        "private",
-		versioning: false,
-		encryption: true,
-		metrics:    true,
-		cors:       false,
-		ttlDays:    0,
+func s3EnsureInputDefault() *S3EnsureInputData {
+	return &S3EnsureInputData{
+		Acl:        "private",
+		Versioning: false,
+		Encryption: true,
+		Metrics:    true,
+		Cors:       false,
+		TtlDays:    0,
 	}
 }
 
-func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
+func S3EnsureInput(name string, attrs []string) (*S3EnsureInputData, error) {
 	input := s3EnsureInputDefault()
-	input.name = name
+	input.Name = name
 	for _, line := range attrs {
 		line = strings.ToLower(line)
 		attr, value, err := SplitOnce(line, "=")
@@ -174,11 +177,11 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 		}
 		switch attr {
 		case "ttldays":
-			input.ttlDays = Atoi(value)
+			input.TtlDays = Atoi(value)
 		case "cors":
 			switch value {
 			case "true", "false":
-				input.cors = value == "true"
+				input.Cors = value == "true"
 			default:
 				err := fmt.Errorf("s3 unknown attr: %s", line)
 				Logger.Println("error:", err)
@@ -187,7 +190,7 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 		case "acl":
 			switch value {
 			case "public", "private":
-				input.acl = value
+				input.Acl = value
 			default:
 				err := fmt.Errorf("s3 unknown attr: %s", line)
 				Logger.Println("error:", err)
@@ -196,7 +199,7 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 		case "versioning":
 			switch value {
 			case "true", "false":
-				input.versioning = value == "true"
+				input.Versioning = value == "true"
 			default:
 				err := fmt.Errorf("s3 unknown attr: %s", line)
 				Logger.Println("error:", err)
@@ -205,7 +208,7 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 		case "encryption":
 			switch value {
 			case "true", "false":
-				input.encryption = value == "true"
+				input.Encryption = value == "true"
 			default:
 				err := fmt.Errorf("s3 unknown attr: %s", line)
 				Logger.Println("error:", err)
@@ -214,7 +217,7 @@ func S3EnsureInput(name string, attrs []string) (*s3EnsureInput, error) {
 		case "metrics":
 			switch value {
 			case "true", "false":
-				input.metrics = value == "true"
+				input.Metrics = value == "true"
 			default:
 				err := fmt.Errorf("s3 unknown attr: %s", line)
 				Logger.Println("error:", err)
@@ -260,7 +263,7 @@ var s3EncryptionConfig = &s3.ServerSideEncryptionConfiguration{
 	}},
 }
 
-func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
+func S3Ensure(ctx context.Context, input *S3EnsureInputData, preview bool) error {
 	//
 	account, err := StsAccount(ctx)
 	if err != nil {
@@ -269,7 +272,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	}
 	//
 	_, err = S3Client().HeadBucketWithContext(ctx, &s3.HeadBucketInput{
-		Bucket:              aws.String(input.name),
+		Bucket:              aws.String(input.Name),
 		ExpectedBucketOwner: aws.String(account),
 	})
 	if err != nil {
@@ -280,7 +283,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 		if !preview {
 			_, err := S3Client().CreateBucketWithContext(ctx, &s3.CreateBucketInput{
-				Bucket: aws.String(input.name),
+				Bucket: aws.String(input.Name),
 				CreateBucketConfiguration: &s3.CreateBucketConfiguration{
 					LocationConstraint: aws.String(Region()),
 				},
@@ -293,12 +296,12 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				}
 			}
 		}
-		Logger.Println(PreviewString(preview)+"s3 created bucket:", input.name, Region())
+		Logger.Println(PreviewString(preview)+"s3 created bucket:", input.Name, Region())
 	}
 	//
 	exists := true
 	pabOut, err := S3Client().GetPublicAccessBlockWithContext(ctx, &s3.GetPublicAccessBlockInput{
-		Bucket:              aws.String(input.name),
+		Bucket:              aws.String(input.Name),
 		ExpectedBucketOwner: aws.String(account),
 	})
 	if err != nil {
@@ -311,7 +314,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	}
 	if exists {
 		conf := pabOut.PublicAccessBlockConfiguration
-		if input.acl == "private" {
+		if input.Acl == "private" {
 			if !(*conf.BlockPublicAcls && *conf.IgnorePublicAcls && *conf.BlockPublicPolicy && *conf.RestrictPublicBuckets) {
 				err := fmt.Errorf("s3 acl public/private can only be set at bucket creation")
 				Logger.Println("error:", err)
@@ -328,13 +331,13 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	if !exists {
 		if !preview {
 			_, err := S3Client().PutPublicAccessBlockWithContext(ctx, &s3.PutPublicAccessBlockInput{
-				Bucket:              aws.String(input.name),
+				Bucket:              aws.String(input.Name),
 				ExpectedBucketOwner: aws.String(account),
 				PublicAccessBlockConfiguration: &s3.PublicAccessBlockConfiguration{
-					BlockPublicAcls:       aws.Bool(input.acl == "private"),
-					IgnorePublicAcls:      aws.Bool(input.acl == "private"),
-					BlockPublicPolicy:     aws.Bool(input.acl == "private"),
-					RestrictPublicBuckets: aws.Bool(input.acl == "private"),
+					BlockPublicAcls:       aws.Bool(input.Acl == "private"),
+					IgnorePublicAcls:      aws.Bool(input.Acl == "private"),
+					BlockPublicPolicy:     aws.Bool(input.Acl == "private"),
+					RestrictPublicBuckets: aws.Bool(input.Acl == "private"),
 				},
 			})
 			if err != nil {
@@ -342,11 +345,11 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				return err
 			}
 		}
-		Logger.Printf(PreviewString(preview)+"s3 created public access block for %s: %s\n", input.name, input.acl)
+		Logger.Printf(PreviewString(preview)+"s3 created public access block for %s: %s\n", input.Name, input.Acl)
 	}
 	//
 	policyOut, err := S3Client().GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
-		Bucket:              aws.String(input.name),
+		Bucket:              aws.String(input.Name),
 		ExpectedBucketOwner: aws.String(account),
 	})
 	if err != nil {
@@ -356,15 +359,23 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			return err
 		}
 		//
-		if input.acl == "public" {
-			if !preview {
-				policyBytes, err := json.Marshal(s3PublicPolicy(input.name))
+		if input.Acl == "public" || input.CustomPolicy != nil {
+			var aclName string
+			var policyBytes []byte
+			if input.CustomPolicy != nil {
+				aclName = "custom"
+				policyBytes = []byte(*input.CustomPolicy)
+			} else {
+				aclName = "public"
+				policyBytes, err = json.Marshal(s3PublicPolicy(input.Name))
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
+			}
+			if !preview {
 				_, err = S3Client().PutBucketPolicyWithContext(ctx, &s3.PutBucketPolicyInput{
-					Bucket:              aws.String(input.name),
+					Bucket:              aws.String(input.Name),
 					ExpectedBucketOwner: aws.String(account),
 					Policy:              aws.String(string(policyBytes)),
 				})
@@ -373,12 +384,36 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"s3 put acl:", input.name, "public")
+			Logger.Println(PreviewString(preview)+"s3 put acl:", input.Name, aclName)
 		}
-	} else if input.acl == "private" {
-		err := fmt.Errorf("s3 no bucket policy should exist for private bucket: %s", input.name)
-		Logger.Println("error:", err)
-		return err
+	} else if input.Acl == "private" {
+		if input.CustomPolicy != nil {
+			policy := IamPolicyDocument{}
+			err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			expectedPolicy := IamPolicyDocument{}
+			if input.CustomPolicy == nil {
+				expectedPolicy = s3PublicPolicy(input.Name)
+			} else {
+				err = json.Unmarshal([]byte(*input.CustomPolicy), &expectedPolicy)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			if !reflect.DeepEqual(expectedPolicy, policy) {
+				err := fmt.Errorf("s3 private bucket policy is misconfigured for bucket: %s\n%s != %s", input.Name, Pformat(policy), Pformat(expectedPolicy))
+				Logger.Println("error:", err)
+				return err
+			}
+		} else {
+			err := fmt.Errorf("s3 no bucket policy should exist for private bucket: %s", input.Name)
+			Logger.Println("error:", err)
+			return err
+		}
 	} else {
 		policy := IamPolicyDocument{}
 		err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
@@ -386,15 +421,25 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		if !reflect.DeepEqual(s3PublicPolicy(input.name), policy) {
-			err := fmt.Errorf("s3 public bucket policy is misconfigured for bucket: %s\n%s != %s", input.name, Pformat(policy), Pformat(s3PublicPolicy(input.name)))
+		expectedPolicy := IamPolicyDocument{}
+		if input.CustomPolicy == nil {
+			expectedPolicy = s3PublicPolicy(input.Name)
+		} else {
+			err = json.Unmarshal([]byte(*input.CustomPolicy), &expectedPolicy)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		if !reflect.DeepEqual(expectedPolicy, policy) {
+			err := fmt.Errorf("s3 public bucket policy is misconfigured for bucket: %s\n%s != %s", input.Name, Pformat(policy), Pformat(expectedPolicy))
 			Logger.Println("error:", err)
 			return err
 		}
 	}
 	//
 	corsOut, err := S3Client().GetBucketCorsWithContext(ctx, &s3.GetBucketCorsInput{
-		Bucket:              aws.String(input.name),
+		Bucket:              aws.String(input.Name),
 		ExpectedBucketOwner: aws.String(account),
 	})
 	if err != nil {
@@ -403,10 +448,10 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		if input.acl == "public" || input.cors {
+		if input.Acl == "public" || input.Cors {
 			if !preview {
 				_, err := S3Client().PutBucketCorsWithContext(ctx, &s3.PutBucketCorsInput{
-					Bucket:              aws.String(input.name),
+					Bucket:              aws.String(input.Name),
 					ExpectedBucketOwner: aws.String(account),
 					CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3Cors},
 				})
@@ -415,39 +460,39 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"s3 put cors:", input.name)
+			Logger.Println(PreviewString(preview)+"s3 put cors:", input.Name)
 		}
-	} else if !input.cors && input.acl != "public" {
-		err := fmt.Errorf("s3 no cors config should exist for bucket: %s", input.name)
+	} else if !input.Cors && input.Acl != "public" {
+		err := fmt.Errorf("s3 no cors config should exist for bucket: %s", input.Name)
 		Logger.Println("error:", err)
 		return err
 	} else if !reflect.DeepEqual(corsOut.CORSRules, s3Cors) {
-		err := fmt.Errorf("s3 public bucket cors config is misconfigured for bucket: %s", input.name)
+		err := fmt.Errorf("s3 public bucket cors config is misconfigured for bucket: %s", input.Name)
 		Logger.Println("error:", err)
 		return err
 	}
 	//
 	needsUpdate := false
 	versionOut, err := S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
-		Bucket:              aws.String(input.name),
+		Bucket:              aws.String(input.Name),
 		ExpectedBucketOwner: aws.String(account),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	if (input.versioning && (versionOut.Status == nil || *versionOut.Status != s3.BucketVersioningStatusEnabled)) ||
-		(!input.versioning && versionOut.Status != nil && *versionOut.Status != s3.BucketVersioningStatusSuspended) {
+	if (input.Versioning && (versionOut.Status == nil || *versionOut.Status != s3.BucketVersioningStatusEnabled)) ||
+		(!input.Versioning && versionOut.Status != nil && *versionOut.Status != s3.BucketVersioningStatusSuspended) {
 		needsUpdate = true
 	}
 	if needsUpdate {
 		if !preview {
 			status := s3.BucketVersioningStatusSuspended
-			if input.versioning {
+			if input.Versioning {
 				status = s3.BucketVersioningStatusEnabled
 			}
 			_, err := S3Client().PutBucketVersioningWithContext(ctx, &s3.PutBucketVersioningInput{
-				Bucket:              aws.String(input.name),
+				Bucket:              aws.String(input.Name),
 				ExpectedBucketOwner: aws.String(account),
 				VersioningConfiguration: &s3.VersioningConfiguration{
 					Status: aws.String(status),
@@ -458,12 +503,12 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				return err
 			}
 		}
-		Logger.Printf(PreviewString(preview)+"s3 updated versioning for %s: %v\n", input.name, input.versioning)
+		Logger.Printf(PreviewString(preview)+"s3 updated versioning for %s: %v\n", input.Name, input.Versioning)
 	}
 	//
 	needsUpdate = false
 	encOut, err := S3Client().GetBucketEncryptionWithContext(ctx, &s3.GetBucketEncryptionInput{
-		Bucket:              aws.String(input.name),
+		Bucket:              aws.String(input.Name),
 		ExpectedBucketOwner: aws.String(account),
 	})
 	exists = true
@@ -475,15 +520,15 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 		exists = false
 	}
-	if (input.encryption && (!exists || !reflect.DeepEqual(encOut.ServerSideEncryptionConfiguration, s3EncryptionConfig))) ||
-		(!input.encryption && exists && len(encOut.ServerSideEncryptionConfiguration.Rules) != 0) {
+	if (input.Encryption && (!exists || !reflect.DeepEqual(encOut.ServerSideEncryptionConfiguration, s3EncryptionConfig))) ||
+		(!input.Encryption && exists && len(encOut.ServerSideEncryptionConfiguration.Rules) != 0) {
 		needsUpdate = true
 	}
 	if needsUpdate {
 		if !preview {
-			if input.encryption {
+			if input.Encryption {
 				_, err := S3Client().PutBucketEncryptionWithContext(ctx, &s3.PutBucketEncryptionInput{
-					Bucket:                            aws.String(input.name),
+					Bucket:                            aws.String(input.Name),
 					ExpectedBucketOwner:               aws.String(account),
 					ServerSideEncryptionConfiguration: s3EncryptionConfig,
 				})
@@ -493,7 +538,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				}
 			} else {
 				_, err := S3Client().DeleteBucketEncryptionWithContext(ctx, &s3.DeleteBucketEncryptionInput{
-					Bucket:              aws.String(input.name),
+					Bucket:              aws.String(input.Name),
 					ExpectedBucketOwner: aws.String(account),
 				})
 				if err != nil {
@@ -503,14 +548,14 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			}
 		}
 		if !exists {
-			Logger.Printf(PreviewString(preview)+"s3 created encryption for %s: %v\n", input.name, input.encryption)
+			Logger.Printf(PreviewString(preview)+"s3 created encryption for %s: %v\n", input.Name, input.Encryption)
 		} else {
-			Logger.Printf(PreviewString(preview)+"s3 updated encryption for %s: %v\n", input.name, input.encryption)
+			Logger.Printf(PreviewString(preview)+"s3 updated encryption for %s: %v\n", input.Name, input.Encryption)
 		}
 	}
 	//
 	metrics, err := S3Client().GetBucketMetricsConfigurationWithContext(ctx, &s3.GetBucketMetricsConfigurationInput{
-		Bucket:              aws.String(input.name),
+		Bucket:              aws.String(input.Name),
 		ExpectedBucketOwner: aws.String(account),
 		Id:                  aws.String(s3MetricsId),
 	})
@@ -520,10 +565,10 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		if input.metrics {
+		if input.Metrics {
 			if !preview {
 				_, err := S3Client().PutBucketMetricsConfigurationWithContext(ctx, &s3.PutBucketMetricsConfigurationInput{
-					Bucket:              aws.String(input.name),
+					Bucket:              aws.String(input.Name),
 					ExpectedBucketOwner: aws.String(account),
 					Id:                  aws.String(s3MetricsId),
 					MetricsConfiguration: &s3.MetricsConfiguration{
@@ -535,19 +580,19 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"s3 put bucket metrics for:", input.name)
+			Logger.Println(PreviewString(preview)+"s3 put bucket metrics for:", input.Name)
 		}
 	} else {
-		if input.metrics {
+		if input.Metrics {
 			if metrics.MetricsConfiguration.Filter != nil {
-				err := fmt.Errorf("s3 bucket metrics misconfigured: %s %s", input.name, s3MetricsId)
+				err := fmt.Errorf("s3 bucket metrics misconfigured: %s %s", input.Name, s3MetricsId)
 				Logger.Println("error:", err)
 				return err
 			}
 		} else {
 			if !preview {
 				_, err := S3Client().DeleteBucketMetricsConfigurationWithContext(ctx, &s3.DeleteBucketMetricsConfigurationInput{
-					Bucket:              aws.String(input.name),
+					Bucket:              aws.String(input.Name),
 					ExpectedBucketOwner: aws.String(account),
 					Id:                  aws.String(s3MetricsId),
 				})
@@ -556,12 +601,12 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"s3 delete bucket metrics for:", input.name)
+			Logger.Println(PreviewString(preview)+"s3 delete bucket metrics for:", input.Name)
 		}
 	}
 	//
 	ttlOut, err := S3Client().GetBucketLifecycleConfigurationWithContext(ctx, &s3.GetBucketLifecycleConfigurationInput{
-		Bucket:              aws.String(input.name),
+		Bucket:              aws.String(input.Name),
 		ExpectedBucketOwner: aws.String(account),
 	})
 	_ = ttlOut
@@ -571,17 +616,17 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		if input.ttlDays != 0 {
+		if input.TtlDays != 0 {
 			if !preview {
 				_, err := S3Client().PutBucketLifecycleConfigurationWithContext(ctx, &s3.PutBucketLifecycleConfigurationInput{
-					Bucket:              aws.String(input.name),
+					Bucket:              aws.String(input.Name),
 					ExpectedBucketOwner: aws.String(account),
 					LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
 						Rules: []*s3.LifecycleRule{{
 							Expiration: &s3.LifecycleExpiration{
-								Days: aws.Int64(int64(input.ttlDays)),
+								Days: aws.Int64(int64(input.TtlDays)),
 							},
-							ID:     aws.String(fmt.Sprintf("ttlDays=%d", input.ttlDays)),
+							ID:     aws.String(fmt.Sprintf("ttlDays=%d", input.TtlDays)),
 							Prefix: aws.String(""),
 							Status: aws.String("Enabled"),
 						}},
@@ -592,13 +637,13 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"put bucket ttl for:", input.name, input.ttlDays)
+			Logger.Println(PreviewString(preview)+"put bucket ttl for:", input.Name, input.TtlDays)
 		}
 	} else {
-		if input.ttlDays == 0 {
+		if input.TtlDays == 0 {
 			if !preview {
 				_, err := S3Client().DeleteBucketLifecycleWithContext(ctx, &s3.DeleteBucketLifecycleInput{
-					Bucket:              aws.String(input.name),
+					Bucket:              aws.String(input.Name),
 					ExpectedBucketOwner: aws.String(account),
 				})
 				if err != nil {
@@ -606,25 +651,25 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"deleted bucket ttl for:", input.name)
+			Logger.Println(PreviewString(preview)+"deleted bucket ttl for:", input.Name)
 		} else {
 			if len(ttlOut.Rules) != 1 {
-				err := fmt.Errorf("expected exactly 1 ttl rule: %s %s", input.name, Pformat(ttlOut.Rules))
+				err := fmt.Errorf("expected exactly 1 ttl rule: %s %s", input.Name, Pformat(ttlOut.Rules))
 				Logger.Println("error:", err)
 				return err
 			}
 			ttlDays := ttlOut.Rules[0].Expiration.Days
-			if ttlDays == nil || *ttlDays != int64(input.ttlDays) {
+			if ttlDays == nil || *ttlDays != int64(input.TtlDays) {
 				if !preview {
 					_, err := S3Client().PutBucketLifecycleConfigurationWithContext(ctx, &s3.PutBucketLifecycleConfigurationInput{
-						Bucket:              aws.String(input.name),
+						Bucket:              aws.String(input.Name),
 						ExpectedBucketOwner: aws.String(account),
 						LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
 							Rules: []*s3.LifecycleRule{
 								{
 									Prefix: aws.String(""),
 									Expiration: &s3.LifecycleExpiration{
-										Days: aws.Int64(int64(input.ttlDays)),
+										Days: aws.Int64(int64(input.TtlDays)),
 									},
 									Status: aws.String("Enabled"),
 								},
@@ -639,7 +684,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				if ttlDays == nil {
 					*ttlDays = 0
 				}
-				Logger.Printf(PreviewString(preview)+"updated bucket ttl for %s: %d => %d\n", input.name, *ttlDays, input.ttlDays)
+				Logger.Printf(PreviewString(preview)+"updated bucket ttl for %s: %d => %d\n", input.Name, *ttlDays, input.TtlDays)
 			}
 		}
 	}
