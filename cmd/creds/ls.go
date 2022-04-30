@@ -37,7 +37,6 @@ func credsLs() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	lib.Logger.Println("~/.aws_creds/")
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() {
 			continue
