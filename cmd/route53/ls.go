@@ -3,6 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/alexflint/go-arg"
@@ -29,6 +30,7 @@ func route53Ls() {
 	if err != nil {
 		lib.Logger.Fatal(err)
 	}
+	var res []string
 	for _, zone := range zones {
 		records, err := lib.Route53ListRecords(ctx, *zone.Id)
 		if err != nil {
@@ -36,7 +38,7 @@ func route53Ls() {
 		}
 		for _, record := range records {
 			if record.AliasTarget != nil {
-				fmt.Println(strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "Type=Alias", "Value="+*record.AliasTarget.DNSName, "HostedZoneId="+*record.AliasTarget.HostedZoneId)
+				res = append(res, strings.Join([]string{strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "Type=Alias", "Value="+*record.AliasTarget.DNSName, "HostedZoneId="+*record.AliasTarget.HostedZoneId}, " "))
 			} else {
 				vals := []string{}
 				for _, val := range record.ResourceRecords {
@@ -46,8 +48,12 @@ func route53Ls() {
 						vals = append(vals, "Value="+*val.Value)
 					}
 				}
-				fmt.Println(strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "TTL="+fmt.Sprint(*record.TTL), "Type="+*record.Type, strings.Join(vals, " "))
+				res = append(res, strings.Join([]string{strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "Type="+*record.Type, "TTL="+fmt.Sprint(*record.TTL), strings.Join(vals, " ")}, " "))
 			}
 		}
+	}
+	sort.Strings(res)
+	for _, r := range res {
+		fmt.Println(r)
 	}
 }
