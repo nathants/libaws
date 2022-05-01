@@ -145,39 +145,35 @@ func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*rou
 			}
 			input.change.ResourceRecordSet.TTL = aws.Int64(int64(ttl))
 		case "type":
-			if !Contains(route53.RRType_Values(), value) {
-				err := fmt.Errorf("route53 unknown type: %s", attr)
-				Logger.Println("error:", err)
-				return nil, err
+			if value == "Alias" {
+				input.change.ResourceRecordSet.Type = aws.String("A")
+				input.change.ResourceRecordSet.AliasTarget = &route53.AliasTarget{
+					EvaluateTargetHealth: aws.Bool(false),
+				}
+			} else {
+				if !Contains(route53.RRType_Values(), value) {
+					err := fmt.Errorf("route53 unknown type: %s", attr)
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				input.change.ResourceRecordSet.Type = aws.String(value)
 			}
-			input.change.ResourceRecordSet.Type = aws.String(value)
 		case "value":
-			input.change.ResourceRecordSet.ResourceRecords = append(
-				input.change.ResourceRecordSet.ResourceRecords,
-				&route53.ResourceRecord{Value: aws.String(value)},
-			)
+			if input.change.ResourceRecordSet.AliasTarget == nil {
+				input.change.ResourceRecordSet.ResourceRecords = append(
+					input.change.ResourceRecordSet.ResourceRecords,
+					&route53.ResourceRecord{Value: aws.String(value)},
+				)
+			} else {
+				input.change.ResourceRecordSet.AliasTarget.DNSName = aws.String(value)
+			}
+		case "hostedzoneid":
+			input.change.ResourceRecordSet.AliasTarget.HostedZoneId = aws.String(value)
 		default:
 			err := fmt.Errorf("route53 unknown record attr: %s", attr)
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		// TODO the rest of the cases
-		// change := &route53.Change{
-		// 	ResourceRecordSet: &route53.ResourceRecordSet{
-		// 		AliasTarget: &route53.AliasTarget{
-		// 			DNSName:              *string,
-		// 			EvaluateTargetHealth: *bool,
-		// 			HostedZoneId:         *string,
-		// 		},
-		// 		Failover:                *string,
-		// 		GeoLocation:             &route53.GeoLocation{},
-		// 		HealthCheckId:           *string,
-		// 		MultiValueAnswer:        *bool,
-		// 		Region:                  *string,
-		// 		TrafficPolicyInstanceId: *string,
-		// 		Weight:                  *int64,
-		// 	},
-		// }
 	}
 	return input, nil
 }
@@ -221,26 +217,61 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 		Logger.Println("error:", err)
 		return err
 	}
-	needsUpdate := true
+	// default to true to add records that don't exist
+	needsUpdate := false
+	exists := false
 	for _, record := range records {
+		// only update records when name matches
 		if strings.TrimRight(*record.Name, ".") != *input.change.ResourceRecordSet.Name {
 			continue
 		}
-		if *record.TTL != *input.change.ResourceRecordSet.TTL {
-			Logger.Printf(PreviewString(preview)+"route53 will update TTL for record %s: %s => %s\n", *record.Name, *record.TTL, *input.change.ResourceRecordSet.TTL)
-			continue
-		}
+		// only update records when type matches
 		if *record.Type != *input.change.ResourceRecordSet.Type {
-			Logger.Printf(PreviewString(preview)+"route53 will update Type for record %s: %s => %s\n", *record.Name, *record.Type, *input.change.ResourceRecordSet.Type)
 			continue
 		}
-		if !reflect.DeepEqual(record.ResourceRecords, input.change.ResourceRecordSet.ResourceRecords) {
-			Logger.Printf(PreviewString(preview)+"route53 will update Type for record %s: %s => %s\n", *record.Name, Format(record.ResourceRecords), Format(input.change.ResourceRecordSet.ResourceRecords))
-			continue
+		// found the record, assume it's already correct until we find a value that isn't
+		exists = true
+		if record.AliasTarget != nil && input.change.ResourceRecordSet.AliasTarget != nil {
+			if !reflect.DeepEqual(record.AliasTarget.DNSName, input.change.ResourceRecordSet.AliasTarget.DNSName) {
+				Logger.Printf(PreviewString(preview)+"route53 update Alias for %s: %v => %v\n", strings.TrimRight(*record.Name, "."), *record.AliasTarget.DNSName, *input.change.ResourceRecordSet.AliasTarget.DNSName)
+				needsUpdate = true
+			}
+			if !reflect.DeepEqual(record.AliasTarget.HostedZoneId, input.change.ResourceRecordSet.AliasTarget.HostedZoneId) {
+				Logger.Printf(PreviewString(preview)+"route53 update HostedZoneId for %s: %v => %v\n", strings.TrimRight(*record.Name, "."), *record.AliasTarget.HostedZoneId, *input.change.ResourceRecordSet.AliasTarget.HostedZoneId)
+				needsUpdate = true
+			}
+		} else {
+			if !reflect.DeepEqual(record.TTL, input.change.ResourceRecordSet.TTL) {
+				Logger.Printf(PreviewString(preview)+"route53 update TTL for %s: %d => %d\n", strings.TrimRight(*record.Name, "."), *record.TTL, *input.change.ResourceRecordSet.TTL)
+				needsUpdate = true
+			}
+			if !reflect.DeepEqual(record.ResourceRecords, input.change.ResourceRecordSet.ResourceRecords) {
+				var old []string
+				for _, r := range record.ResourceRecords {
+					old = append(old, *r.Value)
+				}
+				var new []string
+				for _, r := range input.change.ResourceRecordSet.ResourceRecords {
+					new = append(new, *r.Value)
+				}
+
+				Logger.Printf(PreviewString(preview)+"route53 update Values for %s: %s => %s\n", strings.TrimRight(*record.Name, "."), Format(old), Format(new))
+				needsUpdate = true
+			}
 		}
-		needsUpdate = false
 	}
-	if needsUpdate {
+	if needsUpdate || !exists {
+		if !needsUpdate {
+			if input.change.ResourceRecordSet.AliasTarget == nil {
+				var vals []string
+				for _, r := range input.change.ResourceRecordSet.ResourceRecords {
+					vals = append(vals, "Value="+*r.Value)
+				}
+				Logger.Printf(PreviewString(preview)+"route53 create record for %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "TTL="+fmt.Sprint(*input.change.ResourceRecordSet.TTL), "Type="+*input.change.ResourceRecordSet.Type, strings.Join(vals, " "))
+			} else {
+				Logger.Printf(PreviewString(preview)+"route53 create record for %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "Type=Alias", "Value="+*input.change.ResourceRecordSet.AliasTarget.DNSName, "HostedZoneId="+*input.change.ResourceRecordSet.AliasTarget.HostedZoneId)
+			}
+		}
 		if !preview {
 			_, err = Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
 				HostedZoneId: aws.String(id),
@@ -250,8 +281,8 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 				Logger.Println("error:", err)
 				return err
 			}
+			Logger.Println("route53 updated record: " + *input.change.ResourceRecordSet.Name)
 		}
-		Logger.Println(PreviewString(preview) + "route53 update record: " + Pformat(input.change))
 	}
 	return nil
 }
