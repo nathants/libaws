@@ -36,13 +36,11 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 		Logger.Println("error:", err)
 		return err
 	}
-
 	records, err := Route53ListRecords(ctx, id)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-
 	var record *route53.ResourceRecordSet
 	for _, r := range records {
 		if strings.TrimRight(*r.Name, ".") != *input.change.ResourceRecordSet.Name {
@@ -54,12 +52,17 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 		if *r.Type != *input.change.ResourceRecordSet.Type {
 			continue
 		}
-		if !reflect.DeepEqual(r.ResourceRecords, input.change.ResourceRecordSet.ResourceRecords) {
-			continue
+		if r.AliasTarget != nil && input.change.ResourceRecordSet.AliasTarget != nil {
+			if !reflect.DeepEqual(r.AliasTarget, input.change.ResourceRecordSet.AliasTarget) {
+				continue
+			}
+		} else {
+			if !reflect.DeepEqual(r.ResourceRecords, input.change.ResourceRecordSet.ResourceRecords) {
+				continue
+			}
 		}
 		record = r
 	}
-
 	if record != nil {
 		if !preview {
 			_, err = Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
@@ -74,7 +77,15 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"route53 deleted record:", Pformat(record))
+		if input.change.ResourceRecordSet.AliasTarget == nil {
+			var vals []string
+			for _, r := range input.change.ResourceRecordSet.ResourceRecords {
+				vals = append(vals, "Value="+*r.Value)
+			}
+			Logger.Printf(PreviewString(preview)+"route53 deleted record %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "TTL="+fmt.Sprint(*input.change.ResourceRecordSet.TTL), "Type="+*input.change.ResourceRecordSet.Type, strings.Join(vals, " "))
+		} else {
+			Logger.Printf(PreviewString(preview)+"route53 deleted record %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "Type=Alias", "Value="+*input.change.ResourceRecordSet.AliasTarget.DNSName, "HostedZoneId="+*input.change.ResourceRecordSet.AliasTarget.HostedZoneId)
+		}
 	}
 	return nil
 }
@@ -267,9 +278,9 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 				for _, r := range input.change.ResourceRecordSet.ResourceRecords {
 					vals = append(vals, "Value="+*r.Value)
 				}
-				Logger.Printf(PreviewString(preview)+"route53 create record for %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "TTL="+fmt.Sprint(*input.change.ResourceRecordSet.TTL), "Type="+*input.change.ResourceRecordSet.Type, strings.Join(vals, " "))
+				Logger.Printf(PreviewString(preview)+"route53 create record %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "TTL="+fmt.Sprint(*input.change.ResourceRecordSet.TTL), "Type="+*input.change.ResourceRecordSet.Type, strings.Join(vals, " "))
 			} else {
-				Logger.Printf(PreviewString(preview)+"route53 create record for %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "Type=Alias", "Value="+*input.change.ResourceRecordSet.AliasTarget.DNSName, "HostedZoneId="+*input.change.ResourceRecordSet.AliasTarget.HostedZoneId)
+				Logger.Printf(PreviewString(preview)+"route53 create record %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "Type=Alias", "Value="+*input.change.ResourceRecordSet.AliasTarget.DNSName, "HostedZoneId="+*input.change.ResourceRecordSet.AliasTarget.HostedZoneId)
 			}
 		}
 		if !preview {

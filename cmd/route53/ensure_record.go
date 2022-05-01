@@ -23,8 +23,8 @@ func (route53EnsureRecordArgs) Description() string {
 ensure a route53 record
 
 examples:
- - cli-aws route53-ensure-record example.com example.com TTL=60 Type=A Value=1.1.1.1 Value=2.2.2.2
- - cli-aws route53-ensure-record example.com cname.example.com TTL=60 Type=CNAME Value=about.us-west-2.domain.example.com
+ - cli-aws route53-ensure-record example.com example.com Type=A TTL=60 Value=1.1.1.1 Value=2.2.2.2
+ - cli-aws route53-ensure-record example.com cname.example.com Type=CNAME TTL=60 Value=about.us-west-2.domain.example.com
  - cli-aws route53-ensure-record example.com alias.example.com Type=Alias Value=d-XXX.execute-api.us-west-2.amazonaws.com HostedZoneId=XXX
 
 required attrs for standard dns records:
