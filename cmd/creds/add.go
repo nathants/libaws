@@ -31,11 +31,9 @@ add aws creds
 
         cli-aws creds-add NAME KEY_ID KEY_SECRET REGION
 
-    setup your bashrc:
+    add to your bashrc:
 
         source ~/.aws_creds/_temp_creds.sh
-
-    define bash helper functions:
 
         aws-creds() {
             # permanently set aws credentials for this and future terminal sessions
@@ -48,7 +46,6 @@ add aws creds
             export AWS_CREDS_NAME=$(echo $1|cut -d. -f1)
         }
 
-    AWS_CREDS_NAME=NAME is exported by _temp_creds.sh automatically
 `
 }
 
