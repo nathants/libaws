@@ -38,7 +38,7 @@ func route53Ls() {
 		}
 		for _, record := range records {
 			if record.AliasTarget != nil {
-				res = append(res, strings.Join([]string{strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "Type=Alias", "Value="+*record.AliasTarget.DNSName, "HostedZoneId="+*record.AliasTarget.HostedZoneId}, " "))
+				res = append(res, strings.Join([]string{strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "Type=Alias", "Value=" + *record.AliasTarget.DNSName, "HostedZoneId=" + *record.AliasTarget.HostedZoneId}, " "))
 			} else {
 				vals := []string{}
 				for _, val := range record.ResourceRecords {
@@ -48,7 +48,7 @@ func route53Ls() {
 						vals = append(vals, "Value="+*val.Value)
 					}
 				}
-				res = append(res, strings.Join([]string{strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "Type="+*record.Type, "TTL="+fmt.Sprint(*record.TTL), strings.Join(vals, " ")}, " "))
+				res = append(res, strings.Join([]string{strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "Type=" + *record.Type, "TTL=" + fmt.Sprint(*record.TTL), strings.Join(vals, " ")}, " "))
 			}
 		}
 	}
