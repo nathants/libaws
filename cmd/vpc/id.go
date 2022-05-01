@@ -27,7 +27,7 @@ func vpcId() {
 	ctx := context.Background()
 	id, err := lib.VpcID(ctx, args.Name)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(id)
 }
