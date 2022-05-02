@@ -266,7 +266,7 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 					new = append(new, *r.Value)
 				}
 
-				Logger.Printf(PreviewString(preview)+"route53 update Values for %s: %s => %s\n", strings.TrimRight(*record.Name, "."), Format(old), Format(new))
+				Logger.Printf(PreviewString(preview)+"route53 update Values for %s: %s => %s\n", strings.TrimRight(*record.Name, "."), Json(old), Json(new))
 				needsUpdate = true
 			}
 		}

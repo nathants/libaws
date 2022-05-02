@@ -8,22 +8,22 @@ import (
 )
 
 func init() {
-	lib.Commands["iam-ensure-ec2-roles"] = iamEnsureEC2Roles
-	lib.Args["iam-ensure-ec2-roles"] = iamEnsureEC2RolesArgs{}
+	lib.Commands["iam-ensure-ec2-spot-roles"] = iamEnsureEC2SpotRoles
+	lib.Args["iam-ensure-ec2-spot-roles"] = iamEnsureEC2SpotRolesArgs{}
 }
 
-type iamEnsureEC2RolesArgs struct {
+type iamEnsureEC2SpotRolesArgs struct {
 }
 
-func (iamEnsureEC2RolesArgs) Description() string {
+func (iamEnsureEC2SpotRolesArgs) Description() string {
 	return "\nensure iam ec2 spot roles that are needed to use ec2 spot\n"
 }
 
-func iamEnsureEC2Roles() {
-	var args iamEnsureEC2RolesArgs
+func iamEnsureEC2SpotRoles() {
+	var args iamEnsureEC2SpotRolesArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.IamEnsureEC2Roles(ctx)
+	err := lib.IamEnsureEC2SpotRoles(ctx)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

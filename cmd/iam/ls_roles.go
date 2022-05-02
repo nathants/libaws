@@ -24,11 +24,11 @@ func iamLsRoles() {
 	var args iamLsRolesArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	roles, err := lib.IamListRoles(ctx, "")
+	roles, err := lib.IamListRoles(ctx, nil)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, role := range roles {
-		fmt.Println(lib.Json(role))
+		fmt.Println(lib.Pformat(role))
 	}
 }

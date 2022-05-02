@@ -29,6 +29,11 @@ func iamLsPolicies() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, policy := range policies {
-		fmt.Println(lib.Pformat(policy))
+		p := &lib.IamPolicy{}
+		err := p.FromPolicy(ctx, policy, false)
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
+		fmt.Println(lib.Pformat(p))
 	}
 }

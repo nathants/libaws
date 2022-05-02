@@ -65,14 +65,6 @@ outer:
 	return strings.Join(lines, "\n")
 }
 
-func Format(i interface{}) string {
-	val, err := json.Marshal(i)
-	if err != nil {
-		panic(err)
-	}
-	return string(val)
-}
-
 func Json(i interface{}) string {
 	val, err := json.Marshal(i)
 	if err != nil {
@@ -119,7 +111,7 @@ func RetryAttempts(ctx context.Context, attempts int, fn func() error) error {
 	count := 0
 	return retry.Do(
 		func() error {
-			if count > 5 {
+			if count > 0 {
 				Logger.Printf("retry attempt %d/%d for %v\n", count, attempts-1, functionName(fn))
 			}
 			count++
