@@ -1402,10 +1402,10 @@ func IamEnsureEC2SpotRoles(ctx context.Context) error {
 		})
 		if err != nil {
 			Logger.Println("error:", err)
-		    return err
+			return err
 		}
 		if len(out.AttachedPolicies) != 1 {
-			err := fmt.Errorf("%s is misconfigured:", roleName, Pformat(out.AttachedPolicies))
+			err := fmt.Errorf("%s is misconfigured: %s", roleName, Pformat(out.AttachedPolicies))
 			Logger.Println("error:", err)
 			return err
 		}
