@@ -63,7 +63,7 @@ func (allow *IamAllow) policyName() string {
 	return name
 }
 
-func iamAllowFromPolicyDocument(policyDocument string) (*IamAllow, error) {
+func iamAllowsFromPolicyDocument(policyDocument string) ([]*IamAllow, error) {
 	policy := IamPolicyDocument{}
 	err := json.Unmarshal([]byte(policyDocument), &policy)
 	if err != nil {
@@ -80,11 +80,34 @@ func iamAllowFromPolicyDocument(policyDocument string) (*IamAllow, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	allow := &IamAllow{
-		Action:   policy.Statement[0].Action.(string),
-		Resource: policy.Statement[0].Resource.(string),
+	var allows []*IamAllow
+	resource, ok := policy.Statement[0].Resource.(string)
+	if !ok {
+		resources, ok := policy.Statement[0].Resource.([]interface{})
+		if len(resources) != 1 || !ok {
+			panic(fmt.Sprintf("%#v", policy.Statement[0]))
+		}
+		resource = resources[0].(string)
 	}
-	return allow, nil
+	action, ok := policy.Statement[0].Action.(string)
+	if ok {
+		allows = append(allows, &IamAllow{
+			Action:   action,
+			Resource: resource,
+		})
+	} else {
+		actions, ok := policy.Statement[0].Action.([]interface{})
+		if !ok {
+			panic(fmt.Sprintf("%#v", policy.Statement[0]))
+		}
+		for _, action := range actions {
+			allows = append(allows, &IamAllow{
+				Action:   action.(string),
+				Resource: resource,
+			})
+		}
+	}
+	return allows, nil
 }
 
 type IamPolicy struct {
@@ -331,7 +354,7 @@ func IamListRoles(ctx context.Context, pathPrefix *string) ([]*IamRole, error) {
 		}
 		for _, role := range out.Roles {
 			r := &IamRole{}
-			err := r.FromRole(role)
+			err := r.FromRole(ctx, role)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
@@ -740,8 +763,37 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 	return nil
 }
 
-func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*iam.InstanceProfile, error) {
-	var profiles []*iam.InstanceProfile
+type IamInstanceProfile struct {
+	Arn                 *string    `json:",omitempty"`
+	CreateDate          *time.Time `json:",omitempty"`
+	InstanceProfileId   *string    `json:",omitempty"`
+	InstanceProfileName *string    `json:",omitempty"`
+	Path                *string    `json:",omitempty"`
+	Roles               []*IamRole `json:",omitempty"`
+	Tags                []*iam.Tag `json:",omitempty"`
+}
+
+func (p *IamInstanceProfile) FromProfile(ctx context.Context, profile *iam.InstanceProfile) error {
+	p.Arn = profile.Arn
+	p.CreateDate = profile.CreateDate
+	p.InstanceProfileId = profile.InstanceProfileId
+	p.InstanceProfileName = profile.InstanceProfileName
+	p.Path = profile.Path
+	p.Tags = profile.Tags
+	for _, role := range profile.Roles {
+		r := &IamRole{}
+		err := r.FromRole(ctx, role)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		p.Roles = append(p.Roles, r)
+	}
+	return nil
+}
+
+func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*IamInstanceProfile, error) {
+	var profiles []*IamInstanceProfile
 	var marker *string
 	for {
 		out, err := IamClient().ListInstanceProfilesWithContext(ctx, &iam.ListInstanceProfilesInput{
@@ -752,7 +804,15 @@ func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*iam.In
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		profiles = append(profiles, out.InstanceProfiles...)
+		for _, profile := range out.InstanceProfiles {
+			p := &IamInstanceProfile{}
+			err := p.FromProfile(ctx, profile)
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			profiles = append(profiles, p)
+		}
 		if out.Marker == nil {
 			break
 		}
@@ -779,7 +839,13 @@ func IamEnsureInstanceProfile(ctx context.Context, name string, policies, allows
 				Logger.Println("error:", err)
 				return err
 			}
-			profiles = append(profiles, out.InstanceProfile)
+			p := &IamInstanceProfile{}
+			err = p.FromProfile(ctx, out.InstanceProfile)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			profiles = append(profiles, p)
 		}
 		Logger.Println(PreviewString(preview)+"created instance profile:", name)
 	case 1:
@@ -912,21 +978,24 @@ func IamGetSSHPublicKey(ctx context.Context, keyID string) (*iam.SSHPublicKey, e
 }
 
 type IamRole struct {
-	Arn                            *string
-	AssumeRolePolicyDocument       *IamPolicyDocument
 	assumeRolePolicyDocumentString *string
-	CreateDate                     *time.Time
-	Description                    *string
-	MaxSessionDuration             *int64
-	Path                           *string
-	PermissionsBoundary            *iam.AttachedPermissionsBoundary
-	RoleId                         *string
-	RoleLastUsed                   *iam.RoleLastUsed
-	RoleName                       *string
-	Tags                           []*iam.Tag
+
+	Arn                      *string                          `json:",omitempty"`
+	AssumeRolePolicyDocument *IamPolicyDocument               `json:",omitempty"`
+	CreateDate               *time.Time                       `json:",omitempty"`
+	Description              *string                          `json:",omitempty"`
+	MaxSessionDuration       *int64                           `json:",omitempty"`
+	Path                     *string                          `json:",omitempty"`
+	PermissionsBoundary      *iam.AttachedPermissionsBoundary `json:",omitempty"`
+	RoleId                   *string                          `json:",omitempty"`
+	RoleLastUsed             *iam.RoleLastUsed                `json:",omitempty"`
+	RoleName                 *string                          `json:",omitempty"`
+	Tags                     []*iam.Tag                       `json:",omitempty"`
+	Allows                   []string                         `json:",omitempty"`
+	Policies                 []string                         `json:",omitempty"`
 }
 
-func (r *IamRole) FromRole(role *iam.Role) error {
+func (r *IamRole) FromRole(ctx context.Context, role *iam.Role) error {
 	r.assumeRolePolicyDocumentString = role.AssumeRolePolicyDocument
 	r.AssumeRolePolicyDocument = &IamPolicyDocument{}
 	document, err := url.QueryUnescape(*role.AssumeRolePolicyDocument)
@@ -949,6 +1018,23 @@ func (r *IamRole) FromRole(role *iam.Role) error {
 	r.RoleLastUsed = role.RoleLastUsed
 	r.RoleName = role.RoleName
 	r.Tags = role.Tags
+	allows, err := IamListRoleAllows(ctx, *r.RoleName)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	for _, allow := range allows {
+		r.Allows = append(r.Allows, allow.String())
+	}
+	policies, err := IamListRolePolicies(ctx, *r.RoleName)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	for _, policy := range policies {
+		r.Policies = append(r.Policies, *policy.PolicyName)
+	}
+
 	return nil
 }
 
@@ -1196,12 +1282,12 @@ func IamListUserAllows(ctx context.Context, username string) ([]*IamAllow, error
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			allow, err := iamAllowFromPolicyDocument(policyDocument)
+			allows, err := iamAllowsFromPolicyDocument(policyDocument)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			iamAllows = append(iamAllows, allow)
+			iamAllows = append(iamAllows, allows...)
 		}
 		if out.Marker == nil {
 			break
@@ -1236,12 +1322,12 @@ func IamListRoleAllows(ctx context.Context, roleName string) ([]*IamAllow, error
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			allow, err := iamAllowFromPolicyDocument(policyDocument)
+			allows, err := iamAllowsFromPolicyDocument(policyDocument)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			iamAllows = append(iamAllows, allow)
+			iamAllows = append(iamAllows, allows...)
 		}
 		if out.Marker == nil {
 			break
@@ -1260,7 +1346,7 @@ type IamUser struct {
 	Tags                []*iam.Tag                       `json:",omitempty"`
 	UserId              *string                          `json:",omitempty"`
 	UserName            *string                          `json:",omitempty"`
-	Allows              []*IamAllow                      `json:",omitempty"`
+	Allows              []string                         `json:",omitempty"`
 	Policies            []string                         `json:",omitempty"`
 }
 
@@ -1273,11 +1359,13 @@ func (u *IamUser) FromUser(ctx context.Context, user *iam.User) error {
 	u.Tags = user.Tags
 	u.UserId = user.UserId
 	u.UserName = user.UserName
-	var err error
-	u.Allows, err = IamListUserAllows(ctx, *user.UserName)
+	allows, err := IamListUserAllows(ctx, *user.UserName)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
+	}
+	for _, allow := range allows {
+		u.Allows = append(u.Allows, allow.String())
 	}
 	policies, err := IamListUserPolicies(ctx, *user.UserName)
 	if err != nil {
