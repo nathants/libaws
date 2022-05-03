@@ -1390,20 +1390,39 @@ func IamEnsureEC2SpotRoles(ctx context.Context) error {
 		RoleName:                 aws.String(roleName),
 		AssumeRolePolicyDocument: aws.String(string(bytes)),
 	})
+	policyArn := "arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"
 	if err != nil {
 		aerr, ok := err.(awserr.Error)
 		if !ok || aerr.Code() != iam.ErrCodeEntityAlreadyExistsException {
 			Logger.Println("error:", err)
 			return err
 		}
-	}
-	_, err = IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
-		RoleName:  aws.String(roleName),
-		PolicyArn: aws.String("arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"),
-	})
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
+		out, err := IamClient().ListAttachedRolePoliciesWithContext(ctx, &iam.ListAttachedRolePoliciesInput{
+			RoleName: aws.String(roleName),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+		    return err
+		}
+		if len(out.AttachedPolicies) != 1 {
+			err := fmt.Errorf("%s is misconfigured:", roleName, Pformat(out.AttachedPolicies))
+			Logger.Println("error:", err)
+			return err
+		}
+		if *out.AttachedPolicies[0].PolicyArn != policyArn {
+			err := fmt.Errorf("%s is misconfigured, %s != %s", roleName, *out.AttachedPolicies[0].PolicyArn, policyArn)
+			Logger.Println("error:", err)
+			return err
+		}
+	} else {
+		_, err = IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
+			RoleName:  aws.String(roleName),
+			PolicyArn: aws.String(policyArn),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 	}
 	_, err = IamClient().CreateServiceLinkedRoleWithContext(ctx, &iam.CreateServiceLinkedRoleInput{
 		AWSServiceName: aws.String("spot.amazonaws.com"),
