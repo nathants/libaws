@@ -1,0 +1,20 @@
+name: test-infraset-${uid}
+
+s3:
+  test-bucket-${uid}:
+    attr:
+      - acl=private
+
+lambda:
+  test-lambda:
+    entrypoint: ${account}.dkr.ecr.${region}.amazonaws.com/test-container@${digest}
+    attr:
+      - concurrency=0
+      - memory=128
+      - timeout=60
+    policy:
+      - AWSLambdaBasicExecutionRole
+    trigger:
+      - type: s3
+        attr:
+          - test-bucket-${uid}

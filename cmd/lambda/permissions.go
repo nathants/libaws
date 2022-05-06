@@ -8,7 +8,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/lambda"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -17,7 +17,7 @@ func init() {
 }
 
 type lambdaPermissionsArgs struct {
-	Path string `arg:"positional"`
+	Name string `arg:"positional"`
 }
 
 func (lambdaPermissionsArgs) Description() string {
@@ -28,12 +28,8 @@ func lambdaPermissions() {
 	var args lambdaPermissionsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	name, err := lib.LambdaName(args.Path)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
 	out, err := lib.LambdaClient().GetPolicyWithContext(ctx, &lambda.GetPolicyInput{
-		FunctionName: aws.String(name),
+		FunctionName: aws.String(args.Name),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

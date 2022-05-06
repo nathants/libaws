@@ -1,0 +1,10 @@
+{
+  "name": "libaws",
+  "version": "0.0.0",
+  "main": "main.js",
+  "author": "me@nathants.com",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.87.0"
+  },
+  "license": "MIT"
+}

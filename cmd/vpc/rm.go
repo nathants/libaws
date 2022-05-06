@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -13,7 +13,8 @@ func init() {
 }
 
 type vpcRmArgs struct {
-	Name string `arg:"positional,required"`
+	Name    string `arg:"positional,required"`
+	Preview bool   `arg:"-p,--preview"`
 }
 
 func (vpcRmArgs) Description() string {
@@ -24,7 +25,7 @@ func vpcRm() {
 	var args vpcRmArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.VpcRm(ctx, args.Name)
+	err := lib.VpcRm(ctx, args.Name, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

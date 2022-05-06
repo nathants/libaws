@@ -8,7 +8,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -79,7 +79,7 @@ func vpcEnsureFlowlogs() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	bucketName := fmt.Sprintf("vpc-flowlogs-%s-%s", args.Name, account)
-	input, err := lib.S3EnsureInput(bucketName, []string{"acl=private", "ttldays=7"})
+	input, err := lib.S3EnsureInput("", bucketName, []string{"acl=private", "ttldays=7"})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

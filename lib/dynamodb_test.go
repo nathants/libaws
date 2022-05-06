@@ -12,6 +12,16 @@ import (
 	"time"
 )
 
+func checkAccountDynamoDB() {
+	account, err := StsAccount(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	if os.Getenv("CLI_AWS_TEST_ACCOUNT") != account {
+		panic(fmt.Sprintf("%s != %s", os.Getenv("CLI_AWS_TEST_ACCOUNT"), account))
+	}
+}
+
 func TestAttrSplitOnce(t *testing.T) {
 	type test struct {
 		input string
@@ -69,6 +79,7 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 				KeySchema: []*dynamodb.KeySchemaElement{
 					{AttributeName: aws.String("userid"), KeyType: aws.String("HASH")},
 				},
+				Tags: []*dynamodb.Tag{{Key: aws.String(infraSetTagName), Value: aws.String("")}},
 			},
 			false,
 		},
@@ -93,6 +104,10 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					{AttributeName: aws.String("userid"), KeyType: aws.String("HASH")},
 					{AttributeName: aws.String("date"), KeyType: aws.String("RANGE")},
 				},
+				Tags: []*dynamodb.Tag{{
+					Key:   aws.String(infraSetTagName),
+					Value: aws.String(""),
+				}},
 			},
 			false,
 		},
@@ -126,6 +141,10 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					{AttributeName: aws.String("userid"), KeyType: aws.String("HASH")},
 					{AttributeName: aws.String("date"), KeyType: aws.String("RANGE")},
 				},
+				Tags: []*dynamodb.Tag{{
+					Key:   aws.String(infraSetTagName),
+					Value: aws.String(""),
+				}},
 			},
 			false,
 		},
@@ -177,6 +196,10 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					{AttributeName: aws.String("userid"), KeyType: aws.String("HASH")},
 					{AttributeName: aws.String("date"), KeyType: aws.String("RANGE")},
 				},
+				Tags: []*dynamodb.Tag{{
+					Key:   aws.String(infraSetTagName),
+					Value: aws.String(""),
+				}},
 			},
 			false,
 		},
@@ -270,6 +293,10 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					{AttributeName: aws.String("userid"), KeyType: aws.String("HASH")},
 					{AttributeName: aws.String("date"), KeyType: aws.String("RANGE")},
 				},
+				Tags: []*dynamodb.Tag{{
+					Key:   aws.String(infraSetTagName),
+					Value: aws.String(""),
+				}},
 			},
 			false,
 		},
@@ -287,6 +314,7 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 					StreamEnabled: aws.Bool(false),
 				},
 				Tags: []*dynamodb.Tag{
+					{Key: aws.String(infraSetTagName), Value: aws.String("")},
 					{Key: aws.String("foo"), Value: aws.String("bar")},
 					{Key: aws.String("asdf"), Value: aws.String("123")},
 				},
@@ -308,12 +336,14 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 			[]string{
 				"ProvisionedThroughput.FakeName=10",
 			},
-			&dynamodb.CreateTableInput{TableName: aws.String("table")},
+			&dynamodb.CreateTableInput{
+				TableName: aws.String("table"),
+			},
 			true,
 		},
 	}
 	for _, test := range tests {
-		input, err := DynamoDBEnsureInput(test.name, test.keys, test.attrs)
+		input, err := DynamoDBEnsureInput("", test.name, test.keys, test.attrs)
 		if err != nil && !test.err {
 			t.Errorf("\nerror: %s", err)
 			continue
@@ -332,10 +362,11 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
+	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	//
 	input, err := DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -351,7 +382,6 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	//
 	defer func() {
 		err := DynamoDBDeleteTable(ctx, name, false)
 		if err != nil {
@@ -359,7 +389,6 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		}
 		fmt.Println("deleted table:", name)
 	}()
-	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
 		t.Errorf("%v", err)
@@ -380,8 +409,8 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		t.Errorf("\nkeys != [userid:s:hash]")
 		return
 	}
-	//
 	input, err = DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -417,8 +446,8 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		t.Errorf("\nkeys != [userid:s:hash]")
 		return
 	}
-	//
 	input, err = DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -457,10 +486,11 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
+	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	//
 	input, err := DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -480,7 +510,6 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	//
 	defer func() {
 		err := DynamoDBDeleteTable(ctx, name, false)
 		if err != nil {
@@ -488,7 +517,6 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		}
 		fmt.Println("deleted table:", name)
 	}()
-	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
 		t.Errorf("%v", err)
@@ -525,8 +553,8 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("\nkeys != [userid:s:hash]")
 		return
 	}
-	//
 	input, err = DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -582,8 +610,8 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("\nkeys != [userid:s:hash]")
 		return
 	}
-	//
 	input, err = DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -636,204 +664,12 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 	}
 }
 
-func TestDynamoDBEnsureTableAddTagsRemoveTags(t *testing.T) {
-	ctx := context.Background()
-	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	//
-	input, err := DynamoDBEnsureInput(
-		name,
-		[]string{
-			"userid:s:hash",
-		},
-		[]string{},
-	)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	err = DynamoDBEnsure(ctx, input, false)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	//
-	defer func() {
-		err := DynamoDBDeleteTable(ctx, name, false)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println("deleted table:", name)
-	}()
-	//
-	err = DynamoDBWaitForReady(ctx, name)
-	if err != nil {
-		t.Errorf("%v", err)
-	}
-	table, err := DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
-		TableName: aws.String(name),
-	})
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
-		t.Errorf("\nattr mismatch throughput != nil")
-		return
-	}
-	if table.Table.StreamSpecification != nil {
-		t.Errorf("\nattr mismatch stream != nil")
-		return
-	}
-	if len(table.Table.KeySchema) != 1 ||
-		len(table.Table.AttributeDefinitions) != 1 ||
-		*table.Table.KeySchema[0].AttributeName != "userid" ||
-		*table.Table.KeySchema[0].KeyType != "HASH" ||
-		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
-		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
-		t.Errorf("\nkeys != [userid:s:hash]")
-		return
-	}
-	tags, err := DynamoDBListTags(ctx, name)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	if len(tags) != 0 {
-		t.Errorf("\nlen(tags) != 0")
-		return
-	}
-	//
-	input, err = DynamoDBEnsureInput(
-		name,
-		[]string{
-			"userid:s:hash",
-		},
-		[]string{
-			"Tags.foo=bar",
-			"Tags.asdf=123",
-		},
-	)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	err = DynamoDBEnsure(ctx, input, false)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	err = DynamoDBWaitForReady(ctx, name)
-	if err != nil {
-		t.Errorf("%v", err)
-	}
-	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
-		TableName: aws.String(name),
-	})
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
-		t.Errorf("\nattr mismatch throughput != nil")
-		return
-	}
-	if table.Table.StreamSpecification != nil {
-		t.Errorf("\nattr mismatch stream != nil")
-		return
-	}
-	if len(table.Table.KeySchema) != 1 ||
-		len(table.Table.AttributeDefinitions) != 1 ||
-		*table.Table.KeySchema[0].AttributeName != "userid" ||
-		*table.Table.KeySchema[0].KeyType != "HASH" ||
-		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
-		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
-		t.Errorf("\nkeys != [userid:s:hash]")
-		return
-	}
-	tags, err = DynamoDBListTags(ctx, name)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	if len(tags) != 2 {
-		t.Errorf("\nlen(tags) != 2")
-		return
-	}
-	if *tags[0].Key != "foo" || *tags[0].Value != "bar" {
-		t.Errorf("\ntag:foo != bar")
-		return
-	}
-	if *tags[1].Key != "asdf" || *tags[1].Value != "123" {
-		t.Errorf("\ntag:asdf != 123")
-		return
-	}
-	//
-	input, err = DynamoDBEnsureInput(
-		name,
-		[]string{
-			"userid:s:hash",
-		},
-		[]string{
-			"Tags.asdf=123",
-		},
-	)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	err = DynamoDBEnsure(ctx, input, false)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	err = DynamoDBWaitForReady(ctx, name)
-	if err != nil {
-		t.Errorf("%v", err)
-	}
-	table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
-		TableName: aws.String(name),
-	})
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	if *table.Table.ProvisionedThroughput.ReadCapacityUnits != 0 || *table.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
-		t.Errorf("\nattr mismatch throughput != nil")
-		return
-	}
-	if table.Table.StreamSpecification != nil {
-		t.Errorf("\nattr mismatch stream != nil")
-		return
-	}
-	if len(table.Table.KeySchema) != 1 ||
-		len(table.Table.AttributeDefinitions) != 1 ||
-		*table.Table.KeySchema[0].AttributeName != "userid" ||
-		*table.Table.KeySchema[0].KeyType != "HASH" ||
-		*table.Table.AttributeDefinitions[0].AttributeName != "userid" ||
-		*table.Table.AttributeDefinitions[0].AttributeType != "S" {
-		t.Errorf("\nkeys != [userid:s:hash]")
-		return
-	}
-	tags, err = DynamoDBListTags(ctx, name)
-	if err != nil {
-		t.Errorf("%v", err)
-		return
-	}
-	if len(tags) != 1 {
-		t.Errorf("\nlen(tags) != 1")
-		return
-	}
-	if *tags[0].Key != "asdf" || *tags[0].Value != "123" {
-		t.Errorf("\ntag:asdf != 123")
-		return
-	}
-}
-
 func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
+	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	//
 	input, err := DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -854,7 +690,6 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	//
 	defer func() {
 		err := DynamoDBDeleteTable(ctx, name, false)
 		if err != nil {
@@ -862,7 +697,6 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 		}
 		fmt.Println("deleted table:", name)
 	}()
-	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
 		t.Errorf("%v", err)
@@ -900,8 +734,8 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 	}
 	// NOTE: these tests are slow because updating tables indices is slow
 	if os.Getenv("SLOW_TESTS") == "y" {
-		//
 		input, err = DynamoDBEnsureInput(
+			"",
 			name,
 			[]string{
 				"userid:s:hash",
@@ -932,8 +766,8 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 			t.Errorf("len(globalIndices) != 0")
 			return
 		}
-		//
 		input, err = DynamoDBEnsureInput(
+			"",
 			name,
 			[]string{
 				"userid:s:hash",
@@ -1021,10 +855,11 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
+	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	//
 	input, err := DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -1045,7 +880,6 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	//
 	defer func() {
 		err := DynamoDBDeleteTable(ctx, name, false)
 		if err != nil {
@@ -1053,7 +887,6 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		}
 		fmt.Println("deleted table:", name)
 	}()
-	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
 		t.Errorf("%v", err)
@@ -1073,8 +906,8 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		t.Errorf("\nattr mismatch indexName != index")
 		return
 	}
-	//
 	input, err = DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -1090,7 +923,6 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	//
 	count := 0
 	for {
 		table, err = DynamoDBClient().DescribeTable(&dynamodb.DescribeTableInput{
@@ -1114,10 +946,11 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
+	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	//
 	input, err := DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -1140,7 +973,6 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	//
 	defer func() {
 		err := DynamoDBDeleteTable(ctx, name, false)
 		if err != nil {
@@ -1148,7 +980,6 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 		}
 		fmt.Println("deleted table:", name)
 	}()
-	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
 		t.Errorf("%v", err)
@@ -1195,10 +1026,11 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
+	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	//
 	input, err := DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -1221,7 +1053,6 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	//
 	defer func() {
 		err := DynamoDBDeleteTable(ctx, name, false)
 		if err != nil {
@@ -1229,7 +1060,6 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		}
 		fmt.Println("deleted table:", name)
 	}()
-	//
 	err = DynamoDBWaitForReady(ctx, name)
 	if err != nil {
 		t.Errorf("%v", err)
@@ -1249,8 +1079,8 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		t.Errorf("\nattr mismatch indexName != index")
 		return
 	}
-	//
 	input, err = DynamoDBEnsureInput(
+		"",
 		name,
 		[]string{
 			"userid:s:hash",
@@ -1271,5 +1101,4 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		t.Errorf("unknown error: %s", err.Error())
 		return
 	}
-
 }

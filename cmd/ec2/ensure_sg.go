@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -20,8 +20,8 @@ type ec2EnsureSgArgs struct {
 }
 
 func (ec2EnsureSgArgs) Description() string {
-	return "\nensure a sg\n" + `
-cli-aws ec2-ensure-sg $vpc $sg tcp:22:0.0.0.0/0 tcp:443:0.0.0.0/0 ::sg-XXXX
+	return "\nensure a security-group\n" + `
+libaws ec2-ensure-sg $vpc $sg tcp:22:0.0.0.0/0 tcp:443:0.0.0.0/0 ::sg-XXXX
 `
 }
 
@@ -29,27 +29,11 @@ func ec2EnsureSg() {
 	var args ec2EnsureSgArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	rules := []lib.EC2SgRule{}
-	for _, r := range args.Rules {
-		proto, port, source, err := lib.SplitTwice(r, ":")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		rule := lib.EC2SgRule{
-			Proto:  proto,
-			Source: source,
-		}
-		if port != "" {
-			rule.Port = lib.Atoi(port)
-		}
-		rules = append(rules, rule)
+	input, err := lib.EC2EnsureSgInput("", args.VpcName, args.SgName, args.Rules)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
 	}
-	err := lib.EC2EnsureSg(ctx, &lib.EC2EnsureSgInput{
-		VpcName: args.VpcName,
-		SgName:  args.SgName,
-		Rules:   rules,
-		Preview: args.Preview,
-	})
+	err = lib.EC2EnsureSg(ctx, input, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

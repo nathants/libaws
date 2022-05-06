@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {

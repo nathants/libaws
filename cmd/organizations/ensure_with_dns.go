@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -37,7 +37,7 @@ func organizationsEnsureWithDns() {
 	name := os.Getenv("AWS_CREDS_NAME")
 	if name == "" {
 		fmt.Println("fatal: AWS_CREDS_NAME == \"\"")
-		fmt.Println("follow aws creds setup instructions at: cli-aws creds-set -h ")
+		fmt.Println("follow aws creds setup instructions at: libaws creds-set -h ")
 		os.Exit(1)
 	}
 
@@ -77,7 +77,7 @@ func organizationsEnsureWithDns() {
 	fmt.Println()
 
 	fmt.Println("login to the console of the child account, click username at top right, choose my security credentials, and add access key.")
-	fmt.Println("save those credentials locally via: cli-aws creds-add", args.Name, "$KEY_ID", "$KEY_SECRET", "$REGION")
+	fmt.Println("save those credentials locally via: libaws creds-add", args.Name, "$KEY_ID", "$KEY_SECRET", "$REGION")
 	fmt.Println("hit ENTER to proceed")
 	_, _ = fmt.Scanln(&str)
 	fmt.Println()
@@ -91,9 +91,9 @@ func organizationsEnsureWithDns() {
 
 	fmt.Println("setup the child account route53 via the following commands:")
 	fmt.Println("")
-	fmt.Printf("(aws-creds-temp %s && cli-aws route53-ensure-zone %s)\n", args.Name, args.ChildSubDomain)
-	fmt.Printf("(aws-creds-temp %s && cli-aws route53-ensure-record %s foo.%s TTL=7 Type=CNAME Value=bar)\n", args.Name, args.ChildSubDomain, args.ChildSubDomain)
-	fmt.Printf("(aws-creds-temp %s && cli-aws route53-ns %s > %s)\n", args.Name, args.ChildSubDomain, nsFile)
+	fmt.Printf("(aws-creds-temp %s && libaws route53-ensure-zone %s)\n", args.Name, args.ChildSubDomain)
+	fmt.Printf("(aws-creds-temp %s && libaws route53-ensure-record %s foo.%s TTL=7 Type=CNAME Value=bar)\n", args.Name, args.ChildSubDomain, args.ChildSubDomain)
+	fmt.Printf("(aws-creds-temp %s && libaws route53-ns %s > %s)\n", args.Name, args.ChildSubDomain, nsFile)
 
 	fmt.Println("hit ENTER to proceed")
 	_, _ = fmt.Scanln(&str)
@@ -105,7 +105,7 @@ func organizationsEnsureWithDns() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	cmd := []string{fmt.Sprintf("cli-aws route53-ensure-record %s %s TTL=172800 Type=NS", args.ParentDomain, args.ChildSubDomain)}
+	cmd := []string{fmt.Sprintf("libaws route53-ensure-record %s %s TTL=172800 Type=NS", args.ParentDomain, args.ChildSubDomain)}
 	for _, line := range strings.Split(string(bytes), "\n") {
 		if line != "" {
 			cmd = append(cmd, "Value="+line)

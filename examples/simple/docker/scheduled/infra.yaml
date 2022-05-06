@@ -1,0 +1,17 @@
+name: test-infraset-${uid}
+
+lambda:
+  test-lambda-${uid}:
+    entrypoint: ${account}.dkr.ecr.${region}.amazonaws.com/test-container@${digest}
+    attr:
+      - concurrency=0
+      - memory=128
+      - timeout=60
+    policy:
+      - AWSLambdaBasicExecutionRole
+    trigger:
+      - type: schedule
+        attr:
+          - rate(1 minute)
+    env:
+      - uid=${uid}

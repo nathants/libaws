@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -15,7 +15,7 @@ func init() {
 
 type dynamodbEnsureArgs struct {
 	Name    string   `arg:"positional,required"`
-	Attrs   []string `arg:"positional,required"`
+	Attr    []string `arg:"positional,required"`
 	Preview bool     `arg:"-p,--preview"`
 }
 
@@ -24,18 +24,18 @@ func (dynamodbEnsureArgs) Description() string {
 ensure a dynamodb table
 
 example:
- - cli-aws dynamodb-ensure test-table userid:s:hash timestamp:n:range Tags.0.Key=foo Tags.0.Key=bar
+
+ - libaws dynamodb-ensure test-table userid:s:hash timestamp:n:range stream=keys_only
 
 required attrs:
+
  - NAME:ATTR_TYPE:KEY_TYPE
 
 optional attrs:
- - SSESpecification.KMSMasterKeyId=VALUE
 
- - ProvisionedThroughput.ReadCapacityUnits=VALUE
- - ProvisionedThroughput.WriteCapacityUnits=VALUE
-
- - StreamSpecification.StreamViewType=VALUE
+ - ProvisionedThroughput.ReadCapacityUnits=VALUE, shortcut: read=VALUE, default: 0
+ - ProvisionedThroughput.WriteCapacityUnits=VALUE shortcut: write=VALUE, default: 0
+ - StreamSpecification.StreamViewType=VALUE,      shortcut: stream=VALUE
 
  - LocalSecondaryIndexes.INTEGER.IndexName=VALUE
  - LocalSecondaryIndexes.INTEGER.Key.INTEGER=NAME:ATTR_TYPE:KEY_TYPE
@@ -48,8 +48,6 @@ optional attrs:
  - GlobalSecondaryIndexes.INTEGER.Projection.NonKeyAttributes.INTEGER=VALUE
  - GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.ReadCapacityUnits=VALUE
  - GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.WriteCapacityUnits=VALUE
-
- - Tags.KEY=VALUE
 `
 }
 
@@ -59,14 +57,14 @@ func dynamodbEnsure() {
 	ctx := context.Background()
 	var keys []string
 	var attrs []string
-	for _, param := range args.Attrs {
+	for _, param := range args.Attr {
 		if strings.Contains(param, "=") {
 			attrs = append(attrs, param)
 		} else {
 			keys = append(keys, param)
 		}
 	}
-	input, err := lib.DynamoDBEnsureInput(args.Name, keys, attrs)
+	input, err := lib.DynamoDBEnsureInput("", args.Name, keys, attrs)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

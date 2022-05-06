@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -327,7 +328,7 @@ func EC2WaitState(ctx context.Context, instanceIDs []string, state string) error
 	return err
 }
 
-func EC2FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
+func ec2FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
 	Logger.Println("teardown spot fleet", *spotFleetRequestId)
 	_, err := EC2Client().CancelSpotFleetRequestsWithContext(ctx, &ec2.CancelSpotFleetRequestsInput{
 		SpotFleetRequestIds: []*string{spotFleetRequestId},
@@ -401,7 +402,7 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 	return nil
 }
 
-func EC2WaitSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) error {
+func ec2WaitSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) error {
 	Logger.Println("wait for spot fleet", *spotFleetRequestId, "with", num, "instances")
 	for i := 0; i < 300; i++ {
 		config, err := EC2DescribeSpotFleet(ctx, spotFleetRequestId)
@@ -600,6 +601,11 @@ func makeBlockDeviceMapping(config *EC2Config) []*ec2.BlockDeviceMapping {
 }
 
 func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Config) ([]*ec2.Instance, error) {
+	if strings.Contains(config.Name, "::") {
+		err := fmt.Errorf("name cannot contain '::', got: %s", config.Name)
+		Logger.Println("error:", err)
+		return nil, err
+	}
 	if config.UserName == "" {
 		err := fmt.Errorf("user name is required %v", *config)
 		Logger.Println("error:", err)
@@ -610,7 +616,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
 	}
 	role, err := IamClient().GetRoleWithContext(ctx, &iam.GetRoleInput{
-		RoleName: aws.String("aws-ec2-spot-fleet-tagging-role"),
+		RoleName: aws.String(EC2SpotFleetTaggingRole),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -654,7 +660,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	err = EC2WaitSpotFleet(ctx, spotFleet.SpotFleetRequestId, config.NumInstances)
+	err = ec2WaitSpotFleet(ctx, spotFleet.SpotFleetRequestId, config.NumInstances)
 	if err != nil {
 		Logger.Println("error:", err)
 		err2 := EC2TeardownSpotFleet(context.Background(), spotFleet.SpotFleetRequestId)
@@ -664,7 +670,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		}
 		return nil, err
 	}
-	err = EC2FinalizeSpotFleet(ctx, spotFleet.SpotFleetRequestId)
+	err = ec2FinalizeSpotFleet(ctx, spotFleet.SpotFleetRequestId)
 	if err != nil {
 		return nil, err
 	}
@@ -735,6 +741,11 @@ func ec2ConfigDefaults(config *EC2Config) *EC2Config {
 }
 
 func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, error) {
+	if strings.Contains(config.Name, "::") {
+		err := fmt.Errorf("name cannot contain '::', got: %s", config.Name)
+		Logger.Println("error:", err)
+		return nil, err
+	}
 	if config.UserName == "" {
 		err := fmt.Errorf("user name is required %v", *config)
 		Logger.Println("error:", err)
@@ -826,6 +837,11 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 	defer cancel()
 	for _, instance := range input.Instances {
 		go func(instance *ec2.Instance) {
+			defer func() {
+				if r := recover(); r != nil {
+					logRecover(r)
+				}
+			}()
 			err := concurrency.Acquire(cancelCtx, 1)
 			if err != nil {
 				resultChan <- &ec2SshResult{Err: err, InstanceID: *instance.InstanceId}
@@ -863,7 +879,7 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		rsyncCmd = append(rsyncCmd, []string{"-e", "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"}...)
 	}
 	if os.Getenv("RSYNC_OPTIONS") != "" {
-		rsyncCmd = append(rsyncCmd, strings.Split(os.Getenv("RSYNC_OPTIONS"), " ")...)
+		rsyncCmd = append(rsyncCmd, splitWhiteSpace(os.Getenv("RSYNC_OPTIONS"))...)
 	}
 	target := input.User + "@"
 	if input.PrivateIP {
@@ -884,13 +900,13 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		return result
 	}
 	//
-	for _, src := range strings.Split(source, " ") {
+	for _, src := range splitWhiteSpace(source) {
 		src = strings.Trim(src, " ")
 		if src != "" {
 			rsyncCmd = append(rsyncCmd, src)
 		}
 	}
-	for _, dst := range strings.Split(destination, " ") {
+	for _, dst := range splitWhiteSpace(destination) {
 		dst = strings.Trim(dst, " ")
 		if dst != "" {
 			rsyncCmd = append(rsyncCmd, dst)
@@ -914,6 +930,7 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 	resultLock := &sync.RWMutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
+		// defer func() {}()
 		for {
 			line, err := buf.ReadString('\n')
 			if err != nil {
@@ -1026,6 +1043,11 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 	defer cancel()
 	for _, instance := range input.Instances {
 		go func(instance *ec2.Instance) {
+			defer func() {
+				if r := recover(); r != nil {
+					logRecover(r)
+				}
+			}()
 			err := concurrency.Acquire(cancelCtx, 1)
 			if err != nil {
 				resultChan <- &ec2SshResult{Err: err, InstanceID: *instance.InstanceId}
@@ -1098,6 +1120,7 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 	resultLock := &sync.RWMutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
+		// defer func() {}()
 		for {
 			line, err := buf.ReadString('\n')
 			if err != nil {
@@ -1260,6 +1283,11 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 	defer cancel()
 	for _, instance := range input.Instances {
 		go func(instance *ec2.Instance) {
+			defer func() {
+				if r := recover(); r != nil {
+					logRecover(r)
+				}
+			}()
 			err := concurrency.Acquire(cancelCtx, 1)
 			if err != nil {
 				resultChan <- &ec2SshResult{Err: err, InstanceID: *instance.InstanceId}
@@ -1330,6 +1358,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 	resultLock := &sync.RWMutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
+		// defer func() {}()
 		for {
 			line, err := buf.ReadString('\n')
 			if err != nil {
@@ -1387,7 +1416,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 	return result
 }
 
-func EC2SshLogin(instance *ec2.Instance, user string) error {
+func EC2SshLogin(instance *ec2.Instance, user, key string) error {
 	if user == "" {
 		user = EC2GetTag(instance.Tags, "user", "")
 		if user == "" {
@@ -1396,12 +1425,16 @@ func EC2SshLogin(instance *ec2.Instance, user string) error {
 			return err
 		}
 	}
-	cmd := exec.Command(
+	sshCmd := []string{
 		"ssh",
-		user+"@"+*instance.PublicDnsName,
+		user + "@" + *instance.PublicDnsName,
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
-	)
+	}
+	if key != "" {
+		sshCmd = append(sshCmd, []string{"-i", key, "-o", "IdentitiesOnly=yes"}...)
+	}
+	cmd := exec.Command(sshCmd[0], sshCmd[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -1673,7 +1706,7 @@ func EC2SgID(ctx context.Context, vpcName, sgName string) (string, error) {
 func EC2Tags(tags []*ec2.Tag) string {
 	var res []string
 	for _, tag := range tags {
-		if !Contains([]string{"Name", "aws:ec2spot:fleet-request-id", "creation-date"}, *tag.Key) {
+		if !Contains([]string{"Name", "aws:ec2spot:fleet-request-id", "creation-date", "user"}, *tag.Key) {
 			res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
 		}
 	}
@@ -2060,14 +2093,38 @@ func (r EC2SgRule) String() string {
 	return fmt.Sprintf("%s:%s:%s", proto, port, source)
 }
 
-type EC2EnsureSgInput struct {
-	VpcName string
-	SgName  string
-	Rules   []EC2SgRule
-	Preview bool
+type ec2EnsureSgInput struct {
+	InfraSetName string
+	VpcName      string
+	SgName       string
+	Rules        []EC2SgRule
 }
 
-func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
+func EC2EnsureSgInput(infraSetName, vpcName, sgName string, rules []string) (*ec2EnsureSgInput, error) {
+	input := &ec2EnsureSgInput{
+		InfraSetName: infraSetName,
+		VpcName:      vpcName,
+		SgName:       sgName,
+	}
+	for _, r := range rules {
+		proto, port, source, err := SplitTwice(r, ":")
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		rule := EC2SgRule{
+			Proto:  proto,
+			Source: source,
+		}
+		if port != "" {
+			rule.Port = Atoi(port)
+		}
+		input.Rules = append(input.Rules, rule)
+	}
+	return input, nil
+}
+
+func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) error {
 	for _, rule := range input.Rules {
 		if rule.Port == 0 && rule.Proto != "" {
 			err := fmt.Errorf("you must specify both port and proto or neither, got: %#v", rule)
@@ -2077,33 +2134,35 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 	}
 	vpcID, err := VpcID(ctx, input.VpcName)
 	if err != nil {
-		Logger.Println("error:", err)
-		return err
+		if !strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
+			Logger.Println("error:", err)
+			return err
+		}
 	}
+	tags := []*ec2.TagSpecification{{
+		ResourceType: aws.String(ec2.ResourceTypeSecurityGroup),
+		Tags: []*ec2.Tag{
+			{
+				Key:   aws.String("Name"),
+				Value: aws.String(input.SgName),
+			},
+			{
+				Key:   aws.String(infraSetTagName),
+				Value: aws.String(input.InfraSetName),
+			},
+		},
+	}}
 	sgID, err := EC2SgID(ctx, input.VpcName, input.SgName)
 	if err != nil {
 		if !strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {
 			return err
 		}
-		if !input.Preview {
+		if !preview {
 			out, err := EC2Client().CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
-				GroupName:   aws.String(input.SgName),
-				Description: aws.String(input.SgName),
-				VpcId:       aws.String(vpcID),
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			err = Retry(ctx, func() error {
-				_, err := EC2Client().CreateTagsWithContext(ctx, &ec2.CreateTagsInput{
-					Resources: []*string{out.GroupId},
-					Tags: []*ec2.Tag{{
-						Key:   aws.String("Name"),
-						Value: aws.String(input.SgName),
-					}},
-				})
-				return err
+				GroupName:         aws.String(input.SgName),
+				Description:       aws.String(input.SgName),
+				VpcId:             aws.String(vpcID),
+				TagSpecifications: tags,
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -2111,7 +2170,7 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 			}
 			sgID = *out.GroupId
 		}
-		Logger.Println(PreviewString(input.Preview)+"created security group:", input.VpcName, input.SgName)
+		Logger.Println(PreviewString(preview)+"created security group:", input.VpcName, input.SgName)
 	}
 	sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
 		Filters: []*ec2.Filter{
@@ -2120,15 +2179,18 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 		},
 	})
 	if err != nil {
-		Logger.Println("error:", err)
-		return err
+		_, ok := err.(awserr.Error)
+		if !ok || !preview || strings.Split(err.Error(), "\n")[0] != "InvalidParameterValue: vpc-id" {
+			Logger.Println("error:", err)
+			return err
+		}
 	}
-	if !input.Preview && len(sgs.SecurityGroups) != 1 {
+	if !preview && len(sgs.SecurityGroups) != 1 {
 		err := fmt.Errorf("expected exactly 1 sg: %s", Pformat(sgs))
 		Logger.Println("error:", err)
 		return err
 	}
-	if input.Preview && len(sgs.SecurityGroups) > 1 {
+	if preview && len(sgs.SecurityGroups) > 1 {
 		err := fmt.Errorf("expected exactly 1 sg: %s", Pformat(sgs))
 		Logger.Println("error:", err)
 		return err
@@ -2152,7 +2214,7 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 		if ok {
 			delete[r] = false
 		} else {
-			if !input.Preview {
+			if !preview {
 				sg := sgs.SecurityGroups[0]
 				permissions := []*ec2.IpPermission{}
 				var port *int64
@@ -2190,14 +2252,14 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 					}
 				}
 			}
-			Logger.Println(PreviewString(input.Preview)+"authorize ingress:", r)
+			Logger.Println(PreviewString(preview)+"authorize ingress:", r)
 		}
 	}
 	for k, v := range delete {
 		if !v {
 			continue
 		}
-		if !input.Preview {
+		if !preview {
 			var port *int64
 			if k.Port != 0 {
 				port = aws.Int64(int64(k.Port))
@@ -2232,8 +2294,27 @@ func EC2EnsureSg(ctx context.Context, input *EC2EnsureSgInput) error {
 				return err
 			}
 		}
-		Logger.Println(PreviewString(input.Preview)+"deauthorize ingress:", k)
+		Logger.Println(PreviewString(preview)+"deauthorize ingress:", k)
 	}
+	return nil
+}
+
+func EC2DeleteSg(ctx context.Context, vpcName, sgName string, preview bool) error {
+	sgID, err := EC2SgID(ctx, vpcName, sgName)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if !preview {
+		_, err := EC2Client().DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
+			GroupId: aws.String(sgID),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"deleted security-group:", sgName, vpcName)
 	return nil
 }
 
@@ -2316,6 +2397,11 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 	for _, addr := range input.TargetAddrs {
 		addr := addr
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logRecover(r)
+				}
+			}()
 			err := concurrency.Acquire(cancelCtx, 1)
 			if err != nil {
 				resultChan <- &ec2GoSshResult{Err: err, TargetAddr: addr}
@@ -2382,6 +2468,7 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, 
 	runContext, runCancel := context.WithCancel(ctx)
 	defer runCancel()
 	go func() {
+		// defer func() {}()
 		<-runContext.Done()
 		_ = sshSession.Close()
 		_ = sshConn.Close()
@@ -2391,4 +2478,154 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, 
 		return err
 	}
 	return nil
+}
+
+func EC2DeleteKeypair(ctx context.Context, keypairName string, preview bool) error {
+	out, err := EC2Client().DescribeKeyPairsWithContext(ctx, &ec2.DescribeKeyPairsInput{
+		KeyNames: []*string{aws.String(keypairName)},
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "InvalidKeyPair.NotFound" {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	if len(out.KeyPairs) > 0 {
+		if !preview {
+			_, err := EC2Client().DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
+				KeyName: aws.String(keypairName),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"deleted keypair:", keypairName)
+	}
+	return nil
+}
+
+func EC2EnsureKeypair(ctx context.Context, infraSetName, keyName, pubkeyContent string, preview bool) error {
+	pubkey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubkeyContent))
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	out, err := EC2Client().DescribeKeyPairsWithContext(ctx, &ec2.DescribeKeyPairsInput{
+		KeyNames: []*string{aws.String(keyName)},
+	})
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "InvalidKeyPair.NotFound" {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	tags := []*ec2.TagSpecification{{
+		ResourceType: aws.String(ec2.ResourceTypeKeyPair),
+		Tags: []*ec2.Tag{{
+			Key:   aws.String(infraSetTagName),
+			Value: aws.String(infraSetName),
+		}},
+	}}
+	switch len(out.KeyPairs) {
+	case 0:
+		if !preview {
+			_, err := EC2Client().ImportKeyPairWithContext(ctx, &ec2.ImportKeyPairInput{
+				KeyName:           aws.String(keyName),
+				PublicKeyMaterial: []byte(pubkeyContent),
+				TagSpecifications: tags,
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"created keypair:", keyName)
+		return nil
+	case 1:
+		switch pubkey.Type() {
+		case ssh.KeyAlgoED25519:
+			remoteFingerprint := *out.KeyPairs[0].KeyFingerprint
+			if remoteFingerprint[len(remoteFingerprint)-1] == '=' {
+				remoteFingerprint = remoteFingerprint[:len(remoteFingerprint)-1]
+			}
+			localFingerprint := strings.SplitN(ssh.FingerprintSHA256(pubkey), ":", 2)[1]
+			if remoteFingerprint != localFingerprint {
+				if !preview {
+					_, err := EC2Client().DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
+						KeyName: aws.String(keyName),
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					_, err = EC2Client().ImportKeyPairWithContext(ctx, &ec2.ImportKeyPairInput{
+						KeyName:           aws.String(keyName),
+						PublicKeyMaterial: []byte(pubkeyContent),
+						TagSpecifications: tags,
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					Logger.Println(PreviewString(preview)+"updated keypair:", keyName, remoteFingerprint, "=>", localFingerprint)
+				}
+			}
+			return nil
+		case ssh.KeyAlgoRSA:
+			f, err := os.CreateTemp("/tmp", "libaws_")
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			defer func() { _ = os.Remove(f.Name()) }()
+			_, err = f.WriteString(pubkeyContent)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			cmd := exec.Command("bash", "-c", fmt.Sprintf(`ssh-keygen -e -f %s -m pkcs8 | openssl pkey -pubin -outform der | openssl md5 -c | cut -d" " -f2`, f.Name()))
+			var stdout bytes.Buffer
+			cmd.Stdout = &stdout
+			err = cmd.Run()
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			remoteFingerprint := *out.KeyPairs[0].KeyFingerprint
+			localFingerprint := strings.TrimRight(stdout.String(), "\n")
+			if remoteFingerprint != localFingerprint {
+				if !preview {
+					_, err := EC2Client().DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
+						KeyName: aws.String(keyName),
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					_, err = EC2Client().ImportKeyPairWithContext(ctx, &ec2.ImportKeyPairInput{
+						KeyName:           aws.String(keyName),
+						PublicKeyMaterial: []byte(pubkeyContent),
+						TagSpecifications: tags,
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+					Logger.Println(PreviewString(preview)+"updated keypair:", keyName, remoteFingerprint, "=>", localFingerprint)
+				}
+			}
+			return nil
+		default:
+			err := fmt.Errorf("bad key type: %s", pubkey.Type())
+			Logger.Println("error:", err)
+			return err
+		}
+	default:
+		err := fmt.Errorf("more than 1 key found for: %s %s", keyName, Pformat(out))
+		Logger.Println("error:", err)
+		return err
+	}
 }

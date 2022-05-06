@@ -1,0 +1,37 @@
+name: test-infraset-${uid}
+
+dynamodb:
+  test-table-${uid}:
+    key:
+      - userid:s:hash
+      - version:n:range
+    attr:
+      - stream=keys_only
+  test-other-table-${uid}:
+    key:
+      - userid:s:hash
+
+lambda:
+  test-lambda-${uid}:
+    entrypoint: main.go
+    attr:
+      - concurrency=0
+      - memory=128
+      - timeout=60
+    policy:
+      - AWSLambdaBasicExecutionRole
+      - AWSLambdaDynamoDBExecutionRole
+    allow:
+      - dynamodb:GetItem arn:aws:dynamodb:*:*:table/test-table-${uid}
+      - dynamodb:PutItem arn:aws:dynamodb:*:*:table/test-other-table-${uid}
+    trigger:
+      - type: dynamodb
+        attr:
+          - test-table-${uid}
+          - start=trim_horizon
+          - batch=1
+          - parallel=10
+          - retry=0
+          - window=1
+    env:
+      - uid=${uid}

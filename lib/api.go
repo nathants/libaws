@@ -46,6 +46,10 @@ func ApiList(ctx context.Context) ([]*apigatewayv2.Api, error) {
 	return items, nil
 }
 
+const (
+	ErrApiNotFound = "ErrApiNotFound"
+)
+
 func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
 	var count int
 	var result *apigatewayv2.Api
@@ -62,7 +66,7 @@ func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
 	}
 	switch count {
 	case 0:
-		return nil, nil
+		return nil, fmt.Errorf(ErrApiNotFound)
 	case 1:
 		return result, nil
 	default:
@@ -95,7 +99,6 @@ func ApiListDomains(ctx context.Context) ([]*apigatewayv2.DomainName, error) {
 func ApiUrl(ctx context.Context, name string) (string, error) {
 	api, err := Api(ctx, name)
 	if err != nil {
-		Logger.Println("error:", err)
 		return "", err
 	}
 	url := fmt.Sprintf(

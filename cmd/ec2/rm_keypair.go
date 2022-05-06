@@ -2,12 +2,9 @@ package cliaws
 
 import (
 	"context"
-	"os"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -28,13 +25,7 @@ func ec2RmKeypair() {
 	var args ec2RmKeypairArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	lib.Logger.Println(lib.PreviewString(args.Preview) + "deleting: " + args.Name)
-	if args.Preview {
-		os.Exit(0)
-	}
-	_, err := lib.EC2Client().DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
-		KeyName: aws.String(args.Name),
-	})
+	err := lib.EC2DeleteKeypair(ctx, args.Name, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

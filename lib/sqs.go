@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -29,7 +30,6 @@ func SQSClient() *sqs.SQS {
 }
 
 func SQSListQueues(ctx context.Context) ([]string, error) {
-	Logger.Println("list queues")
 	var nextToken *string
 	var queues []string
 	for {
@@ -85,14 +85,13 @@ func Atoi(a string) int {
 	return i
 }
 
-func SQSQueueUrl(ctx context.Context, queueName string) (string, error) {
-	out, err := SQSClient().GetQueueUrlWithContext(ctx, &sqs.GetQueueUrlInput{
-		QueueName: aws.String(queueName),
-	})
+func SQSQueueUrl(ctx context.Context, name string) (string, error) {
+	account, err := StsAccount(ctx)
 	if err != nil {
+		Logger.Println("error:", err)
 		return "", err
 	}
-	return *out.QueueUrl, nil
+	return fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/%s", Region(), account, name), nil
 }
 
 func SQSArn(ctx context.Context, name string) (string, error) {
@@ -134,6 +133,7 @@ func SQSNumMessages(ctx context.Context, queueUrl string) (*SQSNumMessageOutput,
 }
 
 type sqsEnsureInput struct {
+	infraSetName                  string
 	name                          string
 	delaySeconds                  int
 	maximumMessageSize            int
@@ -164,16 +164,16 @@ func (input *sqsEnsureInput) Attrs() map[string]*string {
 	if input.kmsDataKeyReusePeriodSeconds != -1 {
 		m["KmsDataKeyReusePeriodSeconds"] = aws.String(fmt.Sprint(input.kmsDataKeyReusePeriodSeconds))
 	}
-
 	if len(m) != 0 {
 		return m
 	}
 	return nil
 }
 
-func SQSEnsureInput(name string, attrs []string) (*sqsEnsureInput, error) {
+func SQSEnsureInput(infraSetName, queueName string, attrs []string) (*sqsEnsureInput, error) {
 	input := &sqsEnsureInput{
-		name:                          name,
+		infraSetName:                  infraSetName,
+		name:                          queueName,
 		delaySeconds:                  -1,
 		maximumMessageSize:            -1,
 		messageRetentionPeriod:        -1,
@@ -189,35 +189,35 @@ func SQSEnsureInput(name string, attrs []string) (*sqsEnsureInput, error) {
 			return nil, err
 		}
 		switch attr {
-		case "delayseconds":
+		case "delayseconds", "delay":
 			num, err := strconv.Atoi(value)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
 			}
 			input.delaySeconds = num
-		case "maximummessagesize":
+		case "maximummessagesize", "size":
 			num, err := strconv.Atoi(value)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
 			}
 			input.maximumMessageSize = num
-		case "messageretentionperiod":
+		case "messageretentionperiod", "retention":
 			num, err := strconv.Atoi(value)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
 			}
 			input.messageRetentionPeriod = num
-		case "receivemessagewaittimeseconds":
+		case "receivemessagewaittimeseconds", "wait":
 			num, err := strconv.Atoi(value)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
 			}
 			input.receiveMessageWaitTimeSeconds = num
-		case "visibilitytimeout":
+		case "visibilitytimeout", "timeout":
 			num, err := strconv.Atoi(value)
 			if err != nil {
 				Logger.Println("error:", err)
@@ -243,8 +243,23 @@ func SQSEnsureInput(name string, attrs []string) (*sqsEnsureInput, error) {
 func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 	sqsUrl, err := SQSQueueUrl(ctx, input.name)
 	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	attrsOut, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(sqsUrl),
+		AttributeNames: []*string{
+			aws.String("DelaySeconds"),
+			aws.String("MaximumMessageSize"),
+			aws.String("MessageRetentionPeriod"),
+			aws.String("ReceiveMessageWaitTimeSeconds"),
+			aws.String("VisibilityTimeout"),
+			aws.String("KmsDataKeyReusePeriodSeconds"),
+		},
+	})
+	if err != nil {
 		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != sqs.ErrCodeQueueDoesNotExist {
+		if !ok || !Contains([]string{sqs.ErrCodeQueueDoesNotExist}, aerr.Code()) {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -252,58 +267,58 @@ func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 			_, err := SQSClient().CreateQueueWithContext(ctx, &sqs.CreateQueueInput{
 				QueueName:  aws.String(input.name),
 				Attributes: input.Attrs(),
+				Tags: map[string]*string{
+					infraSetTagName: aws.String(input.infraSetName),
+				},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
+			for {
+				queues, err := SQSListQueues(ctx)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				if Contains(queues, input.name) {
+					break
+				}
+				time.Sleep(1 * time.Second)
+				Logger.Println("waiting for sqs instantiation for:", input.name)
+			}
 		}
-		Logger.Printf(PreviewString(preview)+"sqs created queue: %#v\n", *input)
+		Logger.Printf(PreviewString(preview)+"created queue: %s\n", input.name)
 		for k, v := range input.Attrs() {
-			if v != nil {
-				Logger.Println(PreviewString(preview)+"sqs created attribute:", input.name, k, *v)
+			if v != nil && k != "KmsMasterKeyId" {
+				Logger.Println(PreviewString(preview)+"created attribute for", input.name+":", k, "=", *v)
 			}
 		}
 	} else {
-		attrsOut, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-			QueueUrl: aws.String(sqsUrl),
-			AttributeNames: []*string{
-				aws.String("DelaySeconds"),
-				aws.String("MaximumMessageSize"),
-				aws.String("MessageRetentionPeriod"),
-				aws.String("ReceiveMessageWaitTimeSeconds"),
-				aws.String("VisibilityTimeout"),
-				aws.String("KmsDataKeyReusePeriodSeconds"),
-			},
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
 		needsUpdate := false
 		attrs := attrsOut.Attributes
 		if input.delaySeconds != -1 && attrs["DelaySeconds"] != nil && input.delaySeconds != Atoi(*attrs["DelaySeconds"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "DelaySeconds", input.name, Atoi(*attrs["DelaySeconds"]), input.delaySeconds)
+			Logger.Printf(PreviewString(preview)+"will update attr %s for %s: %d => %d\n", "DelaySeconds", input.name, Atoi(*attrs["DelaySeconds"]), input.delaySeconds)
 			needsUpdate = true
 		}
 		if input.maximumMessageSize != -1 && attrs["MaximumMessageSize"] != nil && input.maximumMessageSize != Atoi(*attrs["MaximumMessageSize"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "MaximumMessageSize", input.name, Atoi(*attrs["MaximumMessageSize"]), input.maximumMessageSize)
+			Logger.Printf(PreviewString(preview)+"will update attr %s for %s: %d => %d\n", "MaximumMessageSize", input.name, Atoi(*attrs["MaximumMessageSize"]), input.maximumMessageSize)
 			needsUpdate = true
 		}
 		if input.messageRetentionPeriod != -1 && attrs["MessageRetentionPeriod"] != nil && input.messageRetentionPeriod != Atoi(*attrs["MessageRetentionPeriod"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "MessageRetentionPeriod", input.name, Atoi(*attrs["MessageRetentionPeriod"]), input.messageRetentionPeriod)
+			Logger.Printf(PreviewString(preview)+"will update attr %s for %s: %d => %d\n", "MessageRetentionPeriod", input.name, Atoi(*attrs["MessageRetentionPeriod"]), input.messageRetentionPeriod)
 			needsUpdate = true
 		}
 		if input.receiveMessageWaitTimeSeconds != -1 && attrs["ReceiveMessageWaitTimeSeconds"] != nil && input.receiveMessageWaitTimeSeconds != Atoi(*attrs["ReceiveMessageWaitTimeSeconds"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "ReceiveMessageWaitTimeSeconds", input.name, Atoi(*attrs["ReceiveMessageWaitTimeSeconds"]), input.receiveMessageWaitTimeSeconds)
+			Logger.Printf(PreviewString(preview)+"will update attr %s for %s: %d => %d\n", "ReceiveMessageWaitTimeSeconds", input.name, Atoi(*attrs["ReceiveMessageWaitTimeSeconds"]), input.receiveMessageWaitTimeSeconds)
 			needsUpdate = true
 		}
 		if input.visibilityTimeout != -1 && attrs["VisibilityTimeout"] != nil && input.visibilityTimeout != Atoi(*attrs["VisibilityTimeout"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "VisibilityTimeout", input.name, Atoi(*attrs["VisibilityTimeout"]), input.visibilityTimeout)
+			Logger.Printf(PreviewString(preview)+"will update attr %s for %s: %d => %d\n", "VisibilityTimeout", input.name, Atoi(*attrs["VisibilityTimeout"]), input.visibilityTimeout)
 			needsUpdate = true
 		}
 		if input.kmsDataKeyReusePeriodSeconds != -1 && attrs["KmsDataKeyReusePeriodSeconds"] != nil && input.kmsDataKeyReusePeriodSeconds != Atoi(*attrs["KmsDataKeyReusePeriodSeconds"]) {
-			Logger.Printf(PreviewString(preview)+"sqs will update attr %s for %s: %d => %d\n", "KmsDataKeyReusePeriodSeconds", input.name, Atoi(*attrs["KmsDataKeyReusePeriodSeconds"]), input.kmsDataKeyReusePeriodSeconds)
+			Logger.Printf(PreviewString(preview)+"will update attr %s for %s: %d => %d\n", "KmsDataKeyReusePeriodSeconds", input.name, Atoi(*attrs["KmsDataKeyReusePeriodSeconds"]), input.kmsDataKeyReusePeriodSeconds)
 			needsUpdate = true
 		}
 		if needsUpdate {
@@ -317,7 +332,7 @@ func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"sqs updated queue:", input.name)
+			Logger.Println(PreviewString(preview)+"updated queue:", input.name)
 		}
 	}
 	return nil
@@ -326,10 +341,7 @@ func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 func SQSDeleteQueue(ctx context.Context, name string, preview bool) error {
 	url, err := SQSQueueUrl(ctx, name)
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != sqs.ErrCodeQueueDoesNotExist {
-			return err
-		}
+		Logger.Println("error:", err)
 		return nil
 	}
 	if !preview {
@@ -337,10 +349,12 @@ func SQSDeleteQueue(ctx context.Context, name string, preview bool) error {
 			QueueUrl: aws.String(url),
 		})
 		if err != nil {
-			Logger.Println("error:", err)
-			return err
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != sqs.ErrCodeQueueDoesNotExist {
+				return err
+			}
 		}
 	}
-	Logger.Println(PreviewString(preview)+"sqs deleted queue:", name)
+	Logger.Println(PreviewString(preview)+"deleted queue:", name)
 	return nil
 }

@@ -1,0 +1,8 @@
+{
+  "name": "libaws",
+  "version": "0.0.0",
+  "main": "main.js",
+  "author": "me@nathants.com",
+  "dependencies": {},
+  "license": "MIT"
+}

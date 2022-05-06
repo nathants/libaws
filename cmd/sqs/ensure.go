@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -14,7 +14,7 @@ func init() {
 
 type sqsEnsureArgs struct {
 	Name    string   `arg:"positional,required"`
-	Attrs   []string `arg:"positional,required"`
+	Attr    []string `arg:"positional"`
 	Preview bool     `arg:"-p,--preview"`
 }
 
@@ -23,15 +23,14 @@ func (sqsEnsureArgs) Description() string {
 ensure a sqs queue
 
 example:
- - cli-aws sqs-ensure test-queue DelaySeconds=30 VisibilityTimeout=60
+ - libaws sqs-ensure test-queue delay=30 timeout=60
 
 optional attrs:
- - DelaySeconds=VALUE
- - MaximumMessageSize=VALUE
- - MessageRetentionPeriod=VALUE
- - ReceiveMessageWaitTimeSeconds=VALUE
- - VisibilityTimeout=VALUE
- - KmsDataKeyReusePeriodSeconds=VALUE
+ - DelaySeconds=VALUE,                  shortcut: delay=VALUE,     default: 0
+ - MaximumMessageSize=VALUE,            shortcut: size=VALUE,      default: 262144
+ - MessageRetentionPeriod=VALUE,        shortcut: retention=VALUE  default: 345600
+ - ReceiveMessageWaitTimeSeconds=VALUE, shortcut: wait=VALUE       default: 0
+ - VisibilityTimeout=VALUE,             shortcut: timeout=VALUE    default: 30
 
 `
 }
@@ -40,7 +39,7 @@ func sqsEnsure() {
 	var args sqsEnsureArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	input, err := lib.SQSEnsureInput(args.Name, args.Attrs)
+	input, err := lib.SQSEnsureInput("", args.Name, args.Attr)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

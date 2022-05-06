@@ -5,8 +5,9 @@ import (
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -32,6 +33,9 @@ func ecrRm() {
 		Force:          aws.Bool(true),
 	})
 	if err != nil {
-		lib.Logger.Fatal("error: ", err)
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != "RepositoryNotFoundException" {
+			lib.Logger.Fatal("error: ", err)
+		}
 	}
 }

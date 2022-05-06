@@ -1,0 +1,46 @@
+# workflow:
+# - write to s3 in-bucket
+# - which triggers lambda
+# - which launches ec2 spot
+# - which reads from in-bucket, writes to out-bucket, and shutdown
+
+name: test-infraset-${uid}
+
+instance-profile:
+  test-profile-${uid}:
+    allow:
+      - s3:List*     arn:aws:s3:::in-bucket-${uid}/*
+      - s3:GetObject arn:aws:s3:::in-bucket-${uid}/*
+      - s3:PutObject arn:aws:s3:::out-bucket-${uid}/*
+
+keypair:
+  test-keypair-${uid}:
+    pubkey-content: ${pubkey}
+
+vpc:
+  test-vpc-${uid}:
+    security-group:
+      test-sg-${uid}:
+        rule:
+          - tcp:22:0.0.0.0/0
+
+s3:
+  in-bucket-${uid}: {}
+  out-bucket-${uid}: {}
+
+lambda:
+  test-lambda-${uid}:
+    entrypoint: main.go
+    allow:
+      - ec2:* *
+      - iam:GetRole *
+      - iam:PassRole arn:aws:iam::*:role/aws-ec2-spot-fleet-tagging-role
+      - iam:PassRole arn:aws:iam::*:role/ec2/test-profile-${uid}-path/test-profile-${uid}
+    policy:
+      - AWSLambdaBasicExecutionRole
+    trigger:
+      - type: s3
+        attr:
+          - in-bucket-${uid}
+    env:
+      - uid=${uid}

@@ -7,7 +7,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -26,7 +26,7 @@ func (dynamodbItemPutArgs) Description() string {
 put item
 describe vals like: $name:s|n|b:$value
 
->> cli-aws dynamodb-item-put test-table user:s:john
+>> libaws dynamodb-item-put test-table user:s:john
 
 `
 }

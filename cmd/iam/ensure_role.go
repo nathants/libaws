@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -15,8 +15,8 @@ func init() {
 type iamEnsureRoleArgs struct {
 	Name      string   `arg:"positional,required"`
 	Principal string   `arg:"positional,required"`
-	Policies  []string `arg:"--policy"`
-	Allows    []string `arg:"--allow"`
+	Policies  []string `arg:"--policy" help:"policy name. can specify multiple times."`
+	Allows    []string `arg:"--allow" help:"\"$service:$action $arn\". can specify multiple times. example: \"s3:* *\""`
 	Preview   bool     `arg:"-p,--preview"`
 }
 
@@ -28,7 +28,7 @@ func iamEnsureRole() {
 	var args iamEnsureRoleArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.IamEnsureRole(ctx, args.Name, args.Principal, args.Preview)
+	err := lib.IamEnsureRole(ctx, "", args.Name, args.Principal, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

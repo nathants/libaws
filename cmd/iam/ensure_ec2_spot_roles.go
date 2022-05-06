@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -13,6 +13,7 @@ func init() {
 }
 
 type iamEnsureEC2SpotRolesArgs struct {
+	Preview bool `arg:"-p,--preview"`
 }
 
 func (iamEnsureEC2SpotRolesArgs) Description() string {
@@ -23,7 +24,7 @@ func iamEnsureEC2SpotRoles() {
 	var args iamEnsureEC2SpotRolesArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.IamEnsureEC2SpotRoles(ctx)
+	err := lib.IamEnsureEC2SpotRoles(ctx, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

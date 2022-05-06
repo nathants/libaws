@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -27,7 +27,7 @@ func iamEnsureInstanceProfile() {
 	var args iamEnsureInstanceProfileArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.IamEnsureInstanceProfile(ctx, args.Name, args.Policies, args.Allows, args.Preview)
+	err := lib.IamEnsureInstanceProfile(ctx, "", args.Name, args.Policies, args.Allows, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

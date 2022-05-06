@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -27,7 +27,7 @@ easily switch between aws creds
 
     add new credentials:
 
-        cli-aws creds-add NAME KEY_ID KEY_SECRET REGION
+        libaws creds-add NAME KEY_ID KEY_SECRET REGION
 
     add to your bashrc:
 
@@ -35,7 +35,7 @@ easily switch between aws creds
 
         aws-creds() {
             # permanently set aws credentials for this and future terminal sessions
-            cli-aws creds-set $1 && . ~/.aws_creds/_temp_creds.sh
+            libaws creds-set $1 && . ~/.aws_creds/_temp_creds.sh
         }
 
         aws-creds-temp() {

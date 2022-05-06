@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -14,7 +14,7 @@ func init() {
 
 type s3EnsureArgs struct {
 	Name    string   `arg:"positional,required"`
-	Attrs   []string `arg:"positional"`
+	Attr    []string `arg:"positional"`
 	Preview bool     `arg:"-p,--preview"`
 }
 
@@ -23,15 +23,14 @@ func (s3EnsureArgs) Description() string {
 ensure a s3 bucket
 
 example:
- - cli-aws s3-ensure test-bucket acl=PUBLIC versioning=TRUE
+ - libaws s3-ensure test-bucket acl=PUBLIC versioning=TRUE
 
 optional attrs:
- - acl=VALUE        (values = "public" | "private", default = "private")
- - versioning=VALUE (values = "true" | "false",     default = "false")
- - encryption=VALUE (values = "true" | "false",     default = "true")
- - metrics=VALUE    (values = "true" | "false",     default = "true")
- - cors=VALUE       (values = "true" | "false",     default = "true")
- - ttldays=VALUE (values = "0" | "n",            default = "0")
+ - acl=VALUE        (values = public | private, default = private)
+ - versioning=VALUE (values = true | false,     default = false)
+ - metrics=VALUE    (values = true | false,     default = true)
+ - cors=VALUE       (values = true | false,     default = false)
+ - ttldays=VALUE    (values = 0 | n,            default = 0)
 `
 }
 
@@ -39,7 +38,7 @@ func s3Ensure() {
 	var args s3EnsureArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	input, err := lib.S3EnsureInput(args.Name, args.Attrs)
+	input, err := lib.S3EnsureInput("", args.Name, args.Attr)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

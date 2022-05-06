@@ -28,9 +28,9 @@ func LogsClient() *cloudwatchlogs.CloudWatchLogs {
 	return logsClient
 }
 
-func LogsEnsureGroup(ctx context.Context, name string, ttlDays int, preview bool) error {
+func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttlDays int, preview bool) error {
 	out, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
-		LogGroupName: aws.String(name),
+		LogGroupName: aws.String(logGroupName),
 	})
 	if err != nil || out.LogStreams == nil {
 		if err != nil {
@@ -42,17 +42,20 @@ func LogsEnsureGroup(ctx context.Context, name string, ttlDays int, preview bool
 		}
 		if !preview {
 			_, err := LogsClient().CreateLogGroupWithContext(ctx, &cloudwatchlogs.CreateLogGroupInput{
-				LogGroupName: aws.String(name),
+				LogGroupName: aws.String(logGroupName),
+				Tags: map[string]*string{
+					infraSetTagName: aws.String(infrasetName),
+				},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"created log group:", name)
+		Logger.Println(PreviewString(preview)+"created log group:", logGroupName)
 	}
 	outGroups, err := LogsClient().DescribeLogGroupsWithContext(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
-		LogGroupNamePrefix: aws.String(name),
+		LogGroupNamePrefix: aws.String(logGroupName),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -60,24 +63,26 @@ func LogsEnsureGroup(ctx context.Context, name string, ttlDays int, preview bool
 	}
 	var logGroup *cloudwatchlogs.LogGroup
 	for _, lg := range outGroups.LogGroups {
-		if name == *lg.LogGroupName {
+		if logGroupName == *lg.LogGroupName {
 			logGroup = lg
 			break
 		}
 	}
 	if logGroup == nil && !preview {
-		err := fmt.Errorf("expected exactly 1 logGroup with name: %s", name)
+		err := fmt.Errorf("expected exactly 1 logGroup with name: %s", logGroupName)
 		Logger.Println("error:", err)
 		return err
 	}
-	if logGroup != nil {
-		if logGroup.RetentionInDays == nil {
-			logGroup.RetentionInDays = aws.Int64(0)
-		}
-		if ttlDays != int(*logGroup.RetentionInDays) {
-			Logger.Printf(PreviewString(preview)+"updated log ttl days for %s: %d => %d\n", name, *logGroup.RetentionInDays, ttlDays)
+	if logGroup == nil {
+		logGroup = &cloudwatchlogs.LogGroup{}
+	}
+	if logGroup.RetentionInDays == nil {
+		logGroup.RetentionInDays = aws.Int64(0)
+	}
+	if ttlDays != int(*logGroup.RetentionInDays) {
+		if !preview {
 			_, err = LogsClient().PutRetentionPolicyWithContext(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
-				LogGroupName:    aws.String(name),
+				LogGroupName:    aws.String(logGroupName),
 				RetentionInDays: aws.Int64(int64(ttlDays)),
 			})
 			if err != nil {
@@ -85,6 +90,7 @@ func LogsEnsureGroup(ctx context.Context, name string, ttlDays int, preview bool
 				return err
 			}
 		}
+		Logger.Printf(PreviewString(preview)+"updated log ttl days for %s: %d => %d\n", logGroupName, *logGroup.RetentionInDays, ttlDays)
 	}
 	return nil
 }
@@ -173,7 +179,6 @@ func LogsStreams(ctx context.Context, name string) ([]*cloudwatchlogs.LogStream,
 
 func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(timestamp time.Time, line string)) error {
 	tokens := make(map[string]*string)
-	minAges := make(map[string]time.Time)
 	for {
 		streams, err := LogsMostRecentStreams(ctx, name)
 		if err != nil {
@@ -194,16 +199,11 @@ func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(
 			if len(out.Events) != 0 {
 				tokens[streamName] = out.NextForwardToken
 			}
-			min, ok := minAges[streamName]
-			if !ok {
-				min = minAge
-			}
 			for _, log := range out.Events {
 				ts := FromUnixMilli(*log.IngestionTime)
-				if !ts.After(min) {
+				if !ts.After(minAge) {
 					continue
 				}
-				minAges[streamName] = ts
 				data = true
 				callback(FromUnixMilli(*log.Timestamp), strings.TrimRight(strings.ReplaceAll(*log.Message, "\t", " "), "\n"))
 			}

@@ -2,14 +2,11 @@ package cliaws
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/alexflint/go-arg"
-	"github.com/mattn/go-isatty"
-	"github.com/nathants/cli-aws/lib"
-	"github.com/tidwall/pretty"
+	"github.com/nathants/libaws/lib"
+	"gopkg.in/yaml.v3"
 )
 
 func init() {
@@ -33,16 +30,9 @@ func infraLs() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	bytes, err := json.Marshal(infra)
+	bytes, err := yaml.Marshal(infra)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
-	}
-	options := &pretty.Options{
-		Indent: "    ",
-	}
-	bytes = pretty.PrettyOptions(bytes, options)
-	if isatty.IsTerminal(os.Stdout.Fd()) {
-		bytes = pretty.Color(bytes, lib.PrettyStyle)
 	}
 	fmt.Println(string(bytes))
 }

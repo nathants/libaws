@@ -1,6 +1,3 @@
-cli-aws
-eagerload.py
-test_pre_check.sh
-*.egg-info
+libaws
 .tox
-lint.sh
+__pycache__

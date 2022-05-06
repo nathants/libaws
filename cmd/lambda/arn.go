@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -14,7 +14,7 @@ func init() {
 }
 
 type lambdaArnArgs struct {
-	Path string `arg:"positional,required"`
+	Name string `arg:"positional,required"`
 }
 
 func (lambdaArnArgs) Description() string {
@@ -25,11 +25,7 @@ func lambdaArn() {
 	var args lambdaArnArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	name, err := lib.LambdaName(args.Path)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
-	arn, err := lib.LambdaArn(ctx, name)
+	arn, err := lib.LambdaArn(ctx, args.Name)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

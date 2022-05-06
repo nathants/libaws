@@ -9,7 +9,7 @@ import (
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -79,7 +79,7 @@ func ec2Ssh() {
 			lib.Logger.Fatal("error: ", err)
 		}
 	} else if len(instances) == 1 && args.Cmd == "" {
-		err = lib.EC2SshLogin(instances[0], args.User)
+		err = lib.EC2SshLogin(instances[0], args.User, args.Key)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

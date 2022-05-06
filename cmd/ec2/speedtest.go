@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/buger/goterm"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -109,6 +109,7 @@ func ec2Speedtest() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	go func() {
+		// defer func() {}()
 		err := cmd.Run()
 		if err != nil && err.Error() != "signal: killed" {
 			lib.Logger.Println("error: ", err)
@@ -160,6 +161,7 @@ func ec2Speedtest() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	go func() {
+		// defer func() {}()
 		err := cmd.Run()
 		if err != nil && err.Error() != "signal: killed" {
 			lib.Logger.Println("error: ", err)

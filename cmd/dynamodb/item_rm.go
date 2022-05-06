@@ -7,7 +7,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -26,7 +26,7 @@ func (dynamodbItemRmArgs) Description() string {
 delete item
 describe keys like: $name:s|n:$value
 
->> cli-aws dynamodb-item-rm test-table user:s:john
+>> libaws dynamodb-item-rm test-table user:s:john
 
 `
 }

@@ -1,31 +1,35 @@
 package lib
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
-	"reflect"
-	"runtime"
+	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/avast/retry-go"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/mattn/go-isatty"
 	"github.com/mikesmitty/edkey"
 	"github.com/pkg/term"
 	"github.com/r3labs/diff/v2"
-	"github.com/tidwall/pretty"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -41,14 +45,11 @@ func SignalHandler(cancel func()) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
+		// defer func() {}()
 		<-c
 		Logger.Println("signal handler")
 		cancel()
 	}()
-}
-
-func functionName(i interface{}) string {
-	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 }
 
 func DropLinesWithAny(s string, tokens ...string) string {
@@ -97,7 +98,7 @@ func Pformat(i interface{}) string {
 }
 
 func Retry(ctx context.Context, fn func() error) error {
-	return RetryAttempts(ctx, 8, fn)
+	return RetryAttempts(ctx, 9, fn)
 }
 
 // 6  attempts = 5    seconds total delay
@@ -108,13 +109,8 @@ func Retry(ctx context.Context, fn func() error) error {
 // 11 attempts = 160  seconds total delay
 // 12 attempts = 320  seconds total delay
 func RetryAttempts(ctx context.Context, attempts int, fn func() error) error {
-	count := 0
 	return retry.Do(
 		func() error {
-			if count > 0 {
-				Logger.Printf("retry attempt %d/%d for %v\n", count, attempts-1, functionName(fn))
-			}
-			count++
 			err := fn()
 			if err != nil {
 				return err
@@ -316,33 +312,39 @@ func Max(i, j int) int {
 	return j
 }
 
-var PrettyStyle = &pretty.Style{
-	Key:    [2]string{"\033[31m", "\033[0m"},
-	String: [2]string{"\033[32m", "\033[0m"},
-	Number: [2]string{"\033[33m", "\033[0m"},
-	True:   [2]string{"\033[34m", "\033[0m"},
-	False:  [2]string{"\033[35m", "\033[0m"},
-	Null:   [2]string{"\033[36m", "\033[0m"},
-	Escape: [2]string{"\033[37m", "\033[0m"},
-	Append: func(dst []byte, c byte) []byte {
-		hexp := func(p byte) byte {
-			switch {
-			case p < 10:
-				return p + '0'
-			default:
-				return (p - 10) + 'a'
-			}
+func zipSha256Hex(data []byte) (map[string]*string, error) {
+	results := make(map[string]*string)
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	for _, f := range r.File {
+		rc, err := f.Open()
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
 		}
-		if c < ' ' && (c != '\r' && c != '\n' && c != '\t' && c != '\v') {
-			dst = append(dst, "\\u00"...)
-			dst = append(dst, hexp((c>>4)&0xF))
-			return append(dst, hexp((c)&0xF))
+		rd, err := io.ReadAll(rc)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
 		}
-		return append(dst, c)
-	},
+		results["./"+f.Name] = aws.String(sha256Short(rd))
+	}
+	return results, nil
 }
 
-func diffMapStringStringPointers(a, b map[string]*string, logValues bool) (bool, error) {
+func sha256Hex(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
+}
+
+func sha256Short(data []byte) string {
+	return "sha256:" + sha256Hex(data)[:16]
+}
+
+func diffMapStringStringPointers(a, b map[string]*string, logPrefix string, logValues bool) (bool, error) {
 	for k, v := range a {
 		if v == nil {
 			delete(a, k)
@@ -365,56 +367,22 @@ func diffMapStringStringPointers(a, b map[string]*string, logValues bool) (bool,
 		switch c.Type {
 		case diff.DELETE:
 			if logValues {
-				Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From))
+				Logger.Println(logPrefix, c.Type+":", c.Path[0]+" = "+fmt.Sprint(c.From))
 			} else {
-				Logger.Println("diff:", c.Type, c.Path[0])
+				Logger.Println(logPrefix, c.Type+":", c.Path[0]+" = "+sha256Short([]byte(fmt.Sprint(c.From))))
 			}
 		case diff.CREATE:
 			if logValues {
-				Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.To))
+				Logger.Println(logPrefix, c.Type+":", c.Path[0]+" = "+fmt.Sprint(c.To))
 			} else {
-				Logger.Println("diff:", c.Type, c.Path[0])
+				Logger.Println(logPrefix, c.Type+":", c.Path[0]+" = "+sha256Short([]byte(fmt.Sprint(c.To))))
 			}
 		case diff.UPDATE:
 			if logValues {
-				Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From), "->", c.Path[0]+"="+fmt.Sprint(c.To))
+				Logger.Println(logPrefix, c.Type+":", c.Path[0]+" = "+fmt.Sprint(c.From), "->", c.Path[0]+" = "+fmt.Sprint(c.To))
 			} else {
-				Logger.Println("diff:", c.Type, c.Path[0])
+				Logger.Println(logPrefix, c.Type+":", c.Path[0]+" = "+sha256Short([]byte(fmt.Sprint(c.From))), "->", c.Path[0]+" = "+sha256Short([]byte(fmt.Sprint(c.To))))
 			}
-		default:
-			return false, fmt.Errorf("unknown diff type: %s", c.Type)
-		}
-	}
-	return len(changes) > 0, nil
-}
-
-func diffMapStringInt64Pointers(a, b map[string]*int64) (bool, error) {
-	for k, v := range a {
-		if v == nil {
-			delete(a, k)
-		}
-	}
-	for k, v := range b {
-		if v == nil {
-			delete(b, k)
-		}
-	}
-	d, err := diff.NewDiffer()
-	if err != nil {
-		return false, err
-	}
-	changes, err := d.Diff(b, a)
-	if err != nil {
-		return false, err
-	}
-	for _, c := range changes {
-		switch c.Type {
-		case diff.DELETE:
-			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From))
-		case diff.CREATE:
-			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.To))
-		case diff.UPDATE:
-			Logger.Println("diff:", c.Type, c.Path[0]+"="+fmt.Sprint(c.From), "->", c.Path[0]+"="+fmt.Sprint(c.To))
 		default:
 			return false, fmt.Errorf("unknown diff type: %s", c.Type)
 		}
@@ -462,4 +430,20 @@ func NowUnixMilli() int64 {
 
 func ToUnixMilli(t time.Time) int64 {
 	return t.UnixNano() / int64(time.Millisecond)
+}
+
+func logRecover(r interface{}) {
+	stack := string(debug.Stack())
+	Logger.Println(r)
+	Logger.Println(stack)
+	Logger.Flush()
+	panic(r)
+}
+
+func splitWhiteSpace(s string) []string {
+	return regexp.MustCompile(` +`).Split(s, -1)
+}
+
+func splitWhiteSpaceN(s string, n int) []string {
+	return regexp.MustCompile(` +`).Split(s, n)
 }

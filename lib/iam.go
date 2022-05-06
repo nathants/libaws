@@ -15,6 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam"
 )
 
+const (
+	EC2SpotFleetTaggingRole = "aws-ec2-spot-fleet-tagging-role"
+)
+
 var iamClient *iam.IAM
 var iamClientLock sync.RWMutex
 
@@ -221,9 +225,9 @@ func IamDeleteUser(ctx context.Context, name string, preview bool) error {
 	return nil
 }
 
-func IamDeleteRole(ctx context.Context, name string, preview bool) error {
+func IamDeleteRole(ctx context.Context, roleName string, preview bool) error {
 	_, err := IamClient().GetRoleWithContext(ctx, &iam.GetRoleInput{
-		RoleName: aws.String(name),
+		RoleName: aws.String(roleName),
 	})
 	if err != nil {
 		aerr, ok := err.(awserr.Error)
@@ -233,32 +237,32 @@ func IamDeleteRole(ctx context.Context, name string, preview bool) error {
 		}
 		return nil
 	}
+	err = IamEnsureRoleAllows(ctx, roleName, []string{}, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	err = IamEnsureRolePolicies(ctx, roleName, []string{}, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
 	if !preview {
-		err := IamEnsureRoleAllows(ctx, name, []string{}, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		err = IamEnsureRolePolicies(ctx, name, []string{}, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
 		_, err = IamClient().DeleteRoleWithContext(ctx, &iam.DeleteRoleInput{
-			RoleName: aws.String(name),
+			RoleName: aws.String(roleName),
 		})
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
 	}
-	Logger.Println(PreviewString(preview)+"deleted role:", name)
+	Logger.Println(PreviewString(preview)+"deleted role:", roleName)
 	return nil
 }
 
-func IamDeleteInstanceProfile(ctx context.Context, name string, preview bool) error {
+func IamDeleteInstanceProfile(ctx context.Context, profileName string, preview bool) error {
 	_, err := IamClient().GetInstanceProfileWithContext(ctx, &iam.GetInstanceProfileInput{
-		InstanceProfileName: aws.String(name),
+		InstanceProfileName: aws.String(profileName),
 	})
 	if err != nil {
 		aerr, ok := err.(awserr.Error)
@@ -268,26 +272,26 @@ func IamDeleteInstanceProfile(ctx context.Context, name string, preview bool) er
 		}
 		return nil
 	}
+	err = IamEnsureRoleAllows(ctx, profileName, []string{}, preview)
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	err = IamEnsureRolePolicies(ctx, profileName, []string{}, preview)
+	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
 	if !preview {
-		err := IamEnsureRoleAllows(ctx, name, []string{}, preview)
-		if err != nil {
-			aerr, ok := err.(awserr.Error)
-			if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
-				Logger.Println("error:", err)
-				return err
-			}
-		}
-		err = IamEnsureRolePolicies(ctx, name, []string{}, preview)
-		if err != nil {
-			aerr, ok := err.(awserr.Error)
-			if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
-				Logger.Println("error:", err)
-				return err
-			}
-		}
 		_, err = IamClient().RemoveRoleFromInstanceProfileWithContext(ctx, &iam.RemoveRoleFromInstanceProfileInput{
-			InstanceProfileName: aws.String(name),
-			RoleName:            aws.String(name),
+			InstanceProfileName: aws.String(profileName),
+			RoleName:            aws.String(profileName),
 		})
 		if err != nil {
 			aerr, ok := err.(awserr.Error)
@@ -297,7 +301,7 @@ func IamDeleteInstanceProfile(ctx context.Context, name string, preview bool) er
 			}
 		}
 		_, err = IamClient().DeleteRoleWithContext(ctx, &iam.DeleteRoleInput{
-			RoleName: aws.String(name),
+			RoleName: aws.String(profileName),
 		})
 		if err != nil {
 			aerr, ok := err.(awserr.Error)
@@ -307,14 +311,14 @@ func IamDeleteInstanceProfile(ctx context.Context, name string, preview bool) er
 			}
 		}
 		_, err = IamClient().DeleteInstanceProfileWithContext(ctx, &iam.DeleteInstanceProfileInput{
-			InstanceProfileName: aws.String(name),
+			InstanceProfileName: aws.String(profileName),
 		})
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
 	}
-	Logger.Println(PreviewString(preview)+"deleted instance profile:", name)
+	Logger.Println(PreviewString(preview)+"deleted instance profile:", profileName)
 	return nil
 }
 
@@ -372,7 +376,7 @@ func IamListRoles(ctx context.Context, pathPrefix *string) ([]*IamRole, error) {
 func IamEnsureUserAllows(ctx context.Context, username string, allows []string, preview bool) error {
 	var allowNames []string
 	for _, allowStr := range allows {
-		parts := strings.SplitN(allowStr, " ", 2)
+		parts := splitWhiteSpaceN(allowStr, 2)
 		if len(parts) != 2 {
 			err := fmt.Errorf("allow format should be: 'SERVICE:ACTION RESOURCE', got: %s", allowStr)
 			Logger.Println("error:", err)
@@ -447,12 +451,12 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, preview bool) error {
 	var allowNames []string
 	for _, allowStr := range allows {
-		_, allowStr, err := resolveEnvVars(allowStr, []string{}) // resolve again since lambdaEnvVarApiID and lambdaEnvVarWebsocketID are not set
+		allowStr, err := resolveEnvVars(allowStr, []string{}) // resolve again since lambdaEnvVarApiID and lambdaEnvVarWebsocketID are not set
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		parts := strings.SplitN(allowStr, " ", 2)
+		parts := splitWhiteSpaceN(allowStr, 2)
 		if len(parts) != 2 {
 			err := fmt.Errorf("allow format should be: 'SERVICE:ACTION RESOURCE', got: %s", allowStr)
 			Logger.Println("error:", err)
@@ -695,16 +699,16 @@ func iamAssumePolicyDocument(principalName string) (*string, error) {
                                        "Action": "sts:AssumeRole"}]}`), nil
 }
 
-func IamEnsureRole(ctx context.Context, roleName, principalName string, preview bool) error {
-	if !preview {
-		rolePath := fmt.Sprintf("/%s/%s-path/", principalName, roleName)
-		roles, err := IamListRoles(ctx, aws.String(rolePath))
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		switch len(roles) {
-		case 0:
+func IamEnsureRole(ctx context.Context, infrasetName, roleName, principalName string, preview bool) error {
+	rolePath := fmt.Sprintf("/%s/%s-path/", principalName, roleName)
+	roles, err := IamListRoles(ctx, aws.String(rolePath))
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	switch len(roles) {
+	case 0:
+		if !preview {
 			policyDocument, err := iamAssumePolicyDocument(principalName)
 			if err != nil {
 				Logger.Println("error:", err)
@@ -714,72 +718,77 @@ func IamEnsureRole(ctx context.Context, roleName, principalName string, preview 
 				Path:                     aws.String(rolePath),
 				AssumeRolePolicyDocument: policyDocument,
 				RoleName:                 aws.String(roleName),
+				Tags: []*iam.Tag{{
+					Key:   aws.String(infraSetTagName),
+					Value: aws.String(infrasetName),
+				}},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Println(PreviewString(preview)+"created role:", roleName, principalName)
-		case 1:
-			if *roles[0].Path != rolePath {
-				err := fmt.Errorf("role path mismatch: %s %s != %s", roleName, *roles[0].Path, rolePath)
-				Logger.Println("error:", err)
-				return err
-			}
-			document, err := url.QueryUnescape(*roles[0].assumeRolePolicyDocumentString)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			policyDocument, err := iamAssumePolicyDocument(principalName)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			equal, err := iamPolicyEqual(document, *policyDocument)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			if !equal {
-				err := fmt.Errorf("role policy mismatch: %s %s != %s", roleName, document, *policyDocument)
-				Logger.Println("error:", err)
-				return err
-			}
-			if *roles[0].RoleName != roleName {
-				err := fmt.Errorf("role name mismatch: %s != %s", *roles[0].RoleName, roleName)
-				Logger.Println("error:", err)
-				return err
-			}
-		default:
-			err := fmt.Errorf("found more than 1 role under path: %s", rolePath)
+		}
+		Logger.Println(PreviewString(preview)+"created role:", roleName, principalName)
+	case 1:
+		if *roles[0].path != rolePath {
+			err := fmt.Errorf("role path mismatch: %s %s != %s", roleName, *roles[0].path, rolePath)
 			Logger.Println("error:", err)
-			for _, role := range roles {
-				Logger.Println("error:", *role.Arn)
-			}
 			return err
 		}
+		document, err := url.QueryUnescape(*roles[0].assumeRolePolicyDocumentString)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		policyDocument, err := iamAssumePolicyDocument(principalName)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		equal, err := iamPolicyEqual(document, *policyDocument)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if !equal {
+			err := fmt.Errorf("role policy mismatch: %s %s != %s", roleName, document, *policyDocument)
+			Logger.Println("error:", err)
+			return err
+		}
+		if *roles[0].RoleName != roleName {
+			err := fmt.Errorf("role name mismatch: %s != %s", *roles[0].RoleName, roleName)
+			Logger.Println("error:", err)
+			return err
+		}
+	default:
+		err := fmt.Errorf("found more than 1 role under path: %s", rolePath)
+		Logger.Println("error:", err)
+		for _, role := range roles {
+			Logger.Println("error:", *role.arn)
+		}
+		return err
 	}
 	return nil
 }
 
 type IamInstanceProfile struct {
-	Arn                 *string    `json:",omitempty"`
-	CreateDate          *time.Time `json:",omitempty"`
-	InstanceProfileId   *string    `json:",omitempty"`
-	InstanceProfileName *string    `json:",omitempty"`
-	Path                *string    `json:",omitempty"`
-	Roles               []*IamRole `json:",omitempty"`
-	Tags                []*iam.Tag `json:",omitempty"`
+	arn        *string
+	createDate *time.Time
+	id         *string
+	path       *string
+	tags       []*iam.Tag
+
+	Name  *string    `json:",omitempty" yaml:",omitempty"`
+	Roles []*IamRole `json:",omitempty" yaml:",omitempty"`
 }
 
 func (p *IamInstanceProfile) FromProfile(ctx context.Context, profile *iam.InstanceProfile) error {
-	p.Arn = profile.Arn
-	p.CreateDate = profile.CreateDate
-	p.InstanceProfileId = profile.InstanceProfileId
-	p.InstanceProfileName = profile.InstanceProfileName
-	p.Path = profile.Path
-	p.Tags = profile.Tags
+	p.arn = profile.Arn
+	p.createDate = profile.CreateDate
+	p.id = profile.InstanceProfileId
+	p.Name = profile.InstanceProfileName
+	p.path = profile.Path
+	p.tags = profile.Tags
 	for _, role := range profile.Roles {
 		r := &IamRole{}
 		err := r.FromRole(ctx, role)
@@ -805,8 +814,20 @@ func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*IamIns
 			return nil, err
 		}
 		for _, profile := range out.InstanceProfiles {
+			out, err := IamClient().ListInstanceProfileTagsWithContext(ctx, &iam.ListInstanceProfileTagsInput{
+				InstanceProfileName: profile.InstanceProfileName,
+				MaxItems:            aws.Int64(100),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			if len(out.Tags) == 100 {
+				panic("tag overflow")
+			}
+			profile.Tags = out.Tags
 			p := &IamInstanceProfile{}
-			err := p.FromProfile(ctx, profile)
+			err = p.FromProfile(ctx, profile)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
@@ -821,8 +842,8 @@ func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*IamIns
 	return profiles, nil
 }
 
-func IamEnsureInstanceProfile(ctx context.Context, name string, policies, allows []string, preview bool) error {
-	profilePath := fmt.Sprintf("/instance-profile/%s-path/", name)
+func IamEnsureInstanceProfile(ctx context.Context, infrasetName, profileName string, policies, allows []string, preview bool) error {
+	profilePath := fmt.Sprintf("/instance-profile/%s-path/", profileName)
 	profiles, err := IamListInstanceProfiles(ctx, aws.String(profilePath))
 	if err != nil {
 		Logger.Println("error:", err)
@@ -832,8 +853,12 @@ func IamEnsureInstanceProfile(ctx context.Context, name string, policies, allows
 	case 0:
 		if !preview {
 			out, err := IamClient().CreateInstanceProfileWithContext(ctx, &iam.CreateInstanceProfileInput{
-				InstanceProfileName: aws.String(name),
+				InstanceProfileName: aws.String(profileName),
 				Path:                aws.String(profilePath),
+				Tags: []*iam.Tag{{
+					Key:   aws.String(infraSetTagName),
+					Value: aws.String(infrasetName),
+				}},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -847,15 +872,15 @@ func IamEnsureInstanceProfile(ctx context.Context, name string, policies, allows
 			}
 			profiles = append(profiles, p)
 		}
-		Logger.Println(PreviewString(preview)+"created instance profile:", name)
+		Logger.Println(PreviewString(preview)+"created instance profile:", profileName)
 	case 1:
-		if *profiles[0].InstanceProfileName != name {
-			err := fmt.Errorf("profile name mismatch: %s != %s", *profiles[0].InstanceProfileName, name)
+		if *profiles[0].Name != profileName {
+			err := fmt.Errorf("profile name mismatch: %s != %s", *profiles[0].Name, profileName)
 			Logger.Println("error:", err)
 			return err
 		}
-		if *profiles[0].Path != profilePath {
-			err := fmt.Errorf("profile path mismatch: %s %s != %s", *profiles[0].InstanceProfileName, *profiles[0].Path, profilePath)
+		if *profiles[0].path != profilePath {
+			err := fmt.Errorf("profile path mismatch: %s %s != %s", *profiles[0].Name, *profiles[0].path, profilePath)
 			Logger.Println("error:", err)
 			return err
 		}
@@ -863,8 +888,23 @@ func IamEnsureInstanceProfile(ctx context.Context, name string, policies, allows
 		err := fmt.Errorf("found more than 1 instance profile under path: %s", profilePath)
 		Logger.Println("error:", err)
 		for _, profile := range profiles {
-			Logger.Println("error:", *profile.Arn)
+			Logger.Println("error:", *profile.arn)
 		}
+		return err
+	}
+	err = IamEnsureRole(ctx, infrasetName, profileName, "ec2", preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	err = IamEnsureRoleAllows(ctx, profileName, allows, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	err = IamEnsureRolePolicies(ctx, profileName, policies, preview)
+	if err != nil {
+		Logger.Println("error:", err)
 		return err
 	}
 	var roleNames []string
@@ -873,42 +913,27 @@ func IamEnsureInstanceProfile(ctx context.Context, name string, policies, allows
 			roleNames = append(roleNames, *role.RoleName)
 		}
 	}
-	err = IamEnsureRole(ctx, name, "ec2", preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
-	err = IamEnsureRoleAllows(ctx, name, allows, preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
-	err = IamEnsureRolePolicies(ctx, name, policies, preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
 	switch len(roleNames) {
 	case 0:
 		if !preview {
 			_, err := IamClient().AddRoleToInstanceProfileWithContext(ctx, &iam.AddRoleToInstanceProfileInput{
-				InstanceProfileName: aws.String(name),
-				RoleName:            aws.String(name),
+				InstanceProfileName: aws.String(profileName),
+				RoleName:            aws.String(profileName),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"added role:", name, "to instance profile:", name)
+		Logger.Println(PreviewString(preview)+"added role:", profileName, "to instance profile:", profileName)
 	case 1:
-		if roleNames[0] != name {
-			err := fmt.Errorf("role name mismatch: %s != %s", roleNames[0], name)
+		if roleNames[0] != profileName {
+			err := fmt.Errorf("role name mismatch: %s != %s", roleNames[0], profileName)
 			Logger.Println("error:", err)
 			return err
 		}
 	default:
-		err := fmt.Errorf("more than 1 role found for instance profile: %s %s", name, Pformat(roleNames))
+		err := fmt.Errorf("more than 1 role found for instance profile: %s %s", profileName, Pformat(roleNames))
 		Logger.Println("error:", err)
 		return err
 	}
@@ -979,20 +1004,20 @@ func IamGetSSHPublicKey(ctx context.Context, keyID string) (*iam.SSHPublicKey, e
 
 type IamRole struct {
 	assumeRolePolicyDocumentString *string
+	description                    *string
+	maxSessionDuration             *int64
+	path                           *string
+	roleId                         *string
+	createDate                     *time.Time
+	arn                            *string
 
-	Arn                      *string                          `json:",omitempty"`
-	AssumeRolePolicyDocument *IamPolicyDocument               `json:",omitempty"`
-	CreateDate               *time.Time                       `json:",omitempty"`
-	Description              *string                          `json:",omitempty"`
-	MaxSessionDuration       *int64                           `json:",omitempty"`
-	Path                     *string                          `json:",omitempty"`
-	PermissionsBoundary      *iam.AttachedPermissionsBoundary `json:",omitempty"`
-	RoleId                   *string                          `json:",omitempty"`
-	RoleLastUsed             *iam.RoleLastUsed                `json:",omitempty"`
-	RoleName                 *string                          `json:",omitempty"`
-	Tags                     []*iam.Tag                       `json:",omitempty"`
-	Allows                   []string                         `json:",omitempty"`
-	Policies                 []string                         `json:",omitempty"`
+	AssumeRolePolicyDocument *IamPolicyDocument               `json:",omitempty" yaml:",omitempty"`
+	PermissionsBoundary      *iam.AttachedPermissionsBoundary `json:",omitempty" yaml:",omitempty"`
+	RoleLastUsed             *iam.RoleLastUsed                `json:",omitempty" yaml:",omitempty"`
+	RoleName                 *string                          `json:",omitempty" yaml:",omitempty"`
+	Tags                     []*iam.Tag                       `json:",omitempty" yaml:",omitempty"`
+	Allow                    []string                         `json:",omitempty" yaml:",omitempty"`
+	Policy                   []string                         `json:",omitempty" yaml:",omitempty"`
 }
 
 func (r *IamRole) FromRole(ctx context.Context, role *iam.Role) error {
@@ -1008,13 +1033,13 @@ func (r *IamRole) FromRole(ctx context.Context, role *iam.Role) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	r.Arn = role.Arn
-	r.CreateDate = role.CreateDate
-	r.Description = role.Description
-	r.MaxSessionDuration = role.MaxSessionDuration
-	r.Path = role.Path
+	r.arn = role.Arn
+	r.createDate = role.CreateDate
+	r.description = role.Description
+	r.maxSessionDuration = role.MaxSessionDuration
+	r.path = role.Path
 	r.PermissionsBoundary = role.PermissionsBoundary
-	r.RoleId = role.RoleId
+	r.roleId = role.RoleId
 	r.RoleLastUsed = role.RoleLastUsed
 	r.RoleName = role.RoleName
 	r.Tags = role.Tags
@@ -1024,7 +1049,7 @@ func (r *IamRole) FromRole(ctx context.Context, role *iam.Role) error {
 		return err
 	}
 	for _, allow := range allows {
-		r.Allows = append(r.Allows, allow.String())
+		r.Allow = append(r.Allow, allow.String())
 	}
 	policies, err := IamListRolePolicies(ctx, *r.RoleName)
 	if err != nil {
@@ -1032,33 +1057,33 @@ func (r *IamRole) FromRole(ctx context.Context, role *iam.Role) error {
 		return err
 	}
 	for _, policy := range policies {
-		r.Policies = append(r.Policies, *policy.PolicyName)
+		r.Policy = append(r.Policy, *policy.PolicyName)
 	}
 
 	return nil
 }
 
 type IamStatementEntry struct {
-	Sid       string      `json:",omitempty"`
-	Effect    string      `json:",omitempty"`
-	Resource  interface{} `json:",omitempty"`
-	Principal interface{} `json:",omitempty"`
-	Action    interface{} `json:",omitempty"`
+	Sid       string      `json:",omitempty" yaml:",omitempty"`
+	Effect    string      `json:",omitempty" yaml:",omitempty"`
+	Resource  interface{} `json:",omitempty" yaml:",omitempty"`
+	Principal interface{} `json:",omitempty" yaml:",omitempty"`
+	Action    interface{} `json:",omitempty" yaml:",omitempty"`
 }
 
 type IamPolicyDocument struct {
-	Version   string              `json:",omitempty"`
-	Id        string              `json:",omitempty"`
-	Statement []IamStatementEntry `json:",omitempty"`
+	Version   string              `json:",omitempty" yaml:",omitempty"`
+	Id        string              `json:",omitempty" yaml:",omitempty"`
+	Statement []IamStatementEntry `json:",omitempty" yaml:",omitempty"`
 }
 
 type IamStatementEntryCondition struct {
-	Sid       string      `json:",omitempty"`
-	Effect    string      `json:",omitempty"`
-	Resource  interface{} `json:",omitempty"`
-	Principal interface{} `json:",omitempty"`
-	Action    interface{} `json:",omitempty"`
-	Condition interface{} `json:",omitempty"`
+	Sid       string
+	Effect    string      `json:",omitempty" yaml:",omitempty"`
+	Resource  interface{} `json:",omitempty" yaml:",omitempty"`
+	Principal interface{} `json:",omitempty" yaml:",omitempty"`
+	Action    interface{} `json:",omitempty" yaml:",omitempty"`
+	Condition interface{} `json:",omitempty" yaml:",omitempty"`
 }
 
 type IamPolicyDocumentCondition struct {
@@ -1338,26 +1363,27 @@ func IamListRoleAllows(ctx context.Context, roleName string) ([]*IamAllow, error
 }
 
 type IamUser struct {
-	Arn                 *string                          `json:",omitempty"`
-	CreateDate          *time.Time                       `json:",omitempty"`
-	PasswordLastUsed    *time.Time                       `json:",omitempty"`
-	Path                *string                          `json:",omitempty"`
-	PermissionsBoundary *iam.AttachedPermissionsBoundary `json:",omitempty"`
-	Tags                []*iam.Tag                       `json:",omitempty"`
-	UserId              *string                          `json:",omitempty"`
-	UserName            *string                          `json:",omitempty"`
-	Allows              []string                         `json:",omitempty"`
-	Policies            []string                         `json:",omitempty"`
+	createDate          *time.Time
+	passwordLastUsed    *time.Time
+	path                *string
+	arn                 *string
+	tags                []*iam.Tag
+	userId              *string
+	permissionsBoundary *iam.AttachedPermissionsBoundary
+
+	UserName *string  `json:",omitempty" yaml:",omitempty"`
+	Allows   []string `json:",omitempty" yaml:",omitempty"`
+	Policies []string `json:",omitempty" yaml:",omitempty"`
 }
 
 func (u *IamUser) FromUser(ctx context.Context, user *iam.User) error {
-	u.Arn = user.Arn
-	u.CreateDate = user.CreateDate
-	u.PasswordLastUsed = user.PasswordLastUsed
-	u.Path = user.Path
-	u.PermissionsBoundary = user.PermissionsBoundary
-	u.Tags = user.Tags
-	u.UserId = user.UserId
+	u.arn = user.Arn
+	u.createDate = user.CreateDate
+	u.passwordLastUsed = user.PasswordLastUsed
+	u.path = user.Path
+	u.permissionsBoundary = user.PermissionsBoundary
+	u.tags = user.Tags
+	u.userId = user.UserId
 	u.UserName = user.UserName
 	allows, err := IamListUserAllows(ctx, *user.UserName)
 	if err != nil {
@@ -1406,63 +1432,10 @@ func IamListUsers(ctx context.Context) ([]*IamUser, error) {
 	return result, nil
 }
 
-func IamDeleteRolePolicies(ctx context.Context, name string, preview bool) error {
-	rolePolicies, err := IamListRolePolicies(ctx, name)
-	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
-			Logger.Println("error:", err)
-			return err
-		}
-		return nil
-	}
-	for _, policy := range rolePolicies {
-		if !preview {
-			_, err := IamClient().DetachRolePolicyWithContext(ctx, &iam.DetachRolePolicyInput{
-				RoleName:  aws.String(name),
-				PolicyArn: policy.PolicyArn,
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-		}
-		Logger.Println(PreviewString(preview)+"deleted role policy:", name, *policy.PolicyName)
-	}
-	return nil
-}
-
-func IamDeleteRoleAllows(ctx context.Context, name string, preview bool) error {
-	roleAllows, err := IamListRoleAllows(ctx, name)
-	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
-			Logger.Println("error:", err)
-			return err
-		}
-		return nil
-	}
-	for _, allow := range roleAllows {
-		if !preview {
-			_, err := IamClient().DeleteRolePolicyWithContext(ctx, &iam.DeleteRolePolicyInput{
-				RoleName:   aws.String(name),
-				PolicyName: aws.String(allow.policyName()),
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-		}
-		Logger.Println(PreviewString(preview)+"deleted role allow:", name, allow.policyName())
-	}
-	return nil
-}
-
-func IamEnsureEC2SpotRoles(ctx context.Context) error {
-	roleName := "aws-ec2-spot-fleet-tagging-role"
+func IamEnsureEC2SpotRoles(ctx context.Context, preview bool) error {
 	doc := IamPolicyDocument{
 		Version: "2012-10-17",
-		Id:      roleName,
+		Id:      EC2SpotFleetTaggingRole,
 		Statement: []IamStatementEntry{{
 			Effect:    "Allow",
 			Principal: map[string]string{"Service": "spotfleet.amazonaws.com"},
@@ -1474,62 +1447,66 @@ func IamEnsureEC2SpotRoles(ctx context.Context) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	_, err = IamClient().CreateRoleWithContext(ctx, &iam.CreateRoleInput{
-		RoleName:                 aws.String(roleName),
-		AssumeRolePolicyDocument: aws.String(string(bytes)),
+	out, err := IamClient().ListAttachedRolePoliciesWithContext(ctx, &iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(EC2SpotFleetTaggingRole),
 	})
 	policyArn := "arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole"
-	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != iam.ErrCodeEntityAlreadyExistsException {
-			Logger.Println("error:", err)
-			return err
-		}
-		out, err := IamClient().ListAttachedRolePoliciesWithContext(ctx, &iam.ListAttachedRolePoliciesInput{
-			RoleName: aws.String(roleName),
-		})
+	if err == nil {
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
 		if len(out.AttachedPolicies) != 1 {
-			err := fmt.Errorf("%s is misconfigured: %s", roleName, Pformat(out.AttachedPolicies))
+			err := fmt.Errorf("%s is misconfigured: %s", EC2SpotFleetTaggingRole, Pformat(out.AttachedPolicies))
 			Logger.Println("error:", err)
 			return err
 		}
 		if *out.AttachedPolicies[0].PolicyArn != policyArn {
-			err := fmt.Errorf("%s is misconfigured, %s != %s", roleName, *out.AttachedPolicies[0].PolicyArn, policyArn)
+			err := fmt.Errorf("%s is misconfigured, %s != %s", EC2SpotFleetTaggingRole, *out.AttachedPolicies[0].PolicyArn, policyArn)
 			Logger.Println("error:", err)
 			return err
 		}
 	} else {
-		_, err = IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
-			RoleName:  aws.String(roleName),
-			PolicyArn: aws.String(policyArn),
+		if !preview {
+			_, err := IamClient().CreateRoleWithContext(ctx, &iam.CreateRoleInput{
+				RoleName:                 aws.String(EC2SpotFleetTaggingRole),
+				AssumeRolePolicyDocument: aws.String(string(bytes)),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = IamClient().AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
+				RoleName:  aws.String(EC2SpotFleetTaggingRole),
+				PolicyArn: aws.String(policyArn),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview) + "create ec2 spot roles")
+	}
+	if !preview {
+		_, err = IamClient().CreateServiceLinkedRoleWithContext(ctx, &iam.CreateServiceLinkedRoleInput{
+			AWSServiceName: aws.String("spot.amazonaws.com"),
 		})
 		if err != nil {
-			Logger.Println("error:", err)
-			return err
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != "InvalidInput" { // already exists
+				Logger.Println("error:", err)
+				return err
+			}
 		}
-	}
-	_, err = IamClient().CreateServiceLinkedRoleWithContext(ctx, &iam.CreateServiceLinkedRoleInput{
-		AWSServiceName: aws.String("spot.amazonaws.com"),
-	})
-	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "InvalidInput" { // already exists
-			Logger.Println("error:", err)
-			return err
-		}
-	}
-	_, err = IamClient().CreateServiceLinkedRoleWithContext(ctx, &iam.CreateServiceLinkedRoleInput{
-		AWSServiceName: aws.String("spotfleet.amazonaws.com"),
-	})
-	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "InvalidInput" { // already exists
-			Logger.Println("error:", err)
-			return err
+		_, err = IamClient().CreateServiceLinkedRoleWithContext(ctx, &iam.CreateServiceLinkedRoleInput{
+			AWSServiceName: aws.String("spotfleet.amazonaws.com"),
+		})
+		if err != nil {
+			aerr, ok := err.(awserr.Error)
+			if !ok || aerr.Code() != "InvalidInput" { // already exists
+				Logger.Println("error:", err)
+				return err
+			}
 		}
 	}
 	return nil

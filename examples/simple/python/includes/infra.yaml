@@ -1,0 +1,13 @@
+name: test-infraset-${uid}
+
+lambda:
+  test-lambda-${uid}:
+    entrypoint: main.py
+    attr:
+      - concurrency=0
+      - memory=128
+      - timeout=60
+    policy:
+      - AWSLambdaBasicExecutionRole
+    include:
+      - include_me.txt

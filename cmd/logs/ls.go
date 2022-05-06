@@ -8,7 +8,7 @@ import (
 
 	"github.com/alexflint/go-arg"
 	"github.com/dustin/go-humanize"
-	"github.com/nathants/cli-aws/lib"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {

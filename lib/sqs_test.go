@@ -2,15 +2,29 @@ package lib
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"testing"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/gofrs/uuid"
-	"testing"
 )
 
+func checkAccountSQS() {
+	account, err := StsAccount(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	if os.Getenv("CLI_AWS_TEST_ACCOUNT") != account {
+		panic(fmt.Sprintf("%s != %s", os.Getenv("CLI_AWS_TEST_ACCOUNT"), account))
+	}
+}
+
 func TestSQSEnsure(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
-	input, err := SQSEnsureInput(queue, []string{})
+	checkAccountSQS()
+	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
+	input, err := SQSEnsureInput("", queue, []string{})
 	if err != nil {
 		t.Error(err)
 		return
@@ -30,9 +44,10 @@ func TestSQSEnsure(t *testing.T) {
 }
 
 func TestSQSEnsureDelaySeconds(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
+	checkAccountSQS()
+	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
-	input, err := SQSEnsureInput(queue, []string{"DelaySeconds=7"})
+	input, err := SQSEnsureInput("", queue, []string{"DelaySeconds=7"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -66,7 +81,7 @@ func TestSQSEnsureDelaySeconds(t *testing.T) {
 		return
 	}
 	//
-	input, err = SQSEnsureInput(queue, []string{"DelaySeconds=15"})
+	input, err = SQSEnsureInput("", queue, []string{"DelaySeconds=15"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -91,9 +106,10 @@ func TestSQSEnsureDelaySeconds(t *testing.T) {
 }
 
 func TestSQSEnsureMaximumMessageSize(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
+	checkAccountSQS()
+	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
-	input, err := SQSEnsureInput(queue, []string{"MaximumMessageSize=2048"})
+	input, err := SQSEnsureInput("", queue, []string{"MaximumMessageSize=2048"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -127,7 +143,7 @@ func TestSQSEnsureMaximumMessageSize(t *testing.T) {
 		return
 	}
 	//
-	input, err = SQSEnsureInput(queue, []string{"MaximumMessageSize=4096"})
+	input, err = SQSEnsureInput("", queue, []string{"MaximumMessageSize=4096"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -152,9 +168,10 @@ func TestSQSEnsureMaximumMessageSize(t *testing.T) {
 }
 
 func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
+	checkAccountSQS()
+	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
-	input, err := SQSEnsureInput(queue, []string{"MessageRetentionPeriod=90"})
+	input, err := SQSEnsureInput("", queue, []string{"MessageRetentionPeriod=90"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -188,7 +205,7 @@ func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
 		return
 	}
 	//
-	input, err = SQSEnsureInput(queue, []string{"MessageRetentionPeriod=120"})
+	input, err = SQSEnsureInput("", queue, []string{"MessageRetentionPeriod=120"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -213,9 +230,10 @@ func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
 }
 
 func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
+	checkAccountSQS()
+	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
-	input, err := SQSEnsureInput(queue, []string{"ReceiveMessageWaitTimeSeconds=7"})
+	input, err := SQSEnsureInput("", queue, []string{"ReceiveMessageWaitTimeSeconds=7"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -249,7 +267,7 @@ func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
 		return
 	}
 	//
-	input, err = SQSEnsureInput(queue, []string{"ReceiveMessageWaitTimeSeconds=3"})
+	input, err = SQSEnsureInput("", queue, []string{"ReceiveMessageWaitTimeSeconds=3"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -274,9 +292,10 @@ func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
 }
 
 func TestSQSEnsureVisibilityTimeout(t *testing.T) {
-	queue := "cli-aws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
+	checkAccountSQS()
+	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
-	input, err := SQSEnsureInput(queue, []string{"VisibilityTimeout=7"})
+	input, err := SQSEnsureInput("", queue, []string{"VisibilityTimeout=7"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -310,7 +329,7 @@ func TestSQSEnsureVisibilityTimeout(t *testing.T) {
 		return
 	}
 	//
-	input, err = SQSEnsureInput(queue, []string{"VisibilityTimeout=15"})
+	input, err = SQSEnsureInput("", queue, []string{"VisibilityTimeout=15"})
 	if err != nil {
 		t.Error(err)
 		return
