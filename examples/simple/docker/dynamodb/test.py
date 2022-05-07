@@ -49,7 +49,7 @@ def test():
                         "attr": ["timeout=60"],
                         "policy": ["AWSLambdaDynamoDBExecutionRole",
                                    "AWSLambdaBasicExecutionRole"],
-                        "trigger": [{"attr": ["test-table",
+                        "trigger": [{"attr": [f"test-table-{uid}",
                                               "batch=1",
                                               "parallel=10",
                                               "retry=0",

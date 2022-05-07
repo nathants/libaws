@@ -1,4 +1,5 @@
 # type: ignore
+import uuid
 import pytest
 import sys
 import shell
