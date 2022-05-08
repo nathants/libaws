@@ -3,12 +3,10 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"os"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
 
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -32,11 +30,6 @@ func dynamodbLs() {
 	tables, err := lib.DynamoDBListTables(ctx)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
-	}
-	if args.Status {
-		fmt.Fprintln(os.Stderr, "name status")
-	} else {
-		fmt.Fprintln(os.Stderr, "name")
 	}
 	for _, table := range tables {
 		if args.Status {
