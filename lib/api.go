@@ -59,7 +59,7 @@ func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
 		return nil, err
 	}
 	for _, api := range apis {
-		if *api.Name == name {
+		if api.Name != nil && *api.Name == name {
 			count++
 			result = api
 		}
