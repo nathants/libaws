@@ -27,7 +27,7 @@ there are two interfaces:
   - [explore the cli](#explore-the-cli)
   - [explore a cli entrypoint](#explore-a-cli-entrypoint)
   - [explore the go api](#explore-the-go-api)
-  - [explore basic examples](#explore-basic-examples)
+  - [explore simple examples](#explore-simple-examples)
   - [explore complex examples](#explore-complex-examples)
   - [explore external examples](#explore-external-examples)
 - [infrastructure set](#infrastructure-set)
@@ -133,84 +133,27 @@ func main() {
 }
 ```
 
-### ensure and trigger the infrastructure set
+### ensure the infrastructure set
 
-```bash
+![](./gif/ensure.gif)
 
->> export uid=dijeokl
+### trigger the infrastructure set
 
->> libaws infra-ensure infra.yaml
+![](./gif/trigger.gif)
 
-lib/s3.go:301: created bucket: test-bucket-dijeokl
-lib/s3.go:339: created bucket tags for: test-bucket-dijeokl
-lib/s3.go:387: created public access block for test-bucket-dijeokl: private
-lib/s3.go:592: created encryption for test-bucket-dijeokl: true
-lib/s3.go:623: put bucket metrics for: test-bucket-dijeokl
-lib/logs.go:55: created log group: /aws/lambda/test-lambda-dijeokl
-lib/logs.go:93: updated log ttl days for /aws/lambda/test-lambda-dijeokl: 0 => 7
-lib/iam.go:731: created role: test-lambda-dijeokl lambda
-lib/iam.go:657: attached role policy: test-lambda-dijeokl AWSLambdaBasicExecutionRole
-lib/lib.go:376: zip create: ./main = sha256:90c781e09b40908f
-lib/lambda.go:2202: update timeout: 0 => 60
-lib/lambda.go:2203: update memory: 0 => 128
-lib/lambda.go:2204: created function: test-lambda-dijeokl
-lib/lambda.go:512: created lambda permission: test-lambda-dijeokl s3.amazonaws.com arn:aws:s3:::test-bucket-dijeokl
-lib/lambda.go:380: updated bucket notifications for test-bucket-dijeokl test-lambda-dijeokl: [] => [s3:ObjectCreated:* s3:ObjectRemoved:*]
+### update the infrastructure set
 
->> libaws logs-tail /aws/lambda/test-lambda-dijeokl --exit-after 'hello-aws' &
+![](./gif/update.gif)
 
-[1] 112830
+### delete the infrastructure set
 
->> echo | aws s3 cp - s3://test-bucket-dijeokl/hello-aws/data.txt
-
-hello-aws/data.txt
-
-[1]+  Done
-```
-
-### view and delete the deployed infrastructure set
-
-```bash
->> libaws infra-ls
-
-account: "ACCOUNT_NUM"
-region: us-west-2
-infraset:
-    test-infraset-dijeokl:
-        lambda:
-            test-lambda-dijeokl:
-                policy:
-                    - AWSLambdaBasicExecutionRole
-                attr:
-                    - timeout=60
-                trigger:
-                    - type: s3
-                      attr:
-                        - test-bucket-dijeokl
-        s3:
-            test-bucket-dijeokl: {}
-
->> libaws infra-rm infra.yaml
-
-lib/lambda.go:406: deleted bucket notification: test-lambda-dijeokl test-bucket-dijeokl
-lib/iam.go:684: detached role policy: test-lambda-dijeokl AWSLambdaBasicExecutionRole
-lib/iam.go:259: deleted role: test-lambda-dijeokl
-lib/lambda.go:2432: deleted function: test-lambda-dijeokl
-lib/logs.go:142: deleted log group: /aws/lambda/test-lambda-dijeokl
-lib/s3.go:864: deleted bucket: test-bucket-dijeokl
-
->> libaws infra-ls
-
-account: "ACCOUNT_NUM"
-region: us-west-2
-
-```
+![](./gif/rm.gif)
 
 ## usage
 
 ### explore the cli
 
-```
+```bash
 >> libaws -h | grep ensure | head
 
 codecommit-ensure             - ensure a codecommit repository
@@ -227,7 +170,7 @@ iam-ensure-user-login         - ensure an iam user with login
 
 ### explore a cli entrypoint
 
-```
+```bash
 >> libaws dynamodb-ensure -h
 
 ensure a dynamodb table
@@ -296,13 +239,16 @@ func main() {
 }
 ```
 
-### explore basic examples
+### explore simple examples
 
-- [python](./examples/python)
-
-- [go](./examples/go)
-
-- [docker](./examples/docker)
+- api: [python](./examples/simple/python/api), [go](./examples/simple/go/api), [docker](./examples/simple/docker/api)
+- dynamodb: [python](./examples/simple/python/dynamodb), [go](./examples/simple/go/dynamodb), [docker](./examples/simple/docker/dynamodb)
+- ecr: [python](./examples/simple/python/ecr), [go](./examples/simple/go/ecr), [docker](./examples/simple/docker/ecr)
+- includes: [python](./examples/simple/python/includes), [go](./examples/simple/go/includes)
+- s3: [python](./examples/simple/python/s3), [go](./examples/simple/go/s3), [docker](./examples/simple/docker/s3)
+- schedule: [python](./examples/simple/python/schedule), [go](./examples/simple/go/schedule), [docker](./examples/simple/docker/schedule)
+- sqs: [python](./examples/simple/python/sqs), [go](./examples/simple/go/sqs), [docker](./examples/simple/docker/sqs)
+- websocket: [python](./examples/simple/python/websocket), [go](./examples/simple/go/websocket), [docker](./examples/simple/docker/websocket)
 
 ### explore complex examples
 
@@ -348,7 +294,7 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
 
 - use [infra-ensure](./cmd/infra/ensure.go) to deploy an infrastructure set.
 
-- use [infra-rm](./cmd/infra/ensure.go) to remove an infrastructure set.
+- use [infra-rm](./cmd/infra/rm.go) to remove an infrastructure set.
 
 - use lambdas in the infrastructure set to:
   - respond to triggers.
@@ -380,20 +326,20 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
   - your code.
 
 - aws resources are uniquely identified by name.
-
   - all aws resources share a private namespace scoped to account/region. use good names.
-
   - except s3, which shares a public namespace scoped to earth. use better names.
 
-- `ensure` are mutative operations that create or update infrastructure.
-
+- mutative operations manipulate aws state.
   - mutative operations are idempotent. if they fail due to a transient error, run them again.
+  - mutative operations can `--preview`. no output means no changes are needed.
 
-  - mutative operations can `--preview`. no output means no changes.
+- `ensure` are mutative operations that create or update infrastructure.
 
 - `rm` are mutative operations that delete infrastructure.
 
 - `ls`, `get`, `scan`, and `describe` operations are non-mutative.
+
+- multiple infrastructure sets can be deployed into the same account/region.
 
 ## tradeoffs
 
@@ -420,12 +366,6 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
     - the operator decides **WHEN** and **IF** top level infrastructure should be deleted, then uses an `rm` operation to do so.
 
     - as a convenience, `infra-rm` will remove **ALL** infrastructure **CURRENTLY** declared in `infra.yaml`.
-
-- multiple infrastructure sets can be deployed into the same account/region.
-
-  - to view all infrastructure in an account/region, use `infra-ls`.
-
-  - to detect drift between your code and aws, use `infra-ensure --preview`.
 
 ## infra.yaml
 
@@ -964,7 +904,7 @@ defines an s3 trigger:
 
 - object creation and deletion invoke the trigger.
 
-- example:
+- schema:
   ```yaml
   lambda:
     VALUE:
