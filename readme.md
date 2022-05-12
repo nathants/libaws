@@ -20,6 +20,7 @@ there are two interfaces:
   - [cli](#cli)
   - [go api](#go-api)
 - [tldr](#tldr)
+  - [define an infrastructure set](#define-an-infrastructure-set)
   - [ensure the infrastructure set](#ensure-the-infrastructure-set)
   - [trigger the infrastructure set](#trigger-the-infrastructure-set)
   - [update the infrastructure set](#update-the-infrastructure-set)
