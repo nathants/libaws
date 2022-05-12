@@ -16,7 +16,6 @@ def test():
     os.environ['digest'] = 'fake'
     container = f'{account}.dkr.ecr.{region}.amazonaws.com/test-container'
     repo_name = container.split('amazonaws.com/')[-1]
-    uid = str(uuid.uuid4())[-12:]
     infra = yaml.safe_load(run('libaws infra-ls'))
     assert sorted(infra["infraset"].keys()) == ["none"], infra
     assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
