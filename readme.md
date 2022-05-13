@@ -8,6 +8,14 @@ building on aws should be simple, easy, and fast.
 
 opinionated tooling, with a minimal interface, targeting a subset of aws.
 
+with this tooling you can deploy systems to aws that:
+
+- use stateful services like [s3](#s3), [dynamodb](#dynamodb), and [sqs](#sqs).
+
+- use ec2 services like [vpc](#vpc), [instance profiles](#instance-profile), [security groups](#security-group), and [keypairs](#keypair).
+
+- use [lambdas](#lambda) with [triggers](#trigger) like [api](#api), [websocket](#websocket), [s3](#s3-1), [dynamodb](#dynamodb-1), [sqs](#sqs-1), [schedule](#schedule), and [ecr](#ecr).
+
 there are two interfaces:
 
 - [cli](#explore-the-cli)
