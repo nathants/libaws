@@ -353,7 +353,7 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
 
 ## tradeoffs
 
-- no attempt is made to avoid it vendor lock-in.
+- no attempt is made to avoid vendor lock-in.
   - migrating between cloud providers will always be non-trivial.
   - attempting to mitigate future migrations has more cost than benefit in the typical case.
 
