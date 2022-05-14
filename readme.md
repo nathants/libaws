@@ -22,13 +22,15 @@ there are two interfaces:
 
 - [go api](#explore-the-api)
 
-compared with the full api of aws, the subset targeted by this tooling:
+compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), the subset targeted by this tooling:
 
 - has simpler examples.
 
 - has fewer knobs.
 
 - is harder to screw up.
+
+- is usually all that's needed.
 
 ## readme index
 
