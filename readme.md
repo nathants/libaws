@@ -22,6 +22,14 @@ there are two interfaces:
 
 - [go api](#explore-the-api)
 
+compared with the full api of aws, the subset targeted by this tooling:
+
+- has simple working examples.
+
+- has fewer knobs.
+
+- is harder to screw up.
+
 ## readme index
 
 - [install](#install)
