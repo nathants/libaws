@@ -32,6 +32,8 @@ compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [
 
 - is usually all that's needed.
 
+- is easy to outgrow.
+
 ## readme index
 
 - [install](#install)
