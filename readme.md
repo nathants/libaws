@@ -24,7 +24,7 @@ there are two interfaces:
 
 compared with the full api of aws, the subset targeted by this tooling:
 
-- has simple working examples.
+- has simpler examples.
 
 - has fewer knobs.
 
