@@ -1914,7 +1914,7 @@ func LambdaZipBytes(infraLambda *InfraLambda) ([]byte, error) {
 
 func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 	zipFile := LambdaZipFile(infraLambda.Name)
-	dir := path.Dir(infraLambda.Entrypoint)
+	dir := infraLambda.dir
 	for _, include := range infraLambda.Include {
 		if strings.Contains(include, "*") {
 			paths, err := filepath.Glob(path.Join(dir, include))
@@ -1935,11 +1935,12 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 					Logger.Println("error:", err)
 					return err
 				}
-				Logger.Printf("include in zip for %s: %s\n", infraLambda.Name, pth)
 			}
 		} else {
-			if !Exists(path.Join(dir, include)) {
-				continue
+			if !Exists(include) {
+				err := fmt.Errorf("no such path for include: %s", include)
+				Logger.Println("error:", err)
+				return err
 			}
 			args := ""
 			if strings.HasPrefix(include, "/") {
@@ -1950,7 +1951,6 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 				Logger.Println("error:", err)
 				return err
 			}
-			Logger.Printf("include in zip for %s: %s\n", infraLambda.Name, include)
 		}
 	}
 	return nil
