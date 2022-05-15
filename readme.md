@@ -8,13 +8,13 @@ building on aws should be simple, easy, and fast.
 
 opinionated tooling, with a minimal interface, targeting a subset of aws.
 
-with this tooling you can deploy [infrastructure sets](#infrastructure-set) that:
+with this tooling you can deploy useful systems as [infrastructure sets](#infrastructure-set) that:
 
-- use stateful services like [s3](#s3), [dynamodb](#dynamodb), and [sqs](#sqs).
+- contain stateful services like [s3](#s3), [dynamodb](#dynamodb), and [sqs](#sqs).
 
-- use ec2 services like [vpc](#vpc), [instance profiles](#instance-profile), [security groups](#security-group), and [keypairs](#keypair).
+- contain ec2 services like [vpc](#vpc), [instance profiles](#instance-profile), [security groups](#security-group), and [keypairs](#keypair).
 
-- use [lambdas](#lambda) with [triggers](#trigger) like [api](#api), [websocket](#websocket), [s3](#s3-1), [dynamodb](#dynamodb-1), [sqs](#sqs-1), [schedule](#schedule), and [ecr](#ecr).
+- contain [lambdas](#lambda) with [triggers](#trigger) like [api](#api), [websocket](#websocket), [s3](#s3-1), [dynamodb](#dynamodb-1), [sqs](#sqs-1), [schedule](#schedule), and [ecr](#ecr).
 
 there are two interfaces:
 
@@ -22,17 +22,53 @@ there are two interfaces:
 
 - [go api](#explore-the-api)
 
+the primary entrypoints are:
+
+- [infra-ls](./cmd/infra/ls.go): view deployed infrastructure sets.
+
+- [infra-ensure](./cmd/infra/ensure.go): deploy an infrastructure set.
+
+- [infra-rm](./cmd/infra/rm.go): remove an infrastructure set.
+
+many other entrypoints exist, and can be explored by type. they fall into two categories:
+
+- mutate aws state:
+
+  ```bash
+  >> libaws -h | grep ensure | wc -l
+  19
+
+  >> libaws -h | grep rm | wc -l
+  26
+  ```
+
+- view aws state:
+
+  ```bash
+  >> libaws -h | grep ls | wc -l
+  33
+
+  >> libaws -h | grep describe | wc -l
+  6
+
+  >> libaws -h | grep get | wc -l
+  16
+
+  >> libaws -h | grep scan | wc -l
+  1
+  ```
+
 compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), the subset targeted by this tooling:
 
-- has simpler examples.
+- [has](./examples/simple/python) [simpler](./examples/simple/go) [examples](./examples/simple/docker).
 
-- has fewer knobs.
+- has [fewer](#typical-usage) [knobs](#infrayaml).
 
 - is harder to screw up.
 
 - is usually all that's needed.
 
-- is easy to outgrow.
+- is easy to [outgrow](#outgrowing).
 
 ## readme index
 
@@ -89,7 +125,7 @@ compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [
 
 ### cli
 
-```
+```bash
 go install github.com/nathants/libaws@latest
 
 export PATH=$PATH:$(go env GOPATH)/bin
@@ -97,7 +133,7 @@ export PATH=$PATH:$(go env GOPATH)/bin
 
 ### go api
 
-```
+```bash
 go get github.com/nathants/libaws@latest
 ```
 
