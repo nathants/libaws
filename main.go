@@ -52,6 +52,7 @@ func main() {
 	fn, ok := lib.Commands[cmd]
 	if !ok {
 		usage()
+		fmt.Fprintln(os.Stderr, "\nunknown command:", cmd)
 		os.Exit(1)
 	}
 	var args []string
