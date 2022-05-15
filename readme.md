@@ -8,7 +8,7 @@ building on aws should be simple, easy, and fast.
 
 opinionated tooling, with a minimal interface, targeting a subset of aws.
 
-with this tooling you can deploy systems to aws that:
+with this tooling you can deploy [infrastructure sets](#infrastructure-set) that:
 
 - use stateful services like [s3](#s3), [dynamodb](#dynamodb), and [sqs](#sqs).
 
@@ -91,6 +91,8 @@ compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [
 
 ```
 go install github.com/nathants/libaws@latest
+
+export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
 ### go api
@@ -290,7 +292,9 @@ func main() {
 
 ## infrastructure set
 
-an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/search?l=Go&q=type+InfraSet+struct) and consists of:
+an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/search?l=Go&q=type+InfraSet+struct) and consists of aws resources which compose a system.
+
+an infrastructure set contains:
 
 - zero or more stateful services:
   - [s3](#s3)
