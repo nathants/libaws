@@ -20,7 +20,7 @@ type ecrRmTagArgs struct {
 }
 
 func (ecrRmTagArgs) Description() string {
-	return "\nrmTag ecr\n"
+	return "\nrm ecr tag\n"
 }
 
 func ecrRmTag() {

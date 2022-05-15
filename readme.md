@@ -38,8 +38,12 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
   >> libaws -h | grep ensure | wc -l
   19
 
+  >> libaws -h | grep new | wc -l
+  1
+
   >> libaws -h | grep rm | wc -l
   26
+
   ```
 
 - view aws state:
