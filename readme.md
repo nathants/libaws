@@ -30,6 +30,8 @@ the primary entrypoints are:
 
 - [infra-rm](./cmd/infra/rm.go): remove an infrastructure set.
 
+`ensure` operations are positive assertions. they assert that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
+
 many other entrypoints exist, and can be explored by type. they fall into two categories:
 
 - mutate aws state:
@@ -413,7 +415,7 @@ an infrastructure set contains:
   - migrating between cloud providers will always be non-trivial.
   - attempting to mitigate future migrations has more cost than benefit in the typical case.
 
-- `ensure` operations are positive assertions. they assert that some named infrastructure exists, and is configured correctly, updating it if needed.
+- `ensure` operations are positive assertions. they assert that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
 
   - positive assertions **CANNOT** remove top level infrastructure, but **CAN** remove configuration from them.
 
