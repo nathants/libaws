@@ -33,7 +33,7 @@ func costExplorer() {
 	arg.MustParse(&args)
 	ctx := context.Background()
 	start := time.Now().UTC().Add(time.Duration(args.DaysAgoStart) * -1 * 24 * time.Hour).Truncate(time.Hour)
-	end := time.Now().UTC().Truncate(time.Hour)
+	end := time.Now().UTC()
 	filter := &costexplorer.Expression{
 		Dimensions: &costexplorer.DimensionValues{
 			Key:    aws.String(costexplorer.DimensionLinkedAccount),
