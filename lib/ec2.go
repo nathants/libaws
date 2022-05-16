@@ -2169,6 +2169,26 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 				return err
 			}
 			sgID = *out.GroupId
+			// wait for security group instantiation
+			err = Retry(ctx, func() error {
+				sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
+					Filters: []*ec2.Filter{
+						{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}},
+						{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+					},
+				})
+				if err != nil {
+				    return err
+				}
+				if len(sgs.SecurityGroups) == 0 {
+					return fmt.Errorf("wait for security group instantiation found for: %#v", input)
+				}
+				return nil
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+			    return err
+			}
 		}
 		Logger.Println(PreviewString(preview)+"created security group:", input.VpcName, input.SgName)
 	}
