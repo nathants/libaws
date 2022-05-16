@@ -44,7 +44,7 @@ def test():
                             "ec2:* *",
                             "iam:GetRole *",
                             "iam:PassRole arn:aws:iam::*:role/aws-ec2-spot-fleet-tagging-role",
-                            "iam:PassRole arn:aws:iam::*:role/ec2/test-profile-path/test-profile",
+                            f"iam:PassRole arn:aws:iam::*:role/ec2/test-profile-{uid}-path/test-profile-{uid}",
                         ],
                         "policy": ["AWSLambdaBasicExecutionRole"],
                         "trigger": [
