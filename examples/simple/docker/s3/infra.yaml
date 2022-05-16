@@ -6,7 +6,7 @@ s3:
       - acl=private
 
 lambda:
-  test-lambda:
+  test-lambda-${uid}:
     entrypoint: ${account}.dkr.ecr.${region}.amazonaws.com/test-container@${digest}
     attr:
       - concurrency=0
