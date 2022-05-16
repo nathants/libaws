@@ -2326,7 +2326,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 		for _, trigger := range infraLambda.Trigger {
 			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket}
 			if !Contains(validTriggers, trigger.Type) {
-				err := fmt.Errorf("unknown trigger: %s", trigger)
+				err := fmt.Errorf("unknown trigger: %#v", trigger)
 				Logger.Println("error:", err)
 				return nil, err
 			}
