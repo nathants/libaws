@@ -247,6 +247,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
 			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
+			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
 				infra.InfraSet[infraSetName] = &InfraSet{}
@@ -277,6 +280,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			infraSetName := api.infraSetName
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
+			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
 			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
@@ -309,6 +315,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
 			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
+			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
 				infra.InfraSet[infraSetName] = &InfraSet{}
@@ -339,6 +348,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			infraSetName := vpc.infraSetName
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
+			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
 			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
@@ -371,6 +383,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
 			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
+			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
 				infra.InfraSet[infraSetName] = &InfraSet{}
@@ -402,6 +417,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
 			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
+			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
 				infra.InfraSet[infraSetName] = &InfraSet{}
@@ -432,6 +450,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			infraSetName := event.infraSetName
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
+			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
 			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
@@ -491,6 +512,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
 			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
+			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
 				infra.InfraSet[infraSetName] = &InfraSet{}
@@ -521,6 +545,9 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			infraSetName := profile.infraSetName
 			if infraSetName == "" {
 				infraSetName = infraSetNameNone
+			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
 			}
 			lock.Lock()
 			if infra.InfraSet[infraSetName] == nil {
