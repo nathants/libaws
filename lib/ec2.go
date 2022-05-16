@@ -2178,7 +2178,7 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 					},
 				})
 				if err != nil {
-				    return err
+					return err
 				}
 				if len(sgs.SecurityGroups) == 0 {
 					return fmt.Errorf("wait for security group instantiation found for: %#v", input)
@@ -2187,7 +2187,7 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 			})
 			if err != nil {
 				Logger.Println("error:", err)
-			    return err
+				return err
 			}
 		}
 		Logger.Println(PreviewString(preview)+"created security group:", input.VpcName, input.SgName)
