@@ -2073,11 +2073,6 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview 
 		Logger.Println("error:", err)
 		return err
 	}
-	err = IamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
 	arnRole, err := IamRoleArn(ctx, "lambda", infraLambda.Name)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2330,6 +2325,12 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview 
 	}
 	permissionSids = append(permissionSids, sids...)
 	sids, err = LambdaEnsureTriggerApi(ctx, infraLambda, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	// ensure role allows after api trigger because it defines $API_ID and WEBSOCKET_ID
+	err = IamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
