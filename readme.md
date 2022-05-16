@@ -66,7 +66,7 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
 
 compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), the subset targeted by this tooling:
 
-- [has](./examples/simple/python) [simpler](./examples/simple/go) [examples](./examples/simple/docker).
+- [has](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
 
 - has [fewer](#typical-usage) [knobs](#infrayaml).
 
@@ -201,19 +201,19 @@ func main() {
 
 ### ensure the infrastructure set
 
-![](./gif/ensure.gif)
+![](https://github.com/nathants/libaws/raw/master/gif/ensure.gif)
 
 ### trigger the infrastructure set
 
-![](./gif/trigger.gif)
+![](https://github.com/nathants/libaws/raw/master/gif/trigger.gif)
 
 ### update the infrastructure set
 
-![](./gif/update.gif)
+![](https://github.com/nathants/libaws/raw/master/gif/update.gif)
 
 ### delete the infrastructure set
 
-![](./gif/rm.gif)
+![](https://github.com/nathants/libaws/raw/master/gif/rm.gif)
 
 ## usage
 
@@ -307,18 +307,18 @@ func main() {
 
 ### explore simple examples
 
-- api: [python](./examples/simple/python/api), [go](./examples/simple/go/api), [docker](./examples/simple/docker/api)
-- dynamodb: [python](./examples/simple/python/dynamodb), [go](./examples/simple/go/dynamodb), [docker](./examples/simple/docker/dynamodb)
-- ecr: [python](./examples/simple/python/ecr), [go](./examples/simple/go/ecr), [docker](./examples/simple/docker/ecr)
-- includes: [python](./examples/simple/python/includes), [go](./examples/simple/go/includes)
-- s3: [python](./examples/simple/python/s3), [go](./examples/simple/go/s3), [docker](./examples/simple/docker/s3)
-- schedule: [python](./examples/simple/python/schedule), [go](./examples/simple/go/schedule), [docker](./examples/simple/docker/schedule)
-- sqs: [python](./examples/simple/python/sqs), [go](./examples/simple/go/sqs), [docker](./examples/simple/docker/sqs)
-- websocket: [python](./examples/simple/python/websocket), [go](./examples/simple/go/websocket), [docker](./examples/simple/docker/websocket)
+- api: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api)
+- dynamodb: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/dynamodb), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/dynamodb), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/dynamodb)
+- ecr: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
+- includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)
+- s3: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/s3), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/s3), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/s3)
+- schedule: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/schedule), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/schedule), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/schedule)
+- sqs: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/sqs), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/sqs), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/sqs)
+- websocket: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/websocket), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/websocket), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/websocket)
 
 ### explore complex examples
 
-- [s3-ec2](./examples/complex/s3-ec2):
+- [s3-ec2](https://github.com/nathants/libaws/tree/master/examples/complex/s3-ec2):
   - write to s3 in-bucket
   - which triggers lambda
   - which launches ec2 spot
@@ -358,11 +358,11 @@ an infrastructure set contains:
 
 ## typical usage
 
-- use [infra-ls](./cmd/infra/ls.go) to view deployed infrastructure sets.
+- use [infra-ls](https://github.com/nathants/libaws/tree/master/cmd/infra/ls.go) to view deployed infrastructure sets.
 
-- use [infra-ensure](./cmd/infra/ensure.go) to deploy an infrastructure set.
+- use [infra-ensure](https://github.com/nathants/libaws/tree/master/cmd/infra/ensure.go) to deploy an infrastructure set.
 
-- use [infra-rm](./cmd/infra/rm.go) to remove an infrastructure set.
+- use [infra-rm](https://github.com/nathants/libaws/tree/master/cmd/infra/rm.go) to remove an infrastructure set.
 
 - use lambdas in the infrastructure set to:
   - respond to triggers.
@@ -513,7 +513,7 @@ defines the name of the infrastructure set.
 
 defines a s3 bucket:
 
-- the following [attributes](./cmd/s3/ensure.go) can be defined:
+- the following [attributes](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) can be defined:
   - `acl=VALUE`, values: `public | private`, default: `private`
   - `versioning=VALUE`, values: `true | false`, default: `false`
   - `metrics=VALUE`, values: `true | false`, default: `true`
@@ -908,9 +908,9 @@ defines an apigateway v2 http api:
 
 - add a custom domain and update route53 with attr: `dns=api.example.com`
 
-  - this domain, or its parent domain, must already exist as a hosted zone in [route53](./cmd/route53/ls.go).
+  - this domain, or its parent domain, must already exist as a hosted zone in [route53](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
 
-  - this domain, or its parent domain, must already have an [acm](./cmd/acm/ls.go) certificate with subdomain wildcard.
+  - this domain, or its parent domain, must already have an [acm](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
 
 - schema:
   ```yaml
@@ -940,9 +940,9 @@ defines an apigateway v2 websocket api:
 
 - add a custom domain and update route53 with attr: `dns=ws.example.com`
 
-  - this domain, or its parent domain, must already exist as a hosted zone in [route53-ls](./cmd/route53/ls.go).
+  - this domain, or its parent domain, must already exist as a hosted zone in [route53-ls](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
 
-  - this domain, or its parent domain, must already have an [acm](./cmd/acm/ls.go) certificate with subdomain wildcard.
+  - this domain, or its parent domain, must already have an [acm](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
 
 - schema:
   ```yaml
@@ -1123,18 +1123,18 @@ source completions.d/aws-creds-temp.sh
 
 to modify the subset of targeted aws features, drop down to the [aws go sdk](https://pkg.go.dev/github.com/aws/aws-sdk-go/service) and implement what you need.
 
-extend an [existing](./cmd/sqs/ensure.go) [mutative](./cmd/s3/ensure.go) [operation](./cmd/dynamodb/ensure.go) or add a new one.
+extend an [existing](https://github.com/nathants/libaws/tree/master/cmd/sqs/ensure.go) [mutative](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) [operation](https://github.com/nathants/libaws/tree/master/cmd/dynamodb/ensure.go) or add a new one.
 
 - make sure that mutative operations are **IDEMPOTENT** and can be **PREVIEWED**.
 
-you will find examples in [cmd/](./cmd) and [lib/](./lib) that can provide a good place to start.
+you will find examples in [cmd/](https://github.com/nathants/libaws/tree/master/cmd) and [lib/](https://github.com/nathants/libaws/tree/master/lib) that can provide a good place to start.
 
 you can reuse many existing operations like:
 
-- [lib/iam.go](./lib/iam.go)
+- [lib/iam.go](https://github.com/nathants/libaws/tree/master/lib/iam.go)
 
-- [lib/lambda.go](./lib/lambda.go)
+- [lib/lambda.go](https://github.com/nathants/libaws/tree/master/lib/lambda.go)
 
-- [lib/ec2.go](./lib/ec2.go)
+- [lib/ec2.go](https://github.com/nathants/libaws/tree/master/lib/ec2.go)
 
 alternatively, you can lift and shift to [other](https://www.pulumi.com/) [infrastructure](https://www.terraform.io/) [automation](https://aws.amazon.com/cloudformation/) [tooling](https://www.serverless.com/). `ls` and `describe` operations will give you all the information you need.
