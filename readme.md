@@ -20,7 +20,7 @@ there are two interfaces:
 
 - [cli](#explore-the-cli)
 
-- [go api](#explore-the-api)
+- [go api](#explore-the-go-api)
 
 the primary entrypoints are:
 
