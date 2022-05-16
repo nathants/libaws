@@ -1420,13 +1420,22 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				}
 			}()
 			infraS3 := &InfraS3{}
-			tagsOut, err := S3Client().GetBucketTaggingWithContext(ctx, &s3.GetBucketTaggingInput{
-				Bucket: bucket.Name,
-			})
+			s3Client, err := S3ClientBucketRegion(*bucket.Name)
 			if err != nil {
 				Logger.Println("error:", err)
 				errChan <- err
 				return
+			}
+			tagsOut, err := s3Client.GetBucketTaggingWithContext(ctx, &s3.GetBucketTaggingInput{
+				Bucket: bucket.Name,
+			})
+			if err != nil {
+				aerr, ok := err.(awserr.Error)
+				if !ok && aerr.Code() != "NoSuchTagSet" {
+					Logger.Println("error:", err)
+					errChan <- nil
+					return
+				}
 			}
 			for _, tag := range tagsOut.TagSet {
 				if *tag.Key == infraSetTagName {
