@@ -53,6 +53,7 @@ def test():
                                 "type": "s3",
                             }
                         ],
+                        'env': [f'uid={uid}'],
                     }
                 },
                 "s3": {
