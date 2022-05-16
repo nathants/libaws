@@ -904,17 +904,17 @@ func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, subDomain strin
 			return err
 		}
 		found := false
+		needsUpdate := false
 		for _, record := range records {
 			if strings.TrimRight(*record.Name, ".") == subDomain && *record.Type == route53.RRTypeA {
 				found = true
 				if strings.TrimRight(*record.AliasTarget.DNSName, ".") != *out.DomainNameConfigurations[0].ApiGatewayDomainName {
-					err := fmt.Errorf("alias target misconfigured: %s != %s", *record.AliasTarget.DNSName, *out.DomainNameConfigurations[0].ApiGatewayDomainName)
-					Logger.Println("error:", err)
-					return err
+					needsUpdate = true
+					break
 				}
 			}
 		}
-		if !found {
+		if !found || needsUpdate {
 			if !preview {
 				_, err := Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
 					HostedZoneId: zone.Id,
@@ -938,7 +938,11 @@ func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, subDomain strin
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain)
+			if needsUpdate {
+				Logger.Println(PreviewString(preview)+"updated api dns:", name, subDomain)
+			} else {
+				Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain)
+			}
 		}
 	}
 	return nil
