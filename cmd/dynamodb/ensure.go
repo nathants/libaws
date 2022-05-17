@@ -33,7 +33,7 @@ required attrs:
 
 optional attrs:
 
- - ProvisionedThroughput.ReadCapacityUnits=VALUE, shortcut: read=VALUE, default: 0
+ - ProvisionedThroughput.ReadCapacityUnits=VALUE, shortcut: read=VALUE,  default: 0
  - ProvisionedThroughput.WriteCapacityUnits=VALUE shortcut: write=VALUE, default: 0
  - StreamSpecification.StreamViewType=VALUE,      shortcut: stream=VALUE
 

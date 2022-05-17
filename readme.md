@@ -8,13 +8,13 @@ building on aws should be simple, easy, and fast.
 
 opinionated tooling, with a minimal interface, targeting a subset of aws.
 
-with this tooling you can deploy useful systems as [infrastructure sets](#infrastructure-set) that:
+with this tooling you can deploy systems as [infrastructure sets](#infrastructure-set) that contain:
 
-- contain stateful services like [s3](#s3), [dynamodb](#dynamodb), and [sqs](#sqs).
+- stateful services like [s3](#s3), [dynamodb](#dynamodb), and [sqs](#sqs).
 
-- contain ec2 services like [vpc](#vpc), [instance profiles](#instance-profile), [security groups](#security-group), and [keypairs](#keypair).
+- ec2 services like [vpcs](#vpc), [instance profiles](#instance-profile), [security groups](#security-group), and [keypairs](#keypair).
 
-- contain [lambdas](#lambda) with [triggers](#trigger) like [api](#api), [websocket](#websocket), [s3](#s3-1), [dynamodb](#dynamodb-1), [sqs](#sqs-1), [schedule](#schedule), and [ecr](#ecr).
+- [lambdas](#lambda) with [triggers](#trigger) like [api](#api), [websocket](#websocket), [s3](#s3-1), [dynamodb](#dynamodb-1), [sqs](#sqs-1), [schedule](#schedule), and [ecr](#ecr).
 
 there are two interfaces:
 
@@ -251,8 +251,8 @@ required attrs:
 
 optional attrs:
 
- - ProvisionedThroughput.ReadCapacityUnits=VALUE, shortcut: read=VALUE
- - ProvisionedThroughput.WriteCapacityUnits=VALUE shortcut: write=VALUE
+ - ProvisionedThroughput.ReadCapacityUnits=VALUE, shortcut: read=VALUE,  default: 0
+ - ProvisionedThroughput.WriteCapacityUnits=VALUE shortcut: write=VALUE  default: 0
  - StreamSpecification.StreamViewType=VALUE,      shortcut: stream=VALUE
 
  - LocalSecondaryIndexes.INTEGER.IndexName=VALUE
@@ -334,27 +334,26 @@ func main() {
 
 ## infrastructure set
 
-an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/search?l=Go&q=type+InfraSet+struct) and consists of aws resources which compose a system.
+an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/search?l=Go&q=type+InfraSet+struct) and consists of aws resources which compose a system:
 
-an infrastructure set contains:
-
-- zero or more stateful services:
+- stateful services
   - [s3](#s3)
   - [dynamodb](#dynamodb)
   - [sqs](#sqs)
-- one or more [lambdas](#lambda)
-- zero or more [lambda triggers](#trigger):
-  - [api](#api)
-  - [websocket](#websocket)
-  - [s3](#s3-1)
-  - [dynamodb](#dynamodb-1)
-  - [sqs](#sqs-1)
-  - [schedule](#schedule)
-  - [ecr](#ecr)
-- zero or more ec2 [keypairs](#keypair)
-- zero or more ec2 [instance profiles](#instance-profile)
-- zero or more [vpcs](#vpc)
-- zero or more vpc [security groups](#security-group)
+- ec2 services
+  - [keypairs](#keypair)
+  - [instance profiles](#instance-profile)
+  - [vpcs](#vpc)
+    - [security groups](#security-group)
+- [lambdas](#lambda)
+  - [lambda triggers](#trigger)
+    - [api](#api)
+    - [websocket](#websocket)
+    - [s3](#s3-1)
+    - [dynamodb](#dynamodb-1)
+    - [sqs](#sqs-1)
+    - [schedule](#schedule)
+    - [ecr](#ecr)
 
 ## typical usage
 
@@ -370,14 +369,9 @@ an infrastructure set contains:
   - monitor services.
   - do anything.
 
-- if you can't think of a use for a lambda:
-  - set it to a 24 hour schedule.
-  - have it print hello.
-  - you'll think of a use later.
-
-- rapidly iterate on you infrastructure sets by [watching for file changes](https://github.com/eradman/entr):
-  - run `infra-ensure infra.yaml --quick LAMBDA_NAME` when files change.
-  - this updates the lambda code without making any other changes.
+- rapidly iterate by responding to [file changes](https://github.com/eradman/entr):
+  - on changes run: `infra-ensure infra.yaml --quick LAMBDA_NAME`
+  - this updates the lambda code without making other changes.
   - example:
     ```
     >> find -type f | entr -r libaws infra-quick infra.yaml --quick test-lambda
@@ -431,9 +425,9 @@ an infrastructure set contains:
 
   - removing a `keypair`, `vpc`, `instance-profile`, `sqs`, `s3`, `dynamodb`, or `lambda` **WON'T** remove that from the account/region.
 
-    - the operator decides **WHEN** and **IF** top level infrastructure should be deleted, then uses an `rm` operation to do so.
+    - the operator decides **IF** and **WHEN** top level infrastructure should be deleted, then uses an `rm` operation to do so.
 
-    - as a convenience, `infra-rm` will remove **ALL** infrastructure **CURRENTLY** declared in `infra.yaml`.
+    - as a convenience, `infra-rm` will remove **ALL** infrastructure **CURRENTLY** declared in an `infra.yaml`.
 
 ## infra.yaml
 
