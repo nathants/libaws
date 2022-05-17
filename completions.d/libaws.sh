@@ -9,7 +9,9 @@ COMP_WORDBREAKS=" '><;|&(:" # removed = so the we can complete cloudwatch dimens
 
 _libaws () {
 
-    if   [ ${COMP_WORDS[1]} = s3-ls   ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
+    if [ "${COMP_CWORD}" = 1 ] && [ -z "${COMP_WORDS[1]}" ]; then
+        COMPREPLY=($(libaws -h | awk '{print $1}'))
+    elif   [ ${COMP_WORDS[1]} = s3-ls   ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-get  ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-head ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-rm   ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
