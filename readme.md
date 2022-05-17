@@ -126,6 +126,7 @@ compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [
       - [ecr](#ecr)
 - [bash completion](#bash-completion)
 - [outgrowing](#outgrowing)
+- [testing](#testing)
 
 ## install
 
@@ -1132,3 +1133,21 @@ you can reuse many existing operations like:
 - [lib/ec2.go](https://github.com/nathants/libaws/tree/master/lib/ec2.go)
 
 alternatively, you can lift and shift to [other](https://www.pulumi.com/) [infrastructure](https://www.terraform.io/) [automation](https://aws.amazon.com/cloudformation/) [tooling](https://www.serverless.com/). `ls` and `describe` operations will give you all the information you need.
+
+## testing
+
+run all integration tests aws with [tox](https://tox.wiki/en/latest/):
+
+```bash
+export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
+
+tox
+```
+
+run one integration test aws with [tox](https://tox.wiki/en/latest/):
+
+```bash
+export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
+
+tox -- bash -c 'cd examples/simple/python/api/ && python test.py'
+```

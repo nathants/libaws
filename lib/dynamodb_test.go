@@ -17,8 +17,8 @@ func checkAccountDynamoDB() {
 	if err != nil {
 		panic(err)
 	}
-	if os.Getenv("CLI_AWS_TEST_ACCOUNT") != account {
-		panic(fmt.Sprintf("%s != %s", os.Getenv("CLI_AWS_TEST_ACCOUNT"), account))
+	if os.Getenv("LIBAWS_TEST_ACCOUNT") != account {
+		panic(fmt.Sprintf("%s != %s", os.Getenv("LIBAWS_TEST_ACCOUNT"), account))
 	}
 }
 
