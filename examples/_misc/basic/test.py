@@ -29,7 +29,7 @@ def test():
                     f"test-lambda-{uid}": {
                         "attr": ["timeout=60"],
                         "policy": ["AWSLambdaBasicExecutionRole"],
-                        "env": [f"uid=${uid}"],
+                        "env": [f"uid={uid}"],
                     }
                 }
             }
