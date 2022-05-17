@@ -785,9 +785,11 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 			infraLambda := &InfraLambda{
 				Name: *fn.FunctionName,
 			}
-			for k, v := range fn.Environment.Variables {
-				if v != nil {
-					infraLambda.Env = append(infraLambda.Env, k+"="+*v)
+			if fn.Environment != nil {
+				for k, v := range fn.Environment.Variables {
+					if v != nil {
+						infraLambda.Env = append(infraLambda.Env, k+"="+*v)
+					}
 				}
 			}
 			tagsOut, err := LambdaClient().ListTagsWithContext(ctx, &lambda.ListTagsInput{
