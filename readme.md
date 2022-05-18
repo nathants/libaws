@@ -2,13 +2,19 @@
 
 ## why
 
-building on aws should be simple, easy, and fast.
+aws should have fewer knobs, while retaining 95% of its power.
+
+aws should be easy to use, and hard to screw up.
+
+aws should be fast, and fun.
+
+aws should scale to zero.
 
 ## what
 
-opinionated tooling, with a minimal interface, targeting a subset of aws.
+a simpler infrastructure as code [specification](#infrayaml) making it easy to use a predefined architectural pattern that satisfies most use cases, and is easy to [outgrow](#outgrowing).
 
-with this tooling you can deploy systems as [infrastructure sets](#infrastructure-set) that contain:
+deploy scale-to-zero systems specified as [infrastructure sets](#infrastructure-set) that contain:
 
 - stateful services like [s3](#s3), [dynamodb](#dynamodb), and [sqs](#sqs).
 
@@ -64,11 +70,13 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
   1
   ```
 
-compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), the subset targeted by this tooling:
+compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), the architectural pattern specified here:
 
 - [has](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
 
 - has [fewer](#typical-usage) [knobs](#infrayaml).
+
+- is easy and fast.
 
 - is harder to screw up.
 
