@@ -46,7 +46,7 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 		if strings.TrimRight(*r.Name, ".") != *input.change.ResourceRecordSet.Name {
 			continue
 		}
-		if *r.TTL != *input.change.ResourceRecordSet.TTL {
+		if input.change.ResourceRecordSet.TTL != nil && *r.TTL != *input.change.ResourceRecordSet.TTL {
 			continue
 		}
 		if *r.Type != *input.change.ResourceRecordSet.Type {
