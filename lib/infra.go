@@ -2354,3 +2354,106 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 	}
 	return infraSet, nil
 }
+
+func InfraDelete(ctx context.Context, yamlPath string, preview bool) error {
+	infraSet, err := InfraParse(yamlPath)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	for vpcName := range infraSet.Vpc {
+		err := VpcRm(ctx, vpcName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	for profileName := range infraSet.InstanceProfile {
+		err := IamDeleteInstanceProfile(ctx, profileName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	for keypairName := range infraSet.Keypair {
+		err := EC2DeleteKeypair(ctx, keypairName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	for lambdaName, infraLambda := range infraSet.Lambda {
+		infraLambda.Name = lambdaName
+		infraLambda.Arn, _ = LambdaArn(ctx, lambdaName)
+		infraLambda.Trigger = nil
+		_, err := LambdaEnsureTriggerApi(ctx, infraLambda, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if infraLambda.Arn != "" {
+			_, err := LambdaEnsureTriggerS3(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			err = LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			err = LambdaEnsureTriggerSQS(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		err = IamDeleteRole(ctx, lambdaName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = LambdaDeleteFunction(ctx, lambdaName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = LogsDeleteGroup(ctx, "/aws/lambda/"+lambdaName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	for bucketName := range infraSet.S3 {
+		err := S3DeleteBucket(ctx, bucketName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	for tableName := range infraSet.DynamoDB {
+		err := DynamoDBDeleteTable(ctx, tableName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	for queueName := range infraSet.SQS {
+		err := SQSDeleteQueue(ctx, queueName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	return nil
+}
