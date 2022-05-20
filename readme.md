@@ -74,6 +74,8 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
   1
   ```
 
+## what about the rest of aws
+
 compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), systems specified as [infrastructure sets](#infrastructure-set):
 
 - [have](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
@@ -84,7 +86,7 @@ compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [
 
 - are harder to screw up.
 
-- are easier to [extend](#outgrowing).
+- are almost always enough, and easy to [extend](#outgrowing).
 
 - are more fun.
 
