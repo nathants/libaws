@@ -12,9 +12,7 @@ aws should be fast, and fun.
 
 aws should have a [tldr](#tldr);
 
-## what
-
-a simpler infrastructure as code [specification](#infrayaml) that is easy to use, and simple to [extend](#outgrowing).
+## how
 
 deploy scale-to-zero systems as [infrastructure sets](#infrastructure-set) that contain:
 
@@ -24,7 +22,9 @@ deploy scale-to-zero systems as [infrastructure sets](#infrastructure-set) that 
 
 - [lambdas](#lambda) with [triggers](#trigger) like [api](#api), [websocket](#websocket), [s3](#s3-1), [dynamodb](#dynamodb-1), [sqs](#sqs-1), [schedule](#schedule), and [ecr](#ecr).
 
-## how
+## what
+
+a simpler infrastructure as code [specification](#infrayaml) that is easy to use, and simple to [extend](#outgrowing).
 
 there are two interfaces:
 
