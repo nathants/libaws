@@ -1,4 +1,4 @@
-# libaws - aws should be easy
+# libaws
 
 ## why
 
