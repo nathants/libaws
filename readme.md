@@ -1,4 +1,4 @@
-# libaws
+# libaws - aws should be easy
 
 ## why
 
@@ -10,7 +10,7 @@ aws should be easy to use, and hard to screw up.
 
 aws should be fast, and fun.
 
-aws should have a [tldr](#tldr);
+aws should have a [tldr](#tldr).
 
 ## how
 
@@ -24,7 +24,7 @@ deploy scale-to-zero systems as [infrastructure sets](#infrastructure-set) that 
 
 ## what
 
-a simpler infrastructure as code [specification](#infrayaml) that is easy to use, and simple to [extend](#outgrowing).
+a simpler infrastructure as code [specification](#infrayaml) that is easy to [use](#typical-usage) and [extend](#outgrowing).
 
 there are two interfaces:
 
@@ -349,7 +349,7 @@ func main() {
 
 ## infrastructure set
 
-an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/search?l=Go&q=type+InfraSet+struct) and consists of aws resources which compose a system:
+an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/infra.go#L51) and contains:
 
 - stateful services
   - [s3](#s3)
@@ -385,12 +385,11 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
   - do anything.
 
 - rapidly iterate by responding to [file changes](https://github.com/eradman/entr):
-  - on changes run: `infra-ensure infra.yaml --quick LAMBDA_NAME`
+  - on changes run:
+    ```bash
+    infra-ensure infra.yaml --quick LAMBDA_NAME
+    ```
   - this updates the lambda code without making other changes.
-  - example:
-    ```
-    >> find -type f | entr -r libaws infra-quick infra.yaml --quick test-lambda
-    ```
 
 ## design
 
@@ -408,7 +407,7 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
 
 - mutative operations manipulate aws state.
   - mutative operations are idempotent. if they fail due to a transient error, run them again.
-  - mutative operations can `--preview`. no output means no changes are needed.
+  - mutative operations can `--preview`. no output means no changes.
 
 - `ensure` are mutative operations that create or update infrastructure.
 
@@ -1102,7 +1101,7 @@ defines a schedule trigger:
 
 defines an ecr trigger:
 
-- successful [image actions](https://github.com/nathants/libaws/search?l=Go&q=aws.ecr) to any ecr repository will invoke the trigger.
+- successful [image actions](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/lambda.go#L153) to any ecr repository will invoke the trigger.
 
 - schema:
   ```yaml
@@ -1130,7 +1129,7 @@ source completions.d/aws-creds-temp.sh
 
 ## outgrowing
 
-to modify the subset of targeted aws features, drop down to the [aws go sdk](https://pkg.go.dev/github.com/aws/aws-sdk-go/service) and implement what you need.
+drop down to the [aws go sdk](https://pkg.go.dev/github.com/aws/aws-sdk-go/service) and implement what you need.
 
 extend an [existing](https://github.com/nathants/libaws/tree/master/cmd/sqs/ensure.go) [mutative](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) [operation](https://github.com/nathants/libaws/tree/master/cmd/dynamodb/ensure.go) or add a new one.
 
@@ -1146,7 +1145,7 @@ you can reuse many existing operations like:
 
 - [lib/ec2.go](https://github.com/nathants/libaws/tree/master/lib/ec2.go)
 
-alternatively, you can lift and shift to [other](https://www.pulumi.com/) [infrastructure](https://www.terraform.io/) [automation](https://aws.amazon.com/cloudformation/) [tooling](https://www.serverless.com/). `ls` and `describe` operations will give you all the information you need.
+alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructure](https://www.terraform.io/) [automation](https://aws.amazon.com/cloudformation/) [tooling](https://www.serverless.com/). `ls` and `describe` operations will give you all the information you need.
 
 ## testing
 
