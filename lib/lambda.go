@@ -2433,3 +2433,69 @@ func LambdaDeleteFunction(ctx context.Context, name string, preview bool) error 
 	Logger.Println(PreviewString(preview)+"deleted function:", name)
 	return nil
 }
+
+func LambdaDelete(ctx context.Context, name string, preview bool) error {
+	triggerChan := make(chan *InfraTrigger)
+	close(triggerChan)
+	infraLambdas, err := InfraListLambda(ctx, triggerChan, name)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	for lambdaName, infraLambda := range infraLambdas {
+		if lambdaName != name {
+			continue
+		}
+		infraLambda.Name = lambdaName
+		infraLambda.Arn, _ = LambdaArn(ctx, lambdaName)
+		infraLambda.Trigger = nil
+		_, err := LambdaEnsureTriggerApi(ctx, infraLambda, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if infraLambda.Arn != "" {
+			_, err := LambdaEnsureTriggerS3(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			err = LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			err = LambdaEnsureTriggerSQS(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		err = IamDeleteRole(ctx, lambdaName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = LambdaDeleteFunction(ctx, lambdaName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = LogsDeleteGroup(ctx, "/aws/lambda/"+lambdaName, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	return nil
+}

@@ -25,58 +25,8 @@ func lambdaRm() {
 	var args lambdaRmArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	triggerChan := make(chan *lib.InfraTrigger)
-	close(triggerChan)
-	infraLambdas, err := lib.InfraListLambda(ctx, triggerChan, args.Name)
+	err := lib.LambdaDelete(ctx, args.Name, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	for lambdaName, infraLambda := range infraLambdas {
-		if lambdaName != args.Name {
-			continue
-		}
-		infraLambda.Name = lambdaName
-		infraLambda.Arn, _ = lib.LambdaArn(ctx, lambdaName)
-		infraLambda.Trigger = nil
-		_, err := lib.LambdaEnsureTriggerApi(ctx, infraLambda, args.Preview)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		if infraLambda.Arn != "" {
-			_, err := lib.LambdaEnsureTriggerS3(ctx, infraLambda, args.Preview)
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-			_, err = lib.LambdaEnsureTriggerEcr(ctx, infraLambda, args.Preview)
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-			_, err = lib.LambdaEnsureTriggerSchedule(ctx, infraLambda, args.Preview)
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-			err = lib.LambdaEnsureTriggerDynamoDB(ctx, infraLambda, args.Preview)
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-			err = lib.LambdaEnsureTriggerSQS(ctx, infraLambda, args.Preview)
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-		}
-		err = lib.IamDeleteRole(ctx, lambdaName, args.Preview)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		err = lib.LambdaDeleteFunction(ctx, lambdaName, args.Preview)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		err = lib.LogsDeleteGroup(ctx, "/aws/lambda/"+lambdaName, args.Preview)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-
-	}
-
 }
