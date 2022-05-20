@@ -685,6 +685,10 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 
 	}
 
+	if filter != "" {
+		infra.InfraSet[infraSetNameNone] = nil
+	}
+
 	return infra, nil
 }
 
