@@ -15,7 +15,8 @@ func init() {
 }
 
 type infraLsArgs struct {
-	Filter string `arg:"positional" help:"filter by name substring"`
+	Filter           string `arg:"positional" help:"filter by name substring"`
+	ShowEnvVarValues bool   `arg:"-v,--values"`
 }
 
 func (infraLsArgs) Description() string {
@@ -26,7 +27,7 @@ func infraLs() {
 	var args infraLsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	infra, err := lib.InfraList(ctx, args.Filter)
+	infra, err := lib.InfraList(ctx, args.Filter, args.ShowEnvVarValues)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

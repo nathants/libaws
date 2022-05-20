@@ -213,7 +213,7 @@ type InfraTrigger struct {
 	Attr       []string `json:"attr,omitempty" yaml:"attr,omitempty"`
 }
 
-func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
+func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*InfraListOutput, error) {
 	var err error
 	lock := &sync.RWMutex{}
 	infra := &InfraListOutput{
@@ -666,6 +666,20 @@ func InfraList(ctx context.Context, filter string) (*InfraListOutput, error) {
 			}
 			if name == "OrganizationAccountAccessRole" {
 				delete(infraSet.Role, name) // ignore always present roles
+			}
+		}
+
+		if !showEnvVarValues {
+			for _, infraLambda := range infraSet.Lambda {
+				for i, env := range infraLambda.Env {
+					k, v, err := SplitOnce(env, "=")
+					if err != nil {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+					infraLambda.Env[i] = k + "=" + sha256Short([]byte(v))
+				}
+
 			}
 		}
 
