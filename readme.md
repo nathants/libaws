@@ -2,25 +2,29 @@
 
 ## why
 
-aws should have fewer knobs, while retaining 95% of its power.
+aws is amazing, but it's hard to see the forest for the trees.
+
+aws should have fewer knobs.
 
 aws should be easy to use, and hard to screw up.
 
 aws should be fast, and fun.
 
-aws should scale to zero.
+aws should have a [tldr](#tldr);
 
 ## what
 
-a simpler infrastructure as code [specification](#infrayaml) making it easy to use a predefined architectural pattern that satisfies most use cases, and is easy to [outgrow](#outgrowing).
+a simpler infrastructure as code [specification](#infrayaml) that is easy to use, and simple to [extend](#outgrowing).
 
-deploy scale-to-zero systems specified as [infrastructure sets](#infrastructure-set) that contain:
+deploy scale-to-zero systems as [infrastructure sets](#infrastructure-set) that contain:
 
-- stateful services like [s3](#s3), [dynamodb](#dynamodb), and [sqs](#sqs).
+- [s3](#s3) buckets, [dynamodb](#dynamodb) tables, and [sqs](#sqs) queues.
 
-- ec2 services like [vpcs](#vpc), [instance profiles](#instance-profile), [security groups](#security-group), and [keypairs](#keypair).
+- [vpcs](#vpc), [instance profiles](#instance-profile), [security groups](#security-group), and [keypairs](#keypair).
 
 - [lambdas](#lambda) with [triggers](#trigger) like [api](#api), [websocket](#websocket), [s3](#s3-1), [dynamodb](#dynamodb-1), [sqs](#sqs-1), [schedule](#schedule), and [ecr](#ecr).
+
+## how
 
 there are two interfaces:
 
@@ -70,19 +74,19 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
   1
   ```
 
-compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), the architectural pattern specified here:
+compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), systems specified as [infrastructure sets](#infrastructure-set):
 
-- [has](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
+- [have](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
 
-- has [fewer](#typical-usage) [knobs](#infrayaml).
+- have [fewer](#typical-usage) [knobs](#infrayaml).
 
-- is easy and fast.
+- are easier to use.
 
-- is harder to screw up.
+- are harder to screw up.
 
-- is usually all that's needed.
+- are easier to [extend](#outgrowing).
 
-- is easy to [outgrow](#outgrowing).
+- are more fun.
 
 ## readme index
 
