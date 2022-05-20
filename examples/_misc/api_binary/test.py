@@ -16,12 +16,12 @@ def test():
     infile = run("mktemp")
     outfile = run("mktemp")
     run("head -c 64 /dev/urandom >", infile)
-    infra = yaml.safe_load(run("libaws infra-ls"))
+    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
     assert sorted(infra["infraset"].keys()) == ["none"], infra
     assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run("libaws infra-ls"))
+    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
     infra.pop("region")
     infra.pop("account")
     infra["infraset"].pop("none")
@@ -58,7 +58,7 @@ def test():
     run("libaws infra-rm infra.yaml --preview")
     run("libaws infra-rm infra.yaml")
     run("rm -f", infile, outfile)
-    infra = yaml.safe_load(run("libaws infra-ls"))
+    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
     assert sorted(infra["infraset"].keys()) == ["none"], infra
     assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
 

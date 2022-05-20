@@ -13,12 +13,12 @@ def test():
     assert os.environ["LIBAWS_TEST_ACCOUNT"] == run("libaws aws-account")
     infile = run("mktemp")
     os.environ["uid"] = uid = str(uuid.uuid4())[-12:]
-    infra = yaml.safe_load(run("libaws infra-ls"))
+    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
     assert sorted(infra["infraset"].keys()) == ["none"], infra
     assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run("libaws infra-ls"))
+    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
     infra.pop("region")
     infra.pop("account")
     infra["infraset"].pop("none")
@@ -42,7 +42,7 @@ def test():
     run("libaws infra-rm infra.yaml --preview")
     run("rm -f", infile)
     run("libaws infra-rm infra.yaml")
-    infra = yaml.safe_load(run("libaws infra-ls"))
+    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
     assert sorted(infra["infraset"].keys()) == ["none"], infra
     assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
 

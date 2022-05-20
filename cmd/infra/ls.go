@@ -16,7 +16,7 @@ func init() {
 
 type infraLsArgs struct {
 	Filter           string `arg:"positional" help:"filter by name substring"`
-	ShowEnvVarValues bool   `arg:"-v,--values"`
+	ShowEnvVarValues bool   `arg:"-v,--env-values" help:"show environment variable values instead of their hash"`
 }
 
 func (infraLsArgs) Description() string {
