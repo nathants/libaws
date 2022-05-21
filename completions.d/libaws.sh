@@ -15,7 +15,7 @@ _libaws () {
     elif [ ${COMP_WORDS[1]} = s3-get  ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-head ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-rm   ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
-    elif [ ${COMP_WORDS[1]} = s3-rm-bucket   ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
+    elif [ ${COMP_WORDS[1]} = s3-rm-bucket   ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg" | tr -d /))
 
     elif [ $COMP_CWORD = 1 ]; then
         if [ -z "${COMP_WORDS[1]}" ]; then
@@ -36,6 +36,7 @@ _libaws () {
         elif [ ${COMP_WORDS[1]} = ec2-dns-private ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-wait-ssh    ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
+        elif [ ${COMP_WORDS[1]} = dynamodb-rm ];        then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-scan ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-rm   ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-put  ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
@@ -46,11 +47,11 @@ _libaws () {
         elif [ ${COMP_WORDS[1]} = infra-rm ];     then COMPREPLY=($(find . -type f 2>/dev/null | grep -E -e '\.yml$' -e '\.yaml$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = infra-url ];     then COMPREPLY=($(find . -type f 2>/dev/null | grep -E -e '\.yml$' -e '\.yaml$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
 
-        # elif [ ${COMP_WORDS[1]} = lambda-rm     ]; then COMPREPLY=($(find . -type f 2>/dev/null | grep -Ev -e '/\.' -e '\.pyc$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
-        # elif [ ${COMP_WORDS[1]} = lambda-meta   ]; then COMPREPLY=($(find . -type f 2>/dev/null | grep -Ev -e '/\.' -e '\.pyc$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = iam-rm-role     ]; then COMPREPLY=($(libaws iam-ls-roles 2>/dev/null | jq -r .RoleName | grep "^${COMP_WORDS[2]}"))
 
-        elif [ ${COMP_WORDS[1]} = lambda-arn    ]; then COMPREPLY=($(find . -type f 2>/dev/null | grep -Ev -e '/\.' -e '\.pyc$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
-        elif [ ${COMP_WORDS[1]} = lambda-vars   ]; then COMPREPLY=($(find . -type f 2>/dev/null | grep -Ev -e '/\.' -e '\.pyc$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = lambda-rm     ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = lambda-arn    ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = lambda-vars   ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
         elif [ ${COMP_WORDS[1]} = logs-tail ]; then COMPREPLY=($(libaws logs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}" | awk '{print $1}'))
 
