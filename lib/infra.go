@@ -1122,7 +1122,6 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 				for _, d := range domains {
 					Logger.Println("check:", *d.DomainName, infraApi.Domain)
 					if *d.DomainName == infraApi.Domain {
-						Logger.Println("hit!", *d.DomainNameConfigurations[0].ApiGatewayDomainName)
 						infraApi.ReadOnlyUrl = *d.DomainNameConfigurations[0].ApiGatewayDomainName
 						break
 					}
