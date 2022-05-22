@@ -74,9 +74,11 @@ type InfraSet struct {
 }
 
 type InfraApi struct {
+	apiID        string
 	infraSetName string
 	Dns          string `json:"dns,omitempty"    yaml:"dns,omitempty"`
 	Domain       string `json:"domain,omitempty" yaml:"domain,omitempty"`
+	ReadOnlyUrl  string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
 type InfraUser struct {
@@ -118,7 +120,7 @@ const (
 type InfraVpc struct {
 	infraSetName  string
 	SecurityGroup map[string]*InfraSecurityGroup `json:"security-group" yaml:"security-group"`
-	EC2           map[string]*InfraEC2           `json:"ec2,omitempty"  yaml:"ec2,omitempty"`
+	ReadOnlyEC2   map[string]*InfraEC2           `json:"ec2,omitempty"  yaml:"ec2,omitempty"`
 }
 
 const (
@@ -634,7 +636,7 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 					delete(vpc.SecurityGroup, sgName) // do not show empty default sg
 				}
 			}
-			for _, ec2 := range vpc.EC2 {
+			for _, ec2 := range vpc.ReadOnlyEC2 {
 				var attrs []string
 				for _, attr := range ec2.Attr {
 					if !strings.HasPrefix(attr, "vpc=") && !strings.HasPrefix(attr, "tag.user=") {
@@ -1070,7 +1072,9 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 					logRecover(r)
 				}
 			}()
-			infraApi := &InfraApi{}
+			infraApi := &InfraApi{
+				apiID: *api.ApiId,
+			}
 			for k, v := range api.Tags {
 				if k == infraSetTagName {
 					infraApi.infraSetName = *v
@@ -1111,6 +1115,21 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 				}
 				lambdaName = lambdaName[:len(lambdaName)-len(LambdaWebsocketSuffix)]
 				triggerType = lambdaTriggerWebsocket
+			}
+			if infraApi.Dns == "" && infraApi.Domain == "" {
+				infraApi.ReadOnlyUrl = fmt.Sprintf("%s.execute-api.%s.amazonaws.com", infraApi.apiID, Region())
+			} else if infraApi.Domain != "" {
+				for _, d := range domains {
+					Logger.Println("check:", *d.DomainName, infraApi.Domain)
+					if *d.DomainName == infraApi.Domain {
+						Logger.Println("hit!", *d.DomainNameConfigurations[0].ApiGatewayDomainName)
+						infraApi.ReadOnlyUrl = *d.DomainNameConfigurations[0].ApiGatewayDomainName
+						break
+					}
+				}
+			}
+			if infraApi.ReadOnlyUrl != "" {
+				attrs = append(attrs, fmt.Sprintf("url=%s", infraApi.ReadOnlyUrl))
 			}
 			triggersChan <- &InfraTrigger{
 				lambdaName: lambdaName,
@@ -1249,7 +1268,7 @@ func InfraListVpc(ctx context.Context) (map[string]*InfraVpc, error) {
 	}
 	for _, vpc := range vpcs {
 		infraVpc := &InfraVpc{
-			EC2:           map[string]*InfraEC2{},
+			ReadOnlyEC2:   map[string]*InfraEC2{},
 			SecurityGroup: map[string]*InfraSecurityGroup{},
 		}
 		for _, tag := range vpc.Tags {
@@ -1262,7 +1281,7 @@ func InfraListVpc(ctx context.Context) (map[string]*InfraVpc, error) {
 			if ec2.vpcID != *vpc.VpcId {
 				continue
 			}
-			infraVpc.EC2[name] = ec2
+			infraVpc.ReadOnlyEC2[name] = ec2
 		}
 		for _, sg := range sgs {
 			if *sg.VpcId != *vpc.VpcId {

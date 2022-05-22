@@ -109,20 +109,6 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 	return url, nil
 }
 
-func ApiUrlDomain(ctx context.Context, name string) (string, error) {
-	api, err := Api(ctx, name)
-	if err != nil {
-		Logger.Println("error:", err)
-		return "", err
-	}
-	url := fmt.Sprintf(
-		"https://%s.execute-api.%s.amazonaws.com",
-		*api.ApiId,
-		Region(),
-	)
-	return url, nil
-}
-
 func apiWebsocketApi(domain string) *apigatewaymanagementapi.ApiGatewayManagementApi {
 	return apigatewaymanagementapi.New(
 		Session(),
