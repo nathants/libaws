@@ -139,7 +139,6 @@ func vpcEnsureFlowlogs() {
 		if *flowLogs.ResourceId != vpcID {
 			panic("invalid vpc id")
 		}
-		lib.Logger.Println("vpc flow logs exist and are correct")
 	default:
 		panic(lib.PformatAlways(out))
 	}
