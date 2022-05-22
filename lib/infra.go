@@ -1120,7 +1120,6 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 				infraApi.ReadOnlyUrl = fmt.Sprintf("%s.execute-api.%s.amazonaws.com", infraApi.apiID, Region())
 			} else if infraApi.Domain != "" {
 				for _, d := range domains {
-					Logger.Println("check:", *d.DomainName, infraApi.Domain)
 					if *d.DomainName == infraApi.Domain {
 						infraApi.ReadOnlyUrl = *d.DomainNameConfigurations[0].ApiGatewayDomainName
 						break
