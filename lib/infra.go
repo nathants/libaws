@@ -1744,7 +1744,7 @@ func InfraEnsureSQS(ctx context.Context, infraSet *InfraSet, preview bool) error
 	return nil
 }
 
-func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, preview bool) error {
+func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool) error {
 	if quick != "" {
 		found := false
 		for lambdaName := range infraSet.Lambda {
@@ -1766,15 +1766,15 @@ func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 		if strings.HasSuffix(infraLambda.Entrypoint, ".py") {
 			infraLambda.runtime = lambdaRuntimePython
 			infraLambda.handler = strings.TrimSuffix(path.Base(infraLambda.Entrypoint), ".py") + ".main"
-			return lambdaEnsure(ctx, infraLambda, quick != "", preview, lambdaUpdateZipPy, lambdaCreateZipPy)
+			return lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipPy, lambdaCreateZipPy)
 		} else if strings.HasSuffix(infraLambda.Entrypoint, ".go") {
 			infraLambda.runtime = lambdaRuntimeGo
 			infraLambda.handler = "main"
-			return lambdaEnsure(ctx, infraLambda, quick != "", preview, lambdaUpdateZipGo, lambdaCreateZipGo)
+			return lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipGo, lambdaCreateZipGo)
 		} else if strings.Contains(infraLambda.Entrypoint, ".dkr.ecr.") {
 			infraLambda.runtime = lambdaRuntimeContainer
 			infraLambda.handler = "main"
-			return lambdaEnsure(ctx, infraLambda, quick != "", preview, lambdaUpdateZipFake, lambdaCreateZipFake)
+			return lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipFake, lambdaCreateZipFake)
 		} else {
 			err := fmt.Errorf("unknown entrypoint type: %s", infraLambda.Entrypoint)
 			Logger.Println("error:", err)
@@ -1805,7 +1805,7 @@ func lambdaUpdateZipFake(_ *InfraLambda) error { return nil }
 
 func lambdaCreateZipFake(_ *InfraLambda) error { return nil }
 
-func InfraEnsure(ctx context.Context, yamlPath string, quick string, preview bool) error {
+func InfraEnsure(ctx context.Context, yamlPath string, quick string, preview, showEnvVarValues bool) error {
 	infraSet, err := InfraParse(yamlPath)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1843,7 +1843,7 @@ func InfraEnsure(ctx context.Context, yamlPath string, quick string, preview boo
 			return err
 		}
 	}
-	err = InfraEnsureLambda(ctx, infraSet, quick, preview)
+	err = InfraEnsureLambda(ctx, infraSet, quick, preview, showEnvVarValues)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err

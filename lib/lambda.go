@@ -2012,7 +2012,7 @@ type LambdaUpdateZipFn func(infraLambda *InfraLambda) error
 
 type LambdaCreateZipFn func(infraLambda *InfraLambda) error
 
-func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
+func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview, showEnvVarValues bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
 	var err error
 	concurrency := lambdaAttrConcurrencyDefault
 	memory := lambdaAttrMemoryDefault
@@ -2193,8 +2193,7 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview 
 			}
 		}
 		logPrefix := PreviewString(preview) + "updated env var for: " + infraLambda.Name + ","
-		logValues := false // because lambda env vars often contain secrets
-		_, err = diffMapStringStringPointers(createInput.Environment.Variables, map[string]*string{}, logPrefix, logValues)
+		_, err = diffMapStringStringPointers(createInput.Environment.Variables, map[string]*string{}, logPrefix, showEnvVarValues)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -2267,8 +2266,7 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview 
 		}
 		needsUpdate := false
 		logPrefix := PreviewString(preview) + "updated env var for: " + infraLambda.Name + ","
-		logValues := false // because lambda env vars often contain secrets
-		diff, err = diffMapStringStringPointers(createInput.Environment.Variables, out.Environment.Variables, logPrefix, logValues)
+		diff, err = diffMapStringStringPointers(createInput.Environment.Variables, out.Environment.Variables, logPrefix, showEnvVarValues)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
