@@ -14,10 +14,10 @@ func init() {
 }
 
 type iamEnsureUserApiArgs struct {
-	Name     string   `arg:"positional,required"`
-	Policies []string `arg:"--policy"`
-	Allows   []string `arg:"--allow"`
-	Preview  bool     `arg:"-p,--preview"`
+	Name    string   `arg:"positional,required"`
+	Policy  []string `arg:"--policy" help:"policy name, can specify multiple values"`
+	Allow   []string `arg:"--allow" help:"\"$service:$action $arn\", example: \"s3:* *\", can specify multiple values"`
+	Preview bool     `arg:"-p,--preview"`
 }
 
 func (iamEnsureUserApiArgs) Description() string {
@@ -32,11 +32,11 @@ func iamEnsureUserApi() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = lib.IamEnsureUserPolicies(ctx, args.Name, args.Policies, args.Preview)
+	err = lib.IamEnsureUserPolicies(ctx, args.Name, args.Policy, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = lib.IamEnsureUserAllows(ctx, args.Name, args.Allows, args.Preview)
+	err = lib.IamEnsureUserAllows(ctx, args.Name, args.Allow, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

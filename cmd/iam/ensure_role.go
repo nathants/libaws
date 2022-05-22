@@ -15,8 +15,8 @@ func init() {
 type iamEnsureRoleArgs struct {
 	Name      string   `arg:"positional,required"`
 	Principal string   `arg:"positional,required"`
-	Policies  []string `arg:"--policy" help:"policy name. can specify multiple times."`
-	Allows    []string `arg:"--allow" help:"\"$service:$action $arn\". can specify multiple times. example: \"s3:* *\""`
+	Policy    []string `arg:"--policy" help:"policy name, can specify multiple values"`
+	Allow     []string `arg:"--allow" help:"\"$service:$action $arn\", example: \"s3:* *\", can specify multiple values"`
 	Preview   bool     `arg:"-p,--preview"`
 }
 
@@ -32,11 +32,11 @@ func iamEnsureRole() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = lib.IamEnsureRolePolicies(ctx, args.Name, args.Policies, args.Preview)
+	err = lib.IamEnsureRolePolicies(ctx, args.Name, args.Policy, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = lib.IamEnsureRoleAllows(ctx, args.Name, args.Allows, args.Preview)
+	err = lib.IamEnsureRoleAllows(ctx, args.Name, args.Allow, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

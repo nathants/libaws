@@ -13,10 +13,10 @@ func init() {
 }
 
 type iamEnsureInstanceProfileArgs struct {
-	Name     string   `arg:"positional,required"`
-	Policies []string `arg:"--policy"`
-	Allows   []string `arg:"--allow"`
-	Preview  bool     `arg:"-p,--preview"`
+	Name    string   `arg:"positional,required"`
+	Policy  []string `arg:"--policy" help:"policy name, can specify multiple values"`
+	Allow   []string `arg:"--allow" help:"\"$service:$action $arn\", example: \"s3:* *\", can specify multiple values"`
+	Preview bool     `arg:"-p,--preview"`
 }
 
 func (iamEnsureInstanceProfileArgs) Description() string {
@@ -27,7 +27,7 @@ func iamEnsureInstanceProfile() {
 	var args iamEnsureInstanceProfileArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.IamEnsureInstanceProfile(ctx, "", args.Name, args.Policies, args.Allows, args.Preview)
+	err := lib.IamEnsureInstanceProfile(ctx, "", args.Name, args.Policy, args.Allow, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
