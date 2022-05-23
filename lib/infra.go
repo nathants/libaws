@@ -1847,7 +1847,7 @@ func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipPy, lambdaCreateZipPy)
 			if err != nil {
 				Logger.Println("error:", err)
-			    return err
+				return err
 			}
 		} else if strings.HasSuffix(infraLambda.Entrypoint, ".go") {
 			infraLambda.runtime = lambdaRuntimeGo
@@ -1855,7 +1855,7 @@ func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipGo, lambdaCreateZipGo)
 			if err != nil {
 				Logger.Println("error:", err)
-			    return err
+				return err
 			}
 		} else if strings.Contains(infraLambda.Entrypoint, ".dkr.ecr.") {
 			infraLambda.runtime = lambdaRuntimeContainer
@@ -1863,7 +1863,7 @@ func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipFake, lambdaCreateZipFake)
 			if err != nil {
 				Logger.Println("error:", err)
-			    return err
+				return err
 			}
 		} else {
 			err := fmt.Errorf("unknown entrypoint type: %s", infraLambda.Entrypoint)

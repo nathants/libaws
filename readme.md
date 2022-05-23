@@ -74,9 +74,9 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
   1
   ```
 
-## what about the rest of aws
+## pulumi, terraform, cloudformation, and serverless
 
-compared with [the](https://www.pulumi.com/) [full](https://www.terraform.io/) [aws](https://aws.amazon.com/cloudformation/) [api](https://www.serverless.com/), systems specified as [infrastructure sets](#infrastructure-set):
+compared with the full aws api exposed by tools like [pulumi](https://www.pulumi.com/), [terraform](https://www.terraform.io/), [cloudformation](https://aws.amazon.com/cloudformation/), and [serverless](https://www.serverless.com/), systems specified as [infrastructure sets](#infrastructure-set):
 
 - [have](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
 
