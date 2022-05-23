@@ -519,13 +519,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		ProvisionedThroughput:       &dynamodb.ProvisionedThroughput{},
 		SSESpecification:            nil, // TODO update see
 		StreamSpecification:         &dynamodb.StreamSpecification{},
-		AttributeDefinitions:        []*dynamodb.AttributeDefinition{},
 		GlobalSecondaryIndexUpdates: []*dynamodb.GlobalSecondaryIndexUpdate{},
-	}
-	//
-	if !reflect.DeepEqual(table.Table.AttributeDefinitions, input.AttributeDefinitions) {
-		needsUpdate = true
-		update.AttributeDefinitions = input.AttributeDefinitions
 	}
 	//
 	existingThroughputNil := table.Table.ProvisionedThroughput == nil && input.ProvisionedThroughput != nil
@@ -752,6 +746,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		update.GlobalSecondaryIndexUpdates = nil
 	} else {
 		needsUpdate = true
+		Logger.Printf(PreviewString(preview)+"update global secondary indexes for %s: %s\n", *input.TableName, Pformat(update.GlobalSecondaryIndexUpdates))
 	}
 	if update.StreamSpecification.StreamEnabled == nil && update.StreamSpecification.StreamViewType == nil {
 		update.StreamSpecification = nil
@@ -764,10 +759,6 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		if !readChanged && !writeChanged {
 			update.ProvisionedThroughput = nil
 		}
-	}
-	//
-	if len(update.AttributeDefinitions) == 0 {
-		update.AttributeDefinitions = nil
 	}
 	//
 	if needsUpdate {
