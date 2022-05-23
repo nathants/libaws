@@ -29,6 +29,10 @@ func LogsClient() *cloudwatchlogs.CloudWatchLogs {
 }
 
 func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttlDays int, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LogsEnsureGroup"}
+		defer d.Log()
+	}
 	out, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(logGroupName),
 	})
@@ -96,6 +100,10 @@ func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttl
 }
 
 func LogsListLogGroups(ctx context.Context) ([]*cloudwatchlogs.LogGroup, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LogsListLogGroups"}
+		defer d.Log()
+	}
 	var token *string
 	var logs []*cloudwatchlogs.LogGroup
 	for {
@@ -116,6 +124,10 @@ func LogsListLogGroups(ctx context.Context) ([]*cloudwatchlogs.LogGroup, error) 
 }
 
 func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LogsDeleteGroup"}
+		defer d.Log()
+	}
 	_, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(name),
 	})
@@ -144,6 +156,10 @@ func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
 }
 
 func LogsMostRecentStreams(ctx context.Context, name string) ([]*cloudwatchlogs.LogStream, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LogsMostRecentStreams"}
+		defer d.Log()
+	}
 	out, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(name),
 		Descending:   aws.Bool(true),
@@ -156,6 +172,10 @@ func LogsMostRecentStreams(ctx context.Context, name string) ([]*cloudwatchlogs.
 }
 
 func LogsStreams(ctx context.Context, name string) ([]*cloudwatchlogs.LogStream, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LogStreams"}
+		defer d.Log()
+	}
 	var res []*cloudwatchlogs.LogStream
 	var token *string
 	for {
@@ -178,6 +198,10 @@ func LogsStreams(ctx context.Context, name string) ([]*cloudwatchlogs.LogStream,
 }
 
 func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(timestamp time.Time, line string)) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LogsTail"}
+		defer d.Log()
+	}
 	tokens := make(map[string]*string)
 	for {
 		streams, err := LogsMostRecentStreams(ctx, name)

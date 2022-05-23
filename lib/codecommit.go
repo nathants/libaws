@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/service/codecommit"
 )
@@ -24,6 +25,10 @@ func CodeCommitClient() *codecommit.CodeCommit {
 }
 
 func CodeCommitListRepos(ctx context.Context) ([]*codecommit.RepositoryNameIdPair, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "CodeCommitListRepos"}
+		defer d.Log()
+	}
 	var token *string
 	var repos []*codecommit.RepositoryNameIdPair
 	for {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -28,6 +29,10 @@ func EcrClient() *ecr.ECR {
 }
 
 func EcrDescribeRepos(ctx context.Context) ([]*ecr.Repository, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EcrDescribeRepos"}
+		defer d.Log()
+	}
 	var repos []*ecr.Repository
 	var token *string
 	for {
@@ -52,6 +57,10 @@ var ecrEncryptionConfig = &ecr.EncryptionConfiguration{
 }
 
 func EcrEnsure(ctx context.Context, name string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EcrEnsure"}
+		defer d.Log()
+	}
 	out, err := EcrClient().DescribeRepositoriesWithContext(ctx, &ecr.DescribeRepositoriesInput{
 		RepositoryNames: []*string{aws.String(name)},
 	})

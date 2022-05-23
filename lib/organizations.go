@@ -27,7 +27,10 @@ func OrganizationsClient() *organizations.Organizations {
 }
 
 func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) (string, error) {
-	//
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "OrganizationsEnsure"}
+		defer d.Log()
+	}
 	var token *string
 	var accounts []*organizations.Account
 	for {
@@ -44,7 +47,6 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 		}
 		token = out.NextToken
 	}
-	//
 	var account organizations.Account
 	count := 0
 	for _, a := range accounts {
@@ -53,7 +55,6 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 			count++
 		}
 	}
-	//
 	switch count {
 	case 0:
 	case 1:
@@ -63,7 +64,6 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 		Logger.Println("error:", err)
 		return "", nil
 	}
-	//
 	Logger.Println(PreviewString(preview)+"organizations created account:", name, email)
 	if !preview {
 		createOut, err := OrganizationsClient().CreateAccountWithContext(ctx, &organizations.CreateAccountInput{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-
 	"path"
 	"path/filepath"
 	"reflect"
@@ -12,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -216,6 +216,10 @@ type InfraTrigger struct {
 }
 
 func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*InfraListOutput, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraList"}
+		defer d.Log()
+	}
 	var err error
 	lock := &sync.RWMutex{}
 	infra := &InfraListOutput{
@@ -695,6 +699,10 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 }
 
 func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[string]*InfraEvent, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListEvent"}
+		defer d.Log()
+	}
 	results := make(map[string]*InfraEvent)
 	lock := sync.RWMutex{}
 	rules, err := EventsListRules(ctx)
@@ -779,6 +787,10 @@ func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map
 }
 
 func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, filter string) (map[string]*InfraLambda, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListLambda"}
+		defer d.Log()
+	}
 	allFns, err := LambdaListFunctions(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -967,6 +979,10 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 }
 
 func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListKeypair"}
+		defer d.Log()
+	}
 	result := make(map[string]*InfraKeypair)
 	out, err := EC2Client().DescribeKeyPairsWithContext(ctx, &ec2.DescribeKeyPairsInput{
 		IncludePublicKey: aws.Bool(true),
@@ -991,6 +1007,10 @@ func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
 }
 
 func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[string]*InfraApi, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListApi"}
+		defer d.Log()
+	}
 	result := make(map[string]*InfraApi)
 	lock := &sync.Mutex{}
 	apis, err := ApiList(ctx)
@@ -1151,6 +1171,10 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 }
 
 func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListDynamoDB"}
+		defer d.Log()
+	}
 	lock := &sync.Mutex{}
 	result := make(map[string]*InfraDynamoDB)
 	tableNames, err := DynamoDBListTables(ctx)
@@ -1248,6 +1272,10 @@ func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 }
 
 func InfraListVpc(ctx context.Context) (map[string]*InfraVpc, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListVpc"}
+		defer d.Log()
+	}
 	result := make(map[string]*InfraVpc)
 	vpcs, err := VpcList(ctx)
 	if err != nil {
@@ -1314,6 +1342,10 @@ func orDash(s *string) string {
 }
 
 func InfraListEC2(ctx context.Context) (map[string]*InfraEC2, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListEC2"}
+		defer d.Log()
+	}
 	result := make(map[string]*InfraEC2)
 	instances, err := EC2ListInstances(ctx, nil, "")
 	if err != nil {
@@ -1374,6 +1406,10 @@ func InfraListEC2(ctx context.Context) (map[string]*InfraEC2, error) {
 }
 
 func InfraListUser(ctx context.Context) (map[string]*InfraUser, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListUser"}
+		defer d.Log()
+	}
 	out, err := IamListUsers(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1390,6 +1426,10 @@ func InfraListUser(ctx context.Context) (map[string]*InfraUser, error) {
 }
 
 func InfraListRole(ctx context.Context) (map[string]*InfraRole, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListRole"}
+		defer d.Log()
+	}
 	out, err := IamListRoles(ctx, nil)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1416,6 +1456,10 @@ func InfraListRole(ctx context.Context) (map[string]*InfraRole, error) {
 }
 
 func InfraListInstanceProfile(ctx context.Context) (map[string]*InfraInstanceProfile, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListInstanceProfile"}
+		defer d.Log()
+	}
 	out, err := IamListInstanceProfiles(ctx, nil)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1440,6 +1484,10 @@ func InfraListInstanceProfile(ctx context.Context) (map[string]*InfraInstancePro
 }
 
 func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[string]*InfraS3, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListS3"}
+		defer d.Log()
+	}
 	lock := &sync.Mutex{}
 	res := make(map[string]*InfraS3)
 	buckets, err := S3Client().ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
@@ -1538,6 +1586,10 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 }
 
 func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraListSQS"}
+		defer d.Log()
+	}
 	urls, err := SQSListQueueUrls(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1625,6 +1677,10 @@ func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 }
 
 func InfraEnsureKeypair(ctx context.Context, infraSet *InfraSet, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsureKeypair"}
+		defer d.Log()
+	}
 	for keypairName, infraKeypair := range infraSet.Keypair {
 		err := EC2EnsureKeypair(ctx, infraSet.Name, keypairName, infraKeypair.PubkeyContent, preview)
 		if err != nil {
@@ -1636,6 +1692,10 @@ func InfraEnsureKeypair(ctx context.Context, infraSet *InfraSet, preview bool) e
 }
 
 func InfraEnsureInstanceProfile(ctx context.Context, infraSet *InfraSet, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsureInstanceProfile"}
+		defer d.Log()
+	}
 	for profileName, infraProfile := range infraSet.InstanceProfile {
 		err := IamEnsureInstanceProfile(ctx, infraSet.Name, profileName, infraProfile.Policy, infraProfile.Allow, preview)
 		if err != nil {
@@ -1647,6 +1707,10 @@ func InfraEnsureInstanceProfile(ctx context.Context, infraSet *InfraSet, preview
 }
 
 func InfraEnsureVpc(ctx context.Context, infraSet *InfraSet, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsureVpc"}
+		defer d.Log()
+	}
 	hasVpc := false
 	for vpcName, infraVpc := range infraSet.Vpc {
 		hasVpc = true
@@ -1695,6 +1759,10 @@ func InfraEnsureVpc(ctx context.Context, infraSet *InfraSet, preview bool) error
 }
 
 func InfraEnsureS3(ctx context.Context, infraSet *InfraSet, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsureS3"}
+		defer d.Log()
+	}
 	for bucketName, infraS3 := range infraSet.S3 {
 		input, err := S3EnsureInput(infraSet.Name, bucketName, infraS3.Attr)
 		if err != nil {
@@ -1711,6 +1779,10 @@ func InfraEnsureS3(ctx context.Context, infraSet *InfraSet, preview bool) error 
 }
 
 func InfraEnsureDynamoDB(ctx context.Context, infraSet *InfraSet, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsureDynamoDB"}
+		defer d.Log()
+	}
 	for tableName, infraDynamoDB := range infraSet.DynamoDB {
 		input, err := DynamoDBEnsureInput(infraSet.Name, tableName, infraDynamoDB.Key, infraDynamoDB.Attr)
 		if err != nil {
@@ -1727,6 +1799,10 @@ func InfraEnsureDynamoDB(ctx context.Context, infraSet *InfraSet, preview bool) 
 }
 
 func InfraEnsureSQS(ctx context.Context, infraSet *InfraSet, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsureSQS"}
+		defer d.Log()
+	}
 	for queueName, infraSQS := range infraSet.SQS {
 		input, err := SQSEnsureInput(infraSet.Name, queueName, infraSQS.Attr)
 		if err != nil {
@@ -1743,6 +1819,10 @@ func InfraEnsureSQS(ctx context.Context, infraSet *InfraSet, preview bool) error
 }
 
 func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsureLambda"}
+		defer d.Log()
+	}
 	if quick != "" {
 		found := false
 		for lambdaName := range infraSet.Lambda {
@@ -1804,6 +1884,10 @@ func lambdaUpdateZipFake(_ *InfraLambda) error { return nil }
 func lambdaCreateZipFake(_ *InfraLambda) error { return nil }
 
 func InfraEnsure(ctx context.Context, yamlPath string, quick string, preview, showEnvVarValues bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsure"}
+		defer d.Log()
+	}
 	infraSet, err := InfraParse(yamlPath)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2373,6 +2457,10 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 }
 
 func InfraDelete(ctx context.Context, yamlPath string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraDelete"}
+		defer d.Log()
+	}
 	infraSet, err := InfraParse(yamlPath)
 	if err != nil {
 		Logger.Println("error:", err)

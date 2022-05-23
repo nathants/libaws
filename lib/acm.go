@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/service/acm"
 )
@@ -24,6 +25,10 @@ func AcmClient() *acm.ACM {
 }
 
 func AcmListCertificates(ctx context.Context) ([]*acm.CertificateSummary, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "AcmListCertificates"}
+		defer d.Log()
+	}
 	var token *string
 	var result []*acm.CertificateSummary
 	for {

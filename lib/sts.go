@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/service/sts"
 )
@@ -31,6 +32,10 @@ func StsAccount(ctx context.Context) (string, error) {
 	stsAccountLock.Lock()
 	defer stsAccountLock.Unlock()
 	if stsAccount == nil {
+		if doDebug {
+			d := &Debug{start: time.Now(), name: "StsAccount"}
+			defer d.Log()
+		}
 		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
 			return "", err
@@ -47,6 +52,10 @@ func StsArn(ctx context.Context) (string, error) {
 	stsArnLock.Lock()
 	defer stsArnLock.Unlock()
 	if stsArn == nil {
+		if doDebug {
+			d := &Debug{start: time.Now(), name: "StsArn"}
+			defer d.Log()
+		}
 		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
 			return "", err
@@ -63,6 +72,10 @@ func StsUser(ctx context.Context) (string, error) {
 	stsUserLock.Lock()
 	defer stsUserLock.Unlock()
 	if stsUser == nil {
+		if doDebug {
+			d := &Debug{start: time.Now(), name: "StsUser"}
+			defer d.Log()
+		}
 		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
 			return "", err

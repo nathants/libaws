@@ -87,6 +87,10 @@ func (a *CloudwatchAlarm) FromAlarm(alarm *cloudwatch.MetricAlarm) {
 }
 
 func CloudwatchListAlarms(ctx context.Context) ([]*CloudwatchAlarm, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "CloudwatchListAlarms"}
+		defer d.Log()
+	}
 	var token *string
 	var result []*CloudwatchAlarm
 	for {
@@ -111,6 +115,10 @@ func CloudwatchListAlarms(ctx context.Context) ([]*CloudwatchAlarm, error) {
 }
 
 func CloudwatchEnsureAlarm(ctx context.Context, name string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "CloudwatchEnsureAlarm"}
+		defer d.Log()
+	}
 	out, err := CloudwatchClient().DescribeAlarmsWithContext(ctx, &cloudwatch.DescribeAlarmsInput{
 		AlarmNames: []*string{
 			aws.String(name),
@@ -126,7 +134,10 @@ func CloudwatchEnsureAlarm(ctx context.Context, name string) error {
 }
 
 func CloudwatchListMetrics(ctx context.Context, namespace, metric *string) ([]*cloudwatch.Metric, error) {
-	_ = aws.String
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "CloudwatchListMetrics"}
+		defer d.Log()
+	}
 	var token *string
 	var metrics []*cloudwatch.Metric
 	for {
@@ -149,17 +160,19 @@ func CloudwatchListMetrics(ctx context.Context, namespace, metric *string) ([]*c
 }
 
 func CloudwatchGetMetricData(ctx context.Context, period int, stat string, fromTime, toTime *time.Time, namespace string, metrics []string, dimension string) ([]*cloudwatch.MetricDataResult, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "CloudwatchGetMetricData"}
+		defer d.Log()
+	}
 	var token *string
 	var result []*cloudwatch.MetricDataResult
 	for {
-
 		input := &cloudwatch.GetMetricDataInput{
 			EndTime:           toTime,
 			StartTime:         fromTime,
 			NextToken:         token,
 			MetricDataQueries: []*cloudwatch.MetricDataQuery{},
 		}
-
 		for _, metric := range metrics {
 			input.MetricDataQueries = append(input.MetricDataQueries, &cloudwatch.MetricDataQuery{
 				Id: aws.String("a" + strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
@@ -177,7 +190,6 @@ func CloudwatchGetMetricData(ctx context.Context, period int, stat string, fromT
 				},
 			})
 		}
-
 		out, err := CloudwatchClient().GetMetricDataWithContext(ctx, input)
 		if err != nil {
 			Logger.Println("error:", err)

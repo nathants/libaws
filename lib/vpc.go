@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 func VpcList(ctx context.Context) ([]*ec2.Vpc, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "VpcList"}
+		defer d.Log()
+	}
 	var token *string
 	var res []*ec2.Vpc
 	for {
@@ -29,6 +34,10 @@ func VpcList(ctx context.Context) ([]*ec2.Vpc, error) {
 }
 
 func VpcID(ctx context.Context, name string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "VpcID"}
+		defer d.Log()
+	}
 	if strings.HasPrefix(name, "vpc-") {
 		return name, nil
 	}
@@ -47,6 +56,10 @@ func VpcID(ctx context.Context, name string) (string, error) {
 }
 
 func VpcSubnets(ctx context.Context, vpcID string) ([]*ec2.Subnet, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "VpcSubnets"}
+		defer d.Log()
+	}
 	out, err := EC2Client().DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}}},
 	})
@@ -59,6 +72,10 @@ func VpcSubnets(ctx context.Context, vpcID string) ([]*ec2.Subnet, error) {
 
 func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) (string, error) {
 	// TODO make this idempotent and previewable. currently if aborted must rm then ensure.
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "VpcEnsure"}
+		defer d.Log()
+	}
 	xx := 0
 	id, err := VpcID(ctx, vpcName)
 	if err == nil {
@@ -249,6 +266,10 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 }
 
 func VpcRm(ctx context.Context, name string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "VpcRm"}
+		defer d.Log()
+	}
 	vpcID, err := VpcID(ctx, name)
 	if err != nil {
 		if strings.HasPrefix(err.Error(), ErrPrefixDidntFindExactlyOne) {

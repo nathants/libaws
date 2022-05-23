@@ -74,6 +74,10 @@ func S3BucketRegion(bucket string) (string, error) {
 		if err == nil {
 			region = string(data)
 		} else {
+			if doDebug {
+				d := &Debug{start: time.Now(), name: "S3BucketRegion"}
+				defer d.Log()
+			}
 			resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
 			if err != nil {
 				return "", err
@@ -268,6 +272,10 @@ var s3EncryptionConfig = &s3.ServerSideEncryptionConfiguration{
 }
 
 func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "S3Ensure"}
+		defer d.Log()
+	}
 	account, err := StsAccount(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -730,6 +738,10 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 }
 
 func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "S3DeleteBucket"}
+		defer d.Log()
+	}
 	resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
 	if err == nil {
 		_ = resp.Body.Close()
@@ -880,13 +892,15 @@ type S3BucketDescription struct {
 }
 
 func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescription, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "S3GetBucketDescription"}
+		defer d.Log()
+	}
 	var descr S3BucketDescription
-
 	s3Client, err := S3ClientBucketRegion(bucket)
 	if err != nil {
 		return nil, err
 	}
-
 	version, err := s3Client.GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
 		Bucket: aws.String(bucket),
 	})
@@ -897,7 +911,6 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	if version.Status != nil {
 		descr.Versioning = *version.Status == s3.BucketVersioningStatusEnabled
 	}
-
 	acl, err := s3Client.GetBucketAclWithContext(ctx, &s3.GetBucketAclInput{
 		Bucket: aws.String(bucket),
 	})
@@ -906,7 +919,6 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 		return nil, err
 	}
 	descr.Acl = acl
-
 	cors, err := s3Client.GetBucketCorsWithContext(ctx, &s3.GetBucketCorsInput{
 		Bucket: aws.String(bucket),
 	})
@@ -919,7 +931,6 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	} else {
 		descr.Cors = cors.CORSRules
 	}
-
 	encryption, err := s3Client.GetBucketEncryptionWithContext(ctx, &s3.GetBucketEncryptionInput{
 		Bucket: aws.String(bucket),
 	})
@@ -932,7 +943,6 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	} else {
 		descr.Encryption = encryption.ServerSideEncryptionConfiguration
 	}
-
 	lifecycle, err := s3Client.GetBucketLifecycleConfigurationWithContext(ctx, &s3.GetBucketLifecycleConfigurationInput{
 		Bucket: aws.String(bucket),
 	})
@@ -945,14 +955,12 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	} else {
 		descr.Lifecycle = lifecycle.Rules
 	}
-
 	region, err := S3BucketRegion(bucket)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
 	descr.Region = region
-
 	logging, err := s3Client.GetBucketLoggingWithContext(ctx, &s3.GetBucketLoggingInput{
 		Bucket: aws.String(bucket),
 	})
@@ -961,7 +969,6 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 		return nil, err
 	}
 	descr.Logging = logging.LoggingEnabled
-
 	notif, err := s3Client.GetBucketNotificationConfigurationWithContext(ctx, &s3.GetBucketNotificationConfigurationRequest{
 		Bucket: aws.String(bucket),
 	})
@@ -969,11 +976,9 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 		Logger.Println("error:", err)
 		return nil, err
 	}
-
 	if notif.LambdaFunctionConfigurations != nil || notif.QueueConfigurations != nil || notif.TopicConfigurations != nil {
 		descr.Notifications = notif
 	}
-
 	policy, err := s3Client.GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
 		Bucket: aws.String(bucket),
 	})
@@ -991,7 +996,6 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 			return nil, err
 		}
 	}
-
 	replication, err := s3Client.GetBucketReplicationWithContext(ctx, &s3.GetBucketReplicationInput{
 		Bucket: aws.String(bucket),
 	})
@@ -1004,7 +1008,6 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	} else {
 		descr.Replication = replication.ReplicationConfiguration
 	}
-
 	metrics, err := s3Client.GetBucketMetricsConfigurationWithContext(ctx, &s3.GetBucketMetricsConfigurationInput{
 		Bucket: aws.String(bucket),
 		Id:     aws.String(s3MetricsId),
@@ -1018,7 +1021,6 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	} else {
 		descr.Metrics = metrics.MetricsConfiguration
 	}
-
 	return &descr, nil
 }
 

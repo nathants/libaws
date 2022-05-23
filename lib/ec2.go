@@ -83,6 +83,10 @@ type EC2Config struct {
 }
 
 func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2DescribeSpotFleet"}
+		defer d.Log()
+	}
 	Logger.Println("describe spot fleet", *spotFleetRequestId)
 	var output *ec2.DescribeSpotFleetRequestsOutput
 	err := Retry(ctx, func() error {
@@ -108,6 +112,10 @@ func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2
 }
 
 func EC2DescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequestId *string) ([]*ec2.ActiveInstance, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2DescribeSpotFleetActiveInstances"}
+		defer d.Log()
+	}
 	Logger.Println("describe spot fleet instances", *spotFleetRequestId)
 	var instances []*ec2.ActiveInstance
 	var nextToken *string
@@ -164,6 +172,10 @@ func isIPAddress(s string) bool {
 }
 
 func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]*ec2.Instance, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2ListInstances"}
+		defer d.Log()
+	}
 	var filterss [][]*ec2.Filter
 	if len(selectors) == 0 {
 		if state != "" {
@@ -268,8 +280,16 @@ func EC2GetTag(tags []*ec2.Tag, key string, defaultValue string) string {
 }
 
 func EC2DescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Instance, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2DescribeInstances"}
+		defer d.Log()
+	}
 	Logger.Println("describe instances for", len(instanceIDs), "instanceIDs")
-	Assert(len(instanceIDs) < 1000, "cannot list 1000 instances by id")
+	if len(instanceIDs) >= 1000 {
+		err := fmt.Errorf("cannot list 1000 instances by id")
+		Logger.Println("error:", err)
+		return nil, err
+	}
 	var output *ec2.DescribeInstancesOutput
 	err := Retry(ctx, func() error {
 		var err error
@@ -300,6 +320,10 @@ var ec2FailedStates = []string{
 }
 
 func EC2WaitState(ctx context.Context, instanceIDs []string, state string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2WaitState"}
+		defer d.Log()
+	}
 	Logger.Println("wait for state", state, "for", len(instanceIDs), "instanceIDs")
 	for i := 0; i < 300; i++ {
 		instances, err := EC2DescribeInstances(ctx, instanceIDs)
@@ -329,6 +353,10 @@ func EC2WaitState(ctx context.Context, instanceIDs []string, state string) error
 }
 
 func ec2FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2FinalizeSpotFleet"}
+		defer d.Log()
+	}
 	Logger.Println("teardown spot fleet", *spotFleetRequestId)
 	_, err := EC2Client().CancelSpotFleetRequestsWithContext(ctx, &ec2.CancelSpotFleetRequestsInput{
 		SpotFleetRequestIds: []*string{spotFleetRequestId},
@@ -342,6 +370,10 @@ func ec2FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 }
 
 func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2TeardownSpotFleet"}
+		defer d.Log()
+	}
 	Logger.Println("teardown spot fleet", *spotFleetRequestId)
 	_, err := EC2Client().CancelSpotFleetRequestsWithContext(ctx, &ec2.CancelSpotFleetRequestsInput{
 		SpotFleetRequestIds: []*string{spotFleetRequestId},
@@ -379,6 +411,10 @@ func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 }
 
 func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2SpotFleetHistoryErrors"}
+		defer d.Log()
+	}
 	t := time.Now().UTC().Add(-24 * time.Hour)
 	timestamp := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 	output, err := EC2Client().DescribeSpotFleetRequestHistoryWithContext(ctx, &ec2.DescribeSpotFleetRequestHistoryInput{
@@ -403,6 +439,10 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 }
 
 func ec2WaitSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2WaitSpotFleet"}
+		defer d.Log()
+	}
 	Logger.Println("wait for spot fleet", *spotFleetRequestId, "with", num, "instances")
 	for i := 0; i < 300; i++ {
 		config, err := EC2DescribeSpotFleet(ctx, spotFleetRequestId)
@@ -601,6 +641,10 @@ func makeBlockDeviceMapping(config *EC2Config) []*ec2.BlockDeviceMapping {
 }
 
 func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Config) ([]*ec2.Instance, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2RequestSpotFleet"}
+		defer d.Log()
+	}
 	if strings.Contains(config.Name, "::") {
 		err := fmt.Errorf("name cannot contain '::', got: %s", config.Name)
 		Logger.Println("error:", err)
@@ -741,6 +785,10 @@ func ec2ConfigDefaults(config *EC2Config) *EC2Config {
 }
 
 func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2NewInstances"}
+		defer d.Log()
+	}
 	if strings.Contains(config.Name, "::") {
 		err := fmt.Errorf("name cannot contain '::', got: %s", config.Name)
 		Logger.Println("error:", err)
@@ -799,6 +847,10 @@ type EC2RsyncInput struct {
 }
 
 func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2Rsync"}
+		defer d.Log()
+	}
 	if len(input.Instances) == 0 {
 		err := fmt.Errorf("no instances")
 		Logger.Println("error:", err)
@@ -821,7 +873,6 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 			return nil, err
 		}
 	}
-	//
 	if input.MaxConcurrency == 0 {
 		input.MaxConcurrency = 32
 	}
@@ -830,7 +881,6 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 		defer timeoutCancel()
 		ctx = timeoutCtx
 	}
-	//
 	resultChan := make(chan *ec2SshResult, len(input.Instances))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -860,11 +910,14 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 		}
 		result = append(result, sshResult)
 	}
-	//
 	return result, errLast
 }
 
 func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput) *ec2SshResult {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2Rsync"}
+		defer d.Log()
+	}
 	result := &ec2SshResult{
 		InstanceID: *instance.InstanceId,
 	}
@@ -887,7 +940,6 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 	} else {
 		target += *instance.PublicDnsName
 	}
-	//
 	source := input.Source
 	destination := input.Destination
 	if strings.HasPrefix(source, ":") {
@@ -899,7 +951,6 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		Logger.Println("error:", result.Err)
 		return result
 	}
-	//
 	for _, src := range splitWhiteSpace(source) {
 		src = strings.Trim(src, " ")
 		if src != "" {
@@ -912,7 +963,6 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 			rsyncCmd = append(rsyncCmd, dst)
 		}
 	}
-	//
 	cmd := exec.CommandContext(ctx, rsyncCmd[0], rsyncCmd[1:]...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -926,7 +976,6 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		result.Err = err
 		return result
 	}
-	//
 	resultLock := &sync.RWMutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
@@ -965,7 +1014,6 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 			input.PrintLock.Unlock()
 		}
 	}
-	//
 	go tail("stdout", bufio.NewReader(stdout))
 	go tail("stderr", bufio.NewReader(stderr))
 	err = cmd.Start()
@@ -1005,6 +1053,10 @@ type EC2ScpInput struct {
 }
 
 func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2Scp"}
+		defer d.Log()
+	}
 	if len(input.Instances) == 0 {
 		err := fmt.Errorf("no instances")
 		Logger.Println("error:", err)
@@ -1027,7 +1079,6 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 			return nil, err
 		}
 	}
-	//
 	if input.MaxConcurrency == 0 {
 		input.MaxConcurrency = 32
 	}
@@ -1036,7 +1087,6 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 		defer timeoutCancel()
 		ctx = timeoutCtx
 	}
-	//
 	resultChan := make(chan *ec2SshResult, len(input.Instances))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -1067,11 +1117,14 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 		}
 		result = append(result, sshResult)
 	}
-	//
 	return result, errLast
 }
 
 func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec2SshResult {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2Scp"}
+		defer d.Log()
+	}
 	result := &ec2SshResult{
 		InstanceID: *instance.InstanceId,
 	}
@@ -1089,7 +1142,6 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 	} else {
 		target += *instance.PublicDnsName
 	}
-	//
 	source := input.Source
 	destination := input.Destination
 	if strings.HasPrefix(source, ":") {
@@ -1102,7 +1154,6 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 		return result
 	}
 	scpCmd = append(scpCmd, []string{source, destination}...)
-	//
 	cmd := exec.CommandContext(ctx, scpCmd[0], scpCmd[1:]...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -1116,7 +1167,6 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 		result.Err = err
 		return result
 	}
-	//
 	resultLock := &sync.RWMutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
@@ -1155,7 +1205,6 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 			input.PrintLock.Unlock()
 		}
 	}
-	//
 	go tail("stdout", bufio.NewReader(stdout))
 	go tail("stderr", bufio.NewReader(stderr))
 	err = cmd.Start()
@@ -1241,6 +1290,10 @@ func ec2SshRemoteCmd(cmd, stdin string) string {
 }
 
 func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2Ssh"}
+		defer d.Log()
+	}
 	if len(input.Instances) == 0 {
 		err := fmt.Errorf("no instances")
 		Logger.Println("error:", err)
@@ -1263,11 +1316,9 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 			return nil, err
 		}
 	}
-	//
 	if !strings.HasPrefix(input.Cmd, "#!") && !strings.HasPrefix(input.Cmd, "set ") {
 		input.Cmd = "#!/bin/bash\nset -eou pipefail\n" + input.Cmd
 	}
-	//
 	if input.MaxConcurrency == 0 {
 		input.MaxConcurrency = 32
 	}
@@ -1276,7 +1327,6 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 		defer timeoutCancel()
 		ctx = timeoutCtx
 	}
-	//
 	resultChan := make(chan *ec2SshResult, len(input.Instances))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -1307,7 +1357,6 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 		}
 		result = append(result, sshResult)
 	}
-	//
 	return result, errLast
 }
 
@@ -1318,6 +1367,10 @@ type ec2SshResult struct {
 }
 
 func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec2SshResult {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2Ssh"}
+		defer d.Log()
+	}
 	result := &ec2SshResult{
 		InstanceID: *instance.InstanceId,
 	}
@@ -1341,7 +1394,6 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 		failureMessage = fmt.Sprintf("failure on %s", *instance.InstanceId)
 	}
 	sshCmd = append(sshCmd, ec2SshRemoteCmdFailureMessage(input.Cmd, input.Stdin, failureMessage))
-	//
 	cmd := exec.CommandContext(ctx, sshCmd[0], sshCmd[1:]...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -1354,7 +1406,6 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 		result.Err = err
 		return result
 	}
-	//
 	resultLock := &sync.RWMutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
@@ -1393,7 +1444,6 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 			input.PrintLock.Unlock()
 		}
 	}
-	//
 	go tail("stdout", bufio.NewReader(stdout))
 	go tail("stderr", bufio.NewReader(stderr))
 	err = cmd.Start()
@@ -1417,6 +1467,10 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 }
 
 func EC2SshLogin(instance *ec2.Instance, user, key string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2SshLogin"}
+		defer d.Log()
+	}
 	if user == "" {
 		user = EC2GetTag(instance.Tags, "user", "")
 		if user == "" {
@@ -1447,6 +1501,10 @@ func EC2SshLogin(instance *ec2.Instance, user, key string) error {
 }
 
 func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2AmiUser"}
+		defer d.Log()
+	}
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Filters: []*ec2.Filter{
 			{Name: aws.String("image-id"), Values: []*string{aws.String(amiID)}},
@@ -1466,6 +1524,10 @@ func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
 }
 
 func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2AmiLambda"}
+		defer d.Log()
+	}
 	resp, err := http.Get("https://docs.aws.amazon.com/lambda/latest/dg/current-supported-versions.html")
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1520,6 +1582,10 @@ func keys(m map[string]string) []string {
 }
 
 func ec2AmiUbuntu(ctx context.Context, name, arch string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2AmiUbuntu"}
+		defer d.Log()
+	}
 	fragment, ok := ubuntus[name]
 	if !ok {
 		err := fmt.Errorf("bad ubuntu name %s, should be one of: %v", name, keys(ubuntus))
@@ -1542,6 +1608,10 @@ func ec2AmiUbuntu(ctx context.Context, name, arch string) (string, error) {
 }
 
 func ec2AmiAmzn(ctx context.Context, arch string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2AmiAmzn"}
+		defer d.Log()
+	}
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String("137112412989")},
 		Filters: []*ec2.Filter{
@@ -1584,6 +1654,10 @@ var ec2AmiArchFinalPublishedImages = []string{
 }
 
 func ec2AmiArch(ctx context.Context, arch string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2AmiArch"}
+		defer d.Log()
+	}
 	if arch != EC2ArchAmd64 {
 		err := fmt.Errorf("ec2 archlinux only supports amd64")
 		Logger.Println("error:", err)
@@ -1609,6 +1683,10 @@ func ec2AmiArch(ctx context.Context, arch string) (string, error) {
 }
 
 func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2AmiAlpine"}
+		defer d.Log()
+	}
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String("538276064493")},
 		Filters: []*ec2.Filter{
@@ -1631,6 +1709,10 @@ func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
 }
 
 func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser string, err error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2AmiBase"}
+		defer d.Log()
+	}
 	switch arch {
 	case EC2ArchAmd64:
 	case EC2ArchArm64:
@@ -1660,6 +1742,10 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 }
 
 func EC2ZonesWithInstance(ctx context.Context, instanceType string) (zones []string, err error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2ZonesWithInstance"}
+		defer d.Log()
+	}
 	out, err := EC2Client().DescribeInstanceTypeOfferingsWithContext(ctx, &ec2.DescribeInstanceTypeOfferingsInput{
 		LocationType: aws.String("availability-zone"),
 		Filters:      []*ec2.Filter{{Name: aws.String("instance-type"), Values: []*string{aws.String(instanceType)}}},
@@ -1680,6 +1766,10 @@ func EC2ZonesWithInstance(ctx context.Context, instanceType string) (zones []str
 }
 
 func EC2SgID(ctx context.Context, vpcName, sgName string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2SgID"}
+		defer d.Log()
+	}
 	if strings.HasPrefix(sgName, "sg-") {
 		return sgName, nil
 	}
@@ -1784,6 +1874,10 @@ type EC2WaitSshInput struct {
 }
 
 func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2WaitSsh"}
+		defer d.Log()
+	}
 	start := time.Now()
 	for {
 		now := time.Now()
@@ -1791,7 +1885,6 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		//
 		var instances []*ec2.Instance
 		var pendingInstances []*ec2.Instance
 		for _, instance := range allInstances {
@@ -1803,7 +1896,6 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 			default:
 			}
 		}
-		//
 		var ips []string
 		for _, instance := range instances {
 			if input.PrivateIP {
@@ -1816,7 +1908,6 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 		// will be invoked with the ipv4 of all instances to be waited
 		// before each attempt
 		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(ips, " "))).Run()
-		//
 		results, err := EC2Ssh(context.Background(), &EC2SshInput{
 			User:           input.User,
 			TimeoutSeconds: 5,
@@ -1881,6 +1972,10 @@ type EC2WaitGoSshInput struct {
 }
 
 func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2WaitGoSsh"}
+		defer d.Log()
+	}
 	start := time.Now()
 	for {
 		now := time.Now()
@@ -1888,7 +1983,6 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 		if err != nil {
 			return nil, err
 		}
-		//
 		var instances []*ec2.Instance
 		var pendingInstances []*ec2.Instance
 		for _, instance := range allInstances {
@@ -1900,7 +1994,6 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			default:
 			}
 		}
-		//
 		var targetAddrs []string
 		for _, instance := range instances {
 			targetAddrs = append(targetAddrs, *instance.PublicDnsName)
@@ -1909,7 +2002,6 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 		// will be invoked with the ipv4 of all instances to be waited
 		// before each attempt
 		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(targetAddrs, " "))).Run()
-		//
 		results, err := EC2GoSsh(context.Background(), &EC2GoSshInput{
 			NoTTY:          true,
 			User:           input.User,
@@ -1977,6 +2069,10 @@ type EC2NewAmiInput struct {
 }
 
 func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2NewAmi"}
+		defer d.Log()
+	}
 	out, err := EC2ListInstances(ctx, input.Selectors, "stopped")
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2026,6 +2122,10 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 }
 
 func EC2ListSgs(ctx context.Context) ([]*ec2.SecurityGroup, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2ListSgs"}
+		defer d.Log()
+	}
 	var res []*ec2.SecurityGroup
 	var token *string
 	for {
@@ -2125,6 +2225,10 @@ func EC2EnsureSgInput(infraSetName, vpcName, sgName string, rules []string) (*ec
 }
 
 func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2EnsureSg"}
+		defer d.Log()
+	}
 	for _, rule := range input.Rules {
 		if rule.Port == 0 && rule.Proto != "" {
 			err := fmt.Errorf("you must specify both port and proto or neither, got: %#v", rule)
@@ -2394,6 +2498,10 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 }
 
 func EC2DeleteSg(ctx context.Context, vpcName, sgName string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2DeleteSg"}
+		defer d.Log()
+	}
 	sgID, err := EC2SgID(ctx, vpcName, sgName)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2440,6 +2548,10 @@ func pubKey(privKey string) (ssh.AuthMethod, error) {
 }
 
 func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2GoSsh"}
+		defer d.Log()
+	}
 	if len(input.TargetAddrs) == 0 {
 		return nil, fmt.Errorf("no instances")
 	}
@@ -2449,9 +2561,7 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 	if input.User == "" {
 		return nil, fmt.Errorf("expected user")
 	}
-	//
 	auth := []ssh.AuthMethod{}
-	//
 	if input.RsaPrivKey != "" {
 		key, err := pubKey(input.RsaPrivKey)
 		if err == nil {
@@ -2467,14 +2577,12 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	//
 	config := &ssh.ClientConfig{
 		User:            input.User,
 		Auth:            auth,
 		Timeout:         5 * time.Second,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-	//
 	if input.MaxConcurrency == 0 {
 		input.MaxConcurrency = 32
 	}
@@ -2519,6 +2627,10 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 }
 
 func sshDialContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "sshDialContext"}
+		defer d.Log()
+	}
 	var d net.Dialer
 	dialContext, dialCancel := context.WithTimeout(ctx, config.Timeout)
 	defer dialCancel()
@@ -2534,24 +2646,25 @@ func sshDialContext(ctx context.Context, network, addr string, config *ssh.Clien
 }
 
 func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, input *EC2GoSshInput) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2GoSsh"}
+		defer d.Log()
+	}
 	sshConn, err := sshDialContext(ctx, "tcp", fmt.Sprintf("%s:22", targetAddr), config)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = sshConn.Close() }()
-	//
 	sshSession, err := sshConn.NewSession()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = sshSession.Close() }()
-	//
 	if err != nil {
 		return err
 	}
 	sshSession.Stdout = input.Stdout
 	sshSession.Stderr = input.Stderr
-	//
 	if !input.NoTTY {
 		err = sshSession.RequestPty("xterm", 80, 24, ssh.TerminalModes{})
 		if err != nil {
@@ -2575,6 +2688,10 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, 
 }
 
 func EC2DeleteKeypair(ctx context.Context, keypairName string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2DeleteKeypair"}
+		defer d.Log()
+	}
 	out, err := EC2Client().DescribeKeyPairsWithContext(ctx, &ec2.DescribeKeyPairsInput{
 		KeyNames: []*string{aws.String(keypairName)},
 	})
@@ -2601,6 +2718,10 @@ func EC2DeleteKeypair(ctx context.Context, keypairName string, preview bool) err
 }
 
 func EC2EnsureKeypair(ctx context.Context, infraSetName, keyName, pubkeyContent string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EC2EnsureKeypair"}
+		defer d.Log()
+	}
 	pubkey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubkeyContent))
 	if err != nil {
 		Logger.Println("error:", err)

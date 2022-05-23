@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -36,6 +37,10 @@ func SNSArn(ctx context.Context, name string) (string, error) {
 }
 
 func SNSListSubscriptions(ctx context.Context, topicArn string) ([]*sns.Subscription, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "SNSListSubscriptions"}
+		defer d.Log()
+	}
 	var nextToken *string
 	var subscriptions []*sns.Subscription
 	for {
@@ -56,6 +61,10 @@ func SNSListSubscriptions(ctx context.Context, topicArn string) ([]*sns.Subscrip
 }
 
 func SNSEnsure(ctx context.Context, name string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "SNSEnsure"}
+		defer d.Log()
+	}
 	snsArn, err := SNSArn(ctx, name)
 	if err != nil {
 		Logger.Println("error:", err)

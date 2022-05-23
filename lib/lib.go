@@ -124,26 +124,6 @@ func RetryAttempts(ctx context.Context, attempts int, fn func() error) error {
 	)
 }
 
-func Assert(cond bool, format string, a ...interface{}) {
-	if !cond {
-		panic(fmt.Sprintf(format, a...))
-	}
-}
-
-func Panic1(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func Panic2(x interface{}, e error) interface{} {
-	if e != nil {
-		Logger.Printf("fatal: %s\n", e)
-		os.Exit(1)
-	}
-	return x
-}
-
 func Contains(parts []string, part string) bool {
 	for _, p := range parts {
 		if p == part {
@@ -446,4 +426,28 @@ func splitWhiteSpace(s string) []string {
 
 func splitWhiteSpaceN(s string, n int) []string {
 	return regexp.MustCompile(` +`).Split(s, n)
+}
+
+func SplitOnce(s string, sep string) (head, tail string, err error) {
+	parts := strings.SplitN(s, sep, 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1], nil
+	}
+	return "", "", fmt.Errorf("cannot split once: %s", s)
+}
+
+func SplitTwice(s string, sep string) (head, mid, tail string, err error) {
+	parts := strings.SplitN(s, sep, 3)
+	if len(parts) == 3 {
+		return parts[0], parts[1], parts[2], nil
+	}
+	return "", "", "", fmt.Errorf("cannot split twice: %s", s)
+}
+
+func Atoi(a string) int {
+	i, err := strconv.Atoi(a)
+	if err != nil {
+		panic(err)
+	}
+	return i
 }

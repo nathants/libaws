@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -73,6 +74,10 @@ func Region() string {
 }
 
 func Zones(ctx context.Context) ([]*ec2.AvailabilityZone, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "Zones"}
+		defer d.Log()
+	}
 	out, err := EC2Client().DescribeAvailabilityZonesWithContext(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
 		Logger.Println("error:", err)

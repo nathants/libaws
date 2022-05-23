@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/apigatewaymanagementapi"
@@ -27,6 +28,10 @@ func ApiClient() *apigatewayv2.ApiGatewayV2 {
 }
 
 func ApiList(ctx context.Context) ([]*apigatewayv2.Api, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ApiList"}
+		defer d.Log()
+	}
 	var token *string
 	var items []*apigatewayv2.Api
 	for {
@@ -51,6 +56,10 @@ const (
 )
 
 func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ApiList"}
+		defer d.Log()
+	}
 	var count int
 	var result *apigatewayv2.Api
 	apis, err := ApiList(ctx)
@@ -77,6 +86,10 @@ func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
 }
 
 func ApiListDomains(ctx context.Context) ([]*apigatewayv2.DomainName, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ApiListDomains"}
+		defer d.Log()
+	}
 	var token *string
 	var result []*apigatewayv2.DomainName
 	for {
@@ -97,6 +110,10 @@ func ApiListDomains(ctx context.Context) ([]*apigatewayv2.DomainName, error) {
 }
 
 func ApiUrl(ctx context.Context, name string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ApiUrl"}
+		defer d.Log()
+	}
 	api, err := Api(ctx, name)
 	if err != nil {
 		return "", err

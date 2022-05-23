@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
@@ -25,6 +26,10 @@ func EventsClientExplicit(accessKeyID, accessKeySecret, region string) *cloudwat
 }
 
 func EventsListRules(ctx context.Context) ([]*cloudwatchevents.Rule, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EventsListRules"}
+		defer d.Log()
+	}
 	var token *string
 	var rules []*cloudwatchevents.Rule
 	for {
@@ -45,6 +50,10 @@ func EventsListRules(ctx context.Context) ([]*cloudwatchevents.Rule, error) {
 }
 
 func EventsListRuleTargets(ctx context.Context, ruleName string) ([]*cloudwatchevents.Target, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "EventsListRuleTargets"}
+		defer d.Log()
+	}
 	var targets []*cloudwatchevents.Target
 	var token *string
 	for {

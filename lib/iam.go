@@ -131,6 +131,10 @@ type IamPolicy struct {
 }
 
 func (p *IamPolicy) FromPolicy(ctx context.Context, policy *iam.Policy, resolveDocument bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamPolicy.FromPolicy"}
+		defer d.Log()
+	}
 	p.Arn = policy.Arn
 	p.AttachmentCount = policy.AttachmentCount
 	p.CreateDate = policy.CreateDate
@@ -168,6 +172,10 @@ func (p *IamPolicy) FromPolicy(ctx context.Context, policy *iam.Policy, resolveD
 }
 
 func IamDeleteUser(ctx context.Context, name string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamDeleteUser"}
+		defer d.Log()
+	}
 	_, err := IamClient().GetUserWithContext(ctx, &iam.GetUserInput{
 		UserName: aws.String(name),
 	})
@@ -226,6 +234,10 @@ func IamDeleteUser(ctx context.Context, name string, preview bool) error {
 }
 
 func IamDeleteRole(ctx context.Context, roleName string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamDeleteRole"}
+		defer d.Log()
+	}
 	_, err := IamClient().GetRoleWithContext(ctx, &iam.GetRoleInput{
 		RoleName: aws.String(roleName),
 	})
@@ -261,6 +273,10 @@ func IamDeleteRole(ctx context.Context, roleName string, preview bool) error {
 }
 
 func IamDeleteInstanceProfile(ctx context.Context, profileName string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamDeleteInstanceProfile"}
+		defer d.Log()
+	}
 	_, err := IamClient().GetInstanceProfileWithContext(ctx, &iam.GetInstanceProfileInput{
 		InstanceProfileName: aws.String(profileName),
 	})
@@ -323,6 +339,10 @@ func IamDeleteInstanceProfile(ctx context.Context, profileName string, preview b
 }
 
 func IamListPolicies(ctx context.Context) ([]*iam.Policy, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListPolicies"}
+		defer d.Log()
+	}
 	var policies []*iam.Policy
 	var marker *string
 	for {
@@ -343,6 +363,10 @@ func IamListPolicies(ctx context.Context) ([]*iam.Policy, error) {
 }
 
 func IamListRoles(ctx context.Context, pathPrefix *string) ([]*IamRole, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListRoles"}
+		defer d.Log()
+	}
 	var roles []*IamRole
 	var marker *string
 	input := &iam.ListRolesInput{}
@@ -374,6 +398,10 @@ func IamListRoles(ctx context.Context, pathPrefix *string) ([]*IamRole, error) {
 }
 
 func IamEnsureUserAllows(ctx context.Context, username string, allows []string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureUserAllows"}
+		defer d.Log()
+	}
 	var allowNames []string
 	for _, allowStr := range allows {
 		parts := splitWhiteSpaceN(allowStr, 2)
@@ -449,6 +477,10 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 }
 
 func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureRoleAllows"}
+		defer d.Log()
+	}
 	var allowNames []string
 	for _, allowStr := range allows {
 		allowStr, err := resolveEnvVars(allowStr, []string{}) // resolve again since lambdaEnvVarApiID and lambdaEnvVarWebsocketID are not set
@@ -542,6 +574,10 @@ func iamPolicyEqual(a, b string) (bool, error) {
 }
 
 func IamEnsureUserPolicies(ctx context.Context, username string, policyNames []string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureUserPolicies"}
+		defer d.Log()
+	}
 	policies, err := IamListPolicies(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -615,6 +651,10 @@ outer:
 }
 
 func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureRolePolicies"}
+		defer d.Log()
+	}
 	policies, err := IamListPolicies(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -700,6 +740,10 @@ func iamAssumePolicyDocument(principalName string) (*string, error) {
 }
 
 func IamEnsureRole(ctx context.Context, infrasetName, roleName, principalName string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureRole"}
+		defer d.Log()
+	}
 	rolePath := fmt.Sprintf("/%s/%s-path/", principalName, roleName)
 	roles, err := IamListRoles(ctx, aws.String(rolePath))
 	if err != nil {
@@ -783,6 +827,10 @@ type IamInstanceProfile struct {
 }
 
 func (p *IamInstanceProfile) FromProfile(ctx context.Context, profile *iam.InstanceProfile) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamInstanceProfile.FromProfile"}
+		defer d.Log()
+	}
 	p.arn = profile.Arn
 	p.createDate = profile.CreateDate
 	p.id = profile.InstanceProfileId
@@ -802,6 +850,10 @@ func (p *IamInstanceProfile) FromProfile(ctx context.Context, profile *iam.Insta
 }
 
 func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*IamInstanceProfile, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListInstanceProfiles"}
+		defer d.Log()
+	}
 	var profiles []*IamInstanceProfile
 	var marker *string
 	for {
@@ -843,6 +895,10 @@ func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*IamIns
 }
 
 func IamEnsureInstanceProfile(ctx context.Context, infrasetName, profileName string, policies, allows []string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureInstanceProfile"}
+		defer d.Log()
+	}
 	profilePath := fmt.Sprintf("/instance-profile/%s-path/", profileName)
 	profiles, err := IamListInstanceProfiles(ctx, aws.String(profilePath))
 	if err != nil {
@@ -959,6 +1015,10 @@ func IamInstanceProfileArn(ctx context.Context, profileName string) (string, err
 }
 
 func IamListSSHPublicKeys(ctx context.Context) ([]*iam.SSHPublicKeyMetadata, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListSSHPublicKeys"}
+		defer d.Log()
+	}
 	user, err := StsUser(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -985,6 +1045,10 @@ func IamListSSHPublicKeys(ctx context.Context) ([]*iam.SSHPublicKeyMetadata, err
 }
 
 func IamGetSSHPublicKey(ctx context.Context, keyID string) (*iam.SSHPublicKey, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamGetSSHPublicKey"}
+		defer d.Log()
+	}
 	user, err := StsUser(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1021,6 +1085,10 @@ type IamRole struct {
 }
 
 func (r *IamRole) FromRole(ctx context.Context, role *iam.Role) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamRole.FromRole"}
+		defer d.Log()
+	}
 	r.assumeRolePolicyDocumentString = role.AssumeRolePolicyDocument
 	r.AssumeRolePolicyDocument = &IamPolicyDocument{}
 	document, err := url.QueryUnescape(*role.AssumeRolePolicyDocument)
@@ -1059,7 +1127,6 @@ func (r *IamRole) FromRole(ctx context.Context, role *iam.Role) error {
 	for _, policy := range policies {
 		r.Policy = append(r.Policy, *policy.PolicyName)
 	}
-
 	return nil
 }
 
@@ -1093,6 +1160,10 @@ type IamPolicyDocumentCondition struct {
 }
 
 func IamPolicyArn(ctx context.Context, policyName string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamPolicyArn"}
+		defer d.Log()
+	}
 	policies, err := IamListPolicies(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1121,6 +1192,10 @@ func IamPolicyArn(ctx context.Context, policyName string) (string, error) {
 }
 
 func IamListUserPolicies(ctx context.Context, username string) ([]*iam.Policy, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListUserPolicies"}
+		defer d.Log()
+	}
 	var marker *string
 	var policies []*iam.Policy
 	for {
@@ -1155,6 +1230,10 @@ func IamListUserPolicies(ctx context.Context, username string) ([]*iam.Policy, e
 }
 
 func IamResetUserLoginTempPassword(ctx context.Context, username, password string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamResetUserLoginTempPassword"}
+		defer d.Log()
+	}
 	_, err := IamClient().UpdateLoginProfileWithContext(ctx, &iam.UpdateLoginProfileInput{
 		Password:              aws.String(password),
 		UserName:              aws.String(username),
@@ -1168,6 +1247,10 @@ func IamResetUserLoginTempPassword(ctx context.Context, username, password strin
 }
 
 func IamEnsureUserApi(ctx context.Context, username string, preview bool) (*iam.AccessKey, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureUserApi"}
+		defer d.Log()
+	}
 	_, err := IamClient().GetUserWithContext(ctx, &iam.GetUserInput{
 		UserName: aws.String(username),
 	})
@@ -1220,6 +1303,10 @@ func IamEnsureUserApi(ctx context.Context, username string, preview bool) (*iam.
 }
 
 func IamEnsureUserLogin(ctx context.Context, username, password string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureUserLogin"}
+		defer d.Log()
+	}
 	_, err := IamClient().GetUserWithContext(ctx, &iam.GetUserInput{
 		UserName: aws.String(username),
 	})
@@ -1263,6 +1350,10 @@ func IamEnsureUserLogin(ctx context.Context, username, password string, preview 
 }
 
 func IamListRolePolicies(ctx context.Context, roleName string) ([]*iam.AttachedPolicy, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListRolePolicies"}
+		defer d.Log()
+	}
 	var policies []*iam.AttachedPolicy
 	var marker *string
 	for {
@@ -1283,6 +1374,10 @@ func IamListRolePolicies(ctx context.Context, roleName string) ([]*iam.AttachedP
 }
 
 func IamListUserAllows(ctx context.Context, username string) ([]*IamAllow, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListUserAllows"}
+		defer d.Log()
+	}
 	var iamAllows []*IamAllow
 	var marker *string
 	for {
@@ -1323,6 +1418,10 @@ func IamListUserAllows(ctx context.Context, username string) ([]*IamAllow, error
 }
 
 func IamListRoleAllows(ctx context.Context, roleName string) ([]*IamAllow, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListRoleAllows"}
+		defer d.Log()
+	}
 	var iamAllows []*IamAllow
 	var marker *string
 	for {
@@ -1377,6 +1476,10 @@ type IamUser struct {
 }
 
 func (u *IamUser) FromUser(ctx context.Context, user *iam.User) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamUser.FromUser"}
+		defer d.Log()
+	}
 	u.arn = user.Arn
 	u.createDate = user.CreateDate
 	u.passwordLastUsed = user.PasswordLastUsed
@@ -1405,6 +1508,10 @@ func (u *IamUser) FromUser(ctx context.Context, user *iam.User) error {
 }
 
 func IamListUsers(ctx context.Context) ([]*IamUser, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamListUsers"}
+		defer d.Log()
+	}
 	var marker *string
 	var result []*IamUser
 	for {
@@ -1433,6 +1540,10 @@ func IamListUsers(ctx context.Context) ([]*IamUser, error) {
 }
 
 func IamEnsureEC2SpotRoles(ctx context.Context, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureEC2SpotRoles"}
+		defer d.Log()
+	}
 	doc := IamPolicyDocument{
 		Version: "2012-10-17",
 		Id:      EC2SpotFleetTaggingRole,

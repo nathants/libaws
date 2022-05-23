@@ -86,6 +86,10 @@ func LambdaClient() *lambda.Lambda {
 }
 
 func LambdaSetConcurrency(ctx context.Context, lambdaName string, concurrency int, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaSetConcurrency"}
+		defer d.Log()
+	}
 	out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
 		FunctionName: aws.String(lambdaName),
 	})
@@ -123,6 +127,10 @@ func LambdaSetConcurrency(ctx context.Context, lambdaName string, concurrency in
 }
 
 func LambdaArn(ctx context.Context, name string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaArn"}
+		defer d.Log()
+	}
 	var expectedErr error
 	var arn string
 	err := Retry(ctx, func() error {
@@ -159,6 +167,10 @@ const lambdaEcrEventPattern = `{
 }`
 
 func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerEcr"}
+		defer d.Log()
+	}
 	ruleName := fmt.Sprintf("%s%strigger_ecr", infraLambda.Name, lambdaEventRuleNameSeparator)
 	var permissionSids []string
 	var triggers []string
@@ -298,6 +310,10 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 }
 
 func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerS3"}
+		defer d.Log()
+	}
 	var permissionSids []string
 	events := []*string{
 		aws.String("s3:ObjectCreated:*"),
@@ -420,6 +436,10 @@ func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, previe
 }
 
 func lambdaRemoveUnusedPermissions(ctx context.Context, name string, permissionSids []string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaRemoveUnusedPermissions"}
+		defer d.Log()
+	}
 	out, err := LambdaClient().GetPolicyWithContext(ctx, &lambda.GetPolicyInput{
 		FunctionName: aws.String(name),
 	})
@@ -456,6 +476,10 @@ func lambdaRemoveUnusedPermissions(ctx context.Context, name string, permissionS
 }
 
 func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, callerArn string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaAddPermission"}
+		defer d.Log()
+	}
 	region := Region()
 	account, err := StsAccount(ctx)
 	if err != nil {
@@ -473,6 +497,10 @@ func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, caller
 }
 
 func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerArn string, preview bool) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaEnsurePermission"}
+		defer d.Log()
+	}
 	sid := strings.ReplaceAll(callerPrincipal, ".", "-") + "__" + Last(strings.Split(callerArn, ":"))
 	sid = strings.ReplaceAll(sid, "$", "DOLLAR")
 	sid = strings.ReplaceAll(sid, "*", "ALL")
@@ -570,6 +598,10 @@ func LambdaArnToLambdaName(arn string) string {
 }
 
 func lambdaEnsureTriggerApi(ctx context.Context, infraSetName, apiName, arnLambda string, protocolType string, preview bool) (*apigatewayv2.Api, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApi"}
+		defer d.Log()
+	}
 	if !Contains([]string{apigatewayv2.ProtocolTypeHttp, apigatewayv2.ProtocolTypeWebsocket}, protocolType) {
 		err := fmt.Errorf("invalid protocol type: %s", protocolType)
 		Logger.Println("error:", err)
@@ -618,6 +650,10 @@ func lambdaEnsureTriggerApi(ctx context.Context, infraSetName, apiName, arnLambd
 }
 
 func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnLambda, protocolType string, api *apigatewayv2.Api, timeoutMillis int64, preview bool) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiIntegrationStageRoute"}
+		defer d.Log()
+	}
 	if api == nil && preview {
 		Logger.Println(PreviewString(preview)+"created api integration:", name)
 		Logger.Println(PreviewString(preview)+"created api stage:", name)
@@ -803,6 +839,10 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 }
 
 func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiDomainName"}
+		defer d.Log()
+	}
 	out, err := ApiClient().GetDomainNameWithContext(ctx, &apigatewayv2.GetDomainNameInput{
 		DomainName: aws.String(domain),
 	})
@@ -887,6 +927,10 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, 
 }
 
 func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, subDomain string, zone *route53.HostedZone, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiDnsRecords"}
+		defer d.Log()
+	}
 	out, err := ApiClient().GetDomainNameWithContext(ctx, &apigatewayv2.GetDomainNameInput{
 		DomainName: aws.String(subDomain),
 	})
@@ -949,6 +993,10 @@ func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, subDomain strin
 }
 
 func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, api *apigatewayv2.Api, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiDns"}
+		defer d.Log()
+	}
 	zones, err := Route53ListZones(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1014,6 +1062,10 @@ func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, api *ap
 }
 
 func lambdaEnsureTriggerApiMapping(ctx context.Context, name, subDomain string, api *apigatewayv2.Api, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiMapping"}
+		defer d.Log()
+	}
 	mappings, err := ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
 		DomainName: aws.String(subDomain),
 		MaxResults: aws.String(fmt.Sprint(500)),
@@ -1060,6 +1112,10 @@ func lambdaEnsureTriggerApiMapping(ctx context.Context, name, subDomain string, 
 }
 
 func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerApi"}
+		defer d.Log()
+	}
 	var permissionSids []string
 	hasApi := false
 	hasWebsocket := false
@@ -1220,6 +1276,10 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 }
 
 func lambdaTriggerApiDeleteApi(ctx context.Context, name string, api *apigatewayv2.Api, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaTriggerApiDeleteApi"}
+		defer d.Log()
+	}
 	if !preview {
 		_, err := ApiClient().DeleteApiWithContext(ctx, &apigatewayv2.DeleteApiInput{
 			ApiId: api.ApiId,
@@ -1234,6 +1294,10 @@ func lambdaTriggerApiDeleteApi(ctx context.Context, name string, api *apigateway
 }
 
 func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apigatewayv2.Api, domain *apigatewayv2.DomainName, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaTriggerApiDeleteDns"}
+		defer d.Log()
+	}
 	mappings, err := ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
 		DomainName: domain.DomainName,
 		MaxResults: aws.String(fmt.Sprint(500)),
@@ -1299,6 +1363,10 @@ func lambdaScheduleName(name, schedule string) string {
 }
 
 func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerSchedule"}
+		defer d.Log()
+	}
 	var permissionSids []string
 	var triggers []string
 	for _, trigger := range infraLambda.Trigger {
@@ -1452,6 +1520,10 @@ func lambdaDynamoDBTriggerAttrShortcut(s string) string {
 }
 
 func LambdaEnsureTriggerDynamoDB(ctx context.Context, infraLambda *InfraLambda, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerDynamoDB"}
+		defer d.Log()
+	}
 	var triggers [][]string
 	var triggerTables []string
 	for _, trigger := range infraLambda.Trigger {
@@ -1636,6 +1708,10 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, infraLambda *InfraLambda, 
 }
 
 func lambdaListEventSourceMappings(ctx context.Context, name string) ([]*lambda.EventSourceMappingConfiguration, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaListEventSourceMappings"}
+		defer d.Log()
+	}
 	var marker *string
 	var eventSourceMappings []*lambda.EventSourceMappingConfiguration
 	for {
@@ -1667,6 +1743,10 @@ func lambdaSQSTriggerAttrShortcut(s string) string {
 }
 
 func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerSQS"}
+		defer d.Log()
+	}
 	var triggers [][]string
 	var queueNames []string
 	for _, trigger := range infraLambda.Trigger {
@@ -1825,6 +1905,10 @@ func lambdaUpdateZipGo(infraLambda *InfraLambda) error {
 }
 
 func lambdaCreateZipGo(infraLambda *InfraLambda) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaCreateZipGo"}
+		defer d.Log()
+	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	dir := path.Dir(zipFile)
 	err := os.RemoveAll(dir)
@@ -1847,6 +1931,10 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 }
 
 func lambdaCreateZipPy(infraLambda *InfraLambda) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaCreateZipPy"}
+		defer d.Log()
+	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	dir := path.Dir(zipFile)
 	err := os.RemoveAll(dir)
@@ -1907,6 +1995,10 @@ func lambdaCreateZipPy(infraLambda *InfraLambda) error {
 }
 
 func LambdaZipBytes(infraLambda *InfraLambda) ([]byte, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaZipBytes"}
+		defer d.Log()
+	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	data, err := ioutil.ReadFile(zipFile)
 	if err != nil {
@@ -1917,6 +2009,10 @@ func LambdaZipBytes(infraLambda *InfraLambda) ([]byte, error) {
 }
 
 func LambdaIncludeInZip(infraLambda *InfraLambda) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaIncludeInZip"}
+		defer d.Log()
+	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	dir := infraLambda.dir
 	for _, include := range infraLambda.Include {
@@ -1961,6 +2057,10 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 }
 
 func lambdaUpdateZipPy(infraLambda *InfraLambda) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaUpdateZipPy"}
+		defer d.Log()
+	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	dir := path.Dir(zipFile)
 	site_packages, err := filepath.Glob(fmt.Sprintf("%s/env/lib/python3*/site-packages", dir))
@@ -1989,6 +2089,10 @@ func lambdaUpdateZipPy(infraLambda *InfraLambda) error {
 }
 
 func LambdaListFunctions(ctx context.Context) ([]*lambda.FunctionConfiguration, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaListFunctions"}
+		defer d.Log()
+	}
 	var marker *string
 	var functions []*lambda.FunctionConfiguration
 	for {
@@ -2013,6 +2117,10 @@ type LambdaUpdateZipFn func(infraLambda *InfraLambda) error
 type LambdaCreateZipFn func(infraLambda *InfraLambda) error
 
 func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview, showEnvVarValues bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaEnsure"}
+		defer d.Log()
+	}
 	var err error
 	concurrency := lambdaAttrConcurrencyDefault
 	memory := lambdaAttrMemoryDefault
@@ -2359,6 +2467,10 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 }
 
 func LambdaUpdateFunctionCode(ctx context.Context, infraLambda *InfraLambda, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaUpdateFunctionCode"}
+		defer d.Log()
+	}
 	if !preview {
 		var expectedErr error
 		err := Retry(ctx, func() error {
@@ -2400,6 +2512,10 @@ func LambdaUpdateFunctionCode(ctx context.Context, infraLambda *InfraLambda, pre
 }
 
 func LambdaDeleteFunction(ctx context.Context, name string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaDeleteFunction"}
+		defer d.Log()
+	}
 	_, err := LambdaClient().GetFunction(&lambda.GetFunctionInput{
 		FunctionName: aws.String(name),
 	})
@@ -2433,6 +2549,10 @@ func LambdaDeleteFunction(ctx context.Context, name string, preview bool) error 
 }
 
 func LambdaDelete(ctx context.Context, name string, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaDelete"}
+		defer d.Log()
+	}
 	triggerChan := make(chan *InfraTrigger)
 	close(triggerChan)
 	infraLambdas, err := InfraListLambda(ctx, triggerChan, name)
