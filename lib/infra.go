@@ -1844,15 +1844,27 @@ func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 		if strings.HasSuffix(infraLambda.Entrypoint, ".py") {
 			infraLambda.runtime = lambdaRuntimePython
 			infraLambda.handler = strings.TrimSuffix(path.Base(infraLambda.Entrypoint), ".py") + ".main"
-			return lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipPy, lambdaCreateZipPy)
+			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipPy, lambdaCreateZipPy)
+			if err != nil {
+				Logger.Println("error:", err)
+			    return err
+			}
 		} else if strings.HasSuffix(infraLambda.Entrypoint, ".go") {
 			infraLambda.runtime = lambdaRuntimeGo
 			infraLambda.handler = "main"
-			return lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipGo, lambdaCreateZipGo)
+			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipGo, lambdaCreateZipGo)
+			if err != nil {
+				Logger.Println("error:", err)
+			    return err
+			}
 		} else if strings.Contains(infraLambda.Entrypoint, ".dkr.ecr.") {
 			infraLambda.runtime = lambdaRuntimeContainer
 			infraLambda.handler = "main"
-			return lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipFake, lambdaCreateZipFake)
+			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipFake, lambdaCreateZipFake)
+			if err != nil {
+				Logger.Println("error:", err)
+			    return err
+			}
 		} else {
 			err := fmt.Errorf("unknown entrypoint type: %s", infraLambda.Entrypoint)
 			Logger.Println("error:", err)
