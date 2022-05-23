@@ -519,7 +519,7 @@ defines the name of the infrastructure set.
 
 ### s3
 
-defines a s3 bucket:
+defines a [s3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket.html) bucket:
 
 - the following [attributes](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) can be defined:
   - `acl=VALUE`, values: `public | private`, default: `private`
@@ -547,7 +547,7 @@ defines a s3 bucket:
 
 ### dynamodb
 
-defines a dynamodb table:
+defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html) table:
 
 - specify key as:
   - `NAME:ATTR_TYPE:KEY_TYPE`
@@ -596,7 +596,7 @@ defines a dynamodb table:
 
 ### sqs
 
-defines a sqs queue:
+defines a [sqs](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html) queue:
 
 - the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html#aws-resource-sqs-queue-syntax) can be defined:
 
@@ -625,7 +625,7 @@ defines a sqs queue:
 
 ### keypair
 
-defines an ec2 keypair.
+defines an ec2 [keypair](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-keypair.html).
 
 - example:
   ```yaml
@@ -643,7 +643,7 @@ defines an ec2 keypair.
 
 ### vpc
 
-defines a default-like vpc with an internet gateway and public access.
+defines a default-like [vpc](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc.html) with an [internet gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-internetgateway.html) and [public access](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support).
 
 - schema:
   ```yaml
@@ -659,7 +659,7 @@ defines a default-like vpc with an internet gateway and public access.
 
 #### security group
 
-defines a security group on a vpc
+defines a [security group](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html) on a vpc
 
 - schema:
   ```yaml
@@ -683,7 +683,7 @@ defines a security group on a vpc
 
 ### instance profile
 
-defines an ec2 instance profile.
+defines an ec2 [instance profile](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-instanceprofile.html).
 
 - schema:
   ```yaml
@@ -707,7 +707,7 @@ defines an ec2 instance profile.
 
 ### lambda
 
-defines a lambda.
+defines a [lambda](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html).
 
 - schema:
   ```yaml
@@ -910,7 +910,7 @@ defines triggers for the lambda:
 
 ##### api
 
-defines an apigateway v2 http api:
+defines an [apigateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) http api:
 
 - add a custom domain with attr: `domain=api.example.com`
 
@@ -942,7 +942,7 @@ defines an apigateway v2 http api:
 
 ##### websocket
 
-defines an apigateway v2 websocket api:
+defines an [apigateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) websocket api:
 
 - add a custom domain with attr: `domain=ws.example.com`
 
@@ -974,7 +974,7 @@ defines an apigateway v2 websocket api:
 
 ##### s3
 
-defines an s3 trigger:
+defines an [s3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-notificationconfig.html):
 
 - the only attribute must be the bucket name.
 
@@ -1002,7 +1002,7 @@ defines an s3 trigger:
 
 ##### dynamodb
 
-defines a dynamodb trigger:
+defines a [dynamodb trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html):
 
 - the first attribute must be the table name.
 
@@ -1041,7 +1041,7 @@ defines a dynamodb trigger:
 
 ##### sqs
 
-defines a sqs trigger:
+defines a [sqs trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html):
 
 - the first attribute must be the queue name.
 
@@ -1073,7 +1073,7 @@ defines a sqs trigger:
 
 ##### schedule
 
-defines a schedule trigger:
+defines a [schedule trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html):
 
 - the only attribute must be the [schedule expression](https://docs.aws.amazon.com/lambda/latest/dg/services-cloudwatchevents-expressions.html).
 
@@ -1099,7 +1099,7 @@ defines a schedule trigger:
 
 ##### ecr
 
-defines an ecr trigger:
+defines an [ecr trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html):
 
 - successful [image actions](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/lambda.go#L153) to any ecr repository will invoke the trigger.
 
