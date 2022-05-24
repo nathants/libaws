@@ -14,23 +14,36 @@ aws should have a [tldr](#tldr).
 
 ## how
 
-deploy scale-to-zero systems as [infrastructure sets](#infrastructure-set) that contain:
+easily **CREATE** and **DEPLOY** useful [systems](#infrastructure-set) to aws:
 
-- [s3](#s3) buckets, [dynamodb](#dynamodb) tables, and [sqs](#sqs) queues.
+- that contain:
+  - [lambdas](#lambda)
+  - [s3](#s3) buckets
+  - [dynamodb](#dynamodb) tables
+  - [sqs](#sqs) queues
+  - [vpcs](#vpc)
+  - vpc [security groups](#security-group)
+  - ec2 [instance profiles](#instance-profile)
+  - ec2 [keypairs](#keypair).
 
-- [vpcs](#vpc), [instance profiles](#instance-profile), [security groups](#security-group), and [keypairs](#keypair).
-
-- [lambdas](#lambda) with [triggers](#trigger) like [api](#api), [websocket](#websocket), [s3](#s3-1), [dynamodb](#dynamodb-1), [sqs](#sqs-1), [schedule](#schedule), and [ecr](#ecr).
+- that react to lambda [triggers](#trigger):
+  - http [apis](#api)
+  - [websocket](#websocket) messages
+  - [s3](#s3-1) bucket writes
+  - [dynamodb](#dynamodb-1) table writes
+  - [sqs](#sqs-1) queue puts
+  - cron [schedules](#schedule)
+  - [ecr](#ecr) docker pushes
 
 ## what
 
-a simpler infrastructure as code [specification](#infrayaml) that is easy to [use](#typical-usage) and [extend](#outgrowing).
+a simpler way to [declare](#infrayaml) aws infrastructure that is easy to [use](#typical-usage) and [extend](#outgrowing).
 
-there are two interfaces:
+there are two ways to use it:
 
-- [cli](#explore-the-cli)
+- [yaml](#infrayaml) and the [cli](#explore-the-cli)
 
-- [go api](#explore-the-go-api)
+- [go structs](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/infra.go#L51) and the [go api](#explore-the-go-api)
 
 the primary entrypoints are:
 
@@ -40,7 +53,7 @@ the primary entrypoints are:
 
 - [infra-rm](./cmd/infra/rm.go): remove an infrastructure set.
 
-`ensure` operations are positive assertions. they assert that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
+`infra-ensure` is a [positive assertion](#tradeoffs). it asserts that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
 
 many other entrypoints exist, and can be explored by type. they fall into two categories:
 
@@ -74,9 +87,9 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
   1
   ```
 
-## pulumi, terraform, cloudformation, and serverless
+## aws sdk, pulumi, terraform, cloudformation, and serverless
 
-compared with the full aws api exposed by tools like [pulumi](https://www.pulumi.com/), [terraform](https://www.terraform.io/), [cloudformation](https://aws.amazon.com/cloudformation/), and [serverless](https://www.serverless.com/), systems specified as [infrastructure sets](#infrastructure-set):
+compared to the full aws api, systems declared as [infrastructure sets](#infrastructure-set):
 
 - [have](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
 
@@ -89,6 +102,13 @@ compared with the full aws api exposed by tools like [pulumi](https://www.pulumi
 - are almost always enough, and easy to [extend](#outgrowing).
 
 - are more fun.
+
+if you want to use the full aws api, there are many great tools:
+- [aws sdk for go](https://aws.amazon.com/sdk-for-go/)
+- [pulumi](https://www.pulumi.com/)
+- [terraform](https://www.terraform.io/)
+- [cloudformation](https://aws.amazon.com/cloudformation/)
+- [serverless](https://www.serverless.com/)
 
 ## readme index
 
