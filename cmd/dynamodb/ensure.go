@@ -27,6 +27,12 @@ example:
 
  - libaws dynamodb-ensure test-table userid:s:hash timestamp:n:range stream=keys_only
 
+ - libaws dynamodb-ensure test-table \
+      username:s:hash \
+      GlobalSecondaryIndexes.0.IndexName=testIndex \
+      GlobalSecondaryIndexes.0.Projection.ProjectionType=ALL \
+      GlobalSecondaryIndexes.0.Key.0=hometown:s:hash \
+
 required attrs:
 
  - NAME:ATTR_TYPE:KEY_TYPE

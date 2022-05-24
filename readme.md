@@ -614,6 +614,18 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
         - read=150
   ```
 
+- example global secondary index:
+  ```yaml
+  dynamodb:
+    test-table:
+      key:
+        - id:s:hash
+      attr:
+        - GlobalSecondaryIndexes.0.IndexName=testIndex
+        - GlobalSecondaryIndexes.0.Projection.ProjectionType=ALL
+        - GlobalSecondaryIndexes.0.Key.0=hometown:s:hash
+  ```
+
 ### sqs
 
 defines a [sqs](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html) queue:
