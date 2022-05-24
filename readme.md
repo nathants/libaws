@@ -463,6 +463,16 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
 
     - as a convenience, `infra-rm` will remove **ALL** infrastructure **CURRENTLY** declared in an `infra.yaml`.
 
+- when using `ensure` operations, no output means no changes.
+
+  - for large infrastructure sets, this can mean a minute or two without output if no changes are needed.
+
+  - to see a lot of output instead of none, set this environment variable:
+
+    ```bash
+    export DEBUG=yes
+    ```
+
 ## infra.yaml
 
 use an `infra.yaml` file to declare an infrastructure set. the schema is as follows:
