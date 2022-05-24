@@ -2241,8 +2241,8 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 			Logger.Println("error:", err)
 			return err
 		}
-		if len(regexp.MustCompile(`[^a-zA-Z_]`).FindAllString(k, -1)) > 0 {
-			err := fmt.Errorf("env vars must be named '[a-zA-Z_]+', got: %s", k)
+		if len(regexp.MustCompile(`[^a-zA-Z0-9_]`).FindAllString(k, -1)) > 0 {
+			err := fmt.Errorf("env vars must be named '[a-zA-Z0-9_]+', got: %s", k)
 			Logger.Println("error:", err)
 			return err
 		}
