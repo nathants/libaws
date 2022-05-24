@@ -24,7 +24,7 @@ easily **CREATE** and **DEPLOY** useful [systems](#infrastructure-set) to aws:
   - [vpcs](#vpc)
   - vpc [security groups](#security-group)
   - ec2 [instance profiles](#instance-profile)
-  - ec2 [keypairs](#keypair).
+  - ec2 [keypairs](#keypair)
 
 - that react to lambda [triggers](#trigger):
   - http [apis](#api)
