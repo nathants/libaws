@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -93,14 +94,30 @@ type InfraRole struct {
 }
 
 const (
-	infraKeyDynamoDBKey  = "key"
-	infraKeyDynamoDBAttr = "attr"
+	infraKeyDynamoDBIndexKey    = "key"
+	infraKeyDynamoDBIndexNonKey = "non-key"
+	infraKeyDynamoDBIndexAttr   = "attr"
+)
+
+type InfraDynamoDBIndex struct {
+	Key    []string `json:"key"                  yaml:"key"`
+	NonKey []string `json:"non-key,omitempty"    yaml:"non-key,omitempty"`
+	Attrs  []string `json:"attr,omitempty"       yaml:"attr,omitempty"`
+}
+
+const (
+	infraKeyDynamoDBKey         = "key"
+	infraKeyDynamoDBAttr        = "attr"
+	infraKeyDynamoDBGlobalIndex = "global-index"
+	infraKeyDynamoDBLocalIndex  = "local-index"
 )
 
 type InfraDynamoDB struct {
 	infraSetName string
-	Key          []string `json:"key,omitempty"  yaml:"key,omitempty"`
-	Attr         []string `json:"attr,omitempty" yaml:"attr,omitempty"`
+	Key          []string                       `json:"key"                    yaml:"key"`
+	Attr         []string                       `json:"attr,omitempty"         yaml:"attr,omitempty"`
+	GlobalIndex  map[string]*InfraDynamoDBIndex `json:"global-index,omitempty" yaml:"global-index,omitempty"`
+	LocalIndex   map[string]*InfraDynamoDBIndex `json:"local-index,omitempty"  yaml:"local-index,omitempty"`
 }
 
 const (
@@ -1778,12 +1795,106 @@ func InfraEnsureS3(ctx context.Context, infraSet *InfraSet, preview bool) error 
 	return nil
 }
 
+func infraEnsureDynamoDBGlobalIndexToAttrs(infraDynamoDB *InfraDynamoDB) error {
+	count := 0
+	for name, index := range infraDynamoDB.GlobalIndex {
+		infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.IndexName=%s", count, name))
+		for i, key := range index.Key {
+			infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Key.%d=%s", count, i, key))
+		}
+		for i, nonKey := range index.NonKey {
+			infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", count, i, nonKey))
+		}
+		projection := false
+		for _, attr := range index.Attrs {
+			k, v, err := SplitOnce(attr, "=")
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			switch k {
+			case "projection":
+				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s", count, strings.ToUpper(v)))
+				projection = true
+			case "read":
+				capacity, err := strconv.Atoi(v)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.ReadCapacityUnits=%d", count, capacity))
+			case "write:":
+				capacity, err := strconv.Atoi(v)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.WriteCapacityUnits=%d", count, capacity))
+			default:
+				err := fmt.Errorf("unknown dynamodb global index attr: %s", attr)
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		if !projection {
+			infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=ALL", count))
+		}
+		count++
+	}
+	return nil
+}
+
+func infraEnsureDynamoDBLocalIndexToAttrs(infraDynamoDB *InfraDynamoDB) error {
+	count := 0
+	for name, index := range infraDynamoDB.LocalIndex {
+		infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.IndexName=%s", count, name))
+		for i, key := range index.Key {
+			infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Key.%d=%s", count, i, key))
+		}
+		for i, nonKey := range index.NonKey {
+			infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", count, i, nonKey))
+		}
+		projection := false
+		for _, attr := range index.Attrs {
+			k, v, err := SplitOnce(attr, "=")
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			switch k {
+			case "projection":
+				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s", count, strings.ToUpper(v)))
+				projection = true
+			default:
+				err := fmt.Errorf("unknown dynamodb local index attr: %s", attr)
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		if !projection {
+			infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=ALL", count))
+		}
+		count++
+	}
+	return nil
+}
+
 func InfraEnsureDynamoDB(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureDynamoDB"}
 		defer d.Log()
 	}
 	for tableName, infraDynamoDB := range infraSet.DynamoDB {
+		err := infraEnsureDynamoDBGlobalIndexToAttrs(infraDynamoDB)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		err = infraEnsureDynamoDBLocalIndexToAttrs(infraDynamoDB)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		input, err := DynamoDBEnsureInput(infraSet.Name, tableName, infraDynamoDB.Key, infraDynamoDB.Attr)
 		if err != nil {
 			Logger.Println("error:", err)
@@ -1945,6 +2056,46 @@ func InfraEnsure(ctx context.Context, yamlPath string, quick string, preview, sh
 	return nil
 }
 
+func infraParseValidateDynamoDBIndex(val interface{}) error {
+	_, ok := val.(map[string]interface{})
+	if !ok {
+		err := fmt.Errorf("infraDynamoDB should be type: map[string]interface{}, got: %#v", val)
+		Logger.Println("error:", err)
+		return err
+	}
+	for name, index := range val.(map[string]interface{}) {
+		if !ok {
+			err := fmt.Errorf("infraDynamoDBIndex should be type: map[string]interface{}, got: %s %#v", name, index)
+			Logger.Println("error:", err)
+			return err
+		}
+		for k, v := range index.(map[string]interface{}) {
+			switch k {
+			case infraKeyDynamoDBIndexKey, infraKeyDynamoDBIndexNonKey, infraKeyDynamoDBIndexAttr:
+				xs, ok := v.([]interface{})
+				if !ok {
+					err := fmt.Errorf("infraDynamoDBIndex key %s should be type: []string, got: %#v", k, v)
+					Logger.Println("error:", err)
+					return err
+				}
+				for _, x := range xs {
+					_, ok := x.(string)
+					if !ok {
+						err := fmt.Errorf("infraDynamoDBIndex key %s should be type: []string, got: %#v", k, v)
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+			default:
+				err := fmt.Errorf("unknown infraDynamoDB key: %s: %v", k, v)
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func infraParseValidateDynamoDB(val interface{}) error {
 	_, ok := val.(map[string]interface{})
 	if !ok {
@@ -1961,6 +2112,12 @@ func infraParseValidateDynamoDB(val interface{}) error {
 		}
 		for k, v := range dynamodb.(map[string]interface{}) {
 			switch k {
+			case infraKeyDynamoDBGlobalIndex, infraKeyDynamoDBLocalIndex:
+				err := infraParseValidateDynamoDBIndex(v)
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
 			case infraKeyDynamoDBKey, infraKeyDynamoDBAttr:
 				xs, ok := v.([]interface{})
 				if !ok {

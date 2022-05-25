@@ -272,37 +272,21 @@ iam-ensure-user-login         - ensure an iam user with login
 ### explore a cli entrypoint
 
 ```bash
->> libaws dynamodb-ensure -h
+>> libaws s3-ensure -h
 
-ensure a dynamodb table
+ensure a s3 bucket
 
 example:
-
- - libaws dynamodb-ensure test-table userid:s:hash timestamp:n:range stream=keys_only
-
-required attrs:
-
- - NAME:ATTR_TYPE:KEY_TYPE
+ - libaws s3-ensure test-bucket acl=PUBLIC versioning=TRUE
 
 optional attrs:
+ - acl=VALUE        (values = public | private, default = private)
+ - versioning=VALUE (values = true | false,     default = false)
+ - metrics=VALUE    (values = true | false,     default = true)
+ - cors=VALUE       (values = true | false,     default = false)
+ - ttldays=VALUE    (values = 0 | n,            default = 0)
 
- - ProvisionedThroughput.ReadCapacityUnits=VALUE, shortcut: read=VALUE,  default: 0
- - ProvisionedThroughput.WriteCapacityUnits=VALUE shortcut: write=VALUE  default: 0
- - StreamSpecification.StreamViewType=VALUE,      shortcut: stream=VALUE
-
- - LocalSecondaryIndexes.INTEGER.IndexName=VALUE
- - LocalSecondaryIndexes.INTEGER.Key.INTEGER=NAME:ATTR_TYPE:KEY_TYPE
- - LocalSecondaryIndexes.INTEGER.Projection.ProjectionType=VALUE
- - LocalSecondaryIndexes.INTEGER.Projection.NonKeyAttributes.INTEGER=VALUE
-
- - GlobalSecondaryIndexes.INTEGER.IndexName=VALUE
- - GlobalSecondaryIndexes.INTEGER.Key.INTEGER=NAME:ATTR_TYPE:KEY_TYPE
- - GlobalSecondaryIndexes.INTEGER.Projection.ProjectionType=VALUE
- - GlobalSecondaryIndexes.INTEGER.Projection.NonKeyAttributes.INTEGER=VALUE
- - GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.ReadCapacityUnits=VALUE
- - GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.WriteCapacityUnits=VALUE
-
-Usage: dynamodb-ensure [--preview] NAME ATTR [ATTR ...]
+Usage: s3-ensure [--preview] NAME [ATTR [ATTR ...]]
 
 Positional arguments:
   NAME
@@ -583,19 +567,16 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
   - `NAME:ATTR_TYPE:KEY_TYPE`
 
 - the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html) can be defined:
-  - `ProvisionedThroughput.ReadCapacityUnits=VALUE`, shortcut: `read=VALUE`, default: `0`
-  - `ProvisionedThroughput.WriteCapacityUnits=VALUE`, shortcut: `write=VALUE`, default: `0`
-  - `StreamSpecification.StreamViewType=VALUE`, shortcut: `stream=VALUE`, default: `0`
-  - `LocalSecondaryIndexes.INTEGER.IndexName=VALUE`
-  - `LocalSecondaryIndexes.INTEGER.Key.INTEGER=NAME:ATTR_TYPE:KEY_TYPE`
-  - `LocalSecondaryIndexes.INTEGER.Projection.ProjectionType=VALUE`
-  - `LocalSecondaryIndexes.INTEGER.Projection.NonKeyAttributes.INTEGER=VALUE`
-  - `GlobalSecondaryIndexes.INTEGER.IndexName=VALUE`
-  - `GlobalSecondaryIndexes.INTEGER.Key.INTEGER=NAME:ATTR_TYPE:KEY_TYPE`
-  - `GlobalSecondaryIndexes.INTEGER.Projection.ProjectionType=VALUE`
-  - `GlobalSecondaryIndexes.INTEGER.Projection.NonKeyAttributes.INTEGER=VALUE`
-  - `GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.ReadCapacityUnits=VALUE`
-  - `GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.WriteCapacityUnits=VALUE`
+  - `read=VALUE`, provisioned read capacity, default: `0`
+  - `write=VALUE`, provisioined write capacity, default: `0`
+
+- on global indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-gsi.html) can be defined:
+  - `projection=VALUE`, provisioned read capacity, default: `ALL`
+  - `read=VALUE`, provisioned read capacity, default: `0`
+  - `write=VALUE`, provisioined write capacity, default: `0`
+
+- on local indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-lsi.html) can be defined:
+  - `projection=VALUE`, provisioned read capacity, default: `ALL`
 
 - schema:
   ```yaml
@@ -605,6 +586,22 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
         - NAME:ATTR_TYPE:KEY_TYPE
       attr:
         - VALUE
+      global-index:
+        VALUE:
+          key:
+            - NAME:ATTR_TYPE:KEY_TYPE
+          non-key:
+            - NAME
+          attr:
+            - VALUE
+      local-index:
+        VALUE:
+          key:
+            - NAME:ATTR_TYPE:KEY_TYPE
+          non-key:
+            - NAME
+          attr:
+            - VALUE
   ```
 
 - example:
@@ -630,10 +627,22 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
     test-table:
       key:
         - id:s:hash
-      attr:
-        - GlobalSecondaryIndexes.0.IndexName=testIndex
-        - GlobalSecondaryIndexes.0.Projection.ProjectionType=ALL
-        - GlobalSecondaryIndexes.0.Key.0=hometown:s:hash
+      global-index:
+        test-index:
+          key:
+            - hometown:s:hash
+  ```
+
+- example local secondary index:
+  ```yaml
+  dynamodb:
+    test-table:
+      key:
+        - id:s:hash
+      local-index:
+        test-index:
+          key:
+            - hometown:s:hash
   ```
 
 ### sqs
@@ -642,11 +651,11 @@ defines a [sqs](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/a
 
 - the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html#aws-resource-sqs-queue-syntax) can be defined:
 
-  - `DelaySeconds=VALUE`, shortcut: `delay=VALUE`, default: `0`
-  - `MaximumMessageSize=VALUE`, shortcut: `size=VALUE`, default: `262144`
-  - `MessageRetentionPeriod=VALUE`, shortcut: `retention=VALUE`, default: `345600`
-  - `ReceiveMessageWaitTimeSeconds=VALUE`, shortcut: `wait=VALUE`, default: `0`
-  - `VisibilityTimeout=VALUE`, shortcut: `timeout=VALUE`, default: `30`
+  - `delay=VALUE`, delay seconds, default: `0`
+  - `size=VALUE`, maximum message size bytes, default: `262144`
+  - `retention=VALUE`, message rentention period seconds, default: `345600`
+  - `wait=VALUE`, receive wait time seconds, default: `0`
+  - `timeout=VALUE`, visibility timeout seconds, default: `30`
 
 - schema:
   ```yaml
@@ -1049,16 +1058,11 @@ defines a [dynamodb trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
 - the first attribute must be the table name.
 
 - the following trigger [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html) can be defined:
-
-  - `BatchSize=VALUE`, shortcut: `batch=VALUE`, default: `100`
-
-  - `ParallelizationFactor=VALUE`, shortcut: `parallel=VALUE`, default: `1`
-
-  - `MaximumRetryAttempts=VALUE`, shortcut: `retry=VALUE`, default: `-1`
-
-  - `MaximumBatchingWindowInSeconds=VALUE`, shortcut: `window=VALUE`, default: `0`
-
-  - `StartingPosition=VALUE`, shortcut: `start=VALUE`
+  - `batch=VALUE`, maximum batch size, default: `100`
+  - `parallel=VALUE`, parallelization factor, default: `1`
+  - `retry=VALUE`, maximum retry attempts, default: `-1`
+  - `window=VALUE`, maximum batching window in seconds, default: `0`
+  - `start=VALUE`, starting position
 
 - schema:
   ```yaml
@@ -1088,10 +1092,8 @@ defines a [sqs trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Use
 - the first attribute must be the queue name.
 
 - the following trigger [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html) can be defined:
-
-  - `BatchSize=VALUE`, shortcut: `batch=VALUE`, default: `10`
-
-  - `MaximumBatchingWindowInSeconds=VALUE`, shortcut: `window=VALUE`, default: `0`
+  - `batch=VALUE`, maximum batch size, default: `10`
+  - `window=VALUE`, maximum batching window in seconds, default: `0`
 
 - schema:
   ```yaml
