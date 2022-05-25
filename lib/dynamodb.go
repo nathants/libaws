@@ -1039,7 +1039,7 @@ func DynamoDBItemDeleteAll(ctx context.Context, tableName string, keyNames []str
 		})
 		if err != nil {
 			Logger.Println("error:", err)
-		    return err
+			return err
 		}
 		reqs := []*dynamodb.WriteRequest{}
 		for _, item := range out.Items {
@@ -1066,12 +1066,12 @@ func DynamoDBItemDeleteAll(ctx context.Context, tableName string, keyNames []str
 			err := dynamodbattribute.UnmarshalMap(req.DeleteRequest.Key, &val)
 			if err != nil {
 				Logger.Println("error:", err)
-			    return err
+				return err
 			}
 			bytes, err := json.Marshal(val)
 			if err != nil {
 				Logger.Println("error:", err)
-			    return err
+				return err
 			}
 			fmt.Println(string(bytes))
 		}

@@ -27,6 +27,6 @@ func dynamodbItemRmAll() {
 	ctx := context.Background()
 	err := lib.DynamoDBItemDeleteAll(ctx, args.Table, args.Keys)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }
