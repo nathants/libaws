@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
 var dynamoDBClient *dynamodb.DynamoDB
@@ -1022,4 +1024,62 @@ func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 		return "", expectedErr
 	}
 	return streamArn, nil
+}
+
+func DynamoDBItemDeleteAll(ctx context.Context, tableName string, keyNames []string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "DynamoDBItemDeleteAll"}
+		defer d.Log()
+	}
+	var start map[string]*dynamodb.AttributeValue
+	for {
+		out, err := DynamoDBClient().ScanWithContext(ctx, &dynamodb.ScanInput{
+			TableName:         aws.String(tableName),
+			ExclusiveStartKey: start,
+			Limit:             aws.Int64(25),
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+		    return err
+		}
+		reqs := []*dynamodb.WriteRequest{}
+		for _, item := range out.Items {
+			key := map[string]*dynamodb.AttributeValue{}
+			for _, k := range keyNames {
+				key[k] = item[k]
+			}
+			reqs = append(reqs, &dynamodb.WriteRequest{
+				DeleteRequest: &dynamodb.DeleteRequest{Key: key},
+			})
+		}
+		input := &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]*dynamodb.WriteRequest{tableName: reqs},
+		}
+		_, err = DynamoDBClient().BatchWriteItemWithContext(ctx, input)
+		if err != nil {
+			if !strings.Contains(err.Error(), "[Member must have length less than or equal to 25, Member must have length greater than or equal to 1]") { // table already empty
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		for _, req := range reqs {
+			val := make(map[string]interface{})
+			err := dynamodbattribute.UnmarshalMap(req.DeleteRequest.Key, &val)
+			if err != nil {
+				Logger.Println("error:", err)
+			    return err
+			}
+			bytes, err := json.Marshal(val)
+			if err != nil {
+				Logger.Println("error:", err)
+			    return err
+			}
+			fmt.Println(string(bytes))
+		}
+		if out.LastEvaluatedKey == nil {
+			break
+		}
+		start = out.LastEvaluatedKey
+	}
+	return nil
 }
