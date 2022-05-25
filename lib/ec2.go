@@ -2103,6 +2103,7 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 		return "", err
 	}
 	if input.Wait {
+		start := time.Now()
 		for {
 			status, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 				ImageIds: []*string{image.ImageId},
@@ -2114,7 +2115,7 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 			if *status.Images[0].State == ec2.ImageStateAvailable {
 				break
 			}
-			Logger.Println("wait for image", time.Now())
+			Logger.Println("wait for image", fmt.Sprintf("t+%d", int(time.Since(start).Seconds())))
 			time.Sleep(1 * time.Second)
 		}
 	}
