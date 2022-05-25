@@ -726,7 +726,6 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		update.GlobalSecondaryIndexUpdates = nil
 	} else {
 		needsUpdate = true
-		Logger.Printf(PreviewString(preview)+"update global secondary indexes for %s: %s\n", *input.TableName, PformatAlways(update.GlobalSecondaryIndexUpdates))
 	}
 	if update.StreamSpecification.StreamEnabled == nil && update.StreamSpecification.StreamViewType == nil {
 		update.StreamSpecification = nil
@@ -766,7 +765,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 				}
 			}
 		}
-		Logger.Println(PreviewString(preview)+"updated table:", *update.TableName, PformatAlways(update))
+		Logger.Println(PreviewString(preview)+"updated table:", *update.TableName, DropLinesWithAny(PformatAlways(update), "null"))
 	}
 	arn, err := DynamoDBArn(ctx, *update.TableName)
 	if err != nil {
