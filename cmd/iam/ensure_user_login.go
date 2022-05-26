@@ -22,7 +22,13 @@ type iamEnsureUserLoginArgs struct {
 }
 
 func (iamEnsureUserLoginArgs) Description() string {
-	return "\nensure an iam user with login\n"
+	return `
+ensure an iam user with login
+
+temporary password is only printed on user creation.
+
+to reset password use: libaws iam-reset-user-login-password
+`
 }
 
 func iamEnsureUserLogin() {
@@ -37,9 +43,22 @@ func iamEnsureUserLogin() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = lib.IamEnsureUserLogin(ctx, args.Name, password, args.Preview)
+	found := false
+	users, err := lib.IamListUsers(ctx)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
+	}
+	for _, user := range users {
+		if *user.UserName == args.Name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		err = lib.IamEnsureUserLogin(ctx, args.Name, password, args.Preview)
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
 	}
 	err = lib.IamEnsureUserPolicies(ctx, args.Name, args.Policy, args.Preview)
 	if err != nil {
@@ -49,7 +68,9 @@ func iamEnsureUserLogin() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Println("username:", args.Name)
-	fmt.Println("password:", password)
-	fmt.Printf("url: https://%s.signin.aws.amazon.com/console\n", account)
+	if !found {
+		fmt.Println("username:", args.Name)
+		fmt.Println("password:", password)
+		fmt.Printf("url: https://%s.signin.aws.amazon.com/console\n", account)
+	}
 }
