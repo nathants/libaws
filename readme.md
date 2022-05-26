@@ -279,6 +279,8 @@ func main() {
 
 ### view the infrastructure set
 
+depth based colors by [yaml](https://gist.github.com/nathants/1955b2c3130b7d1a00c8420ad6231639)
+
 ![](https://github.com/nathants/libaws/raw/master/gif/ls.gif)
 
 ### trigger the infrastructure set
