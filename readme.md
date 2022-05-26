@@ -4,15 +4,14 @@
 
 aws is amazing, but it's hard to see the forest for the trees.
 
-aws should have fewer knobs.
-
-aws should be easy to use, and hard to screw up.
-
-aws should be fast, and fun.
-
-aws should have a [tldr](#tldr).
-
-aws should be on rails!
+aws should:
+- have fewer knobs
+- have sane defaults
+- be easy to use
+- be hard to screw up
+- be fast
+- be fun
+- have a [tldr](#tldr)
 
 it should be easy to have a [lambda](#lambda):
 - react to docker push to [ecr](#ecr)
@@ -410,7 +409,7 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
   - [vpcs](#vpc)
     - [security groups](#security-group)
 - [lambdas](#lambda)
-  - [lambda triggers](#trigger)
+  - [triggers](#trigger)
     - [api](#api)
     - [websocket](#websocket)
     - [s3](#s3-1)
