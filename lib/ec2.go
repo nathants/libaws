@@ -2377,7 +2377,7 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 					}
 				}
 				// wait for rule instantiation
-				err = Retry(ctx, func() error {
+				err = RetryAttempts(ctx, 11, func() error {
 					sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
 						Filters: []*ec2.Filter{
 							{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}},
@@ -2456,7 +2456,7 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 				return err
 			}
 			// wait for rule de-instantiation
-			err = Retry(ctx, func() error {
+			err = RetryAttempts(ctx, 11, func() error {
 				sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
 					Filters: []*ec2.Filter{
 						{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}},
