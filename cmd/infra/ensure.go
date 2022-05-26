@@ -27,7 +27,11 @@ func infraEnsure() {
 	var args infraEnsureArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.InfraEnsure(ctx, args.YamlPath, args.Quick, args.Preview, args.ShowEnvVarValues)
+	infraSet, err := lib.InfraParse(args.YamlPath)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+	err = lib.InfraEnsure(ctx, infraSet, args.Quick, args.Preview, args.ShowEnvVarValues)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

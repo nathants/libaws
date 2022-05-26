@@ -25,7 +25,11 @@ func infraRm() {
 	var args infraRmArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.InfraDelete(ctx, args.YamlPath, args.Preview)
+	infraSet, err := lib.InfraParse(args.YamlPath)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+	err = lib.InfraDelete(ctx, infraSet, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

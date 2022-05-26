@@ -27,11 +27,11 @@ func infraUrlWebsocket() {
 	var args infraUrlWebsocketArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	input, err := lib.InfraParse(args.YamlPath)
+	infraSet, err := lib.InfraParse(args.YamlPath)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	for name := range input.Lambda {
+	for name := range infraSet.Lambda {
 		if name == args.LambdaName {
 			url, err := lib.ApiUrl(ctx, name+lib.LambdaWebsocketSuffix)
 			if err != nil {

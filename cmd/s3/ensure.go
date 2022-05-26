@@ -23,7 +23,7 @@ func (s3EnsureArgs) Description() string {
 ensure a s3 bucket
 
 example:
- - libaws s3-ensure test-bucket acl=PUBLIC versioning=TRUE
+ - libaws s3-ensure test-bucket acl=public versioning=true
 
 optional attrs:
  - acl=VALUE        (values = public | private, default = private)

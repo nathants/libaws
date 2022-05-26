@@ -2006,18 +2006,13 @@ func lambdaUpdateZipFake(_ *InfraLambda) error { return nil }
 
 func lambdaCreateZipFake(_ *InfraLambda) error { return nil }
 
-func InfraEnsure(ctx context.Context, yamlPath string, quick string, preview, showEnvVarValues bool) error {
+func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsure"}
 		defer d.Log()
 	}
-	infraSet, err := InfraParse(yamlPath)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
 	if quick == "" {
-		err = InfraEnsureKeypair(ctx, infraSet, preview)
+		err := InfraEnsureKeypair(ctx, infraSet, preview)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -2048,7 +2043,7 @@ func InfraEnsure(ctx context.Context, yamlPath string, quick string, preview, sh
 			return err
 		}
 	}
-	err = InfraEnsureLambda(ctx, infraSet, quick, preview, showEnvVarValues)
+	err := InfraEnsureLambda(ctx, infraSet, quick, preview, showEnvVarValues)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -2625,15 +2620,10 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 	return infraSet, nil
 }
 
-func InfraDelete(ctx context.Context, yamlPath string, preview bool) error {
+func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraDelete"}
 		defer d.Log()
-	}
-	infraSet, err := InfraParse(yamlPath)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
 	}
 	for vpcName := range infraSet.Vpc {
 		err := VpcRm(ctx, vpcName, preview)
