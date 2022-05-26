@@ -21,7 +21,7 @@ type ec2SshArgs struct {
 	Selectors      []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
 	User           string   `arg:"-u,--user" help:"ssh user if not tagged on instance as 'user'"`
 	Cmd            string   `arg:"-c,--cmd"`
-	Stdin          string   `arg:"-s,--stdin" help:"stdin value to be provided to remote cmd.\n                         if stdin is -, all content is read from stdin, and then passed to ssh.\n                         to stream through stdin, use: ssh USER@$(libaws ec2-ip INSTANCE)"`
+	Stdin          string   `arg:"-s,--stdin" help:"stdin value to be provided to remote cmd.\n                         if stdin is -, all content is read from stdin, and then passed to ssh.\n                         to stream through stdin, use: ssh $(libaws ec2-ssh-user INSTANCE)@$(libaws ec2-ip INSTANCE)"`
 	Timeout        int      `arg:"-t,--timeout" help:"seconds before ssh cmd is considered failed"`
 	PrivateIP      bool     `arg:"-p,--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
 	MaxConcurrency int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent ssh connections"`
