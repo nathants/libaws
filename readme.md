@@ -12,9 +12,26 @@ aws should be fast, and fun.
 
 aws should have a [tldr](#tldr).
 
+aws should be on rails!
+
+it should be easy to have a [lambda](#lambda):
+- react to docker push to [ecr](#ecr)
+- react to [s3](#s3-1) put object
+- react to [dynamodb](#dynamodb-1) put item
+- react to [sqs](#sqs-1) send message
+- react to [time](#schedule) passing
+- react to [http](#api) requests
+- react to [websocket](#websocket) messages
+
+it should be easy to create:
+- [vpcs](#vpc)
+- [security groups](#security-group)
+- [instance profiles](#instance-profile)
+- [keypairs](#keypair)
+
 ## how
 
-easily **CREATE** and **DEPLOY** useful [systems](#infrastructure-set) to aws:
+[declare](#define-an-infrastructure-set) and [deploy](#ensure-the-infrastructure-set) groups of related aws infrastructure as [infrastructure sets](#infrastructure-set):
 
 - that contain:
   - [lambdas](#lambda)
@@ -22,9 +39,9 @@ easily **CREATE** and **DEPLOY** useful [systems](#infrastructure-set) to aws:
   - [dynamodb](#dynamodb) tables
   - [sqs](#sqs) queues
   - [vpcs](#vpc)
-  - vpc [security groups](#security-group)
-  - ec2 [instance profiles](#instance-profile)
-  - ec2 [keypairs](#keypair)
+  - [security groups](#security-group)
+  - [instance profiles](#instance-profile)
+  - [keypairs](#keypair)
 
 - that react to lambda [triggers](#trigger):
   - http [apis](#api)
@@ -37,21 +54,42 @@ easily **CREATE** and **DEPLOY** useful [systems](#infrastructure-set) to aws:
 
 ## what
 
-a simpler way to [declare](#infrayaml) aws infrastructure that is easy to [use](#typical-usage) and [extend](#outgrowing).
+a simpler way to [declare](#infrayaml) aws infrastructure that is easy to [use](#typical-usage) and [extend](#extending).
 
 there are two ways to use it:
 
 - [yaml](#infrayaml) and the [cli](#explore-the-cli)
 
-- [go structs](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/infra.go#L51) and the [go api](#explore-the-go-api)
+- [go structs](https://github.com/nathants/libaws/blob/master/lib/infra.go#L52) and the [go api](#explore-the-go-api)
 
 the primary entrypoints are:
 
-- [infra-ls](./cmd/infra/ls.go): view deployed infrastructure sets.
+- [infra-ensure](#ensure-the-infrastructure-set): deploy an infrastructure set.
 
-- [infra-ensure](./cmd/infra/ensure.go): deploy an infrastructure set.
+  ```bash
+  libaws infra-ensure ./infra.yaml --preview
+  libaws infra-ensure ./infra.yaml
+  ```
 
-- [infra-rm](./cmd/infra/rm.go): remove an infrastructure set.
+- [infra-ls](#view-the-infrastructure-set): view infrastructure sets.
+
+  ```bash
+  libaws infra-ls
+  ```
+
+- [infra-ensure --quick](#quickly-update-lambda-code): quickly update lambda code.
+
+  ```bash
+  libaws infra-ensure ./infra.yaml --quick LAMBDA_NAME
+  ```
+
+- [infra-rm](#delete-the-infrastructure-set): remove an infrastructure set.
+
+  ```bash
+  libaws infra-rm ./infra.yaml --preview
+  libaws infra-rm ./infra.yaml
+  ```
+
 
 `infra-ensure` is a [positive assertion](#tradeoffs). it asserts that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
 
@@ -99,7 +137,7 @@ compared to the full aws api, systems declared as [infrastructure sets](#infrast
 
 - are harder to screw up.
 
-- are almost always enough, and easy to [extend](#outgrowing).
+- are almost always enough, and easy to [extend](#extending).
 
 - are more fun.
 
@@ -118,8 +156,9 @@ if you want to use the full aws api, there are many great tools:
 - [tldr](#tldr)
   - [define an infrastructure set](#define-an-infrastructure-set)
   - [ensure the infrastructure set](#ensure-the-infrastructure-set)
+  - [view the infrastructure set](#view-the-infrastructure-set)
   - [trigger the infrastructure set](#trigger-the-infrastructure-set)
-  - [update the infrastructure set](#update-the-infrastructure-set)
+  - [quickly update lambda code](#quickly-update-lambda-code)
   - [delete the infrastructure set](#delete-the-infrastructure-set)
 - [usage](#usage)
   - [explore the cli](#explore-the-cli)
@@ -159,7 +198,7 @@ if you want to use the full aws api, there are many great tools:
       - [schedule](#schedule)
       - [ecr](#ecr)
 - [bash completion](#bash-completion)
-- [outgrowing](#outgrowing)
+- [extending](#extending)
 - [testing](#testing)
 
 ## install
@@ -238,11 +277,15 @@ func main() {
 
 ![](https://github.com/nathants/libaws/raw/master/gif/ensure.gif)
 
+### view the infrastructure set
+
+![](https://github.com/nathants/libaws/raw/master/gif/ls.gif)
+
 ### trigger the infrastructure set
 
 ![](https://github.com/nathants/libaws/raw/master/gif/trigger.gif)
 
-### update the infrastructure set
+### quickly update lambda code
 
 ![](https://github.com/nathants/libaws/raw/master/gif/update.gif)
 
@@ -277,7 +320,7 @@ iam-ensure-user-login         - ensure an iam user with login
 ensure a s3 bucket
 
 example:
- - libaws s3-ensure test-bucket acl=PUBLIC versioning=TRUE
+ - libaws s3-ensure test-bucket acl=public versioning=true
 
 optional attrs:
  - acl=VALUE        (values = public | private, default = private)
@@ -353,7 +396,7 @@ func main() {
 
 ## infrastructure set
 
-an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/infra.go#L51) and contains:
+an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/blob/master/lib/infra.go#L52) and contains:
 
 - stateful services
   - [s3](#s3)
@@ -376,24 +419,31 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
 
 ## typical usage
 
-- use [infra-ls](https://github.com/nathants/libaws/tree/master/cmd/infra/ls.go) to view deployed infrastructure sets.
+- use [infra-ensure](#ensure-the-infrastructure-set) to deploy an infrastructure set.
 
-- use [infra-ensure](https://github.com/nathants/libaws/tree/master/cmd/infra/ensure.go) to deploy an infrastructure set.
+  ```bash
+  libaws infra-ensure ./infra.yaml --preview
+  libaws infra-ensure ./infra.yaml
+  ```
 
-- use [infra-rm](https://github.com/nathants/libaws/tree/master/cmd/infra/rm.go) to remove an infrastructure set.
+- use [infra-ls](#view-the-infrastructure-set) to view infrastructure sets.
 
-- use lambdas in the infrastructure set to:
-  - respond to triggers.
-  - manage fleets of ec2 instances.
-  - monitor services.
-  - do anything.
+  ```bash
+  libaws infra-ls
+  ```
 
-- rapidly iterate by responding to [file changes](https://github.com/eradman/entr):
-  - on changes run:
-    ```bash
-    infra-ensure infra.yaml --quick LAMBDA_NAME
-    ```
-  - this updates the lambda code without making other changes.
+- use [infra-ensure --quick LAMBDA_NAME](#quickly-update-lambda-code) to quickly update lambda code.
+
+  ```bash
+  libaws infra-ensure ./infra.yaml --quick LAMBDA_NAME
+  ```
+
+- use [infra-rm](#delete-the-infrastructure-set) to remove an infrastructure set.
+
+  ```bash
+  libaws infra-rm ./infra.yaml --preview
+  libaws infra-rm ./infra.yaml
+  ```
 
 ## design
 
@@ -405,8 +455,8 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
   - aws.
   - your code.
 
-- aws resources are uniquely identified by name.
-  - all aws resources share a private namespace scoped to account/region. use good names.
+- aws infrastructure is uniquely identified by name.
+  - all aws infrastructure share a private namespace scoped to account/region. use good names.
   - except s3, which shares a public namespace scoped to earth. use better names.
 
 - mutative operations manipulate aws state.
@@ -1171,7 +1221,7 @@ source completions.d/aws-creds.sh
 source completions.d/aws-creds-temp.sh
 ```
 
-## outgrowing
+## extending
 
 drop down to the [aws go sdk](https://pkg.go.dev/github.com/aws/aws-sdk-go/service) and implement what you need.
 
