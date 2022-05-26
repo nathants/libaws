@@ -13,14 +13,14 @@ aws should:
 - be fun
 - have a [tldr](#tldr)
 
-it should be easy to have a [lambda](#lambda):
-- react to docker push to [ecr](#ecr)
-- react to [s3](#s3-1) put object
-- react to [dynamodb](#dynamodb-1) put item
-- react to [sqs](#sqs-1) send message
-- react to [time](#schedule) passing
-- react to [http](#api) requests
-- react to [websocket](#websocket) messages
+it should be easy for a [lambda](#lambda) to react to:
+- docker push to [ecr](#ecr)
+- [s3](#s3-1) put object
+- [dynamodb](#dynamodb-1) put item
+- [sqs](#sqs-1) send message
+- [time](#schedule) passing
+- [http](#api) requests
+- [websocket](#websocket) messages
 
 it should be easy to create:
 - [vpcs](#vpc)
