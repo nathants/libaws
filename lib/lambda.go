@@ -1922,7 +1922,11 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	err = shellAt(dir, "zip -9 %s ./main", zipFile)
+	compression := "-9"
+	if os.Getenv("ZIP_COMPRESSION") != "" {
+		compression = "-" + os.Getenv("ZIP_COMPRESSION")
+	}
+	err = shellAt(dir, "zip %s %s ./main", compression, zipFile)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -1986,7 +1990,11 @@ func lambdaCreateZipPy(infraLambda *InfraLambda) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	err = shellAt(site_package, "zip -9 -r %s .", zipFile)
+	compression := "-9"
+	if os.Getenv("ZIP_COMPRESSION") != "" {
+		compression = "-" + os.Getenv("ZIP_COMPRESSION")
+	}
+	err = shellAt(site_package, "zip %s -r %s .", compression, zipFile)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -2030,7 +2038,11 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 				if !Exists(path.Join(dir, pth)) {
 					continue
 				}
-				err = shellAt(dir, "zip -9 -r %s '%s'", zipFile, pth)
+				compression := "-9"
+				if os.Getenv("ZIP_COMPRESSION") != "" {
+					compression = "-" + os.Getenv("ZIP_COMPRESSION")
+				}
+				err = shellAt(dir, "zip %s -r %s '%s'", compression, zipFile, pth)
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
@@ -2046,7 +2058,11 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 			if strings.HasPrefix(include, "/") {
 				args = "--junk-paths"
 			}
-			err := shellAt(dir, "zip -9 %s -r %s '%s'", args, zipFile, include)
+			compression := "-9"
+			if os.Getenv("ZIP_COMPRESSION") != "" {
+				compression = "-" + os.Getenv("ZIP_COMPRESSION")
+			}
+			err := shellAt(dir, "zip %s %s -r %s '%s'", compression, args, zipFile, include)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
@@ -2079,7 +2095,11 @@ func lambdaUpdateZipPy(infraLambda *InfraLambda) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	err = shellAt(site_package, "zip -9 %s %s", zipFile, path.Base(infraLambda.Entrypoint))
+	compression := "-9"
+	if os.Getenv("ZIP_COMPRESSION") != "" {
+		compression = "-" + os.Getenv("ZIP_COMPRESSION")
+	}
+	err = shellAt(site_package, "zip %s %s %s", compression, zipFile, path.Base(infraLambda.Entrypoint))
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
