@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -483,6 +484,17 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 	}
 	var allowNames []string
 	for _, allowStr := range allows {
+		if preview {
+			for _, name := range []string{lambdaEnvVarApiID, lambdaEnvVarWebsocketID} {
+				if os.Getenv(name) == "" {
+					err := os.Setenv(name, name)
+					if err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
+				}
+			}
+		}
 		allowStr, err := resolveEnvVars(allowStr, []string{}) // resolve again since lambdaEnvVarApiID and lambdaEnvVarWebsocketID are not set
 		if err != nil {
 			Logger.Println("error:", err)

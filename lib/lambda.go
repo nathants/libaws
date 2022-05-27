@@ -1163,7 +1163,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 				return nil, err
 			}
 			if protocolType == apigatewayv2.ProtocolTypeHttp {
-				if !preview {
+				if api != nil && api.ApiId != nil {
 					err := os.Setenv(lambdaEnvVarApiID, *api.ApiId)
 					if err != nil {
 						Logger.Println("error:", err)
@@ -1171,7 +1171,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 					}
 				}
 			} else if protocolType == apigatewayv2.ProtocolTypeWebsocket {
-				if !preview {
+				if api != nil && api.ApiId != nil {
 					err := os.Setenv(lambdaEnvVarWebsocketID, *api.ApiId)
 					if err != nil {
 						Logger.Println("error:", err)

@@ -683,7 +683,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"put bucket ttl for:", input.name, input.ttlDays)
+			Logger.Println(PreviewString(preview)+"put bucket ttl days for:", input.name, input.ttlDays)
 		}
 	} else {
 		if input.ttlDays == 0 {
