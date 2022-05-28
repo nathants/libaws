@@ -5,8 +5,8 @@ go 1.17
 require (
 	github.com/alexflint/go-arg v1.4.3
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/aws/aws-lambda-go v1.31.1
-	github.com/aws/aws-sdk-go v1.44.6
+	github.com/aws/aws-lambda-go v1.32.0
+	github.com/aws/aws-sdk-go v1.44.24
 	github.com/buger/goterm v1.0.4
 	github.com/dustin/go-humanize v1.0.0
 	github.com/gofrs/uuid v4.2.0+incompatible
@@ -15,9 +15,9 @@ require (
 	github.com/pkg/term v1.1.0
 	github.com/r3labs/diff/v2 v2.15.1
 	github.com/sethvargo/go-password v0.2.0
-	golang.org/x/crypto v0.0.0-20220427172511-eb4f295cb31f
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
+	golang.org/x/sync v0.0.0-20220513210516-0976fa681c29
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
