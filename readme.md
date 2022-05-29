@@ -399,17 +399,17 @@ func main() {
 
 an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/blob/master/lib/infra.go#L52) and contains:
 
-- stateful services
+- stateful infrastructure:
   - [s3](#s3)
   - [dynamodb](#dynamodb)
   - [sqs](#sqs)
-- ec2 services
+- ec2 infrastructure:
   - [keypairs](#keypair)
   - [instance profiles](#instance-profile)
   - [vpcs](#vpc)
     - [security groups](#security-group)
-- [lambdas](#lambda)
-  - [triggers](#trigger)
+- [lambdas](#lambda):
+  - [triggers](#trigger):
     - [api](#api)
     - [websocket](#websocket)
     - [s3](#s3-1)
