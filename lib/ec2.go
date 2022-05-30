@@ -1573,6 +1573,12 @@ var ubuntus = map[string]string{
 	"trusty": "ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-",
 }
 
+var debians = map[string]string{
+	"bullseye": "debian-11-",
+	"buster":   "debian-10-",
+	"stretch":  "debian-9-",
+}
+
 func keys(m map[string]string) []string {
 	var ks []string
 	for k := range m {
@@ -1595,7 +1601,34 @@ func ec2AmiUbuntu(ctx context.Context, name, arch string) (string, error) {
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String("099720109477")},
 		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String(fmt.Sprintf("*%s*", fragment))}},
+			{Name: aws.String("name"), Values: []*string{aws.String(fmt.Sprintf("%s*", fragment))}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+		},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
+	return *out.Images[0].ImageId, nil
+}
+
+func ec2AmiDebian(ctx context.Context, name, arch string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2AmiDebian"}
+		defer d.Log()
+	}
+	fragment, ok := debians[name]
+	if !ok {
+		err := fmt.Errorf("bad debian name %s, should be one of: %v", name, keys(debians))
+		Logger.Println("error:", err)
+		return "", err
+	}
+	_ = fragment
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Owners: []*string{aws.String("136693071363")},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("name"), Values: []*string{aws.String(fmt.Sprintf("%s*", fragment))}},
 			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
 		},
 	})
@@ -1721,6 +1754,7 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 		Logger.Println("error:", err)
 		return "", "", err
 	}
+
 	switch name {
 	case EC2AmiLambda:
 		amiID, err = ec2AmiLambda(ctx, arch)
@@ -1735,8 +1769,20 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 		amiID, err = ec2AmiAlpine(ctx, arch)
 		sshUser = "alpine"
 	default:
-		amiID, err = ec2AmiUbuntu(ctx, name, arch)
-		sshUser = "ubuntu"
+		_, okUbuntu := ubuntus[name]
+		_, okDebian := debians[name]
+		switch {
+		case okUbuntu:
+			amiID, err = ec2AmiUbuntu(ctx, name, arch)
+			sshUser = "ubuntu"
+		case okDebian:
+			amiID, err = ec2AmiDebian(ctx, name, arch)
+			sshUser = "admin"
+		default:
+			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | alpine | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | bullseye | buster | stretch\", got: %s", name)
+			Logger.Println("error:", err)
+			return "", "", err
+		}
 	}
 	return amiID, sshUser, err
 }
