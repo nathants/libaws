@@ -508,6 +508,8 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
     export DEBUG=yes
     ```
 
+- `infra-ls` is designed to list aws accounts managed with `infra-ensure`. it will not work well in other scenarios.
+
 ## infra.yaml
 
 use an `infra.yaml` file to declare an infrastructure set. the schema is as follows:
