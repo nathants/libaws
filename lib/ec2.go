@@ -1741,7 +1741,7 @@ func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 	}
 	var images []*ec2.Image
 	for _, image := range out.Images {
-		if strings.Contains(*image.Name, "-uefi-tiny-") {
+		if strings.Contains(*image.Name, "-tiny-") {
 			images = append(images, image)
 		}
 	}
