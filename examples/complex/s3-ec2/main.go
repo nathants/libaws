@@ -41,7 +41,7 @@ func handleRequest(ctx context.Context, event events.S3Event) (events.APIGateway
 	if err != nil {
 		panic(err)
 	}
-	amiID, user, err := lib.EC2AmiBase(ctx, lib.EC2AmiAlpine, lib.EC2ArchAmd64)
+	amiID, user, err := lib.EC2AmiBase(ctx, lib.EC2AmiAlpine3160, lib.EC2ArchAmd64)
 	if err != nil {
 		panic(err)
 	}
