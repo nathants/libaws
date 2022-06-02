@@ -1999,6 +1999,11 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
+			if len(ready) == 0 {
+				err := fmt.Errorf("no instances became ready")
+				Logger.Println("error:", err)
+				return nil, err
+			}
 			return ready, nil
 		}
 		secondsToWait := 5 - (time.Since(now).Seconds())
@@ -2097,6 +2102,11 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 				InstanceIds: ids,
 			})
 			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			if len(ready) == 0 {
+				err := fmt.Errorf("no instances became ready")
 				Logger.Println("error:", err)
 				return nil, err
 			}
