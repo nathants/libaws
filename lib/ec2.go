@@ -32,9 +32,9 @@ const (
 	EC2ArchAmd64 = "x86_64"
 	EC2ArchArm64 = "arm64"
 
-	EC2AmiLambda     = "lambda"
-	EC2AmiAmzn       = "amzn"
-	EC2AmiArch       = "arch"
+	EC2AmiLambda = "lambda"
+	EC2AmiAmzn   = "amzn"
+	EC2AmiArch   = "arch"
 
 	EC2AmiUbuntuFocal  = "focal"
 	EC2AmiUbuntuBionic = "bionic"
