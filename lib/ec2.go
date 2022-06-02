@@ -32,10 +32,9 @@ const (
 	EC2ArchAmd64 = "x86_64"
 	EC2ArchArm64 = "arm64"
 
-	EC2AmiLambda = "lambda"
-	EC2AmiAmzn   = "amzn"
-	EC2AmiArch   = "arch"
-	EC2AmiAlpine = "alpine" // alpine edge
+	EC2AmiLambda     = "lambda"
+	EC2AmiAmzn       = "amzn"
+	EC2AmiArch       = "arch"
 
 	EC2AmiUbuntuFocal  = "focal"
 	EC2AmiUbuntuBionic = "bionic"
@@ -45,6 +44,8 @@ const (
 	EC2AmiDebianBullseye = "bullseye"
 	EC2AmiDebianBuster   = "buster"
 	EC2AmiDebianStretch  = "stretch"
+
+	EC2AmiAlpine3160 = "alpine-3.16.0"
 )
 
 var ec2Client *ec2.EC2
