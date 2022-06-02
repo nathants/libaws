@@ -25,6 +25,7 @@ def test():
     infra.pop("region")
     infra.pop("account")
     infra["infraset"].pop("none")
+    infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     infra["infraset"][f"test-infraset-{uid}"]["lambda"][f"test-lambda-{uid}"]['trigger'][1].pop("attr")
     expected = {
         "infraset": {
