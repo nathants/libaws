@@ -1020,7 +1020,7 @@ func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
 		}
 		result[*keypair.KeyName] = infraKeypair
 	}
-	return nil, nil
+	return result, nil
 }
 
 func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[string]*InfraApi, error) {
