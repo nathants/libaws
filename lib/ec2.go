@@ -35,12 +35,16 @@ const (
 	EC2AmiLambda = "lambda"
 	EC2AmiAmzn   = "amzn"
 	EC2AmiArch   = "arch"
-	EC2AmiAlpine = "alpine"
+	EC2AmiAlpine = "alpine" // alpine edge
 
 	EC2AmiUbuntuFocal  = "focal"
 	EC2AmiUbuntuBionic = "bionic"
 	EC2AmiUbuntuXenial = "xenial"
 	EC2AmiUbuntuTrusty = "trusty"
+
+	EC2AmiDebianBullseye = "bullseye"
+	EC2AmiDebianBuster   = "buster"
+	EC2AmiDebianStretch  = "stretch"
 )
 
 var ec2Client *ec2.EC2
