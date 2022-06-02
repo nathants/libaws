@@ -1570,6 +1570,10 @@ func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
+var alpines = map[string]string{
+	"alpine-3.16.0": "alpine-3.16.0-",
+}
+
 var ubuntus = map[string]string{
 	"focal":  "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-",
 	"bionic": "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-",
@@ -1719,7 +1723,7 @@ func ec2AmiArch(ctx context.Context, arch string) (string, error) {
 	return amiID, nil
 }
 
-func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
+func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiAlpine"}
 		defer d.Log()
@@ -1727,7 +1731,7 @@ func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String("538276064493")},
 		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String("alpine-ami-*")}},
+			{Name: aws.String("name"), Values: []*string{aws.String(alpines[name] + "*")}},
 			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
 		},
 	})
@@ -1737,11 +1741,11 @@ func ec2AmiAlpine(ctx context.Context, arch string) (string, error) {
 	}
 	var images []*ec2.Image
 	for _, image := range out.Images {
-		if strings.Contains(*image.Name, "edge") {
+		if strings.Contains(*image.Name, "-uefi-tiny-") {
 			images = append(images, image)
 		}
 	}
-	sort.Slice(images, func(i, j int) bool { return *images[i].Name > *images[j].Name })
+	sort.Slice(images, func(i, j int) bool { return *images[i].CreationDate > *images[j].CreationDate })
 	return *images[0].ImageId, nil
 }
 
@@ -1758,7 +1762,6 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 		Logger.Println("error:", err)
 		return "", "", err
 	}
-
 	switch name {
 	case EC2AmiLambda:
 		amiID, err = ec2AmiLambda(ctx, arch)
@@ -1769,13 +1772,14 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 	case EC2AmiArch:
 		amiID, err = ec2AmiArch(ctx, arch)
 		sshUser = "arch"
-	case EC2AmiAlpine:
-		amiID, err = ec2AmiAlpine(ctx, arch)
-		sshUser = "alpine"
 	default:
+		_, okAlpine := alpines[name]
 		_, okUbuntu := ubuntus[name]
 		_, okDebian := debians[name]
 		switch {
+		case okAlpine:
+			amiID, err = ec2AmiAlpine(ctx, name, arch)
+			sshUser = "alpine"
 		case okUbuntu:
 			amiID, err = ec2AmiUbuntu(ctx, name, arch)
 			sshUser = "ubuntu"
@@ -1783,7 +1787,7 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 			amiID, err = ec2AmiDebian(ctx, name, arch)
 			sshUser = "admin"
 		default:
-			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | alpine | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | bullseye | buster | stretch\", got: %s", name)
+			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | bullseye | buster | stretch | alpine-3.16.0\", got: %s", name)
 			Logger.Println("error:", err)
 			return "", "", err
 		}

@@ -22,7 +22,7 @@ type ec2NewArgs struct {
 	Name           string   `arg:"positional,required"`
 	Num            int      `arg:"-n,--num" default:"1"`
 	Type           string   `arg:"-t,--type,required"`
-	Ami            string   `arg:"-a,--ami,required" help:"ami-ID | arch | alpine | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | bullseye | buster | stretch"`
+	Ami            string   `arg:"-a,--ami,required" help:"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | bullseye | buster | stretch | alpine-3.16.0"`
 	UserName       string   `arg:"-u,--user" help:"ssh user name, otherwise look for 'user' tag on instance or find via ami name lookup"`
 	Key            string   `arg:"-k,--key,required"`
 	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create onDemand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized"`
