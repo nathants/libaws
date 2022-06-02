@@ -2107,12 +2107,14 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			for _, instance := range instances {
 				ids = append(ids, instance.InstanceId)
 			}
-			_, err = EC2Client().TerminateInstancesWithContext(context.Background(), &ec2.TerminateInstancesInput{
-				InstanceIds: ids,
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
+			if len(ids) > 0 {
+				_, err = EC2Client().TerminateInstancesWithContext(context.Background(), &ec2.TerminateInstancesInput{
+					InstanceIds: ids,
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
 			}
 			if len(ready) == 0 {
 				err := fmt.Errorf("no instances became ready")
