@@ -36,6 +36,7 @@ const (
 	EC2AmiAmzn   = "amzn"
 	EC2AmiArch   = "arch"
 
+	EC2AmiUbuntuJammy  = "jammy"
 	EC2AmiUbuntuFocal  = "focal"
 	EC2AmiUbuntuBionic = "bionic"
 	EC2AmiUbuntuXenial = "xenial"
@@ -1576,6 +1577,7 @@ var alpines = map[string]string{
 }
 
 var ubuntus = map[string]string{
+	"jammy":  "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-",
 	"focal":  "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-",
 	"bionic": "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-",
 	"xenial": "ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-",
@@ -1788,7 +1790,7 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 			amiID, err = ec2AmiDebian(ctx, name, arch)
 			sshUser = "admin"
 		default:
-			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | bullseye | buster | stretch | alpine-3.16.0\", got: %s", name)
+			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-3.16.0\", got: %s", name)
 			Logger.Println("error:", err)
 			return "", "", err
 		}
