@@ -32,6 +32,7 @@ const (
 	EC2ArchAmd64 = "x86_64"
 	EC2ArchArm64 = "arm64"
 
+	EC2AmiAlpineEdge = "alpine" // edge
 	EC2AmiLambda = "lambda"
 	EC2AmiAmzn   = "amzn"
 	EC2AmiArch   = "arch"
@@ -1726,6 +1727,32 @@ func ec2AmiArch(ctx context.Context, arch string) (string, error) {
 	return amiID, nil
 }
 
+func ec2AmiAlpineEdge(ctx context.Context, arch string) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "ec2AmiAlpineEdge"}
+		defer d.Log()
+	}
+	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Owners: []*string{aws.String("538276064493")},
+		Filters: []*ec2.Filter{
+			{Name: aws.String("name"), Values: []*string{aws.String("alpine-ami-*")}},
+			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+		},
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	var images []*ec2.Image
+	for _, image := range out.Images {
+		if strings.Contains(*image.Name, "edge") {
+			images = append(images, image)
+		}
+	}
+	sort.Slice(images, func(i, j int) bool { return *images[i].CreationDate > *images[j].CreationDate })
+	return *images[0].ImageId, nil
+}
+
 func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiAlpine"}
@@ -1775,6 +1802,9 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 	case EC2AmiArch:
 		amiID, err = ec2AmiArch(ctx, arch)
 		sshUser = "arch"
+	case EC2AmiAlpineEdge:
+		amiID, err = ec2AmiAlpineEdge(ctx, arch)
+		sshUser = "alpine"
 	default:
 		_, okAlpine := alpines[name]
 		_, okUbuntu := ubuntus[name]
