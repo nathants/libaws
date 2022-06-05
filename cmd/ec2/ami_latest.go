@@ -13,8 +13,8 @@ import (
 )
 
 func init() {
-	lib.Commands["ec2-latest-ami"] = ec2LatestAmi
-	lib.Args["ec2-latest-ami"] = ec2LatestAmiArgs{}
+	lib.Commands["ec2-ami-latest"] = ec2LatestAmi
+	lib.Args["ec2-ami-latest"] = ec2LatestAmiArgs{}
 }
 
 type ec2LatestAmiArgs struct {
