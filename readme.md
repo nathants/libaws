@@ -391,7 +391,7 @@ func main() {
 
 - [new-gocljs](https://github.com/nathants/new-gocljs)
 
-- [aws-rce](https://github.com/nathants/aws-rce)
+- [aws-exec](https://github.com/nathants/aws-exec)
 
 - [aws-ensure-route53](https://github.com/nathants/aws-ensure-route53)
 
