@@ -749,10 +749,15 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 			return nil
 		}
 	}
+	s3Client, err := S3ClientBucketRegion(bucket)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
 	// rm objects
 	var token *string
 	for {
-		out, err := S3Client().ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
+		out, err := s3Client.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
 			Bucket:            aws.String(bucket),
 			ContinuationToken: token,
 		})
@@ -769,7 +774,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 		if len(objects) != 0 {
 			var errs []string
 			if !preview {
-				deleteOut, err := S3Client().DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+				deleteOut, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
 					Bucket: aws.String(bucket),
 					Delete: &s3.Delete{Objects: objects},
 				})
@@ -798,7 +803,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	var keyMarker *string
 	var versionMarker *string
 	for {
-		out, err := S3Client().ListObjectVersionsWithContext(ctx, &s3.ListObjectVersionsInput{
+		out, err := s3Client.ListObjectVersionsWithContext(ctx, &s3.ListObjectVersionsInput{
 			Bucket:          aws.String(bucket),
 			Prefix:          nil,
 			KeyMarker:       keyMarker,
@@ -826,7 +831,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 		}
 		if !preview {
 			if len(objects) != 0 {
-				deleteOut, err := S3Client().DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+				deleteOut, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
 					Bucket: aws.String(bucket),
 					Delete: &s3.Delete{Objects: objects},
 				})
@@ -865,7 +870,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	}
 	// rm bucket
 	if !preview {
-		_, err = S3Client().DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+		_, err = s3Client.DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
 			Bucket: aws.String(bucket),
 		})
 		if err != nil {

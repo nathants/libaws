@@ -33,9 +33,9 @@ const (
 	EC2ArchArm64 = "arm64"
 
 	EC2AmiAlpineEdge = "alpine" // edge
-	EC2AmiLambda = "lambda"
-	EC2AmiAmzn   = "amzn"
-	EC2AmiArch   = "arch"
+	EC2AmiLambda     = "lambda"
+	EC2AmiAmzn       = "amzn"
+	EC2AmiArch       = "arch"
 
 	EC2AmiUbuntuJammy  = "jammy"
 	EC2AmiUbuntuFocal  = "focal"
