@@ -17,16 +17,17 @@ func init() {
 
 type dynamodbItemPutArgs struct {
 	Table string   `arg:"positional,required"`
-	Keys  []string `arg:"positional,required"`
+	Attr  []string `arg:"positional,required"`
 }
 
 func (dynamodbItemPutArgs) Description() string {
 	return `
 
 put item
-describe vals like: $name:s|n|b:$value
 
->> libaws dynamodb-item-put test-table user:s:john
+describe attributes like: $name:s|n|b:$value
+
+>> libaws dynamodb-item-put test-table user:s:jane dob:n:1984
 
 `
 }
@@ -36,7 +37,7 @@ func dynamodbItemPut() {
 	arg.MustParse(&args)
 	ctx := context.Background()
 	item := map[string]*dynamodb.AttributeValue{}
-	for _, key := range args.Keys {
+	for _, key := range args.Attr {
 		name, kind, val, err := lib.SplitTwice(key, ":")
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
