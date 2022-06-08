@@ -51,6 +51,7 @@ _libaws () {
         elif [ ${COMP_WORDS[1]} = iam-rm-role     ]; then COMPREPLY=($(libaws iam-ls-roles 2>/dev/null | jq -r .RoleName | grep "^${COMP_WORDS[2]}"))
 
         elif [ ${COMP_WORDS[1]} = lambda-rm     ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = lambda-describe     ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = lambda-arn    ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = lambda-vars   ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
