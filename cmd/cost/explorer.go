@@ -22,6 +22,7 @@ type costExplorerArgs struct {
 	AccountNum   string `arg:"-a,--account,required"`
 	Region       string `arg:"-r,--region"`
 	DaysAgoStart int    `arg:"-d,--days-ago-start" default:"7"`
+	Daily        bool   `arg:"--daily" help:"use daily instead of hourly granularity"`
 }
 
 func (costExplorerArgs) Description() string {
@@ -60,11 +61,17 @@ func costExplorer() {
 	}
 	var results []*costexplorer.ResultByTime
 	var token *string
+	granularity := aws.String(costexplorer.GranularityHourly)
+	formatDate := func(s string) string { return s }
+	if args.Daily {
+		granularity = aws.String(costexplorer.GranularityDaily)
+		formatDate = func(s string) string { return s[:10] } // yyyy-MM-dd
+	}
 	for {
 		out, err := lib.CostExplorerClient().GetCostAndUsageWithContext(ctx, &costexplorer.GetCostAndUsageInput{
 			NextPageToken: token,
 			Filter:        filter,
-			Granularity:   aws.String(costexplorer.GranularityHourly),
+			Granularity:   granularity,
 			GroupBy: []*costexplorer.GroupDefinition{{
 				Type: aws.String(costexplorer.GroupDefinitionTypeDimension),
 				Key:  aws.String(costexplorer.DimensionService),
@@ -73,8 +80,8 @@ func costExplorer() {
 				aws.String(costexplorer.MetricUnblendedCost),
 			},
 			TimePeriod: &costexplorer.DateInterval{
-				Start: aws.String(start.Format(time.RFC3339)),
-				End:   aws.String(end.Format(time.RFC3339)),
+				Start: aws.String(formatDate(start.Format(time.RFC3339))),
+				End:   aws.String(formatDate(end.Format(time.RFC3339))),
 			},
 		})
 		if err != nil {
