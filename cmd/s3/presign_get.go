@@ -26,12 +26,10 @@ func (s3PresignGetArgs) Description() string {
 func s3PresignGet() {
 	var args s3PresignGetArgs
 	arg.MustParse(&args)
-	path := lib.Last(strings.Split(args.Path, "s3://"))
-	parts := strings.Split(path, "/")
-	bucket := parts[0]
-	var key string
-	if len(parts) > 1 {
-		key = strings.Join(parts[1:], "/")
+	args.Path = strings.ReplaceAll(args.Path, "s3://", "")
+	bucket, key, err := lib.SplitOnce(args.Path, "/")
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println(lib.S3PresignGet(bucket, key, "", time.Duration(args.ExpirationMinutes)*time.Minute))
 }
