@@ -1066,6 +1066,10 @@ func lambdaEnsureTriggerApiMapping(ctx context.Context, name, subDomain string, 
 		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiMapping"}
 		defer d.Log()
 	}
+	if api == nil && preview {
+		Logger.Println(PreviewString(preview)+"created api path mapping:", name, subDomain)
+		return nil
+	}
 	mappings, err := ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
 		DomainName: aws.String(subDomain),
 		MaxResults: aws.String(fmt.Sprint(500)),
