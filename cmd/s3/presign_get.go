@@ -17,6 +17,7 @@ func init() {
 type s3PresignGetArgs struct {
 	Path              string `arg:"positional"`
 	ExpirationMinutes int    `arg:"-e,--expiration-minutes" default:"20"`
+	Range             string `arg:"-r,--range" help:"bytes=0-10"`
 }
 
 func (s3PresignGetArgs) Description() string {
@@ -31,5 +32,5 @@ func s3PresignGet() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Println(lib.S3PresignGet(bucket, key, "", time.Duration(args.ExpirationMinutes)*time.Minute))
+	fmt.Println(lib.S3PresignGet(bucket, key, args.Range, time.Duration(args.ExpirationMinutes)*time.Minute))
 }
