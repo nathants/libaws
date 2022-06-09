@@ -13,6 +13,7 @@ _libaws () {
         COMPREPLY=($(libaws -h | awk '{print $1}'))
     elif   [ ${COMP_WORDS[1]} = s3-ls         ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-get          ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
+    elif [ ${COMP_WORDS[1]} = s3-put          ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-presign-get  ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-presign-put  ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
     elif [ ${COMP_WORDS[1]} = s3-head         ] && [ $COMP_CWORD = 2 ]; then arg=""; for i in $(seq 2 $COMP_CWORD); do arg="${arg}${COMP_WORDS[$i]}"; done; COMPREPLY=($(libaws s3-ls -q "$arg" 2>/dev/null | grep "^$arg"))
