@@ -2053,7 +2053,8 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 				}
 			}
 		} else {
-			if !Exists(include) {
+			_, errReadlink := os.Readlink(include)
+			if !Exists(include) && errReadlink != nil {
 				err := fmt.Errorf("no such path for include: %s", include)
 				Logger.Println("error:", err)
 				return err
@@ -2061,6 +2062,9 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 			args := ""
 			if strings.HasPrefix(include, "/") {
 				args = "--junk-paths"
+			}
+			if errReadlink == nil {
+				args = "--symlinks"
 			}
 			compression := "-9"
 			if os.Getenv("ZIP_COMPRESSION") != "" {
