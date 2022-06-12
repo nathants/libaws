@@ -389,7 +389,7 @@ func main() {
 
 ### explore external examples
 
-- [new-gocljs](https://github.com/nathants/new-gocljs)
+- [aws-gocljs](https://github.com/nathants/aws-gocljs)
 
 - [aws-exec](https://github.com/nathants/aws-exec)
 

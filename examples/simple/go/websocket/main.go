@@ -12,7 +12,7 @@ func handleRequest(_ context.Context, _ events.APIGatewayProxyRequest) (events.A
 	//
 	// this test currently just checks that the websocket trigger can be successfully deployed.
 	//
-	// for websocket example see: https://github.com/nathants/new-gocljs
+	// for websocket example see: https://github.com/nathants/aws-gocljs
 	//
 	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
 }

@@ -6,7 +6,7 @@ exports.handler = async (event, context) => {
   //
   // this test currently just checks that the websocket trigger can be successfully deployed.
   //
-  // for websocket example see: https://github.com/nathants/new-gocljs
+  // for websocket example see: https://github.com/nathants/aws-gocljs
   //
   let response = {
     statusCode: '200',
