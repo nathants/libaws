@@ -1569,7 +1569,6 @@ func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	fmt.Println(*out.Images[0].OwnerId)
 	return *out.Images[0].ImageId, nil
 }
 
@@ -2061,6 +2060,8 @@ type EC2WaitGoSshInput struct {
 	MaxConcurrency int
 	RsaPrivKey     string
 	Ed25519PrivKey string
+	Stdout         io.Writer
+	Stderr         io.Writer
 }
 
 func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, error) {
@@ -2069,6 +2070,12 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 		defer d.Log()
 	}
 	start := time.Now()
+	if input.Stderr == nil {
+		input.Stderr = os.Stderr
+	}
+	if input.Stdout == nil {
+		input.Stdout = os.Stdout
+	}
 	for {
 		now := time.Now()
 		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")
@@ -2101,20 +2108,20 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			TargetAddrs:    targetAddrs,
 			Cmd:            "whoami >/dev/null",
 			MaxConcurrency: input.MaxConcurrency,
-			Stdout:         os.Stdout,
-			Stderr:         os.Stderr,
+			Stdout:         input.Stdout,
+			Stderr:         input.Stderr,
 			RsaPrivKey:     input.RsaPrivKey,
 			Ed25519PrivKey: input.Ed25519PrivKey,
 		})
 		for _, result := range results {
 			if result.Err == nil {
-				fmt.Fprintf(os.Stderr, "ready: %s\n", Green(result.TargetAddr))
+				Logger.Printf("ready: %s\n", Green(result.TargetAddr))
 			} else {
-				fmt.Fprintf(os.Stderr, "unready: %s\n", Red(result.TargetAddr))
+				Logger.Printf("unready: %s\n", Red(result.TargetAddr))
 			}
 		}
 		for _, instance := range pendingInstances {
-			fmt.Fprintf(os.Stderr, "pending: %s\n", Cyan(*instance.InstanceId))
+			Logger.Printf("pending: %s\n", Cyan(*instance.InstanceId))
 		}
 		if err == nil && len(pendingInstances) == 0 {
 			return targetAddrs, nil
@@ -2124,7 +2131,7 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 			var terminate []string
 			for _, result := range results {
 				if result.Err != nil {
-					fmt.Fprintln(os.Stderr, "terminating unready instance:", result.TargetAddr)
+					Logger.Printf("terminating unready instance:", result.TargetAddr)
 					terminate = append(terminate, result.TargetAddr)
 				} else {
 					ready = append(ready, result.TargetAddr)
@@ -2651,6 +2658,12 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2GoSsh"}
 		defer d.Log()
+	}
+	if input.Stderr == nil {
+		input.Stderr = os.Stderr
+	}
+	if input.Stdout == nil {
+		input.Stdout = os.Stdout
 	}
 	if len(input.TargetAddrs) == 0 {
 		return nil, fmt.Errorf("no instances")
