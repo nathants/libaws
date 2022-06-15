@@ -2342,7 +2342,7 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		if infraLambda.runtime == lambdaRuntimeContainer {
 			existing := map[string]*string{"entrypoint": getFunctionOut.Code.ImageUri}
 			new := map[string]*string{"entrypoint": createInput.Code.ImageUri}
-			diff, err = diffMapStringStringPointers(new, existing, "entrypoint", true)
+			diff, err = diffMapStringStringPointers(new, existing, PreviewString(preview)+"entrypoint", true)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
@@ -2369,7 +2369,7 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 				Logger.Println("error:", err)
 				return err
 			}
-			diff, err = diffMapStringStringPointers(new, existing, "zip", true)
+			diff, err = diffMapStringStringPointers(new, existing, PreviewString(preview)+"zip", true)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
