@@ -694,9 +694,6 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		}
 		launchSpecs = append(launchSpecs, launchSpec)
 	}
-	Logger.Println("type:", config.InstanceType)
-	Logger.Println("subnets:", config.SubnetIds)
-	Logger.Println("requst spot fleet", DropLinesWithAny(Pformat(launchSpecs[0]), "null", "SubnetId", "UserData"))
 	spotFleet, err := EC2Client().RequestSpotFleetWithContext(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2.SpotFleetRequestConfigData{
 		IamFleetRole:                     role.Role.Arn,
 		LaunchSpecifications:             launchSpecs,
@@ -707,6 +704,11 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		ReplaceUnhealthyInstances:        aws.Bool(false),
 		TerminateInstancesWithExpiration: aws.Bool(false),
 	}})
+	Logger.Println("type:", config.InstanceType)
+	Logger.Println("subnets:", config.SubnetIds)
+	launchSpecs[0].UserData = nil
+	launchSpecs[0].SubnetId = nil
+	Logger.Println("requst spot fleet", Pformat(launchSpecs[0]))
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -831,12 +833,14 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, e
 	if config.Profile != "" {
 		runInstancesInput.IamInstanceProfile = &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
 	}
-	Logger.Println("run instances", DropLinesWithAny(Pformat(runInstancesInput), "null", "UserData"))
 	reservation, err := EC2Client().RunInstancesWithContext(ctx, runInstancesInput)
+	runInstancesInput.UserData = nil
+	Logger.Println("run instances", Pformat(runInstancesInput))
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
+
 	return reservation.Instances, nil
 }
 
