@@ -330,6 +330,10 @@ optional attrs:
  - cors=VALUE       (values = true | false,     default = false)
  - ttldays=VALUE    (values = 0 | n,            default = 0)
 
+setting 'cors=true' uses '*' for allowed origins. to specify one or more explicit origins, do this instead:
+ - corsorigin=http://localhost:8080
+ - corsorigin=https://example.com
+
 Usage: s3-ensure [--preview] NAME [ATTR [ATTR ...]]
 
 Positional arguments:
@@ -594,6 +598,10 @@ defines a [s3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   - `metrics=VALUE`, values: `true | false`, default: `true`
   - `cors=VALUE`, values: `true | false`, default: `false`
   - `ttldays=VALUE`, values: `0 | n`, default: `0`
+
+- setting `cors=true` uses `*` for allowed origins. to specify one or more explicit origins, do this instead:
+  - `corsorigin=http://localhost:8080`
+  - `corsorigin=https://example.com`
 
 - schema:
   ```yaml

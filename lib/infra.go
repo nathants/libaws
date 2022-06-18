@@ -1557,10 +1557,28 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.acl != "public" {
 				infraS3.Attr = append(infraS3.Attr, "acl=public")
 			}
-			if descr.Cors == nil && s3Default.cors {
+			if descr.Cors == nil && *s3Default.cors {
 				infraS3.Attr = append(infraS3.Attr, "cors=false")
-			} else if reflect.DeepEqual(s3Cors, descr.Cors) {
+			} else if reflect.DeepEqual(s3Cors(nil), descr.Cors) {
 				infraS3.Attr = append(infraS3.Attr, "cors=true")
+			} else if len(descr.Cors) > 1 {
+				err := fmt.Errorf("cors misconfigured for %s: %s", bucket, Pformat(descr.Cors))
+				Logger.Println("error:", err)
+				errChan <- err
+				return
+			} else {
+				var allowedOrigins []string
+				allowedOrigins = append(allowedOrigins, StringSlice(descr.Cors[0].AllowedOrigins)...)
+				if reflect.DeepEqual(s3Cors(allowedOrigins), descr.Cors) {
+					for _, origin := range allowedOrigins {
+						infraS3.Attr = append(infraS3.Attr, "corsorigin="+origin)
+					}
+				} else {
+					err := fmt.Errorf("cors misconfigured for %s: %s", bucket, Pformat(descr.Cors))
+					Logger.Println("error:", err)
+					errChan <- err
+					return
+				}
 			}
 			if descr.Versioning != s3Default.versioning {
 				infraS3.Attr = append(infraS3.Attr, fmt.Sprintf("versioning=%t", descr.Versioning))

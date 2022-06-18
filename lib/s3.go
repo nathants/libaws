@@ -161,7 +161,8 @@ type s3EnsureInput struct {
 	versioning   bool
 	encryption   bool
 	metrics      bool
-	cors         bool
+	cors         *bool
+	corsOrigins  []string
 	ttlDays      int
 
 	// NOTE: you almost never want to use this, danger close.
@@ -176,7 +177,7 @@ func s3EnsureInputDefault() *s3EnsureInput {
 		versioning: false,
 		encryption: true,
 		metrics:    true,
-		cors:       false,
+		cors:       nil,
 		ttlDays:    0,
 	}
 }
@@ -195,12 +196,19 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 		switch attr {
 		case "ttldays":
 			input.ttlDays = Atoi(value)
+		case "corsorigin":
+			if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
+				err := fmt.Errorf("corsorigin must begin with http or https: %s", line)
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			input.corsOrigins = append(input.corsOrigins, value)
 		case "cors":
 			switch value {
 			case "true", "false":
-				input.cors = value == "true"
+				input.cors = aws.Bool(value == "true")
 			default:
-				err := fmt.Errorf("s3 unknown attr: %s", line)
+				err := fmt.Errorf("unknown attr: %s", line)
 				Logger.Println("error:", err)
 				return nil, err
 			}
@@ -209,7 +217,7 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 			case "public", "private":
 				input.acl = value
 			default:
-				err := fmt.Errorf("s3 unknown attr: %s", line)
+				err := fmt.Errorf("unknown attr: %s", line)
 				Logger.Println("error:", err)
 				return nil, err
 			}
@@ -218,7 +226,7 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 			case "true", "false":
 				input.versioning = value == "true"
 			default:
-				err := fmt.Errorf("s3 unknown attr: %s", line)
+				err := fmt.Errorf("unknown attr: %s", line)
 				Logger.Println("error:", err)
 				return nil, err
 			}
@@ -227,15 +235,23 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 			case "true", "false":
 				input.metrics = value == "true"
 			default:
-				err := fmt.Errorf("s3 unknown attr: %s", line)
+				err := fmt.Errorf("unknown attr: %s", line)
 				Logger.Println("error:", err)
 				return nil, err
 			}
 		default:
-			err := fmt.Errorf("s3 unknown attr: %s", line)
+			err := fmt.Errorf("unknown attr: %s", line)
 			Logger.Println("error:", err)
 			return nil, err
 		}
+	}
+	if input.cors != nil && !*input.cors && len(input.corsOrigins) > 0 {
+		err := fmt.Errorf("cannot specify cors=false and corsorigin=VALUE: %s", Pformat(input.corsOrigins))
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if len(input.corsOrigins) > 0 {
+		input.cors = aws.Bool(true)
 	}
 	return input, nil
 }
@@ -254,13 +270,18 @@ func s3PublicPolicy(bucket string) IamPolicyDocument {
 	}
 }
 
-var s3Cors = []*s3.CORSRule{{
-	AllowedHeaders: []*string{aws.String("Authorization"), aws.String("Range")},
-	AllowedMethods: []*string{aws.String("GET"), aws.String("PUT"), aws.String("POST"), aws.String("HEAD")},
-	AllowedOrigins: []*string{aws.String("*")},
-	ExposeHeaders:  []*string{aws.String("Content-Length"), aws.String("Content-Type"), aws.String("ETag")},
-	MaxAgeSeconds:  aws.Int64(int64(3000)),
-}}
+func s3Cors(allowedOrigins []string) []*s3.CORSRule {
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = append(allowedOrigins, "*")
+	}
+	return []*s3.CORSRule{{
+		AllowedHeaders: []*string{aws.String("Authorization"), aws.String("Range")},
+		AllowedMethods: []*string{aws.String("GET"), aws.String("PUT"), aws.String("POST"), aws.String("HEAD")},
+		AllowedOrigins: aws.StringSlice(allowedOrigins),
+		ExposeHeaders:  []*string{aws.String("Content-Length"), aws.String("Content-Type"), aws.String("ETag")},
+		MaxAgeSeconds:  aws.Int64(int64(3000)),
+	}}
+}
 
 var s3EncryptionConfig = &s3.ServerSideEncryptionConfiguration{
 	Rules: []*s3.ServerSideEncryptionRule{{
@@ -488,12 +509,12 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		if input.cors {
+		if input.cors != nil && *input.cors {
 			if !preview {
 				_, err := S3Client().PutBucketCorsWithContext(ctx, &s3.PutBucketCorsInput{
 					Bucket:              aws.String(input.name),
 					ExpectedBucketOwner: aws.String(account),
-					CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3Cors},
+					CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3Cors(input.corsOrigins)},
 				})
 				if err != nil {
 					Logger.Println("error:", err)
@@ -502,7 +523,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			}
 			Logger.Println(PreviewString(preview)+"put cors:", input.name)
 		}
-	} else if !input.cors {
+	} else if input.cors == nil || !*input.cors {
 		if !preview {
 			_, err := S3Client().DeleteBucketCorsWithContext(ctx, &s3.DeleteBucketCorsInput{
 				Bucket:              aws.String(input.name),
@@ -514,10 +535,47 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			}
 		}
 		Logger.Println(PreviewString(preview)+"delete cors:", input.name)
-	} else if !reflect.DeepEqual(corsOut.CORSRules, s3Cors) {
+	} else if len(corsOut.CORSRules) != 1 {
 		err := fmt.Errorf("bucket cors config is misconfigured for bucket: %s", input.name)
 		Logger.Println("error:", err)
 		return err
+	} else if !reflect.DeepEqual(corsOut.CORSRules, s3Cors(input.corsOrigins)) {
+		if !preview {
+			_, err := S3Client().PutBucketCorsWithContext(ctx, &s3.PutBucketCorsInput{
+				Bucket:              aws.String(input.name),
+				ExpectedBucketOwner: aws.String(account),
+				CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3Cors(input.corsOrigins)},
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		have := corsOut.CORSRules[0]
+		want := s3Cors(input.corsOrigins)[0]
+		if !reflect.DeepEqual(have.AllowedHeaders, want.AllowedHeaders) {
+			Logger.Printf(PreviewString(preview)+"updated cors allowed headers for %s: %s -> %s\n", input.name, Json(StringSlice(have.AllowedHeaders)), Json(StringSlice(want.AllowedHeaders)))
+		}
+		if !reflect.DeepEqual(have.AllowedMethods, want.AllowedMethods) {
+			Logger.Printf(PreviewString(preview)+"updated cors allowed methods: %s -> %s\n", input.name, Json(StringSlice(have.AllowedMethods)), Json(StringSlice(want.AllowedMethods)))
+		}
+		if !reflect.DeepEqual(have.AllowedOrigins, want.AllowedOrigins) {
+			Logger.Printf(PreviewString(preview)+"updated cors allowed origins for %s: %s -> %s\n", input.name, Json(StringSlice(have.AllowedOrigins)), Json(StringSlice(want.AllowedOrigins)))
+		}
+		if !reflect.DeepEqual(have.ExposeHeaders, want.ExposeHeaders) {
+			Logger.Printf(PreviewString(preview)+"updated cors expose headers for %s: %s -> %s\n", input.name, Json(StringSlice(have.ExposeHeaders)), Json(StringSlice(want.ExposeHeaders)))
+		}
+		if !reflect.DeepEqual(have.MaxAgeSeconds, want.MaxAgeSeconds) {
+			haveMax := int64(0)
+			if have.MaxAgeSeconds != nil {
+				haveMax = *have.MaxAgeSeconds
+			}
+			wantMax := int64(0)
+			if want.MaxAgeSeconds != nil {
+				wantMax = *want.MaxAgeSeconds
+			}
+			Logger.Printf(PreviewString(preview)+"updated cors max age seconds for %s: %d -> %d\n", input.name, haveMax, wantMax)
+		}
 	}
 	needsUpdate := false
 	versionOut, err := S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
