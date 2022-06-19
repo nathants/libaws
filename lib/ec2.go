@@ -631,7 +631,7 @@ set +x
 
 func makeBlockDeviceMapping(config *EC2Config) []*ec2.BlockDeviceMapping {
 	deviceName := "/dev/sda1"
-	if config.UserName == "alpine" {
+	if config.UserName == "alpine" || config.UserName == "admin" { // alpine and debian use /dev/xvda
 		deviceName = "/dev/xvda"
 	}
 	return []*ec2.BlockDeviceMapping{{
