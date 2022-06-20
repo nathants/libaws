@@ -1557,16 +1557,16 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.acl != "public" {
 				infraS3.Attr = append(infraS3.Attr, "acl=public")
 			}
-			if descr.Cors == nil && *s3Default.cors {
+			if descr.Cors == nil && s3Default.cors != nil && *s3Default.cors {
 				infraS3.Attr = append(infraS3.Attr, "cors=false")
 			} else if reflect.DeepEqual(s3Cors(nil), descr.Cors) {
 				infraS3.Attr = append(infraS3.Attr, "cors=true")
 			} else if len(descr.Cors) > 1 {
-				err := fmt.Errorf("cors misconfigured for %s: %s", bucket, Pformat(descr.Cors))
+				err := fmt.Errorf("cors misconfigured for %s: %s", *bucket.Name, Pformat(descr.Cors))
 				Logger.Println("error:", err)
 				errChan <- err
 				return
-			} else {
+			} else if len(descr.Cors) == 1 {
 				var allowedOrigins []string
 				allowedOrigins = append(allowedOrigins, StringSlice(descr.Cors[0].AllowedOrigins)...)
 				if reflect.DeepEqual(s3Cors(allowedOrigins), descr.Cors) {
