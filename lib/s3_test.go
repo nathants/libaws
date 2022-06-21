@@ -308,7 +308,7 @@ func TestS3EnsurePrivateCors(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if !reflect.DeepEqual(cors.CORSRules, s3Cors) {
+	if !reflect.DeepEqual(cors.CORSRules, s3Cors(nil)) {
 		t.Error("cors config misconfigured")
 		return
 	}
@@ -417,7 +417,7 @@ func TestS3EnsurePublicCors(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if !reflect.DeepEqual(cors.CORSRules, s3Cors) {
+	if !reflect.DeepEqual(cors.CORSRules, s3Cors(nil)) {
 		t.Error("cors config misconfigured")
 		return
 	}
