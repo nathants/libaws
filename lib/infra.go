@@ -983,14 +983,19 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 		ts, ok := triggers[*fn.FunctionName]
 		if ok {
 			for _, trigger := range ts {
-				l, ok := res[*fn.FunctionName]
+				infraLambda, ok := res[*fn.FunctionName]
 				if !ok {
 					panic(*fn.FunctionName)
 				}
-				l.Trigger = append(l.Trigger, trigger)
-				res[*fn.FunctionName] = l
+				infraLambda.Trigger = append(infraLambda.Trigger, trigger)
 			}
 		}
+	}
+	// sort so triggers have deterministic order
+	for _, infraLambda := range res {
+		sort.Slice(infraLambda.Trigger, func(i, j int) bool {
+			return Json(infraLambda.Trigger[i]) > Json(infraLambda.Trigger[j])
+		})
 	}
 	return res, nil
 }
