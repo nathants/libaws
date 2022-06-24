@@ -45,6 +45,8 @@ func dynamodbItemPut() {
 		switch strings.ToUpper(kind) {
 		case "S":
 			item[name] = &dynamodb.AttributeValue{S: aws.String(val)}
+		case "B":
+			item[name] = &dynamodb.AttributeValue{BOOL: aws.Bool(val == "true")}
 		case "N":
 			item[name] = &dynamodb.AttributeValue{N: aws.String(val)}
 		default:
