@@ -751,7 +751,6 @@ func makeInit(config *EC2Config) string {
 	init := config.Init
 	for _, instanceType := range []string{"i3", "i3en", "i4i", "c5d", "m5d", "r5d", "z1d", "c6gd", "m6gd", "r6gd", "c5ad", "is4gen", "im4gn"} {
 		if instanceType == strings.Split(config.InstanceType, ".")[0] {
-			Logger.Println("add nvme instance store setup to init script")
 			init = nvmeInit + init
 			break
 		}
