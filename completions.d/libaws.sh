@@ -33,6 +33,7 @@ _libaws () {
         elif [ ${COMP_WORDS[1]} = ec2-ssh-user    ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-new-ami     ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-rm          ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = ec2-reboot      ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-stop        ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-ssh         ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-ip          ]; then COMPREPLY=($(libaws ec2-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
