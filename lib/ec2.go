@@ -759,7 +759,7 @@ func makeInit(config *EC2Config) string {
 		init = strings.Replace(timeoutInit, "TIMEOUT_SECONDS", fmt.Sprint(config.SecondsTimeout), 1) + init
 	}
 	init = base64.StdEncoding.EncodeToString([]byte(init))
-	init = fmt.Sprintf("#!/bin/sh\nset -x; path=/tmp/$(cat /proc/sys/kernel/random/uuid); if which apk >/dev/null; then apk update && apk add curl git procps ncurses-terminfo coreutils sed grep less vim sudo bash && echo -e '%s ALL=(ALL) NOPASSWD:ALL\nroot ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers; fi; echo %s | base64 -d > $path; cd /home/%s; sudo -u %s bash -e $path 2>&1", config.UserName, init, config.UserName, config.UserName)
+	init = fmt.Sprintf("#!/bin/sh\nset -x; path=/tmp/$(cat /proc/sys/kernel/random/uuid); if which apk >/dev/null; then (apk update || apk upgrade alpine-keys) && apk add curl git procps ncurses-terminfo coreutils sed grep less vim sudo bash && echo -e '%s ALL=(ALL) NOPASSWD:ALL\nroot ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers; fi; echo %s | base64 -d > $path; cd /home/%s; sudo -u %s bash -e $path 2>&1", config.UserName, init, config.UserName, config.UserName)
 	init = base64.StdEncoding.EncodeToString([]byte(init))
 	return init
 }
