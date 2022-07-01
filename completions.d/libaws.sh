@@ -60,7 +60,6 @@ _libaws () {
         elif [ ${COMP_WORDS[1]} = lambda-arn    ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = lambda-vars   ]; then COMPREPLY=($(libaws lambda-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
-        elif [ ${COMP_WORDS[1]} = logs-tail ]; then COMPREPLY=($(libaws logs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}" | awk '{print $1}'))
 
         elif [ ${COMP_WORDS[1]} = sqs-stats ]; then COMPREPLY=($(libaws sqs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = sqs-purge ]; then COMPREPLY=($(libaws sqs-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
@@ -68,6 +67,8 @@ _libaws () {
 
         elif [ ${COMP_WORDS[1]} = logs-search ]; then COMPREPLY=($(libaws logs-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = logs-near   ]; then COMPREPLY=($(libaws logs-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = logs-tail   ]; then COMPREPLY=($(libaws logs-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = logs-rm     ]; then COMPREPLY=($(libaws logs-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
         elif [ ${COMP_WORDS[1]} = ecr-ls-tags ]; then COMPREPLY=($(libaws ecr-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ecr-rm      ]; then COMPREPLY=($(libaws ecr-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
