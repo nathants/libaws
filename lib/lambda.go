@@ -223,7 +223,7 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 		var targets []*cloudwatchevents.Target
 		err = Retry(ctx, func() error {
 			var err error
-			targets, err = EventsListRuleTargets(ctx, ruleName)
+			targets, err = EventsListRuleTargets(ctx, ruleName, nil)
 			aerr, ok := err.(awserr.Error)
 			if ok && aerr.Code() == "ResourceNotFoundException" {
 				return nil
@@ -266,13 +266,13 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 			return nil, err
 		}
 	} else {
-		rules, err := EventsListRules(ctx)
+		rules, err := EventsListRules(ctx, nil)
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 		for _, rule := range rules {
-			targets, err := EventsListRuleTargets(ctx, *rule.Name)
+			targets, err := EventsListRuleTargets(ctx, *rule.Name, nil)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err
@@ -1423,7 +1423,7 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 			var targets []*cloudwatchevents.Target
 			err = Retry(ctx, func() error {
 				var err error
-				targets, err = EventsListRuleTargets(ctx, scheduleName)
+				targets, err = EventsListRuleTargets(ctx, scheduleName, nil)
 				aerr, ok := err.(awserr.Error)
 				if ok && aerr.Code() == "ResourceNotFoundException" {
 					return nil
@@ -1467,13 +1467,13 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 			}
 		}
 	}
-	rules, err := EventsListRules(ctx)
+	rules, err := EventsListRules(ctx, nil)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
 	for _, rule := range rules {
-		targets, err := EventsListRuleTargets(ctx, *rule.Name)
+		targets, err := EventsListRuleTargets(ctx, *rule.Name, nil)
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err

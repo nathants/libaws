@@ -722,7 +722,7 @@ func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map
 	}
 	results := make(map[string]*InfraEvent)
 	lock := sync.RWMutex{}
-	rules, err := EventsListRules(ctx)
+	rules, err := EventsListRules(ctx, nil)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -736,7 +736,7 @@ func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map
 					logRecover(r)
 				}
 			}()
-			targets, err := EventsListRuleTargets(ctx, *rule.Name)
+			targets, err := EventsListRuleTargets(ctx, *rule.Name, nil)
 			if err != nil {
 				Logger.Println("error:", err)
 				errChan <- err
