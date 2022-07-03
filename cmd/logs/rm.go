@@ -27,6 +27,6 @@ func logsRm() {
 	ctx := context.Background()
 	err := lib.LogsDeleteGroup(ctx, args.Name, args.Preview)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }
