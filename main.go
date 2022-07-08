@@ -16,6 +16,7 @@ import (
 	_ "github.com/nathants/libaws/cmd/dynamodb"
 	_ "github.com/nathants/libaws/cmd/ec2"
 	_ "github.com/nathants/libaws/cmd/ecr"
+	_ "github.com/nathants/libaws/cmd/events"
 	_ "github.com/nathants/libaws/cmd/iam"
 	_ "github.com/nathants/libaws/cmd/infra"
 	_ "github.com/nathants/libaws/cmd/lambda"
