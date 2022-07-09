@@ -889,16 +889,12 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					break
 				}
 			}
-			if logGroup == nil {
-				err := fmt.Errorf("expected exactly 1 logGroup with name: %s", logGroupName)
-				Logger.Println("error:", err)
-				errChan <- err
-				return
-			}
-			if logGroup.RetentionInDays == nil {
-				infraLambda.Attr = append(infraLambda.Attr, "logs-ttl-days=0")
-			} else if int(*logGroup.RetentionInDays) != lambdaAttrLogsTTLDaysDefault {
-				infraLambda.Attr = append(infraLambda.Attr, fmt.Sprintf("logs-ttl-days=%d", *logGroup.RetentionInDays))
+			if logGroup != nil {
+				if logGroup.RetentionInDays == nil {
+					infraLambda.Attr = append(infraLambda.Attr, "logs-ttl-days=0")
+				} else if int(*logGroup.RetentionInDays) != lambdaAttrLogsTTLDaysDefault {
+					infraLambda.Attr = append(infraLambda.Attr, fmt.Sprintf("logs-ttl-days=%d", *logGroup.RetentionInDays))
+				}
 			}
 			roleName := Last(strings.Split(*fn.Role, "/"))
 			policies, err := IamListRolePolicies(ctx, roleName)
