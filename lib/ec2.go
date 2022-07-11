@@ -434,7 +434,9 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 	}
 	var errors []string
 	for _, record := range output.HistoryRecords {
-		errors = append(errors, *record.EventInformation.EventDescription)
+		if record.EventInformation.EventDescription != nil {
+			errors = append(errors, *record.EventInformation.EventDescription)
+		}
 	}
 	if len(errors) != 0 {
 		err = fmt.Errorf(strings.Join(errors, "\n"))
