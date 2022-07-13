@@ -26,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/gofrs/uuid"
 )
 
 const (
@@ -77,6 +78,7 @@ type EC2Config struct {
 	AmiID          string
 	UserName       string // instance ssh username
 	Key            string
+	TempKey        bool
 	InstanceType   string
 	SubnetIds      []string
 	Gigs           int
@@ -495,6 +497,15 @@ func ec2WaitSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) 
 	return err
 }
 
+const tempkeyInit = `
+  while true; do
+    if ! grep 'PUBKEY' ~/.ssh/authorized_keys &>/dev/null; then
+      echo -n 'PUBKEY' >> ~/.ssh/authorized_keys
+    fi
+    sleep 1
+  done &>/dev/null </dev/null &
+`
+
 const timeoutInit = `
 echo '# timeout will call this script before it $(sudo poweroff)s, and wait 60 seconds for this script to complete' | sudo tee -a /etc/timeout.sh >/dev/null
 echo '#!/bin/bash
@@ -674,6 +685,11 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	init, err := makeInit(config)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
 	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
 	for _, subnetId := range config.SubnetIds {
 		launchSpec := &ec2.SpotFleetLaunchSpecification{
@@ -681,7 +697,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 			KeyName:             aws.String(config.Key),
 			SubnetId:            aws.String(subnetId),
 			InstanceType:        aws.String(config.InstanceType),
-			UserData:            aws.String(makeInit(config)),
+			UserData:            aws.String(init),
 			EbsOptimized:        aws.Bool(true),
 			SecurityGroups:      []*ec2.GroupIdentifier{{GroupId: aws.String(config.SgID)}},
 			BlockDeviceMappings: makeBlockDeviceMapping(config),
@@ -745,9 +761,11 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 	return instances, nil
 }
 
-func makeInit(config *EC2Config) string {
+func makeInit(config *EC2Config) (string, error) {
 	if config.UserName == "" {
-		panic("makeInit needs a username")
+		err := fmt.Errorf("makeInit needs a username")
+		Logger.Println("error:", err)
+		return "", err
 	}
 	init := config.Init
 	for _, instanceType := range []string{"i3", "i3en", "i4i", "c5d", "m5d", "r5d", "z1d", "c6gd", "c6id", "m6gd", "r6gd", "c5ad", "is4gen", "im4gn"} {
@@ -759,10 +777,34 @@ func makeInit(config *EC2Config) string {
 	if config.SecondsTimeout != 0 {
 		init = strings.Replace(timeoutInit, "TIMEOUT_SECONDS", fmt.Sprint(config.SecondsTimeout), 1) + init
 	}
+	if config.TempKey {
+		pubKey, privKey, err := SshKeygenEd25519()
+		if err != nil {
+			Logger.Println("error:", err)
+			return "", err
+		}
+		uid := uuid.Must(uuid.NewV4()).String()
+		path := fmt.Sprintf("/tmp/libaws/%s", uid)
+		err = os.MkdirAll(path, os.ModePerm)
+		if err != nil {
+			Logger.Println("error:", err)
+			return "", err
+		}
+		config.Tags = append(config.Tags, EC2Tag{
+			Name:  "ssh-id",
+			Value: uid,
+		})
+		err = ioutil.WriteFile(path+"/id_ed25519", []byte(privKey), 0600)
+		if err != nil {
+			Logger.Println("error:", err)
+			return "", err
+		}
+		init = strings.ReplaceAll(tempkeyInit, "PUBKEY", pubKey) + init
+	}
 	init = base64.StdEncoding.EncodeToString([]byte(init))
 	init = fmt.Sprintf("#!/bin/sh\nset -x; path=/tmp/$(cat /proc/sys/kernel/random/uuid); if which apk >/dev/null; then apk update && apk add curl git procps ncurses-terminfo coreutils sed grep less vim sudo bash && echo -e '%s ALL=(ALL) NOPASSWD:ALL\nroot ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers; fi; echo %s | base64 -d > $path; cd /home/%s; sudo -u %s bash -e $path 2>&1", config.UserName, init, config.UserName, config.UserName)
 	init = base64.StdEncoding.EncodeToString([]byte(init))
-	return init
+	return init, nil
 }
 
 func makeTags(config *EC2Config) []*ec2.Tag {
@@ -814,12 +856,17 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, e
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	init, err := makeInit(config)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
 	runInstancesInput := &ec2.RunInstancesInput{
 		ImageId:             aws.String(config.AmiID),
 		KeyName:             aws.String(config.Key),
 		SubnetId:            aws.String(config.SubnetIds[0]),
 		InstanceType:        aws.String(config.InstanceType),
-		UserData:            aws.String(makeInit(config)),
+		UserData:            aws.String(init),
 		EbsOptimized:        aws.Bool(true),
 		SecurityGroupIds:    []*string{&config.SgID},
 		BlockDeviceMappings: makeBlockDeviceMapping(config),
@@ -1390,7 +1437,19 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
-	if input.Key != "" {
+	tempKey := ""
+	for _, tag := range instance.Tags {
+		if *tag.Key == "ssh-id" {
+			path := fmt.Sprintf("/tmp/libaws/%s/id_ed25519", *tag.Value)
+			if Exists(path) {
+				tempKey = path
+			}
+			break
+		}
+	}
+	if tempKey != "" {
+		sshCmd = append(sshCmd, []string{"-i", tempKey, "-o", "IdentitiesOnly=yes"}...)
+	} else if input.Key != "" {
 		sshCmd = append(sshCmd, []string{"-i", input.Key, "-o", "IdentitiesOnly=yes"}...)
 	}
 	target := input.User + "@"
@@ -1496,7 +1555,19 @@ func EC2SshLogin(instance *ec2.Instance, user, key string) error {
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
-	if key != "" {
+	tempKey := ""
+	for _, tag := range instance.Tags {
+		if *tag.Key == "ssh-id" {
+			path := fmt.Sprintf("/tmp/libaws/%s/id_ed25519", *tag.Value)
+			if Exists(path) {
+				tempKey = path
+			}
+			break
+		}
+	}
+	if tempKey != "" {
+		sshCmd = append(sshCmd, []string{"-i", tempKey, "-o", "IdentitiesOnly=yes"}...)
+	} else if key != "" {
 		sshCmd = append(sshCmd, []string{"-i", key, "-o", "IdentitiesOnly=yes"}...)
 	}
 	cmd := exec.Command(sshCmd[0], sshCmd[1:]...)
