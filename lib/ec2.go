@@ -984,7 +984,10 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		"-avh",
 		"--delete",
 	}
-	if input.Key != "" {
+	tempKey := ec2EphemeralKey(instance.Tags)
+	if tempKey != "" {
+		rsyncCmd = append(rsyncCmd, []string{"-e", fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no", tempKey)}...)
+	} else if input.Key != "" {
 		rsyncCmd = append(rsyncCmd, []string{"-e", fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no", input.Key)}...)
 	} else {
 		rsyncCmd = append(rsyncCmd, []string{"-e", "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"}...)
@@ -1191,7 +1194,10 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
-	if input.Key != "" {
+	tempKey := ec2EphemeralKey(instance.Tags)
+	if tempKey != "" {
+		scpCmd = append(scpCmd, []string{"-o", "IdentitiesOnly=yes", "-i", tempKey}...)
+	} else if input.Key != "" {
 		scpCmd = append(scpCmd, []string{"-o", "IdentitiesOnly=yes", "-i", input.Key}...)
 	}
 	target := input.User + "@"
@@ -1424,6 +1430,18 @@ type ec2SshResult struct {
 	Stdout     []string
 }
 
+func ec2EphemeralKey(tags []*ec2.Tag) string {
+	for _, tag := range tags {
+		if *tag.Key == "ssh-id" {
+			path := fmt.Sprintf("/tmp/libaws/%s/id_ed25519", *tag.Value)
+			if Exists(path) {
+				return path
+			}
+		}
+	}
+	return ""
+}
+
 func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec2SshResult {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2Ssh"}
@@ -1437,16 +1455,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
-	tempKey := ""
-	for _, tag := range instance.Tags {
-		if *tag.Key == "ssh-id" {
-			path := fmt.Sprintf("/tmp/libaws/%s/id_ed25519", *tag.Value)
-			if Exists(path) {
-				tempKey = path
-			}
-			break
-		}
-	}
+	tempKey := ec2EphemeralKey(instance.Tags)
 	if tempKey != "" {
 		sshCmd = append(sshCmd, []string{"-i", tempKey, "-o", "IdentitiesOnly=yes"}...)
 	} else if input.Key != "" {
@@ -1555,16 +1564,7 @@ func EC2SshLogin(instance *ec2.Instance, user, key string) error {
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
-	tempKey := ""
-	for _, tag := range instance.Tags {
-		if *tag.Key == "ssh-id" {
-			path := fmt.Sprintf("/tmp/libaws/%s/id_ed25519", *tag.Value)
-			if Exists(path) {
-				tempKey = path
-			}
-			break
-		}
-	}
+	tempKey := ec2EphemeralKey(instance.Tags)
 	if tempKey != "" {
 		sshCmd = append(sshCmd, []string{"-i", tempKey, "-o", "IdentitiesOnly=yes"}...)
 	} else if key != "" {
