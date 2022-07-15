@@ -50,6 +50,8 @@ const (
 	EC2AmiAlpine3160 = "alpine-3.16.0"
 )
 
+var ec2RegexpAlpine = regexp.MustCompile(`alpine\-\d\d?\.\d\d?\.\d\d?`)
+
 var ec2Client *ec2.EC2
 var ec2ClientLock sync.RWMutex
 
@@ -1648,7 +1650,7 @@ func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
 }
 
 var alpines = map[string]string{
-	"alpine-3.16.0": "alpine-3.16.0-",
+	"alpine-xx.yy.zz": "alpine-xx.yy.zz-",
 }
 
 var ubuntus = map[string]string{
@@ -1809,7 +1811,10 @@ func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String("538276064493")},
 		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String(alpines[name] + "*")}},
+			{
+				Name: aws.String("name"),
+				Values: []*string{aws.String(name + "-*")},
+			},
 			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
 		},
 	})
@@ -1819,11 +1824,18 @@ func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 	}
 	var images []*ec2.Image
 	for _, image := range out.Images {
-		if strings.Contains(*image.Name, "-tiny-") {
+		if strings.Contains(*image.Name, "-bios-tiny-") && ec2RegexpAlpine.FindString(*image.Name) != "" {
 			images = append(images, image)
 		}
 	}
-	sort.Slice(images, func(i, j int) bool { return *images[i].CreationDate > *images[j].CreationDate })
+	sort.SliceStable(images, func(i, j int) bool { return *images[i].CreationDate > *images[j].CreationDate })
+	sort.SliceStable(images, func(i, j int) bool {
+		versionsA := strings.SplitN(strings.SplitN(*images[i].Name, "-", 3)[1], ".", 3)
+		versionsB := strings.SplitN(strings.SplitN(*images[j].Name, "-", 3)[1], ".", 3)
+		versionA := fmt.Sprintf("%02d.%02d.%02d", Atoi(versionsA[0]), Atoi(versionsA[1]), Atoi(versionsA[2]))
+		versionB := fmt.Sprintf("%02d.%02d.%02d", Atoi(versionsB[0]), Atoi(versionsB[1]), Atoi(versionsB[2]))
+		return versionA > versionB
+	})
 	return *images[0].ImageId, nil
 }
 
@@ -1851,7 +1863,7 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 		amiID, err = ec2AmiArch(ctx, arch)
 		sshUser = "arch"
 	default:
-		_, okAlpine := alpines[name]
+		okAlpine := ec2RegexpAlpine.FindString(name) != ""
 		_, okUbuntu := ubuntus[name]
 		_, okDebian := debians[name]
 		switch {
@@ -1865,7 +1877,7 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 			amiID, err = ec2AmiDebian(ctx, name, arch)
 			sshUser = "admin"
 		default:
-			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-3.16.0\", got: %s", name)
+			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-xx.yy.zz\", got: %s", name)
 			Logger.Println("error:", err)
 			return "", "", err
 		}

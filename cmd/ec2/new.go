@@ -22,7 +22,7 @@ type ec2NewArgs struct {
 	Name           string   `arg:"positional,required"`
 	Num            int      `arg:"-n,--num" default:"1"`
 	Type           string   `arg:"-t,--type,required"`
-	Ami            string   `arg:"-a,--ami,required" help:"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-3.16.0"`
+	Ami            string   `arg:"-a,--ami,required" help:"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-xx.yy.zz"`
 	UserName       string   `arg:"-u,--user" help:"ssh user name, otherwise look for 'user' tag on instance or find via ami name lookup"`
 	Key            string   `arg:"-k,--key,required"`
 	EphemeralKey   bool     `arg:"-e,--ephemeral-key" help:"add an additional ssh keypair to this instance.\n                         the private key will be written to /tmp/libaws/SSH_ID/id_ed25519.\n                         the SSH_ID will be tagged on the instance."`
