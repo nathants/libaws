@@ -1649,10 +1649,6 @@ func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
-var alpines = map[string]string{
-	"alpine-xx.yy.zz": "alpine-xx.yy.zz-",
-}
-
 var ubuntus = map[string]string{
 	"jammy":  "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-",
 	"focal":  "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-",
