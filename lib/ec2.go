@@ -1808,7 +1808,7 @@ func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 		Owners: []*string{aws.String("538276064493")},
 		Filters: []*ec2.Filter{
 			{
-				Name: aws.String("name"),
+				Name:   aws.String("name"),
 				Values: []*string{aws.String(name + "-*")},
 			},
 			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
