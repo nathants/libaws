@@ -1820,7 +1820,7 @@ func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 	}
 	var images []*ec2.Image
 	for _, image := range out.Images {
-		if strings.Contains(*image.Name, "-bios-tiny-") && ec2RegexpAlpine.FindString(*image.Name) != "" {
+		if strings.Contains(*image.Name, "-tiny-") && ec2RegexpAlpine.FindString(*image.Name) != "" {
 			images = append(images, image)
 		}
 	}
