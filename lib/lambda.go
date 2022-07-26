@@ -2027,8 +2027,11 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	dir := infraLambda.dir
+	var includes []string
 	for _, include := range infraLambda.Include {
-		if strings.Contains(include, "*") {
+		if !strings.Contains(include, "*") {
+			includes = append(includes, include)
+		} else {
 			paths, err := filepath.Glob(path.Join(dir, include))
 			if err != nil {
 				Logger.Println("error:", err)
@@ -2039,42 +2042,32 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 				if err != nil {
 					panic(err)
 				}
-				if !Exists(path.Join(dir, pth)) {
-					continue
-				}
-				compression := "-9"
-				if os.Getenv("ZIP_COMPRESSION") != "" {
-					compression = "-" + os.Getenv("ZIP_COMPRESSION")
-				}
-				err = shellAt(dir, "zip %s -r %s '%s'", compression, zipFile, pth)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
+				includes = append(includes, pth)
 			}
-		} else {
-			_, errReadlink := os.Readlink(include)
-			if !Exists(include) && errReadlink != nil {
-				err := fmt.Errorf("no such path for include: %s", include)
-				Logger.Println("error:", err)
-				return err
-			}
-			args := ""
-			if strings.HasPrefix(include, "/") {
-				args = "--junk-paths"
-			}
-			if errReadlink == nil {
-				args = "--symlinks"
-			}
-			compression := "-9"
-			if os.Getenv("ZIP_COMPRESSION") != "" {
-				compression = "-" + os.Getenv("ZIP_COMPRESSION")
-			}
-			err := shellAt(dir, "zip %s %s -r %s '%s'", compression, args, zipFile, include)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
+		}
+	}
+	for _, include := range includes {
+		_, errReadlink := os.Readlink(include)
+		if !Exists(include) && errReadlink != nil {
+			err := fmt.Errorf("no such path for include: %s", include)
+			Logger.Println("error:", err)
+			return err
+		}
+		args := ""
+		if strings.HasPrefix(include, "/") {
+			args = "--junk-paths"
+		}
+		if errReadlink == nil {
+			args = "--symlinks"
+		}
+		compression := "-9"
+		if os.Getenv("ZIP_COMPRESSION") != "" {
+			compression = "-" + os.Getenv("ZIP_COMPRESSION")
+		}
+		err := shellAt(dir, "zip %s %s -r %s '%s'", compression, args, zipFile, include)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
 		}
 	}
 	return nil
