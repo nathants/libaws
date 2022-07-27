@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -796,7 +795,7 @@ func makeInit(config *EC2Config) (string, error) {
 			Name:  "ssh-id",
 			Value: uid,
 		})
-		err = ioutil.WriteFile(path+"/id_ed25519", []byte(privKey), 0600)
+		err = os.WriteFile(path+"/id_ed25519", []byte(privKey), 0600)
 		if err != nil {
 			Logger.Println("error:", err)
 			return "", err
@@ -1624,7 +1623,7 @@ func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
 		return "", err
 	}
 	r := regexp.MustCompile("(amzn-ami-hvm[^\" ]+)")
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err

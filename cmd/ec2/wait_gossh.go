@@ -3,7 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -66,8 +66,8 @@ func ec2WaitGoSsh() {
 			lib.Logger.Println(lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
-	rsaBytes, _ := ioutil.ReadFile(args.RsaPrivKeyFile)
-	edBytes, _ := ioutil.ReadFile(args.Ed25519PrivKeyFile)
+	rsaBytes, _ := os.ReadFile(args.RsaPrivKeyFile)
+	edBytes, _ := os.ReadFile(args.Ed25519PrivKeyFile)
 	readyIDs, err := lib.EC2WaitGoSsh(ctx, &lib.EC2WaitGoSshInput{
 		Selectors:      args.Selectors,
 		MaxWaitSeconds: args.MaxWait,

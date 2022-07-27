@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"reflect"
@@ -70,7 +69,7 @@ func S3BucketRegion(bucket string) (string, error) {
 	region, ok := s3BucketRegion[bucket]
 	if !ok {
 		cacheFile := "/tmp/aws.s3.bucket.region=" + bucket
-		data, err := ioutil.ReadFile(cacheFile)
+		data, err := os.ReadFile(cacheFile)
 		if err == nil {
 			region = string(data)
 		} else {
@@ -102,7 +101,7 @@ func S3BucketRegion(bucket string) (string, error) {
 			if region == "" {
 				return "", fmt.Errorf("empty x-amz-bucket-region for bucket: %s", bucket)
 			}
-			err = ioutil.WriteFile(cacheFile, []byte(region), os.ModePerm)
+			err = os.WriteFile(cacheFile, []byte(region), os.ModePerm)
 			if err != nil {
 				Logger.Println("error:", err)
 				return "", err

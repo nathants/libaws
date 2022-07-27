@@ -3,8 +3,8 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
+	"os"
 	"strings"
 
 	"github.com/alexflint/go-arg"
@@ -92,7 +92,7 @@ func ec2New() {
 	ctx, cancel := context.WithCancel(context.Background())
 	lib.SignalHandler(cancel)
 	if lib.Exists(args.Init) {
-		data, err := ioutil.ReadFile(args.Init)
+		data, err := os.ReadFile(args.Init)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

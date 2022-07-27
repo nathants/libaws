@@ -3,7 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"sync"
 
@@ -59,7 +59,7 @@ func ec2Ssh() {
 		os.Exit(0)
 	}
 	if args.Cmd != "" && lib.Exists(args.Cmd) {
-		bytes, err := ioutil.ReadFile(args.Cmd)
+		bytes, err := os.ReadFile(args.Cmd)
 		if err != nil {
 			lib.Logger.Fatal("error:", err)
 		}
@@ -67,7 +67,7 @@ func ec2Ssh() {
 	}
 	stdin := args.Stdin
 	if args.Stdin == "-" {
-		bytes, err2 := ioutil.ReadAll(os.Stdin)
+		bytes, err2 := io.ReadAll(os.Stdin)
 		if err2 != nil {
 			lib.Logger.Fatal("error:", err2)
 		}

@@ -2,7 +2,6 @@ package cliaws
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/user"
 	"path"
@@ -47,7 +46,7 @@ func credsLs() {
 		if entry.Name()[:1] == "." {
 			continue
 		}
-		bytes, err := ioutil.ReadFile(path.Join(root, entry.Name()))
+		bytes, err := os.ReadFile(path.Join(root, entry.Name()))
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

@@ -3,7 +3,7 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 
 	"github.com/alexflint/go-arg"
@@ -53,7 +53,7 @@ func ec2Gossh() {
 		lib.Logger.Println("targeting:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 	}
 	if args.Cmd != "" && lib.Exists(args.Cmd) {
-		bytes, err := ioutil.ReadFile(args.Cmd)
+		bytes, err := os.ReadFile(args.Cmd)
 		if err != nil {
 			lib.Logger.Fatal("error:", err)
 		}
@@ -61,7 +61,7 @@ func ec2Gossh() {
 	}
 	stdin := args.Stdin
 	if args.Stdin == "-" {
-		bytes, err2 := ioutil.ReadAll(os.Stdin)
+		bytes, err2 := io.ReadAll(os.Stdin)
 		if err2 != nil {
 			lib.Logger.Fatal("error:", err2)
 		}
@@ -73,9 +73,9 @@ func ec2Gossh() {
 			lib.Logger.Fatal("error: ", err)
 		}
 	} else {
-		rsaBytes, _ := ioutil.ReadFile(args.RsaPrivKeyFile)
+		rsaBytes, _ := os.ReadFile(args.RsaPrivKeyFile)
 		rsaPrivKey := string(rsaBytes)
-		edBytes, _ := ioutil.ReadFile(args.Ed25519PrivKeyFile)
+		edBytes, _ := os.ReadFile(args.Ed25519PrivKeyFile)
 		ed25519PrivKey := string(edBytes)
 		var targetAddrs []string
 		for _, instance := range instances {

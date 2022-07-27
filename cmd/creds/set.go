@@ -2,7 +2,6 @@ package cliaws
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/user"
 	"path"
@@ -70,7 +69,7 @@ func credsSet() {
 		if entry.Name() == tempCreds {
 			continue
 		}
-		bytes, err := ioutil.ReadFile(path.Join(root, entry.Name()))
+		bytes, err := os.ReadFile(path.Join(root, entry.Name()))
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
@@ -96,7 +95,7 @@ func credsSet() {
 				text += line + "\n"
 			}
 		}
-		err = ioutil.WriteFile(path.Join(root, tempCreds), []byte("export AWS_CREDS_NAME="+name+"\n"+text), 0666)
+		err = os.WriteFile(path.Join(root, tempCreds), []byte("export AWS_CREDS_NAME="+name+"\n"+text), 0666)
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

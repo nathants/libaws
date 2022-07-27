@@ -1,7 +1,7 @@
 package cliaws
 
 import (
-	"io/ioutil"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/libaws/lib"
@@ -26,11 +26,11 @@ func sshKeygenEd25519() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = ioutil.WriteFile("id_ed25519.pub", []byte(pubKey), 0600)
+	err = os.WriteFile("id_ed25519.pub", []byte(pubKey), 0600)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = ioutil.WriteFile("id_ed25519", []byte(privKey), 0600)
+	err = os.WriteFile("id_ed25519", []byte(privKey), 0600)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

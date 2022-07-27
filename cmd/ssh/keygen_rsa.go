@@ -1,7 +1,7 @@
 package cliaws
 
 import (
-	"io/ioutil"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/libaws/lib"
@@ -26,11 +26,11 @@ func sshKeygenRsa() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = ioutil.WriteFile("id_rsa.pub", []byte(pubKey), 0600)
+	err = os.WriteFile("id_rsa.pub", []byte(pubKey), 0600)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = ioutil.WriteFile("id_rsa", []byte(privKey), 0600)
+	err = os.WriteFile("id_rsa", []byte(privKey), 0600)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

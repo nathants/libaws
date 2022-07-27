@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -2012,7 +2011,7 @@ func LambdaZipBytes(infraLambda *InfraLambda) ([]byte, error) {
 		defer d.Log()
 	}
 	zipFile := LambdaZipFile(infraLambda.Name)
-	data, err := ioutil.ReadFile(zipFile)
+	data, err := os.ReadFile(zipFile)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err

@@ -2,7 +2,7 @@ package cliaws
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"os/user"
 	"path"
 	"strings"
@@ -77,7 +77,7 @@ func credsAdd() {
 		lib.Logger.Fatal("creds with name already exists:", pth)
 	}
 	contents := fmt.Sprintf(template, args.AccessKeyID, args.SecretAccessKey, args.DefaultRegion)
-	err = ioutil.WriteFile(pth, []byte(contents), 0666)
+	err = os.WriteFile(pth, []byte(contents), 0666)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

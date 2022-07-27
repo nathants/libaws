@@ -3,7 +3,6 @@ package cliaws
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -101,7 +100,7 @@ func organizationsEnsureWithDns() {
 
 	fmt.Println("setup the parent account route53 via the following commands:")
 	fmt.Println("")
-	bytes, err := ioutil.ReadFile(nsFile)
+	bytes, err := os.ReadFile(nsFile)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
