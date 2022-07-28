@@ -2056,14 +2056,11 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 		if strings.HasPrefix(include, "/") {
 			args = "--junk-paths"
 		}
-		if errReadlink == nil {
-			args = "--symlinks"
-		}
 		compression := "-9"
 		if os.Getenv("ZIP_COMPRESSION") != "" {
 			compression = "-" + os.Getenv("ZIP_COMPRESSION")
 		}
-		err := shellAt(dir, "zip %s %s -r %s '%s'", compression, args, zipFile, include)
+		err := shellAt(dir, "zip %s %s --symlinks -r %s '%s'", compression, args, zipFile, include)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
