@@ -2231,7 +2231,7 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		})
 		if err != nil {
 			aerr, ok := err.(awserr.Error)
-			if !ok || aerr.Code() != lambda.ErrCodeResourceNotFoundException {
+			if !ok || !(aerr.Code() == lambda.ErrCodeResourceNotFoundException || aerr.Code() == "RequestEntityTooLargeException") {
 				return err
 			}
 			expectedErr = err
@@ -2507,7 +2507,7 @@ func LambdaUpdateFunctionCode(ctx context.Context, infraLambda *InfraLambda, pre
 			_, err := LambdaClient().UpdateFunctionCodeWithContext(ctx, updateInput)
 			if err != nil {
 				aerr, ok := err.(awserr.Error)
-				if !ok || aerr.Code() != lambda.ErrCodeResourceNotFoundException {
+				if !ok || !(aerr.Code() == lambda.ErrCodeResourceNotFoundException || aerr.Code() == "RequestEntityTooLargeException") {
 					return err
 				}
 				expectedErr = err
