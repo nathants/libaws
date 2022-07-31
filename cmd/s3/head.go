@@ -43,8 +43,9 @@ func s3Head() {
 	}
 
 	out, err := s3Client.HeadObjectWithContext(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
+		Bucket:       aws.String(bucket),
+		Key:          aws.String(key),
+		ChecksumMode: aws.String(s3.ChecksumModeEnabled),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
