@@ -45,6 +45,7 @@ _libaws () {
         elif [ ${COMP_WORDS[1]} = dynamodb-rm ];        then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-scan ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-rm   ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = dynamodb-item-rm-all   ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-put  ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
         elif [ ${COMP_WORDS[1]} = infra-parse ];  then COMPREPLY=($(find . -type f 2>/dev/null | grep -E -e '\.yml$' -e '\.yaml$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
