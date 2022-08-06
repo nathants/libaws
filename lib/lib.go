@@ -344,6 +344,12 @@ func diffMapStringStringPointers(a, b map[string]*string, logPrefix string, logV
 		return false, err
 	}
 	for _, c := range changes {
+		if c.From == "sha256:e3b0c44298fc1c14" {
+			c.From = "<empty-file>"
+		}
+		if c.To == "sha256:e3b0c44298fc1c14" {
+			c.To = "<empty-file>"
+		}
 		switch c.Type {
 		case diff.DELETE:
 			if logValues {
