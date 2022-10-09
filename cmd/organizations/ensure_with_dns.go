@@ -33,13 +33,6 @@ func organizationsEnsureWithDns() {
 	ctx := context.Background()
 	var str string
 
-	name := os.Getenv("AWS_CREDS_NAME")
-	if name == "" {
-		fmt.Println("fatal: AWS_CREDS_NAME == \"\"")
-		fmt.Println("follow aws creds setup instructions at: libaws creds-set -h ")
-		os.Exit(1)
-	}
-
 	creds, err := lib.Session().Config.Credentials.Get()
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
@@ -53,7 +46,6 @@ func organizationsEnsureWithDns() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	fmt.Println("parent account id:", account)
-	fmt.Println("parent name:", name)
 	fmt.Println("this account will be the parent, and should have an organization enabled at: https://console.aws.amazon.com/organizations/v2/home")
 
 	fmt.Println("hit ENTER to proceed")
@@ -90,9 +82,9 @@ func organizationsEnsureWithDns() {
 
 	fmt.Println("setup the child account route53 via the following commands:")
 	fmt.Println("")
-	fmt.Printf("(aws-creds-temp %s && libaws route53-ensure-zone %s)\n", args.Name, args.ChildSubDomain)
-	fmt.Printf("(aws-creds-temp %s && libaws route53-ensure-record %s foo.%s TTL=7 Type=CNAME Value=bar)\n", args.Name, args.ChildSubDomain, args.ChildSubDomain)
-	fmt.Printf("(aws-creds-temp %s && libaws route53-ns %s > %s)\n", args.Name, args.ChildSubDomain, nsFile)
+	fmt.Printf("libaws creds-set %s && libaws route53-ensure-zone %s\n", args.Name, args.ChildSubDomain)
+	fmt.Printf("libaws creds-set %s && libaws route53-ensure-record %s foo.%s TTL=7 Type=CNAME Value=bar\n", args.Name, args.ChildSubDomain, args.ChildSubDomain)
+	fmt.Printf("libaws creds-set %s && libaws route53-ns %s > %s\n", args.Name, args.ChildSubDomain, nsFile)
 
 	fmt.Println("hit ENTER to proceed")
 	_, _ = fmt.Scanln(&str)
@@ -104,7 +96,7 @@ func organizationsEnsureWithDns() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	cmd := []string{fmt.Sprintf("libaws route53-ensure-record %s %s TTL=172800 Type=NS", args.ParentDomain, args.ChildSubDomain)}
+	cmd := []string{fmt.Sprintf("libaws creds-set PARENT_NAME && libaws route53-ensure-record %s %s TTL=172800 Type=NS", args.ParentDomain, args.ChildSubDomain)}
 	for _, line := range strings.Split(string(bytes), "\n") {
 		if line != "" {
 			cmd = append(cmd, "Value="+line)

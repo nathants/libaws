@@ -1230,8 +1230,6 @@ defines an [ecr trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Us
 
 ```
 source completions.d/libaws.sh
-source completions.d/aws-creds.sh
-source completions.d/aws-creds-temp.sh
 ```
 
 ## extending
