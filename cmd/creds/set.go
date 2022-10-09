@@ -21,32 +21,8 @@ type credsSetArgs struct {
 }
 
 func (credsSetArgs) Description() string {
-	return `
-easily switch between aws creds
-
-    add new credentials:
-
-        libaws creds-add NAME KEY_ID KEY_SECRET REGION
-
-    add to your bashrc:
-
-        source ~/.aws_creds/_temp_creds.sh
-
-        aws-creds() {
-            # permanently set aws credentials for this and future terminal sessions
-            libaws creds-set $1 && . ~/.aws_creds/_temp_creds.sh
-        }
-
-        aws-creds-temp() {
-            # temporarily set aws credentials for the current terminal session
-            . ~/.aws_creds/$1.sh
-            export AWS_CREDS_NAME=$(echo $1|cut -d. -f1)
-        }
-
-`
+	return `switch between aws creds`
 }
-
-const tempCreds = "_temp_creds.sh"
 
 func credsSet() {
 	var args credsSetArgs
@@ -56,54 +32,45 @@ func credsSet() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	home := usr.HomeDir
-	root := path.Join(home, ".aws_creds")
+	dir := os.Getenv("LIBAWS_CREDS_DIR")
+	if dir == "" {
+		dir = "secure/aws_creds"
+	}
+	root := path.Join(home, dir)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	var creds []string
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() {
 			continue
 		}
-		if entry.Name() == tempCreds {
-			continue
-		}
-		bytes, err := os.ReadFile(path.Join(root, entry.Name()))
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		text := string(bytes)
-		if !strings.Contains(text, "export AWS_ACCESS_KEY_ID=") {
-			continue
-		}
-		if !strings.Contains(text, "export AWS_SECRET_ACCESS_KEY=") {
-			continue
-		}
-		if !strings.Contains(text, "export AWS_DEFAULT_REGION=") {
-			continue
-		}
-		creds = append(creds, strings.Split(entry.Name(), ".")[0])
-		if args.Name+".sh" != entry.Name() {
+		if !strings.HasSuffix(entry.Name(), ".creds") {
 			continue
 		}
 		name := strings.Split(entry.Name(), ".")[0]
-		lines := strings.Split(text, "\n")
-		text = ""
-		for _, line := range lines {
-			if strings.Contains(line, "export") {
-				text += line + "\n"
+		if name == args.Name {
+			err = os.MkdirAll(path.Join(home, ".aws"), 0700)
+			if err != nil {
+				lib.Logger.Fatal("error: ", err)
 			}
+			_ = os.Remove(path.Join(home, ".aws", "credentials"))
+			err := os.Symlink(path.Join(root, name+".creds"), path.Join(home, ".aws", "credentials"))
+			if err != nil {
+				lib.Logger.Fatal("error: ", err)
+			}
+			_ = os.Remove(path.Join(home, ".aws", "config"))
+			err = os.Symlink(path.Join(root, name+".config"), path.Join(home, ".aws", "config"))
+			if err != nil {
+				lib.Logger.Fatal("error: ", err)
+			}
+			os.Exit(0)
 		}
-		err = os.WriteFile(path.Join(root, tempCreds), []byte("export AWS_CREDS_NAME="+name+"\n"+text), 0666)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		return
+
 	}
-	fmt.Println("fatal: no match, try:")
-	for _, cred := range creds {
-		fmt.Println(" ", cred)
-	}
+	fmt.Println("no creds for name:", args.Name)
 	os.Exit(1)
 }

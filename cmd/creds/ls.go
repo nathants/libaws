@@ -31,7 +31,14 @@ func credsLs() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	home := usr.HomeDir
-	root := path.Join(home, ".aws_creds")
+	dir := os.Getenv("LIBAWS_CREDS_DIR")
+	if dir == "" {
+		dir = "secure/aws_creds"
+	}
+	root := path.Join(home, dir)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
@@ -40,27 +47,11 @@ func credsLs() {
 		if !entry.Type().IsRegular() {
 			continue
 		}
-		if entry.Name() == "_temp_creds.sh" {
+		if !strings.HasSuffix(entry.Name(), ".creds") {
 			continue
 		}
-		if entry.Name()[:1] == "." {
-			continue
-		}
-		bytes, err := os.ReadFile(path.Join(root, entry.Name()))
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		text := string(bytes)
-		if !strings.Contains(text, "AWS_ACCESS_KEY_ID=") {
-			continue
-		}
-		if !strings.Contains(text, "AWS_SECRET_ACCESS_KEY=") {
-			continue
-		}
-		if !strings.Contains(text, "AWS_DEFAULT_REGION=") {
-			continue
-		}
-		fmt.Println(strings.Split(entry.Name(), ".sh")[0])
+		name := strings.Split(entry.Name(), ".")[0]
+		fmt.Println(name)
 	}
 
 }

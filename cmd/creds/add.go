@@ -24,37 +24,17 @@ type credsAddArgs struct {
 }
 
 func (credsAddArgs) Description() string {
-	return `
-add aws creds
-
-    add new credentials:
-
-        libaws creds-add NAME KEY_ID KEY_SECRET REGION
-
-    add to your bashrc:
-
-        source ~/.aws_creds/_temp_creds.sh
-
-        aws-creds() {
-            # permanently set aws credentials for this and future terminal sessions
-            libaws creds-set $1 && source ~/.aws_creds/_temp_creds.sh
-        }
-
-        aws-creds-temp() {
-            # temporarily set aws credentials for the current terminal session
-            source ~/.aws_creds/$1.sh
-            export AWS_CREDS_NAME=$(echo $1|cut -d. -f1)
-        }
-
-`
+	return `add aws creds`
 }
 
-const template = `#!/bin/bash
-export AWS_STS_REGIONAL_ENDPOINTS=regional
-export AWS_SDK_LOAD_CONFIG=true
-export AWS_ACCESS_KEY_ID=%s
-export AWS_SECRET_ACCESS_KEY=%s
-export AWS_DEFAULT_REGION=%s
+const templateCreds = `[default]
+aws_access_key_id=%s
+aws_secret_access_key=%s
+`
+
+const templateConfig = `[default]
+region=%s
+output=json
 `
 
 func credsAdd() {
@@ -65,20 +45,39 @@ func credsAdd() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	home := usr.HomeDir
-	root := path.Join(home, ".aws_creds")
+	dir := os.Getenv("LIBAWS_CREDS_DIR")
+	if dir == "" {
+		dir = "secure/aws_creds"
+	}
+	root := path.Join(home, dir)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+	err = os.MkdirAll(root, 0700)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 	if strings.Contains(args.Name, " ") {
 		lib.Logger.Fatal("creds name cannot contain spaces:", args.Name)
 	}
-	pth := path.Join(root, args.Name+".sh")
+	pth := path.Join(root, args.Name+".config")
 	if lib.Exists(pth) {
 		lib.Logger.Fatal("creds with name already exists:", pth)
 	}
-	contents := fmt.Sprintf(template, args.AccessKeyID, args.SecretAccessKey, args.DefaultRegion)
-	err = os.WriteFile(pth, []byte(contents), 0666)
+	contents := fmt.Sprintf(templateConfig, args.DefaultRegion)
+	err = os.WriteFile(pth, []byte(contents), 0600)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
+	lib.Logger.Println("created:", pth)
+	pth = path.Join(root, args.Name+".creds")
+	if lib.Exists(pth) {
+		lib.Logger.Fatal("creds with name already exists:", pth)
+	}
+	contents = fmt.Sprintf(templateCreds, args.AccessKeyID, args.SecretAccessKey)
+	err = os.WriteFile(pth, []byte(contents), 0600)
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+	lib.Logger.Println("created:", pth)
 }
