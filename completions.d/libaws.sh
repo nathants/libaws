@@ -42,6 +42,8 @@ _libaws () {
         elif [ ${COMP_WORDS[1]} = ec2-dns-private ]; then COMPREPLY=($(libaws ec2-ls -s running 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ec2-wait-ssh    ]; then COMPREPLY=($(libaws ec2-ls -s running 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
+        elif [ ${COMP_WORDS[1]} = creds-set    ]; then COMPREPLY=($(libaws creds-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+
         elif [ ${COMP_WORDS[1]} = dynamodb-rm ];        then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-scan ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-rm   ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
