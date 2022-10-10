@@ -841,6 +841,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					}
 				}
 			}
+			sort.Strings(infraLambda.Env)
 			tagsOut, err := LambdaClient().ListTagsWithContext(ctx, &lambda.ListTagsInput{
 				Resource: fn.FunctionArn,
 			})
