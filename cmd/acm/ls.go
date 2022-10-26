@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go/service/acm"
@@ -38,6 +39,11 @@ func acmLs() {
 			lib.Logger.Fatal("error: ", err)
 		}
 
-		fmt.Println(strings.Join(lib.StringSlice(out.Certificate.SubjectAlternativeNames), " "), "renewal="+*out.Certificate.RenewalEligibility)
+		fmt.Println(
+			strings.Join(lib.StringSlice(out.Certificate.SubjectAlternativeNames), " "),
+			"renewal="+*out.Certificate.RenewalEligibility,
+			"status="+*out.Certificate.Status,
+			"expires="+out.Certificate.NotAfter.Format(time.RFC3339),
+		)
 	}
 }
