@@ -26,7 +26,7 @@ type ec2NewArgs struct {
 	UserName       string   `arg:"-u,--user" help:"ssh user name, otherwise look for 'user' tag on instance or find via ami name lookup"`
 	Key            string   `arg:"-k,--key,required"`
 	EphemeralKey   bool     `arg:"-e,--ephemeral-key" help:"add an additional ssh keypair to this instance.\n                         the private key will be written to /tmp/libaws/SSH_ID/id_ed25519.\n                         the SSH_ID will be tagged on the instance."`
-	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create onDemand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized"`
+	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create on-demand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized | capacityOptimizedPrioritized | priceCapacityOptimized"`
 	Sg             string   `arg:"--sg,required" help:"security group name or id"`
 	SubnetIds      []string `arg:"--subnets" help:"subnet-ids as space separated values"`
 	Vpc            string   `arg:"-v,--vpc" help:"vpc name or id"`
