@@ -49,6 +49,7 @@ _libaws () {
         elif [ ${COMP_WORDS[1]} = dynamodb-item-rm   ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-rm-all   ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = dynamodb-item-put  ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = dynamodb-item-get  ]; then COMPREPLY=($(libaws dynamodb-ls 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[2]}"))
 
         elif [ ${COMP_WORDS[1]} = infra-parse ];  then COMPREPLY=($(find . -type f 2>/dev/null | grep -E -e '\.yml$' -e '\.yaml$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = infra-ensure ]; then COMPREPLY=($(find . -type f 2>/dev/null | grep -E -e '\.yml$' -e '\.yaml$'  | sed s:./:: | grep "^${COMP_WORDS[2]}"))
@@ -86,6 +87,7 @@ _libaws () {
 
         if   [ ${COMP_WORDS[1]} = cloudwatch-ls-dimensions ]; then COMPREPLY=($(libaws cloudwatch-ls-metrics "${COMP_WORDS[2]}" 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[3]}"))
         elif [ ${COMP_WORDS[1]} = cloudwatch-get-metric ];    then COMPREPLY=($(libaws cloudwatch-ls-metrics "${COMP_WORDS[2]}" 2>/dev/null | awk '{print $1}' | grep "^${COMP_WORDS[3]}"))
+        elif [ ${COMP_WORDS[1]} = dynamodb-item-get ];    then COMPREPLY=($(libaws dynamodb-item-scan "${COMP_WORDS[2]}" 2>/dev/null | jq -r .id | grep "^${COMP_WORDS[3]}" | sed s/^/id:s:/))
         fi
 
     elif [ $COMP_CWORD = 4 ]; then
