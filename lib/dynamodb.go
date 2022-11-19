@@ -1073,7 +1073,7 @@ func DynamoDBItemDeleteAll(ctx context.Context, tableName string, keyNames []str
 				Logger.Println("error:", err)
 				return err
 			}
-			fmt.Println("dynamodb deleted:", string(bytes))
+			fmt.Println("dynamodb deleted:", tableName, string(bytes))
 		}
 		if out.LastEvaluatedKey == nil {
 			break
