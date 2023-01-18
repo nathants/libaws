@@ -6,9 +6,9 @@ require (
 	github.com/alexflint/go-arg v1.4.3
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/aws/aws-lambda-go v1.37.0
-	github.com/aws/aws-sdk-go v1.44.179
+	github.com/aws/aws-sdk-go v1.44.182
 	github.com/buger/goterm v1.0.4
-	github.com/dustin/go-humanize v1.0.0
+	github.com/dustin/go-humanize v1.0.1
 	github.com/gofrs/uuid v4.3.1+incompatible
 	github.com/mattn/go-isatty v0.0.17
 	github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a
