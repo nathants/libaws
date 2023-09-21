@@ -47,6 +47,7 @@ const (
 
 	EC2AmiAlpine3160 = "alpine-3.16.0"
 	EC2AmiAlpine3182 = "alpine-3.18.2"
+	EC2AmiAlpine3183 = "alpine-3.18.3"
 )
 
 var ec2RegexpAlpine = regexp.MustCompile(`alpine\-\d\d?\.\d\d?\.\d\d?`)
