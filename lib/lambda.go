@@ -64,7 +64,7 @@ const (
 	LambdaWebsocketSuffix        = lambdaEventRuleNameSeparator + "websocket"
 
 	lambdaRuntimePython    = "python3.9"
-	lambdaRuntimeGo        = "go1.x"
+	lambdaRuntimeGo        = "provided.al2"
 	lambdaRuntimeContainer = "container"
 )
 

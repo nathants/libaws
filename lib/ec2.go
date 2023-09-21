@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -32,9 +31,9 @@ const (
 	EC2ArchAmd64 = "x86_64"
 	EC2ArchArm64 = "arm64"
 
-	EC2AmiLambda = "lambda"
-	EC2AmiAmzn   = "amzn"
-	EC2AmiArch   = "arch"
+	EC2AmiAmzn2023 = "amzn2023"
+	EC2AmiAmzn2    = "amzn2"
+	EC2AmiArch     = "arch"
 
 	EC2AmiUbuntuJammy  = "jammy"
 	EC2AmiUbuntuFocal  = "focal"
@@ -1607,33 +1606,15 @@ func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
 	return user, nil
 }
 
-func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
+func ec2AmiAmzn2023(ctx context.Context, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiLambda"}
 		defer d.Log()
 	}
-	resp, err := http.Get("https://docs.aws.amazon.com/lambda/latest/dg/current-supported-versions.html")
-	if err != nil {
-		Logger.Println("error:", err)
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("bad http status code: %d", resp.StatusCode)
-		Logger.Println("error:", err)
-		return "", err
-	}
-	r := regexp.MustCompile("(amzn-ami-hvm[^\" ]+)")
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Logger.Println("error:", err)
-		return "", err
-	}
-	ami := r.FindAllString(string(body), -1)[0]
 	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String("137112412989")},
 		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String(ami)}},
+			{Name: aws.String("name"), Values: []*string{aws.String("al2023-ami-2023*")}},
 			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
 		},
 	})
@@ -1641,11 +1622,11 @@ func ec2AmiLambda(ctx context.Context, arch string) (string, error) {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	if len(out.Images) != 1 {
-		err := fmt.Errorf("didn't find ami for: %s [%d]", ami, len(out.Images))
+	if len(out.Images) == 0 {
 		Logger.Println("error:", err)
 		return "", err
 	}
+	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
 	return *out.Images[0].ImageId, nil
 }
 
@@ -1724,7 +1705,7 @@ func ec2AmiDebian(ctx context.Context, name, arch string) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
-func ec2AmiAmzn(ctx context.Context, arch string) (string, error) {
+func ec2AmiAmzn2(ctx context.Context, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiAmzn"}
 		defer d.Log()
@@ -1849,11 +1830,11 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 		return "", "", err
 	}
 	switch name {
-	case EC2AmiLambda:
-		amiID, err = ec2AmiLambda(ctx, arch)
+	case EC2AmiAmzn2023:
+		amiID, err = ec2AmiAmzn2023(ctx, arch)
 		sshUser = "user"
-	case EC2AmiAmzn:
-		amiID, err = ec2AmiAmzn(ctx, arch)
+	case EC2AmiAmzn2:
+		amiID, err = ec2AmiAmzn2(ctx, arch)
 		sshUser = "user"
 	case EC2AmiArch:
 		amiID, err = ec2AmiArch(ctx, arch)
@@ -1873,7 +1854,7 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 			amiID, err = ec2AmiDebian(ctx, name, arch)
 			sshUser = "admin"
 		default:
-			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-xx.yy.zz\", got: %s", name)
+			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | amzn2 | amzn2023 | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-xx.yy.zz\", got: %s", name)
 			Logger.Println("error:", err)
 			return "", "", err
 		}

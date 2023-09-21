@@ -13,7 +13,7 @@ func init() {
 }
 
 type ec2AmiBaseArgs struct {
-	Name string `arg:"positional,required" help:"ami-ID | arch | amzn | lambda | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-xx.yy.zz"`
+	Name string `arg:"positional,required" help:"ami-ID | arch | amzn2 | amzn2023 | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-xx.yy.zz"`
 	Arch string `arg:"-a,--arch" default:"x86_64" help:"arm64 | x86_64"`
 }
 
