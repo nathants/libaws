@@ -103,12 +103,7 @@ func ec2New() {
 	}
 	useSubnetsFromVpc(ctx, &args)
 	if strings.HasPrefix(args.Ami, "ami-") {
-		account, err := lib.StsAccount(ctx)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
 		images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-			Owners: []*string{aws.String(account)},
 			Filters: []*ec2.Filter{{
 				Name: aws.String("image-id"),
 				Values: []*string{
