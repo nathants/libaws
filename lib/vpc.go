@@ -33,6 +33,27 @@ func VpcList(ctx context.Context) ([]*ec2.Vpc, error) {
 	return res, nil
 }
 
+func VpcListSubnets(ctx context.Context, vpcID string) ([]*ec2.Subnet, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "VpcListSubnets"}
+		defer d.Log()
+	}
+	input := &ec2.DescribeSubnetsInput{
+		Filters: []*ec2.Filter{
+			&ec2.Filter{
+				Name:   aws.String("vpc-id"),
+				Values: []*string{aws.String(vpcID)},
+			},
+		},
+	}
+	out, err := EC2Client().DescribeSubnetsWithContext(ctx, input)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	return out.Subnets, nil
+}
+
 func VpcID(ctx context.Context, name string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcID"}
