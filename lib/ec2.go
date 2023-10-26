@@ -33,7 +33,6 @@ const (
 
 	EC2AmiAmzn2023 = "amzn2023"
 	EC2AmiAmzn2    = "amzn2"
-	EC2AmiArch     = "arch"
 
 	EC2AmiUbuntuJammy  = "jammy"
 	EC2AmiUbuntuFocal  = "focal"
@@ -41,6 +40,7 @@ const (
 	EC2AmiUbuntuXenial = "xenial"
 	EC2AmiUbuntuTrusty = "trusty"
 
+	EC2AmiDebianBookworm = "bookworm"
 	EC2AmiDebianBullseye = "bullseye"
 	EC2AmiDebianBuster   = "buster"
 	EC2AmiDebianStretch  = "stretch"
@@ -1641,6 +1641,7 @@ var ubuntus = map[string]string{
 }
 
 var debians = map[string]string{
+	"bookworm": "debian-12-",
 	"bullseye": "debian-11-",
 	"buster":   "debian-10-",
 	"stretch":  "debian-9-",
@@ -1727,61 +1728,6 @@ func ec2AmiAmzn2(ctx context.Context, arch string) (string, error) {
 	return *out.Images[0].ImageId, nil
 }
 
-// uplinklabs has stopped publishing these images, so make sure no
-// ami-ID other than the following is ever used, as they are the last published.
-// final release of: Release 2021.06.02 ebs hvm x86_64 stable
-var ec2AmiArchFinalPublishedImages = []string{
-	"ami-0aa7dbd2db78fa7fb",
-	"ami-008ef391bf64d8b7f",
-	"ami-0bc142e116312d7e6",
-	"ami-023693ce180f3adb1",
-	"ami-07b08bb244fc72525",
-	"ami-0f0259bc20bcc0114",
-	"ami-0209cf5105e3a5872",
-	"ami-0a10dbf824c9cc3fc",
-	"ami-0b46d60197650c7b2",
-	"ami-0622746594aec927a",
-	"ami-0668288fd748abc0a",
-	"ami-0f472c7bb5ef62781",
-	"ami-058d618623e52c423",
-	"ami-00894b4c7df5dbb94",
-	"ami-0fae3a42c0f7438ee",
-	"ami-016f15543452da599",
-	"ami-00cfc0bbf81a9d32c",
-	"ami-0343ae980006cdd80",
-	"ami-0745450a9dd2e9595",
-	"ami-0abb8c3a6b6e5e6f3",
-}
-
-func ec2AmiArch(ctx context.Context, arch string) (string, error) {
-	if doDebug {
-		d := &Debug{start: time.Now(), name: "ec2AmiArch"}
-		defer d.Log()
-	}
-	if arch != EC2ArchAmd64 {
-		err := fmt.Errorf("ec2 archlinux only supports amd64")
-		Logger.Println("error:", err)
-		return "", err
-	}
-	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String("093273469852")},
-		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String("arch-linux-hvm-*-ebs")}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
-		},
-	})
-	if err != nil {
-		Logger.Println("error:", err)
-		return "", err
-	}
-	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
-	amiID := *out.Images[0].ImageId
-	if !Contains(ec2AmiArchFinalPublishedImages, amiID) {
-		return "", fmt.Errorf("ami-id %s was not in the list of the final published images from https://www.uplinklabs.net/projects/arch-linux-on-ec2/ %v", amiID, ec2AmiArchFinalPublishedImages)
-	}
-	return amiID, nil
-}
-
 func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiAlpine"}
@@ -1838,9 +1784,6 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 	case EC2AmiAmzn2:
 		amiID, err = ec2AmiAmzn2(ctx, arch)
 		sshUser = "user"
-	case EC2AmiArch:
-		amiID, err = ec2AmiArch(ctx, arch)
-		sshUser = "arch"
 	default:
 		okAlpine := ec2RegexpAlpine.FindString(name) != ""
 		_, okUbuntu := ubuntus[name]
@@ -1856,7 +1799,7 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 			amiID, err = ec2AmiDebian(ctx, name, arch)
 			sshUser = "admin"
 		default:
-			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | arch | amzn2 | amzn2023 | deeplearning | bionic | xenial | trusty | focal | jammy | bullseye | buster | stretch | alpine-xx.yy.zz\", got: %s", name)
+			err := fmt.Errorf("unknown ami name, should be one of: \"ami-ID | amzn2 | amzn2023 | deeplearning | bionic | xenial | trusty | focal | jammy | bookworm | bullseye | buster | stretch | alpine-xx.yy.zz\", got: %s", name)
 			Logger.Println("error:", err)
 			return "", "", err
 		}
