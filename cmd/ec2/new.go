@@ -101,7 +101,9 @@ func ec2New() {
 	if args.Vpc == "" && len(args.SubnetIds) == 0 {
 		p.Fail("you must specify one of --vpc | --subnets")
 	}
-	useSubnetsFromVpc(ctx, &args)
+	if len(args.SubnetIds) == 0 {
+		useSubnetsFromVpc(ctx, &args)
+	}
 	if strings.HasPrefix(args.Ami, "ami-") {
 		images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 			Filters: []*ec2.Filter{{
