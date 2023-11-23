@@ -35,12 +35,20 @@ func ec2LatestAmi() {
 	}
 	images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Owners: []*string{aws.String(account)},
-		Filters: []*ec2.Filter{{
-			Name: aws.String("description"),
-			Values: []*string{
-				&args.Name,
+		Filters: []*ec2.Filter{
+			{
+				Name: aws.String("description"),
+				Values: []*string{
+					&args.Name,
+				},
 			},
-		}},
+			{
+				Name: aws.String("state"),
+				Values: []*string{
+					aws.String("available"),
+				},
+			},
+		},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
