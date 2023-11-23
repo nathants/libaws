@@ -1304,7 +1304,7 @@ func IamEnsureUserApi(ctx context.Context, username string, preview bool) (*iam.
 			Logger.Println(PreviewString(preview)+"created access key for username:", username)
 			return out.AccessKey, nil
 		case 1:
-			return &iam.AccessKey{}, nil
+			return &iam.AccessKey{}, nil // access key is only returned on creation
 		default:
 			err := fmt.Errorf("more than 1 access key exists for username: %s %d", username, len(out.AccessKeyMetadata))
 			return nil, err
