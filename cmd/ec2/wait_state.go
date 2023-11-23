@@ -39,24 +39,24 @@ func ec2WaitState() {
 		lib.Logger.Fatal("error: provide some selectors")
 	}
 	start := time.Now()
-	var instances []*ec2.Instance
-	var err error
 	for {
-		instances, err = lib.EC2ListInstances(ctx, args.Selectors, "")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		if time.Since(start) > 15*time.Second {
-			err = fmt.Errorf("no instances found for those selectors")
+		var instances []*ec2.Instance
+		var err error
+		for {
+			instances, err = lib.EC2ListInstances(ctx, args.Selectors, "")
 			if err != nil {
 				lib.Logger.Fatal("error: ", err)
 			}
+			if time.Since(start) > 15*time.Second {
+				err = fmt.Errorf("no instances found for those selectors")
+				if err != nil {
+					lib.Logger.Fatal("error: ", err)
+				}
+			}
+			if len(instances) > 0 {
+				break
+			}
 		}
-		if len(instances) > 0 {
-			break
-		}
-	}
-	for {
 		pass := true
 		for _, instance := range instances {
 			fmt.Println(*instance.State.Name, *instance.InstanceId)
