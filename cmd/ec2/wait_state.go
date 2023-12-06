@@ -47,7 +47,7 @@ func ec2WaitState() {
 			if err != nil {
 				lib.Logger.Fatal("error: ", err)
 			}
-			if time.Since(start) > 15*time.Second {
+			if time.Since(start) > 300*time.Second {
 				err = fmt.Errorf("no instances found for those selectors")
 				if err != nil {
 					lib.Logger.Fatal("error: ", err)
