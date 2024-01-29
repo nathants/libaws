@@ -1012,7 +1012,7 @@ func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
 	}
 	for _, keypair := range out.KeyPairs {
 		infraKeypair := &InfraKeypair{
-			PubkeyContent: *keypair.PublicKey,
+			PubkeyContent: strings.TrimSpace(*keypair.PublicKey),
 		}
 		for _, tag := range keypair.Tags {
 			if *tag.Key == infraSetTagName {
