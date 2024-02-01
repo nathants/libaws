@@ -405,7 +405,7 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 	}
 	var allowNames []string
 	for _, allowStr := range allows {
-		parts := splitWhiteSpaceN(allowStr, 2)
+		parts := SplitWhiteSpaceN(allowStr, 2)
 		if len(parts) != 2 {
 			err := fmt.Errorf("allow format should be: 'SERVICE:ACTION RESOURCE', got: %s", allowStr)
 			Logger.Println("error:", err)
@@ -500,7 +500,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 			Logger.Println("error:", err)
 			return err
 		}
-		parts := splitWhiteSpaceN(allowStr, 2)
+		parts := SplitWhiteSpaceN(allowStr, 2)
 		if len(parts) != 2 {
 			err := fmt.Errorf("allow format should be: 'SERVICE:ACTION RESOURCE', got: %s", allowStr)
 			Logger.Println("error:", err)

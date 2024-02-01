@@ -426,12 +426,24 @@ func logRecover(r interface{}) {
 	panic(r)
 }
 
-func splitWhiteSpace(s string) []string {
-	return regexp.MustCompile(` +`).Split(s, -1)
+func SplitWhiteSpace(s string) []string {
+	var res []string
+	for _, part := range regexp.MustCompile(` +`).Split(s, -1) {
+		if strings.TrimSpace(part) != "" {
+			res = append(res, part)
+		}
+	}
+	return res
 }
 
-func splitWhiteSpaceN(s string, n int) []string {
-	return regexp.MustCompile(` +`).Split(s, n)
+func SplitWhiteSpaceN(s string, n int) []string {
+	var res []string
+	for _, part := range regexp.MustCompile(` +`).Split(s, n) {
+		if strings.TrimSpace(part) != "" {
+			res = append(res, part)
+		}
+	}
+	return res
 }
 
 func SplitOnce(s string, sep string) (head, tail string, err error) {

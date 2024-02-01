@@ -996,7 +996,7 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		rsyncCmd = append(rsyncCmd, []string{"-e", "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"}...)
 	}
 	if os.Getenv("RSYNC_OPTIONS") != "" {
-		rsyncCmd = append(rsyncCmd, splitWhiteSpace(os.Getenv("RSYNC_OPTIONS"))...)
+		rsyncCmd = append(rsyncCmd, SplitWhiteSpace(os.Getenv("RSYNC_OPTIONS"))...)
 	}
 	target := input.User + "@"
 	if input.PrivateIP {
@@ -1015,13 +1015,13 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		Logger.Println("error:", result.Err)
 		return result
 	}
-	for _, src := range splitWhiteSpace(source) {
+	for _, src := range SplitWhiteSpace(source) {
 		src = strings.Trim(src, " ")
 		if src != "" {
 			rsyncCmd = append(rsyncCmd, src)
 		}
 	}
-	for _, dst := range splitWhiteSpace(destination) {
+	for _, dst := range SplitWhiteSpace(destination) {
 		dst = strings.Trim(dst, " ")
 		if dst != "" {
 			rsyncCmd = append(rsyncCmd, dst)

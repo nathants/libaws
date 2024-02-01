@@ -19,25 +19,25 @@ func init() {
 }
 
 type ec2NewArgs struct {
-	Name           string   `arg:"positional,required"`
-	Num            int      `arg:"-n,--num" default:"1"`
-	Type           string   `arg:"-t,--type,required"`
-	Ami            string   `arg:"-a,--ami,required" help:"ami-ID | amzn2 | amzn2023 | deeplearning | bionic | xenial | trusty | focal | jammy | bookworm | bullseye | buster | stretch | alpine-xx.yy.zz"`
-	UserName       string   `arg:"-u,--user" help:"ssh user name, otherwise look for 'user' tag on instance or find via ami name lookup"`
-	Key            string   `arg:"-k,--key,required"`
-	EphemeralKey   bool     `arg:"-e,--ephemeral-key" help:"add an additional ssh keypair to this instance.\n                         the private key will be written to /tmp/libaws/SSH_ID/id_ed25519.\n                         the SSH_ID will be tagged on the instance."`
-	SpotStrategy   string   `arg:"-s,--spot" help:"leave unspecified to create on-demand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized | capacityOptimizedPrioritized | priceCapacityOptimized"`
-	Sg             string   `arg:"--sg,required" help:"security group name or id"`
-	SubnetIds      []string `arg:"--subnets" help:"subnet-ids as space separated values"`
-	Vpc            string   `arg:"-v,--vpc" help:"vpc name or id"`
-	Gigs           int      `arg:"-g,--gigs" help:"ebs gigabytes\n                        " default:"16"`
-	Iops           int      `arg:"--iops" help:"gp3 iops\n                        " default:"3000"`
-	Throughput     int      `arg:"--throughput" help:"gp3 throughput mb/s\n                        " default:"125"`
-	Init           string   `arg:"-i,--init" help:"cloud init bash script"`
-	Tags           []string `arg:"--tags" help:"space separated values like: key=value"`
-	Profile        string   `arg:"-p,--profile" help:"iam instance profile name"`
-	SecondsTimeout int      `arg:"--seconds-timeout" default:"3600" help:"will $(sudo poweroff) after this many seconds.\n                         calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff).\n                         set to 0 to disable.\n                         $(sudo journalctl -f -u timeout.service) to follow logs.\n                        "`
-	Wait           bool     `arg:"-w,--wait" default:"false" help:"wait for ssh"`
+	Name           string `arg:"positional,required"`
+	Num            int    `arg:"-n,--num" default:"1"`
+	Type           string `arg:"-t,--type,required"`
+	Ami            string `arg:"-a,--ami,required" help:"ami-ID | amzn2 | amzn2023 | deeplearning | bionic | xenial | trusty | focal | jammy | bookworm | bullseye | buster | stretch | alpine-xx.yy.zz"`
+	UserName       string `arg:"-u,--user" help:"ssh user name, otherwise look for 'user' tag on instance or find via ami name lookup"`
+	Key            string `arg:"-k,--key,required"`
+	EphemeralKey   bool   `arg:"-e,--ephemeral-key" help:"add an additional ssh keypair to this instance.\n                         the private key will be written to /tmp/libaws/SSH_ID/id_ed25519.\n                         the SSH_ID will be tagged on the instance."`
+	SpotStrategy   string `arg:"-s,--spot" help:"leave unspecified to create on-demand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized | capacityOptimizedPrioritized | priceCapacityOptimized"`
+	Sg             string `arg:"--sg,required" help:"security group name or id"`
+	SubnetIds      string `arg:"--subnets" help:"subnet-ids as space separated values"`
+	Vpc            string `arg:"-v,--vpc" help:"vpc name or id"`
+	Gigs           int    `arg:"-g,--gigs" help:"ebs gigabytes\n                        " default:"16"`
+	Iops           int    `arg:"--iops" help:"gp3 iops\n                        " default:"3000"`
+	Throughput     int    `arg:"--throughput" help:"gp3 throughput mb/s\n                        " default:"125"`
+	Init           string `arg:"-i,--init" help:"cloud init bash script"`
+	Tags           string `arg:"--tags" help:"space separated values like: key=value"`
+	Profile        string `arg:"-p,--profile" help:"iam instance profile name"`
+	SecondsTimeout int    `arg:"--seconds-timeout" default:"3600" help:"will $(sudo poweroff) after this many seconds.\n                         calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff).\n                         set to 0 to disable.\n                         $(sudo journalctl -f -u timeout.service) to follow logs.\n                        "`
+	Wait           bool   `arg:"-w,--wait" default:"false" help:"wait for ssh"`
 }
 
 func (ec2NewArgs) Description() string {
@@ -68,18 +68,18 @@ func useSubnetsFromVpc(ctx context.Context, args *ec2NewArgs) {
 			zone := zones[rand.Intn(len(zones))]
 			for _, subnet := range subnets {
 				if *subnet.AvailabilityZone == zone {
-					args.SubnetIds = []string{*subnet.SubnetId}
+					args.SubnetIds = *subnet.SubnetId
 					break
 				}
 			}
-			if len(args.SubnetIds) != 1 {
+			if len(lib.SplitWhiteSpace(args.SubnetIds)) != 1 {
 				lib.Logger.Fatalf("no subnet in zone %s for vpc %s", zone, vpcID)
 			}
 		} else {
 			for _, subnet := range subnets {
-				args.SubnetIds = append(args.SubnetIds, *subnet.SubnetId)
+				args.SubnetIds = " " + *subnet.SubnetId
 			}
-			if len(args.SubnetIds) == 0 {
+			if len(lib.SplitWhiteSpace(args.SubnetIds)) == 0 {
 				lib.Logger.Fatalf("no subnets for vpc %s", vpcID)
 			}
 		}
@@ -98,10 +98,10 @@ func ec2New() {
 		}
 		args.Init = string(data)
 	}
-	if args.Vpc == "" && len(args.SubnetIds) == 0 {
+	if args.Vpc == "" && len(lib.SplitWhiteSpace(args.SubnetIds)) == 0 {
 		p.Fail("you must specify one of --vpc | --subnets")
 	}
-	if len(args.SubnetIds) == 0 {
+	if len(lib.SplitWhiteSpace(args.SubnetIds)) == 0 {
 		useSubnetsFromVpc(ctx, &args)
 	}
 	if strings.HasPrefix(args.Ami, "ami-") {
@@ -143,7 +143,7 @@ func ec2New() {
 	}
 	var instances []*ec2.Instance
 	var tags []lib.EC2Tag
-	for _, tag := range args.Tags {
+	for _, tag := range lib.SplitWhiteSpace(args.Tags) {
 		parts := strings.Split(tag, "=")
 		tags = append(tags, lib.EC2Tag{
 			Name:  parts[0],
@@ -159,7 +159,7 @@ func ec2New() {
 		Key:            args.Key,
 		TempKey:        args.EphemeralKey,
 		SgID:           args.Sg,
-		SubnetIds:      args.SubnetIds,
+		SubnetIds:      lib.SplitWhiteSpace(args.SubnetIds),
 		Gigs:           args.Gigs,
 		Iops:           args.Iops,
 		Throughput:     args.Throughput,
