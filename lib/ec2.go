@@ -220,6 +220,7 @@ func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]
 			selectors[0] = fmt.Sprintf("Name=%s", selectors[0])
 		}
 		for _, chunk := range Chunk(selectors, 195) { // max aws api params per query is 200
+			var filterKind ec2.Filter
 			var filters []*ec2.Filter
 			if state != "" {
 				filters = append(filters, &ec2.Filter{Name: aws.String("instance-state-name"), Values: []*string{aws.String(state)}})
@@ -231,9 +232,11 @@ func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]
 					v := parts[1]
 					filters = append(filters, &ec2.Filter{Name: aws.String(fmt.Sprintf("tag:%s", k)), Values: []*string{aws.String(v)}})
 				} else {
-					filters = append(filters, &ec2.Filter{Name: aws.String(string(kind)), Values: aws.StringSlice(chunk)})
+					filterKind.Name = aws.String(string(kind))
+					filterKind.Values = append(filterKind.Values, aws.String(selector))
 				}
 			}
+			filters = append(filters, &filterKind)
 			filterss = append(filterss, filters)
 		}
 	}
