@@ -28,6 +28,7 @@ type ec2SshArgs struct {
 	Key            string   `arg:"-k,--key" help:"ssh private key"`
 	Preview        bool     `arg:"-p,--preview" default:"false"`
 	NoPrint        bool     `arg:"--no-print" default:"false" help:"do not print live output to stdout/stderr"`
+	IPNotID        bool     `arg:"-i,--ip" default:"false" help:"when targeting multiple instances, prefix output lines with ipv4 not instance-id"`
 }
 
 func (ec2SshArgs) Description() string {
@@ -94,6 +95,7 @@ func ec2Ssh() {
 			MaxConcurrency: args.MaxConcurrency,
 			Key:            args.Key,
 			PrintLock:      sync.RWMutex{},
+			IPNotID:        args.IPNotID,
 		})
 		fmt.Fprint(os.Stderr, "\n")
 		for _, result := range results {

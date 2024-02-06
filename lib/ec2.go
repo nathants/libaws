@@ -1312,6 +1312,7 @@ type EC2SshInput struct {
 	AccumulateResult bool
 	PrintLock        sync.RWMutex
 	NoPrint          bool
+	IPNotID          bool
 }
 
 const remoteCmdTemplateFailureMessage = `
@@ -1510,7 +1511,11 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 				return
 			}
 			if len(input.Instances) > 1 {
-				line = *instance.InstanceId + ": " + line
+				if input.IPNotID {
+					line = *instance.PublicIpAddress + ": " + line
+				} else {
+					line = *instance.InstanceId + ": " + line
+				}
 			}
 			if !input.NoPrint && kind == "stdout" && input.AccumulateResult {
 				resultLock.Lock()
