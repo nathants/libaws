@@ -1005,7 +1005,7 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 	if input.PrivateIP {
 		target += *instance.PrivateIpAddress
 	} else {
-		target += *instance.PublicDnsName
+		target += *instance.PublicIpAddress
 	}
 	source := input.Source
 	destination := input.Destination
@@ -1210,7 +1210,7 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 	if input.PrivateIP {
 		target += *instance.PrivateIpAddress
 	} else {
-		target += *instance.PublicDnsName
+		target += *instance.PublicIpAddress
 	}
 	source := input.Source
 	destination := input.Destination
@@ -1472,7 +1472,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 	if input.PrivateIP {
 		target += *instance.PrivateIpAddress
 	} else {
-		target += *instance.PublicDnsName
+		target += *instance.PublicIpAddress
 	}
 	sshCmd = append(sshCmd, target)
 	failureMessage := "failure"
@@ -1571,7 +1571,7 @@ func EC2SshLogin(instance *ec2.Instance, user, key string) error {
 	}
 	sshCmd := []string{
 		"ssh",
-		user + "@" + *instance.PublicDnsName,
+		user + "@" + *instance.PublicIpAddress,
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
@@ -1975,7 +1975,7 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 			if input.PrivateIP {
 				ips = append(ips, *instance.PrivateIpAddress)
 			} else {
-				ips = append(ips, *instance.PublicDnsName)
+				ips = append(ips, *instance.PublicIpAddress)
 			}
 		}
 		// add an executable on PATH named `aws-ec2-ip-callback` which
@@ -2083,7 +2083,7 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 		}
 		var targetAddrs []string
 		for _, instance := range instances {
-			targetAddrs = append(targetAddrs, *instance.PublicDnsName)
+			targetAddrs = append(targetAddrs, *instance.PublicIpAddress)
 		}
 		// add an executable on PATH named `aws-ec2-ip-callback` which
 		// will be invoked with the ipv4 of all instances to be waited
