@@ -38,6 +38,10 @@ func ec2Ls() {
 		if instance.SubnetId != nil {
 			subnet = *instance.SubnetId
 		}
+		ipv4 := "-"
+		if instance.PublicIpAddress != nil {
+			ipv4 = *instance.PublicIpAddress
+		}
 		fmt.Println(
 			lib.EC2NameColored(instance),
 			*instance.InstanceType,
@@ -46,7 +50,7 @@ func ec2Ls() {
 			*instance.ImageId,
 			lib.EC2Kind(instance),
 			subnet,
-			*instance.PublicIpAddress,
+			ipv4,
 			lib.EC2SecurityGroups(instance.SecurityGroups),
 			lib.EC2Tags(instance.Tags),
 		)
