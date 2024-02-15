@@ -46,6 +46,7 @@ func ec2Ls() {
 			*instance.ImageId,
 			lib.EC2Kind(instance),
 			subnet,
+			*instance.PublicIpAddress,
 			lib.EC2SecurityGroups(instance.SecurityGroups),
 			lib.EC2Tags(instance.Tags),
 		)
