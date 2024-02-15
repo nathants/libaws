@@ -79,7 +79,7 @@ func ec2Gossh() {
 		ed25519PrivKey := string(edBytes)
 		var targetAddrs []string
 		for _, instance := range instances {
-			targetAddrs = append(targetAddrs, *instance.PublicIpAddress)
+			targetAddrs = append(targetAddrs, *instance.PublicDnsName)
 		}
 		_, err := lib.EC2GoSsh(context.Background(), &lib.EC2GoSshInput{
 			NoTTY:          true,
