@@ -16,6 +16,7 @@ func init() {
 type ec2LsArgs struct {
 	Selectors []string `arg:"positional" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
 	State     string   `arg:"-s,--state" default:"" help:"running | pending | terminated | stopped"`
+	Dns       bool     `arg:"-d, --dns" help:"include public dns"`
 }
 
 func (ec2LsArgs) Description() string {
@@ -38,9 +39,12 @@ func ec2Ls() {
 		if instance.SubnetId != nil {
 			subnet = *instance.SubnetId
 		}
-		ipv4 := "-"
+		dns := "-"
 		if instance.PublicIpAddress != nil {
-			ipv4 = *instance.PublicIpAddress
+			dns = *instance.PublicDnsName
+		}
+		if args.Dns {
+			subnet += " " + dns
 		}
 		fmt.Println(
 			lib.EC2NameColored(instance),
@@ -50,7 +54,6 @@ func ec2Ls() {
 			*instance.ImageId,
 			lib.EC2Kind(instance),
 			subnet,
-			ipv4,
 			lib.EC2SecurityGroups(instance.SecurityGroups),
 			lib.EC2Tags(instance.Tags),
 		)
