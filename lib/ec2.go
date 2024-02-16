@@ -432,7 +432,6 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 	t := time.Now().UTC().Add(-24 * time.Hour)
 	timestamp := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 	output, err := EC2Client().DescribeSpotFleetRequestHistoryWithContext(ctx, &ec2.DescribeSpotFleetRequestHistoryInput{
-		EventType:          aws.String(ec2.EventTypeError),
 		SpotFleetRequestId: spotFleetRequestId,
 		StartTime:          aws.Time(timestamp),
 	})
