@@ -557,6 +557,8 @@ echo '#!/bin/bash
         sleep 1
     done
     date +%s | sudo tee /etc/timeout.start.seconds >/dev/null # reset start time so when we power the machine back up, the timer is reset
+    echo sudo poweroff
+    sleep 5
     sudo poweroff # sudo poweroff terminates spot instances by default
 ' |  sudo tee /usr/local/bin/ec2-timeout >/dev/null
 sudo chmod +x /usr/local/bin/ec2-timeout
