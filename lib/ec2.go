@@ -514,7 +514,7 @@ const tempkeyInit = `
 const timeoutInit = `
 echo '# timeout will call this script before it $(sudo poweroff)s, and wait 60 seconds for this script to complete' | sudo tee -a /etc/timeout.sh >/dev/null
 echo '#!/bin/bash
-    warning="seconds remaining until timeout poweroff. [sudo journalctl -u timeout.service -f] to follow. increase /etc/timeout.seconds to delay. [date +%s | sudo tee /etc/timeout.start.seconds] to reset, or [sudo systemctl {{stop,disable}} timeout.service] to cancel."
+    warning="seconds remaining until timeout poweroff. [sudo journalctl -u timeout.service -f] to follow. increase /etc/timeout.seconds to delay. [date +%s > /tmp/seconds && sudo mv -f /tmp/seconds /etc/timeout.start.seconds] to reset, or [sudo systemctl {{stop,disable}} timeout.service] to cancel."
     echo TIMEOUT_SECONDS | sudo tee /etc/timeout.seconds >/dev/null
     # count down until timeout
     if [ ! -f /etc/timeout.true_start.seconds ]; then
