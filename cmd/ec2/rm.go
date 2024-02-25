@@ -43,6 +43,9 @@ func ec2Rm() {
 	}
 	var ids []*string
 	for _, instance := range instances {
+		if *instance.State.Name == ec2.InstanceStateNameTerminated {
+			continue
+		}
 		ids = append(ids, instance.InstanceId)
 		if *instance.State.Name == ec2.InstanceStateNameRunning || *instance.State.Name == ec2.InstanceStateNameStopped {
 			lib.Logger.Println(lib.PreviewString(args.Preview)+"terminating:", lib.EC2Name(instance.Tags), *instance.InstanceId)
@@ -57,6 +60,10 @@ func ec2Rm() {
 	_, err = lib.EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: ids,
 	})
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+	err = lib.EC2WaitState(ctx, lib.StringSlice(ids), "terminated")
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
