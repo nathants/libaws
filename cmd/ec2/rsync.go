@@ -71,7 +71,6 @@ func ec2Rsync() {
 		Key:            args.Key,
 		PrintLock:      sync.RWMutex{},
 	})
-	fmt.Fprint(os.Stderr, "\n")
 	var lastErr error
 	for _, result := range results {
 		if result.Err == nil {

@@ -97,7 +97,6 @@ func ec2Ssh() {
 			PrintLock:      sync.RWMutex{},
 			IPNotID:        args.IPNotID,
 		})
-		fmt.Fprint(os.Stderr, "\n")
 		for _, result := range results {
 			if result.Err == nil {
 				fmt.Fprintf(os.Stderr, "success: %s\n", lib.Green(result.InstanceID))
