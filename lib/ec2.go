@@ -659,8 +659,8 @@ func makeBlockDeviceMapping(config *EC2Config) []*ec2.BlockDeviceMapping {
 			DeleteOnTermination: aws.Bool(true),
 			Encrypted:           aws.Bool(true),
 			VolumeType:          aws.String(ec2.VolumeTypeGp3),
-			Iops:                aws.Int64(int64(config.Iops)),
-			Throughput:          aws.Int64(int64(config.Throughput)),
+			Iops:                aws.Int64(min(3000, int64(config.Iops))),
+			Throughput:          aws.Int64(min(125, int64(config.Throughput))),
 			VolumeSize:          aws.Int64(int64(config.Gigs)),
 		},
 	}}
