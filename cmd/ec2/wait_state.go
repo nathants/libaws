@@ -59,14 +59,9 @@ func ec2WaitState() {
 		}
 		pass := true
 		for _, instance := range instances {
-			fmt.Println(*instance.State.Name, *instance.InstanceId)
-			switch args.State {
-			case ec2.InstanceStateNameRunning, ec2.InstanceStateNameStopped:
-				if args.State != *instance.State.Name {
-					pass = false
-				}
-			default:
-				panic(args.State)
+			if args.State != *instance.State.Name {
+				fmt.Println(*instance.State.Name, *instance.InstanceId)
+				pass = false
 			}
 		}
 		if pass {
