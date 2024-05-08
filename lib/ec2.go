@@ -1985,7 +1985,7 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(ips, " "))).Run()
 		results, err := EC2Ssh(context.Background(), &EC2SshInput{
 			User:           input.User,
-			TimeoutSeconds: 15,
+			TimeoutSeconds: 30,
 			Instances:      instances,
 			Cmd:            "whoami >/dev/null",
 			PrivateIP:      input.PrivateIP,
