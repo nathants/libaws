@@ -22,7 +22,7 @@ type ec2StopArgs struct {
 }
 
 func (ec2StopArgs) Description() string {
-	return "\ndelete an ami\n"
+	return "\nstop an instance\n"
 }
 
 func ec2Stop() {

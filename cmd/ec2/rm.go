@@ -21,7 +21,7 @@ type ec2RmArgs struct {
 }
 
 func (ec2RmArgs) Description() string {
-	return "\ndelete an ami\n"
+	return "\ndelete an instance\n"
 }
 
 func ec2Rm() {
