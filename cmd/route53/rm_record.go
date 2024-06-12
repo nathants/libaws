@@ -22,7 +22,7 @@ func (route53DeleteRecordArgs) Description() string {
 	return `delete a route53 record
 
 example:
- - libaws route53-ensure-record example.com domain.example.com Type=A TTL=60 Value=1.1.1.1 Value=2.2.2.2
+ - libaws route53-rm-record example.com domain.example.com Type=A TTL=60 Value=1.1.1.1 Value=2.2.2.2
 
 required attrs:
  - TTL=VALUE
