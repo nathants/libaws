@@ -3,7 +3,7 @@
 all: libaws
 
 libaws:
-	CGO_ENABLED=0 go build -ldflags='-s -w' -tags 'netgo osusergo'
+	CGO_ENABLED=0 go build -tags 'netgo osusergo purego'
 
 check: check-deps check-static check-ineff check-err check-vet check-lint check-bodyclose check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck
 
