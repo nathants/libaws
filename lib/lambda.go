@@ -63,8 +63,8 @@ const (
 	lambdaEventRuleNameSeparator = "___"
 	LambdaWebsocketSuffix        = lambdaEventRuleNameSeparator + "websocket"
 
-	lambdaRuntimePython    = "python3.11"
-	lambdaRuntimeGo        = "provided.al2"
+	lambdaRuntimePython    = "python3.12"
+	lambdaRuntimeGo        = "provided.al2023"
 	lambdaRuntimeContainer = "container"
 )
 
@@ -1920,7 +1920,7 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 		return err
 	}
 	_ = os.MkdirAll(dir, os.ModePerm)
-	err = shellAt(path.Dir(infraLambda.Entrypoint), "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w %s' -tags 'netgo osusergo' -o %s %s", os.Getenv("LDFLAGS"), path.Join(dir, "main"), path.Base(infraLambda.Entrypoint))
+	err = shellAt(path.Dir(infraLambda.Entrypoint), "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s %s", os.Getenv("LDFLAGS"), path.Join(dir, "bootstrap"), path.Base(infraLambda.Entrypoint))
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -1929,7 +1929,7 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 	if os.Getenv("ZIP_COMPRESSION") != "" {
 		compression = "-" + os.Getenv("ZIP_COMPRESSION")
 	}
-	err = shellAt(dir, "zip %s %s ./main", compression, zipFile)
+	err = shellAt(dir, "zip %s %s ./bootstrap", compression, zipFile)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
