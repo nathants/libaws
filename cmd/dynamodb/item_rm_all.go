@@ -14,7 +14,7 @@ func init() {
 
 type dynamodbItemRmAllArgs struct {
 	Table string   `arg:"positional"`
-	Keys  []string `arg:"positional,required"`
+	Keys  []string `arg:"positional,required" help:"should be user_id, not user_id:s:hash"`
 }
 
 func (dynamodbItemRmAllArgs) Description() string {
