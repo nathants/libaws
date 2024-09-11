@@ -24,9 +24,11 @@ import (
 	_ "github.com/nathants/libaws/cmd/organizations"
 	_ "github.com/nathants/libaws/cmd/route53"
 	_ "github.com/nathants/libaws/cmd/s3"
+	_ "github.com/nathants/libaws/cmd/ses"
 	_ "github.com/nathants/libaws/cmd/sqs"
 	_ "github.com/nathants/libaws/cmd/ssh"
 	_ "github.com/nathants/libaws/cmd/vpc"
+
 	"github.com/nathants/libaws/lib"
 )
 

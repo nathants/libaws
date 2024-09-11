@@ -38,6 +38,11 @@ const (
 	lambdaAttrTimeoutDefault     = 300
 	lambdaAttrLogsTTLDaysDefault = 7
 
+	lambdaTriggerSes           = "ses"
+	lambdaTriggerSesAttrDns    = "dns"
+	lambdaTriggerSesAttrBucket = "bucket"
+	lambdaTriggerSesAttrPrefix = "prefix"
+
 	lambdaTriggerSQS       = "sqs"
 	lambdaTrigerS3         = "s3"
 	lambdaTriggerDynamoDB  = "dynamodb"
@@ -164,6 +169,73 @@ const lambdaEcrEventPattern = `{
     "result": ["SUCCESS"]
   }
 }`
+
+func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, preview bool) (string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerSes"}
+		defer d.Log()
+	}
+	var triggers []*InfraTrigger
+	for _, trigger := range infraLambda.Trigger {
+		if trigger.Type == lambdaTriggerSes {
+			triggers = append(triggers, trigger)
+			break
+		}
+	}
+	sid := ""
+	domains := []string{}
+	for _, trigger := range triggers {
+		domainName := ""
+		bucket := ""
+		prefix := ""
+		for _, attr := range trigger.Attr {
+			k, v, err := SplitOnce(attr, "=")
+			if err != nil {
+				Logger.Println("error:", err)
+				return "", err
+			}
+			switch k {
+			case lambdaTriggerSesAttrDns: // domain already enrolled in ses, ie example.com
+				domainName = v
+			case lambdaTriggerSesAttrBucket:
+				bucket = v
+			case lambdaTriggerSesAttrPrefix:
+				prefix = v
+			}
+		}
+		if domainName == "" {
+			return "", fmt.Errorf("ses trigger needs dns=VALUE")
+		}
+		if bucket == "" {
+			return "", fmt.Errorf("ses trigger needs bucket=VALUE")
+		}
+		if prefix == "" {
+			return "", fmt.Errorf("ses trigger needs prefix=VALUE")
+		}
+		domains = append(domains, domainName)
+		var err error
+		sid, err = SesEnsureReceiptRuleset(ctx, domainName, bucket, prefix, infraLambda.Arn, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return "", err
+		}
+	}
+	rules, err := SesListReceiptRulesets(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+	    return "", err
+	}
+	for _, rule := range rules {
+		if !Contains(domains, *rule.Name) {
+			err := SesRmReceiptRuleset(ctx, *rule.Name, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+			    return "", err
+			}
+		}
+	}
+	return sid, nil
+}
 
 func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
 	if doDebug {
@@ -503,6 +575,7 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAr
 	sid := strings.ReplaceAll(callerPrincipal, ".", "-") + "__" + Last(strings.Split(callerArn, ":"))
 	sid = strings.ReplaceAll(sid, "$", "DOLLAR")
 	sid = strings.ReplaceAll(sid, "*", "ALL")
+	sid = strings.ReplaceAll(sid, ".", "DOT")
 	sid = strings.ReplaceAll(sid, "-", "_")
 	sid = strings.ReplaceAll(sid, "/", "__")
 	var expectedErr error
@@ -2441,6 +2514,12 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 	}
 	var permissionSids []string
 	permissionSids = append(permissionSids, sids...)
+	sid, err := LambdaEnsureTriggerSes(ctx, infraLambda, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	permissionSids = append(permissionSids, sid)
 	sids, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2585,6 +2664,11 @@ func LambdaDelete(ctx context.Context, name string, preview bool) error {
 		infraLambda.Arn, _ = LambdaArn(ctx, lambdaName)
 		infraLambda.Trigger = nil
 		_, err := LambdaEnsureTriggerApi(ctx, infraLambda, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		_, err = LambdaEnsureTriggerSes(ctx, infraLambda, preview)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err

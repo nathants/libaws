@@ -31,6 +31,7 @@ optional attrs:
  - metrics=VALUE    (values = true | false,     default = true)
  - cors=VALUE       (values = true | false,     default = false)
  - ttldays=VALUE    (values = 0 | n,            default = 0)
+ - allow_put=VALUE  (values = $principal.amazonaws.com)
 
 setting 'cors=true' uses '*' for allowed origins. to specify one or more explicit origins, do this instead:
  - corsorigin=http://localhost:8080

@@ -45,6 +45,7 @@ it should be easy to create:
   - [keypairs](#keypair)
 
 - that react to lambda [triggers](#trigger):
+  - [ses](#ses) emails
   - http [apis](#api)
   - [websocket](#websocket) messages
   - [s3](#s3-1) bucket writes
@@ -600,6 +601,7 @@ defines a [s3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   - `metrics=VALUE`, values: `true | false`, default: `true`
   - `cors=VALUE`, values: `true | false`, default: `false`
   - `ttldays=VALUE`, values: `0 | n`, default: `0`
+  - `allow_put=VALUE`, values: `$principal.amazonaws.com`
 
 - setting `cors=true` uses `*` for allowed origins. to specify one or more explicit origins, do this instead:
   - `corsorigin=http://localhost:8080`
@@ -1021,6 +1023,44 @@ defines triggers for the lambda:
   ```
 
 #### trigger types
+
+##### ses
+
+defines an [ses](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html) email receiving trigger.
+
+- route53 and ses must already be configured to use this trigger.
+
+- dns, bucket, and prefix attrs are required.
+
+- s3 bucket must allow put from ses.
+
+- schema:
+  ```yaml
+  lambda:
+    VALUE:
+      trigger:
+        - type: ses
+          attr:
+            - VALUE
+  ```
+
+- example:
+  ```yaml
+
+  s3:
+    my-bucket:
+      attr:
+        - allow_put=ses.amazonaws.com
+
+  lambda:
+    test-lambda:
+      trigger:
+        - type: ses
+          attr:
+            - dns=my-email-domain.com
+            - bucket=my-bucket
+            - prefix=emails/
+  ```
 
 ##### api
 

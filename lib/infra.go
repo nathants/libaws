@@ -2629,7 +2629,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 			}
 		}
 		for _, trigger := range infraLambda.Trigger {
-			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket}
+			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket, lambdaTriggerSes}
 			if !Contains(validTriggers, trigger.Type) {
 				err := fmt.Errorf("unknown trigger: %#v", trigger)
 				Logger.Println("error:", err)
@@ -2675,8 +2675,18 @@ func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
+		_, err = LambdaEnsureTriggerSes(ctx, infraLambda, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		if infraLambda.Arn != "" {
 			_, err := LambdaEnsureTriggerS3(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = LambdaEnsureTriggerSes(ctx, infraLambda, preview)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err

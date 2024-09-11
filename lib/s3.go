@@ -162,6 +162,7 @@ type s3EnsureInput struct {
 	metrics      bool
 	cors         *bool
 	corsOrigins  []string
+	allowPut     []string
 	ttlDays      int
 
 	// NOTE: you almost never want to use this, danger close.
@@ -185,6 +186,10 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 	input := s3EnsureInputDefault()
 	input.infraSetName = infraSetName
 	input.name = bucketName
+	policy := IamPolicyDocument{
+		Version: "2012-10-17",
+		Statement: []IamStatementEntry{},
+	}
 	for _, line := range attrs {
 		line = strings.ToLower(line)
 		attr, value, err := SplitOnce(line, "=")
@@ -193,6 +198,14 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 			return nil, err
 		}
 		switch attr {
+		case "allow_put":
+			policy.Statement = append(policy.Statement, IamStatementEntry{
+				Sid: "allow put from " + value,
+				Effect: "Allow",
+				Action: "s3:PutObject",
+				Resource: "arn:aws:s3:::" + bucketName + "/*",
+				Principal: map[string]string{"Service": value},
+			})
 		case "ttldays":
 			input.ttlDays = Atoi(value)
 		case "corsorigin":
@@ -243,6 +256,14 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 			Logger.Println("error:", err)
 			return nil, err
 		}
+	}
+	if len(policy.Statement) > 0 {
+		data, err := json.Marshal(policy)
+		if err != nil {
+			Logger.Println("error:", err)
+		    return nil, err
+		}
+		input.CustomPolicy = aws.String(string(data))
 	}
 	if input.cors != nil && !*input.cors && len(input.corsOrigins) > 0 {
 		err := fmt.Errorf("cannot specify cors=false and corsorigin=VALUE: %s", Pformat(input.corsOrigins))
@@ -449,7 +470,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"put acl:", input.name, aclName)
+			Logger.Println(PreviewString(preview)+"put acl:", input.name, aclName, string(policyBytes))
 		}
 	} else if input.acl == "private" {
 		if input.CustomPolicy != nil {
