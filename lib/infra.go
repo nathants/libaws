@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -23,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/ses"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"gopkg.in/yaml.v3"
 )
@@ -914,6 +916,44 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 			for _, allow := range allows {
 				infraLambda.Allow = append(infraLambda.Allow, allow.String())
 			}
+			rules, err := SesListReceiptRulesets(ctx)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			for _, rule := range rules {
+				out, err := SesClient().DescribeReceiptRuleWithContext(ctx, &ses.DescribeReceiptRuleInput{
+					RuleName:    rule.Name,
+					RuleSetName: rule.Name,
+				})
+				if err == nil {
+					bucket := ""
+					prefix := ""
+					dns := ""
+					for _, action := range out.Rule.Actions {
+						if action.S3Action != nil {
+							bucket = *action.S3Action.BucketName
+							prefix = *action.S3Action.ObjectKeyPrefix
+						}
+						if action.LambdaAction != nil &&
+							action.LambdaAction.FunctionArn != nil &&
+							*action.LambdaAction.FunctionArn == *fn.FunctionArn &&
+							len(out.Rule.Recipients) == 1 &&
+							*out.Rule.Recipients[0] == *rule.Name {
+							dns = *rule.Name
+						}
+					}
+					triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], &InfraTrigger{
+						lambdaName: *fn.FunctionName,
+						Type: lambdaTriggerSes,
+						Attr: []string{
+							"dns=" + dns,
+							"bucket=" + bucket,
+							"prefix=" + prefix,
+						},
+					})
+				}
+			}
 			var marker *string
 			for {
 				out, err := LambdaClient().ListEventSourceMappingsWithContext(ctx, &lambda.ListEventSourceMappingsInput{
@@ -1529,6 +1569,30 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				Logger.Println("error:", err)
 				errChan <- err
 				return
+			}
+			policyOut, err := s3Client.GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
+				Bucket: bucket.Name,
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				errChan <- err
+				return
+			}
+			policy := IamPolicyDocument{}
+			err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
+			if err != nil {
+				Logger.Println("error:", err)
+				errChan <- err
+				return
+			}
+			for _, statement := range policy.Statement {
+				if statement.Effect == "Allow" &&
+					statement.Action == "s3:PutObject" &&
+					statement.Resource == "arn:aws:s3:::"+*bucket.Name+"/*" &&
+					strings.HasPrefix(statement.Sid, "allow put from ") {
+					principal := statement.Principal.(map[string]interface{})["Service"].(string)
+					infraS3.Attr = append(infraS3.Attr, "allow_put="+principal)
+				}
 			}
 			tagsOut, err := s3Client.GetBucketTaggingWithContext(ctx, &s3.GetBucketTaggingInput{
 				Bucket: bucket.Name,
