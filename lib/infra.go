@@ -932,8 +932,12 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					dns := ""
 					for _, action := range out.Rule.Actions {
 						if action.S3Action != nil {
-							bucket = *action.S3Action.BucketName
-							prefix = *action.S3Action.ObjectKeyPrefix
+							if action.S3Action.BucketName != nil {
+								bucket = *action.S3Action.BucketName
+							}
+							if action.S3Action.ObjectKeyPrefix != nil {
+								prefix = *action.S3Action.ObjectKeyPrefix
+							}
 						}
 						if action.LambdaAction != nil &&
 							action.LambdaAction.FunctionArn != nil &&
@@ -943,14 +947,17 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 							dns = *rule.Name
 						}
 					}
+					attrs := []string{
+						"dns=" + dns,
+						"bucket=" + bucket,
+					}
+					if prefix != "" {
+						attrs = append(attrs, "prefix="+prefix)
+					}
 					triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], &InfraTrigger{
 						lambdaName: *fn.FunctionName,
 						Type:       lambdaTriggerSes,
-						Attr: []string{
-							"dns=" + dns,
-							"bucket=" + bucket,
-							"prefix=" + prefix,
-						},
+						Attr:       attrs,
 					})
 				}
 			}

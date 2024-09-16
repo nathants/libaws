@@ -184,6 +184,8 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 	}
 	sid := ""
 	domains := []string{}
+	// buckets := map[string]string{}
+	// prefixes := map[string]string{}
 	for _, trigger := range triggers {
 		domainName := ""
 		bucket := ""
@@ -209,10 +211,9 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 		if bucket == "" {
 			return "", fmt.Errorf("ses trigger needs bucket=VALUE")
 		}
-		if prefix == "" {
-			return "", fmt.Errorf("ses trigger needs prefix=VALUE")
-		}
 		domains = append(domains, domainName)
+		// buckets[domainName] = bucket
+		// prefixes[domainName] = prefix
 		var err error
 		sid, err = SesEnsureReceiptRuleset(ctx, domainName, bucket, prefix, infraLambda.Arn, preview)
 		if err != nil {
@@ -223,14 +224,14 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 	rules, err := SesListReceiptRulesets(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
-	    return "", err
+		return "", err
 	}
 	for _, rule := range rules {
 		if !Contains(domains, *rule.Name) {
 			err := SesRmReceiptRuleset(ctx, *rule.Name, preview)
 			if err != nil {
 				Logger.Println("error:", err)
-			    return "", err
+				return "", err
 			}
 		}
 	}

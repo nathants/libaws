@@ -1030,7 +1030,7 @@ defines an [ses](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html)
 
 - route53 and ses must already be configured to use this trigger.
 
-- dns, bucket, and prefix attrs are required.
+- dns and bucket attrs are required, prefix is optional.
 
 - s3 bucket must allow put from ses.
 

@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -121,6 +122,34 @@ func SesEnsureReceiptRuleset(ctx context.Context, domain string, bucket string, 
 			break
 		}
 	}
+	prefixParam := aws.String(prefix)
+	if prefix == "" {
+		prefixParam = nil
+	}
+	ruleInput := &ses.CreateReceiptRuleInput{
+		RuleSetName: aws.String(domain),
+		Rule: &ses.ReceiptRule{
+			Enabled:     aws.Bool(true),
+			Name:        aws.String(domain),
+			Recipients:  []*string{aws.String(domain)},
+			TlsPolicy:   aws.String(ses.TlsPolicyRequire),
+			ScanEnabled: aws.Bool(false),
+			Actions: []*ses.ReceiptAction{
+				&ses.ReceiptAction{
+					S3Action: &ses.S3Action{
+						BucketName:      aws.String(bucket),
+						ObjectKeyPrefix: prefixParam,
+					},
+				},
+				&ses.ReceiptAction{
+					LambdaAction: &ses.LambdaAction{
+						FunctionArn:    aws.String(lambdaArn),
+						InvocationType: aws.String(ses.InvocationTypeEvent),
+					},
+				},
+			},
+		},
+	}
 	if !found {
 		if !preview {
 			_, err := SesClient().CreateReceiptRuleSetWithContext(ctx, &ses.CreateReceiptRuleSetInput{
@@ -140,36 +169,56 @@ func SesEnsureReceiptRuleset(ctx context.Context, domain string, bucket string, 
 				Logger.Println("error:", err)
 				return sid, err
 			}
-			_, err = SesClient().CreateReceiptRuleWithContext(ctx, &ses.CreateReceiptRuleInput{
-				RuleSetName: aws.String(domain),
-				Rule: &ses.ReceiptRule{
-					Enabled:     aws.Bool(true),
-					Name:        aws.String(domain),
-					Recipients:  []*string{aws.String(domain)},
-					TlsPolicy:   aws.String(ses.TlsPolicyRequire),
-					ScanEnabled: aws.Bool(false),
-					Actions: []*ses.ReceiptAction{
-						&ses.ReceiptAction{
-							S3Action: &ses.S3Action{
-								BucketName:      aws.String(bucket),
-								ObjectKeyPrefix: aws.String(prefix),
-							},
-						},
-						&ses.ReceiptAction{
-							LambdaAction: &ses.LambdaAction{
-								FunctionArn:    aws.String(lambdaArn),
-								InvocationType: aws.String(ses.InvocationTypeEvent),
-							},
-						},
-					},
-				},
-			})
+			_, err = SesClient().CreateReceiptRuleWithContext(ctx, ruleInput)
 			if err != nil {
 				Logger.Println("error:", err)
 				return sid, err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"created ses receive rule:", domain)
+		Logger.Println(PreviewString(preview)+"created ses receive rule:", "domain="+domain, "bucket="+bucket, "prefix="+prefix)
+	} else {
+		if !preview {
+			out, err := SesClient().DescribeReceiptRuleWithContext(ctx, &ses.DescribeReceiptRuleInput{
+				RuleName:    aws.String(domain),
+				RuleSetName: aws.String(domain),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return sid, err
+			}
+			if !reflect.DeepEqual(out.Rule, ruleInput.Rule) {
+				oldDomain := ""
+				oldBucket := ""
+				oldPrefix := ""
+				if len(out.Rule.Recipients) > 0 {
+					oldDomain = *out.Rule.Recipients[0]
+				}
+				Logger.Println(PformatAlways(*out))
+				if len(out.Rule.Actions) > 0 {
+					if out.Rule.Actions[0].S3Action != nil {
+						if out.Rule.Actions[0].S3Action.BucketName != nil {
+							oldBucket = *out.Rule.Actions[0].S3Action.BucketName
+						}
+						if out.Rule.Actions[0].S3Action.ObjectKeyPrefix != nil {
+							oldPrefix = *out.Rule.Actions[0].S3Action.ObjectKeyPrefix
+						}
+					}
+				}
+				if !preview {
+					_, err := SesClient().UpdateReceiptRuleWithContext(ctx, &ses.UpdateReceiptRuleInput{
+						Rule:        ruleInput.Rule,
+						RuleSetName: aws.String(domain),
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return sid, err
+					}
+				}
+				Logger.Println(PreviewString(preview)+"update ses receive rule: domain="+
+					oldDomain+" bucket="+oldBucket+" prefix="+oldPrefix,
+					"=> domain="+domain+" bucket="+bucket+" prefix="+prefix)
+			}
+		}
 	}
 	return sid, nil
 }
