@@ -187,7 +187,7 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 	input.infraSetName = infraSetName
 	input.name = bucketName
 	policy := IamPolicyDocument{
-		Version: "2012-10-17",
+		Version:   "2012-10-17",
 		Statement: []IamStatementEntry{},
 	}
 	for _, line := range attrs {
@@ -200,10 +200,10 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 		switch attr {
 		case "allow_put":
 			policy.Statement = append(policy.Statement, IamStatementEntry{
-				Sid: "allow put from " + value,
-				Effect: "Allow",
-				Action: "s3:PutObject",
-				Resource: "arn:aws:s3:::" + bucketName + "/*",
+				Sid:       "allow put from " + value,
+				Effect:    "Allow",
+				Action:    "s3:PutObject",
+				Resource:  "arn:aws:s3:::" + bucketName + "/*",
 				Principal: map[string]string{"Service": value},
 			})
 		case "ttldays":
@@ -261,7 +261,7 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 		data, err := json.Marshal(policy)
 		if err != nil {
 			Logger.Println("error:", err)
-		    return nil, err
+			return nil, err
 		}
 		input.CustomPolicy = aws.String(string(data))
 	}
@@ -473,13 +473,13 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Println(PreviewString(preview)+"put acl:", input.name, aclName, string(policyBytes))
 		}
 	} else if input.acl == "private" {
+		policy := IamPolicyDocument{}
+		err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		if input.CustomPolicy != nil {
-			policy := IamPolicyDocument{}
-			err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
 			expectedPolicy := IamPolicyDocument{}
 			err = json.Unmarshal([]byte(*input.CustomPolicy), &expectedPolicy)
 			if err != nil {
@@ -492,9 +492,16 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				return err
 			}
 		} else {
-			err := fmt.Errorf("no bucket policy should exist for private bucket: %s", input.name)
-			Logger.Println("error:", err)
-			return err
+			if !preview {
+				_, err := S3Client().DeleteBucketPolicyWithContext(ctx, &s3.DeleteBucketPolicyInput{
+					Bucket: aws.String(input.name),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+				    return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"remove bucket policy:", input.name, *policyOut.Policy)
 		}
 	} else {
 		policy := IamPolicyDocument{}

@@ -945,7 +945,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					}
 					triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], &InfraTrigger{
 						lambdaName: *fn.FunctionName,
-						Type: lambdaTriggerSes,
+						Type:       lambdaTriggerSes,
 						Attr: []string{
 							"dns=" + dns,
 							"bucket=" + bucket,
@@ -1573,25 +1573,22 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 			policyOut, err := s3Client.GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
 				Bucket: bucket.Name,
 			})
-			if err != nil {
-				Logger.Println("error:", err)
-				errChan <- err
-				return
-			}
-			policy := IamPolicyDocument{}
-			err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
-			if err != nil {
-				Logger.Println("error:", err)
-				errChan <- err
-				return
-			}
-			for _, statement := range policy.Statement {
-				if statement.Effect == "Allow" &&
-					statement.Action == "s3:PutObject" &&
-					statement.Resource == "arn:aws:s3:::"+*bucket.Name+"/*" &&
-					strings.HasPrefix(statement.Sid, "allow put from ") {
-					principal := statement.Principal.(map[string]interface{})["Service"].(string)
-					infraS3.Attr = append(infraS3.Attr, "allow_put="+principal)
+			if err == nil {
+				policy := IamPolicyDocument{}
+				err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
+				if err != nil {
+					Logger.Println("error:", err)
+					errChan <- err
+					return
+				}
+				for _, statement := range policy.Statement {
+					if statement.Effect == "Allow" &&
+						statement.Action == "s3:PutObject" &&
+						statement.Resource == "arn:aws:s3:::"+*bucket.Name+"/*" &&
+						strings.HasPrefix(statement.Sid, "allow put from ") {
+						principal := statement.Principal.(map[string]interface{})["Service"].(string)
+						infraS3.Attr = append(infraS3.Attr, "allow_put="+principal)
+					}
 				}
 			}
 			tagsOut, err := s3Client.GetBucketTaggingWithContext(ctx, &s3.GetBucketTaggingInput{
@@ -1618,10 +1615,24 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				return
 			}
 			s3Default := s3EnsureInputDefault()
-			if descr.Policy == nil && s3Default.acl != "private" {
+			if descr.Policy == nil {
 				infraS3.Attr = append(infraS3.Attr, "acl=private")
-			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) && s3Default.acl != "public" {
+			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) {
 				infraS3.Attr = append(infraS3.Attr, "acl=public")
+			} else if descr.Policy != nil {
+				privateWithAllowPuts := true
+				for _, statement := range descr.Policy.Statement {
+					if !(statement.Effect == "Allow" &&
+						statement.Action == "s3:PutObject" &&
+						strings.HasPrefix(statement.Sid, "allow put from ")) {
+						privateWithAllowPuts = false
+					}
+				}
+				if privateWithAllowPuts {
+					infraS3.Attr = append(infraS3.Attr, "acl=private")
+				} else {
+					infraS3.Attr = append(infraS3.Attr, "acl=custom")
+				}
 			}
 			if descr.Cors == nil && s3Default.cors != nil && *s3Default.cors {
 				infraS3.Attr = append(infraS3.Attr, "cors=false")
