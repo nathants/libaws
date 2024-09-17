@@ -37,6 +37,9 @@ required attrs for aws alias records:
  - Value=VALUE
  - HostedZoneId=VALUE
 
+for complex values, quote them like this:
+ - 'Value=complex value'
+
 `
 }
 
