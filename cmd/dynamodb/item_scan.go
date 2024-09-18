@@ -36,6 +36,7 @@ func dynamodbItemScan() {
 		out, err := lib.DynamoDBClient().ScanWithContext(ctx, &dynamodb.ScanInput{
 			TableName:         aws.String(args.Table),
 			ExclusiveStartKey: start,
+			Limit:             aws.Int64(1000),
 		})
 		if err != nil {
 			panic(err)
