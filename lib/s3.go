@@ -176,7 +176,7 @@ func s3EnsureInputDefault() *s3EnsureInput {
 		acl:        "private",
 		versioning: false,
 		encryption: true,
-		metrics:    true,
+		metrics:    false,
 		cors:       nil,
 		ttlDays:    0,
 	}

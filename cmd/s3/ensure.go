@@ -28,7 +28,7 @@ example:
 optional attrs:
  - acl=VALUE        (values = public | private, default = private)
  - versioning=VALUE (values = true | false,     default = false)
- - metrics=VALUE    (values = true | false,     default = true)
+ - metrics=VALUE    (values = true | false,     default = false)
  - cors=VALUE       (values = true | false,     default = false)
  - ttldays=VALUE    (values = 0 | n,            default = 0)
  - allow_put=VALUE  (values = $principal.amazonaws.com)
