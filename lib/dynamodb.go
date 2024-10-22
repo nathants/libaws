@@ -567,7 +567,12 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		input.StreamSpecification != nil &&
 		*input.StreamSpecification.StreamEnabled &&
 		*table.Table.StreamSpecification.StreamViewType != *input.StreamSpecification.StreamViewType
-	if (existingStreamNil || streamViewTypeNotEqual) && *input.StreamSpecification.StreamEnabled {
+	if streamViewTypeNotEqual && *input.StreamSpecification.StreamEnabled {
+		err := fmt.Errorf("stream type cannot be changed, instead disable it, then enable with a new type")
+		Logger.Println("error:", err)
+		return err
+	}
+	if existingStreamNil && *input.StreamSpecification.StreamEnabled {
 		needsUpdate = true
 		update.StreamSpecification.StreamViewType = input.StreamSpecification.StreamViewType
 		old := ""
