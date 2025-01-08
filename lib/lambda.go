@@ -25,6 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/ses"
 )
 
 const (
@@ -227,6 +228,26 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 		return "", err
 	}
 	for _, rule := range rules {
+		out, err := SesClient().DescribeReceiptRuleSetWithContext(ctx, &ses.DescribeReceiptRuleSetInput{
+			RuleSetName: rule.Name,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+		    return "", err
+		}
+		if len(out.Rules) != 1 {
+			err := fmt.Errorf("ses rule did not have exactly 1 rule: %s", *rule.Name)
+			Logger.Println("error:", err)
+			return "", err
+		}
+		if len(out.Rules[0].Actions) != 2 {
+			err := fmt.Errorf("ses rule did not have exactly 2 actions: %s", *rule.Name)
+			Logger.Println("error:", err)
+			return "", err
+		}
+		if *out.Rules[0].Actions[1].LambdaAction.FunctionArn != infraLambda.Arn {
+			continue
+		}
 		if !Contains(domains, *rule.Name) {
 			err := SesRmReceiptRuleset(ctx, *rule.Name, preview)
 			if err != nil {
