@@ -947,6 +947,9 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 							dns = *rule.Name
 						}
 					}
+					if dns == "" {
+						continue
+					}
 					attrs := []string{
 						"dns=" + dns,
 						"bucket=" + bucket,
