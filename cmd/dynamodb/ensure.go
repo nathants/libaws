@@ -54,6 +54,8 @@ optional attrs:
  - GlobalSecondaryIndexes.INTEGER.Projection.NonKeyAttributes.INTEGER=VALUE
  - GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.ReadCapacityUnits=VALUE
  - GlobalSecondaryIndexes.INTEGER.ProvisionedThroughput.WriteCapacityUnits=VALUE
+
+ - ttl=ATTR_NAME
 `
 }
 
@@ -70,11 +72,11 @@ func dynamodbEnsure() {
 			keys = append(keys, param)
 		}
 	}
-	input, err := lib.DynamoDBEnsureInput("", args.Name, keys, attrs)
+	input, ttl, err := lib.DynamoDBEnsureInput("", args.Name, keys, attrs)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	err = lib.DynamoDBEnsure(ctx, input, args.Preview)
+	err = lib.DynamoDBEnsure(ctx, input, ttl, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

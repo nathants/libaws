@@ -13,7 +13,7 @@ func init() {
 }
 
 type sesRmReceiptRulesArg struct {
-	Domain string `arg:"positional"`
+	Domain  string `arg:"positional"`
 	Preview bool   `arg:"-p,--preview"`
 }
 
@@ -27,6 +27,6 @@ func sesRmReceiptRule() {
 	ctx := context.Background()
 	err := lib.SesRmReceiptRuleset(ctx, args.Domain, args.Preview)
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }

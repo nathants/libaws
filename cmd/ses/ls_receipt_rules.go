@@ -36,7 +36,7 @@ func sesLsReceiptRules() {
 			RuleSetName: rule.Name,
 		})
 		if err != nil {
-		    lib.Logger.Fatal("error: ", err)
+			lib.Logger.Fatal("error: ", err)
 		}
 		fmt.Println(lib.PformatAlways(out))
 	}

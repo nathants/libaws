@@ -75,7 +75,7 @@ func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
 	}
 	switch count {
 	case 0:
-		return nil, fmt.Errorf(ErrApiNotFound)
+		return nil, fmt.Errorf("%s", ErrApiNotFound)
 	case 1:
 		return result, nil
 	default:

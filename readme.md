@@ -633,7 +633,8 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
 
 - the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html) can be defined:
   - `read=VALUE`, provisioned read capacity, default: `0`
-  - `write=VALUE`, provisioined write capacity, default: `0`
+  - `write=VALUE`, provisioned write capacity, default: `0`
+  - `ttl=ATTR_NAME`, optional, which attribute to read ttl from.
 
 - on global indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-gsi.html) can be defined:
   - `projection=VALUE`, provisioned read capacity, default: `ALL`

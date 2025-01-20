@@ -24,7 +24,7 @@ func regions() {
 	arg.MustParse(&args)
 	awsRegions, err := lib.Regions()
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 	for _, region := range awsRegions {
 		fmt.Println(region)

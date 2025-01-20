@@ -162,7 +162,6 @@ type s3EnsureInput struct {
 	metrics      bool
 	cors         *bool
 	corsOrigins  []string
-	allowPut     []string
 	ttlDays      int
 
 	// NOTE: you almost never want to use this, danger close.
@@ -498,7 +497,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				})
 				if err != nil {
 					Logger.Println("error:", err)
-				    return err
+					return err
 				}
 			}
 			Logger.Println(PreviewString(preview)+"remove bucket policy:", input.name, *policyOut.Policy)

@@ -75,11 +75,11 @@ func Region() string {
 
 func Regions() ([]string, error) {
 	out, err := EC2Client().DescribeRegions(&ec2.DescribeRegionsInput{
-        AllRegions: aws.Bool(true), // Set to true to include all regions
-    })
+		AllRegions: aws.Bool(true), // Set to true to include all regions
+	})
 	if err != nil {
 		Logger.Println("error:", err)
-	    return nil, err
+		return nil, err
 	}
 	var regions []string
 	for _, region := range out.Regions {

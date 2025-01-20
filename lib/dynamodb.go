@@ -45,11 +45,12 @@ func dynamoDBTableAttrShortcut(s string) string {
 	return s
 }
 
-func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []string) (*dynamodb.CreateTableInput, error) {
+func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []string) (*dynamodb.CreateTableInput, *dynamodb.TimeToLiveSpecification, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBEnsureInput"}
 		defer d.Log()
 	}
+	var ttl *dynamodb.TimeToLiveSpecification
 	input := &dynamodb.CreateTableInput{
 		TableName:        aws.String(tableName),
 		BillingMode:      aws.String("PAY_PER_REQUEST"),
@@ -71,7 +72,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 		if len(parts) != 3 {
 			err := fmt.Errorf("keys must be in format: 'Name:AttrType:KeyType', got: %s", key)
 			Logger.Println("error:", err)
-			return nil, err
+			return nil, nil, err
 		}
 		attrName, attrType, keyType := parts[0], parts[1], parts[2]
 		input.KeySchema = append(input.KeySchema, &dynamodb.KeySchemaElement{
@@ -88,25 +89,32 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 		attr, value, err := SplitOnce(line, "=")
 		if err != nil {
 			Logger.Println("error:", err)
-			return nil, err
+			return nil, nil, err
+		}
+		if attr == "ttl" {
+			ttl = &dynamodb.TimeToLiveSpecification{
+				AttributeName: aws.String(value),
+				Enabled:       aws.Bool(true),
+			}
+			continue
 		}
 		attr = dynamoDBTableAttrShortcut(attr)
 		head, tail, err := SplitOnce(attr, ".")
 		if err != nil {
 			Logger.Println("error:", err)
-			return nil, err
+			return nil, nil, err
 		}
 		switch head {
 		case "BillingMode":
 			err := fmt.Errorf("BillingMode is implied by the existence of provisioned throughput attrs: %s", line)
 			Logger.Println("error:", err)
-			return nil, err
+			return nil, nil, err
 		case "SSESpecification":
 			switch tail {
 			case "Enabled":
 				err := fmt.Errorf("SSESpecification.Enabled is implied by the existance of SSESpecification attrs: %s", line)
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			case "KMSMasterKeyId":
 				input.SSESpecification.Enabled = aws.Bool(true)
 				input.SSESpecification.KMSMasterKeyId = aws.String(value)
@@ -114,11 +122,11 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 			case "SSEType":
 				err := fmt.Errorf("SSESpecification.SSEType has only one value: %s", line)
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			default:
 				err := fmt.Errorf("unknown dynamodb attr: %s", line)
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 		case "ProvisionedThroughput":
 			switch tail {
@@ -127,7 +135,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 				units, err := strconv.Atoi(value)
 				if err != nil {
 					Logger.Println("error:", err)
-					return nil, err
+					return nil, nil, err
 				}
 				input.ProvisionedThroughput.ReadCapacityUnits = aws.Int64(int64(units))
 			case "WriteCapacityUnits":
@@ -135,19 +143,15 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 				units, err := strconv.Atoi(value)
 				if err != nil {
 					Logger.Println("error:", err)
-					return nil, err
+					return nil, nil, err
 				}
 				input.ProvisionedThroughput.WriteCapacityUnits = aws.Int64(int64(units))
 			default:
 				err := fmt.Errorf("unknown dynamodb attr: %s", line)
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 		case "StreamSpecification":
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
-			}
 			switch tail {
 			case "StreamViewType":
 				input.StreamSpecification.StreamEnabled = aws.Bool(true)
@@ -155,18 +159,18 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 			default:
 				err := fmt.Errorf("unknown dynamodb attr: %s", line)
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 		case "LocalSecondaryIndexes":
 			head, tail, err := SplitOnce(tail, ".")
 			if err != nil {
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 			i, err := strconv.Atoi(head)
 			if err != nil {
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 			switch len(input.LocalSecondaryIndexes) {
 			case i:
@@ -178,7 +182,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 			default:
 				err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 			switch tail {
 			case "IndexName":
@@ -187,14 +191,14 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 				head, tail, err = SplitOnce(tail, ".")
 				if err != nil {
 					Logger.Println("error:", err)
-					return nil, err
+					return nil, nil, err
 				}
 				switch head {
 				case "Key":
 					j, err := strconv.Atoi(tail)
 					if err != nil {
 						Logger.Println("error:", err)
-						return nil, err
+						return nil, nil, err
 					}
 					switch len(input.LocalSecondaryIndexes[i].KeySchema) {
 					case j:
@@ -202,7 +206,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 						if len(parts) != 3 {
 							err := fmt.Errorf("keys must be in format: 'Name:AttrType:KeyType', got: %s", value)
 							Logger.Println("error:", err)
-							return nil, err
+							return nil, nil, err
 						}
 						attrName, attrType, keyType := parts[0], parts[1], parts[2]
 						input.LocalSecondaryIndexes[i].KeySchema = append(
@@ -217,7 +221,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 							if *attr.AttributeName == attrName {
 								exists = true
 								if *attr.AttributeType != strings.ToUpper(attrType) {
-									return nil, fmt.Errorf("GlobalIndex attrType didn't equal existing with same name: %s, %s != %s", *attr.AttributeName, *attr.AttributeType, strings.ToUpper(attrType))
+									return nil, nil, fmt.Errorf("GlobalIndex attrType didn't equal existing with same name: %s, %s != %s", *attr.AttributeName, *attr.AttributeType, strings.ToUpper(attrType))
 								}
 								break
 							}
@@ -231,7 +235,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 					default:
 						err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
 						Logger.Println("error:", err)
-						return nil, err
+						return nil, nil, err
 					}
 				case "Projection":
 					switch tail {
@@ -241,14 +245,14 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 						head, tail, err = SplitOnce(tail, ".")
 						if err != nil {
 							Logger.Println("error:", err)
-							return nil, err
+							return nil, nil, err
 						}
 						switch head {
 						case "NonKeyAttributes":
 							j, err := strconv.Atoi(tail)
 							if err != nil {
 								Logger.Println("error:", err)
-								return nil, err
+								return nil, nil, err
 							}
 							switch len(input.LocalSecondaryIndexes[i].Projection.NonKeyAttributes) {
 							case j:
@@ -259,30 +263,30 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 							default:
 								err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
 								Logger.Println("error:", err)
-								return nil, err
+								return nil, nil, err
 							}
 						default:
 							err := fmt.Errorf("unknown dynamodb attr: %s", line)
 							Logger.Println("error:", err)
-							return nil, err
+							return nil, nil, err
 						}
 					}
 				default:
 					err := fmt.Errorf("unknown dynamodb attr: %s", line)
 					Logger.Println("error:", err)
-					return nil, err
+					return nil, nil, err
 				}
 			}
 		case "GlobalSecondaryIndexes":
 			head, tail, err := SplitOnce(tail, ".")
 			if err != nil {
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 			i, err := strconv.Atoi(head)
 			if err != nil {
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 			switch len(input.GlobalSecondaryIndexes) {
 			case i:
@@ -297,7 +301,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 			default:
 				err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
 				Logger.Println("error:", err)
-				return nil, err
+				return nil, nil, err
 			}
 			switch tail {
 			case "IndexName":
@@ -306,14 +310,14 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 				head, tail, err = SplitOnce(tail, ".")
 				if err != nil {
 					Logger.Println("error:", err)
-					return nil, err
+					return nil, nil, err
 				}
 				switch head {
 				case "Key":
 					j, err := strconv.Atoi(tail)
 					if err != nil {
 						Logger.Println("error:", err)
-						return nil, err
+						return nil, nil, err
 					}
 					switch len(input.GlobalSecondaryIndexes[i].KeySchema) {
 					case j:
@@ -321,7 +325,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 						if len(parts) != 3 {
 							err := fmt.Errorf("keys must be in format: 'Name:AttrType:KeyType', got: %s", value)
 							Logger.Println("error:", err)
-							return nil, err
+							return nil, nil, err
 						}
 						attrName, attrType, keyType := parts[0], parts[1], parts[2]
 						input.GlobalSecondaryIndexes[i].KeySchema = append(
@@ -336,7 +340,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 							if *attr.AttributeName == attrName {
 								exists = true
 								if *attr.AttributeType != strings.ToUpper(attrType) {
-									return nil, fmt.Errorf("LocalIndex attrType didn't equal existing with same name: %s, %s != %s", *attr.AttributeName, *attr.AttributeType, strings.ToUpper(attrType))
+									return nil, nil, fmt.Errorf("LocalIndex attrType didn't equal existing with same name: %s, %s != %s", *attr.AttributeName, *attr.AttributeType, strings.ToUpper(attrType))
 								}
 								break
 							}
@@ -350,7 +354,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 					default:
 						err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
 						Logger.Println("error:", err)
-						return nil, err
+						return nil, nil, err
 					}
 				case "ProvisionedThroughput":
 					switch tail {
@@ -358,20 +362,20 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 						units, err := strconv.Atoi(value)
 						if err != nil {
 							Logger.Println("error:", err)
-							return nil, err
+							return nil, nil, err
 						}
 						input.GlobalSecondaryIndexes[i].ProvisionedThroughput.ReadCapacityUnits = aws.Int64(int64(units))
 					case "WriteCapacityUnits":
 						units, err := strconv.Atoi(value)
 						if err != nil {
 							Logger.Println("error:", err)
-							return nil, err
+							return nil, nil, err
 						}
 						input.GlobalSecondaryIndexes[i].ProvisionedThroughput.WriteCapacityUnits = aws.Int64(int64(units))
 					default:
 						err := fmt.Errorf("unknown dynamodb attr: %s", line)
 						Logger.Println("error:", err)
-						return nil, err
+						return nil, nil, err
 					}
 				case "Projection":
 					switch tail {
@@ -381,14 +385,14 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 						head, tail, err = SplitOnce(tail, ".")
 						if err != nil {
 							Logger.Println("error:", err)
-							return nil, err
+							return nil, nil, err
 						}
 						switch head {
 						case "NonKeyAttributes":
 							j, err := strconv.Atoi(tail)
 							if err != nil {
 								Logger.Println("error:", err)
-								return nil, err
+								return nil, nil, err
 							}
 							switch len(input.GlobalSecondaryIndexes[i].Projection.NonKeyAttributes) {
 							case j:
@@ -399,18 +403,18 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 							default:
 								err := fmt.Errorf("attrs with indices must be in ascending order: %s", line)
 								Logger.Println("error:", err)
-								return nil, err
+								return nil, nil, err
 							}
 						default:
 							err := fmt.Errorf("unknown dynamodb attr: %s", line)
 							Logger.Println("error:", err)
-							return nil, err
+							return nil, nil, err
 						}
 					}
 				default:
 					err := fmt.Errorf("unknown dynamodb attr: %s", line)
 					Logger.Println("error:", err)
-					return nil, err
+					return nil, nil, err
 				}
 			}
 		case "Tags":
@@ -421,7 +425,7 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 		default:
 			err := fmt.Errorf("unknown dynamodb attr: %s", line)
 			Logger.Println("error:", err)
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if len(input.LocalSecondaryIndexes) == 0 {
@@ -454,10 +458,10 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 		input.SSESpecification.SSEType == nil {
 		input.SSESpecification = nil
 	}
-	return input, nil
+	return input, ttl, nil
 }
 
-func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, preview bool) error {
+func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *dynamodb.TimeToLiveSpecification, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBEnsure"}
 		defer d.Log()
@@ -830,7 +834,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 	}
 	if len(untagInput.TagKeys) > 0 {
 		if !preview {
-			_, err = dynamoDBClient.UntagResourceWithContext(ctx, untagInput)
+			_, err = DynamoDBClient().UntagResourceWithContext(ctx, untagInput)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
@@ -838,6 +842,66 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, previ
 		}
 		Logger.Println(PreviewString(preview)+"removed tags for table:", *input.TableName)
 	}
+	ttlOut, err := DynamoDBClient().DescribeTimeToLiveWithContext(ctx, &dynamodb.DescribeTimeToLiveInput{
+		TableName: input.TableName,
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if ttlOut == nil {
+		err := fmt.Errorf("ttlOut was nil without error")
+		Logger.Println("error:", err)
+		return err
+	}
+	for {
+		status := *ttlOut.TimeToLiveDescription.TimeToLiveStatus
+		if status == dynamodb.TimeToLiveStatusDisabled ||
+			status == dynamodb.TimeToLiveStatusEnabled {
+			break
+		}
+		Logger.Println("waiting for table ttl status to finish updating:", *input.TableName, status)
+		time.Sleep(2 * time.Second)
+	}
+	if ttl == nil {
+		if *ttlOut.TimeToLiveDescription.TimeToLiveStatus == dynamodb.TimeToLiveStatusEnabled {
+			if !preview {
+				_, err := DynamoDBClient().UpdateTimeToLiveWithContext(ctx, &dynamodb.UpdateTimeToLiveInput{
+					TableName: input.TableName,
+					TimeToLiveSpecification: &dynamodb.TimeToLiveSpecification{
+						AttributeName: ttlOut.TimeToLiveDescription.AttributeName,
+						Enabled:       aws.Bool(false),
+					},
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"disable ttl attr:", *ttlOut.TimeToLiveDescription.AttributeName+", table:", *input.TableName)
+		}
+	} else {
+		if *ttlOut.TimeToLiveDescription.TimeToLiveStatus == dynamodb.TimeToLiveStatusDisabled {
+			if !*ttl.Enabled {
+				err := fmt.Errorf("expected ttl enabled, got: %s", PformatAlways(ttl))
+				Logger.Println("error:", err)
+				return err
+
+			}
+			if !preview {
+				_, err := DynamoDBClient().UpdateTimeToLiveWithContext(ctx, &dynamodb.UpdateTimeToLiveInput{
+					TableName:               input.TableName,
+					TimeToLiveSpecification: ttl,
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"enable ttl attr:", *ttl.AttributeName+", table:", *input.TableName)
+		}
+	}
+
 	return nil
 }
 

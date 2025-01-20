@@ -233,7 +233,7 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 		})
 		if err != nil {
 			Logger.Println("error:", err)
-		    return "", err
+			return "", err
 		}
 		if len(out.Rules) != 1 {
 			err := fmt.Errorf("ses rule did not have exactly 1 rule: %s", *rule.Name)

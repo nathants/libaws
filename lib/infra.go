@@ -1324,6 +1324,33 @@ func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 					break
 				}
 			}
+
+			ttlOut, err := DynamoDBClient().DescribeTimeToLiveWithContext(ctx, &dynamodb.DescribeTimeToLiveInput{
+				TableName: aws.String(tableName),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				errChan <- err
+				return
+			}
+			if ttlOut == nil {
+				err := fmt.Errorf("ttlOut was nil without error")
+				Logger.Println("error:", err)
+				errChan <- err
+				return
+			}
+			for {
+				status := *ttlOut.TimeToLiveDescription.TimeToLiveStatus
+				if status == dynamodb.TimeToLiveStatusDisabled ||
+					status == dynamodb.TimeToLiveStatusEnabled {
+					break
+				}
+				Logger.Println("waiting for table ttl status to finish updating:", tableName, status)
+				time.Sleep(2 * time.Second)
+			}
+			if *ttlOut.TimeToLiveDescription.TimeToLiveStatus == dynamodb.TimeToLiveStatusEnabled {
+				infraDynamoDB.Attr = append(infraDynamoDB.Attr, "ttl="+*ttlOut.TimeToLiveDescription.AttributeName)
+			}
 			lock.Lock()
 			result[tableName] = infraDynamoDB
 			lock.Unlock()
@@ -2000,12 +2027,12 @@ func InfraEnsureDynamoDB(ctx context.Context, infraSet *InfraSet, preview bool) 
 			Logger.Println("error:", err)
 			return err
 		}
-		input, err := DynamoDBEnsureInput(infraSet.Name, tableName, infraDynamoDB.Key, infraDynamoDB.Attr)
+		input, ttl, err := DynamoDBEnsureInput(infraSet.Name, tableName, infraDynamoDB.Key, infraDynamoDB.Attr)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		err = DynamoDBEnsure(ctx, input, preview)
+		err = DynamoDBEnsure(ctx, input, ttl, preview)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err

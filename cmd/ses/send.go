@@ -50,6 +50,6 @@ func sesSend() {
 		Source: aws.String(args.From),
 	})
 	if err != nil {
-	    lib.Logger.Fatal("error: ", err)
+		lib.Logger.Fatal("error: ", err)
 	}
 }

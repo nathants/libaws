@@ -343,7 +343,7 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		input, err := DynamoDBEnsureInput("", test.name, test.keys, test.attrs)
+		input, _, err := DynamoDBEnsureInput("", test.name, test.keys, test.attrs)
 		if err != nil && !test.err {
 			t.Errorf("\nerror: %s", err)
 			continue
@@ -365,7 +365,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	input, err := DynamoDBEnsureInput(
+	input, ttl, err := DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -377,7 +377,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -409,7 +409,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		t.Errorf("\nkeys != [userid:s:hash]")
 		return
 	}
-	input, err = DynamoDBEnsureInput(
+	input, ttl, err = DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -421,7 +421,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -446,7 +446,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		t.Errorf("\nkeys != [userid:s:hash]")
 		return
 	}
-	input, err = DynamoDBEnsureInput(
+	input, ttl, err = DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -458,7 +458,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -489,7 +489,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	input, err := DynamoDBEnsureInput(
+	input, ttl, err := DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -505,7 +505,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -553,7 +553,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("\nkeys != [userid:s:hash]")
 		return
 	}
-	input, err = DynamoDBEnsureInput(
+	input, ttl, err = DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -569,7 +569,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -610,7 +610,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("\nkeys != [userid:s:hash]")
 		return
 	}
-	input, err = DynamoDBEnsureInput(
+	input, ttl, err = DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -625,7 +625,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -668,7 +668,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	input, err := DynamoDBEnsureInput(
+	input, ttl, err := DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -685,7 +685,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -734,7 +734,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 	}
 	// NOTE: these tests are slow because updating tables indices is slow
 	if os.Getenv("SLOW_TESTS") == "y" {
-		input, err = DynamoDBEnsureInput(
+		input, ttl, err = DynamoDBEnsureInput(
 			"",
 			name,
 			[]string{
@@ -746,7 +746,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 			t.Errorf("%v", err)
 			return
 		}
-		err = DynamoDBEnsure(ctx, input, false)
+		err = DynamoDBEnsure(ctx, input, ttl, false)
 		if err != nil {
 			t.Errorf("%v", err)
 			return
@@ -766,7 +766,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 			t.Errorf("len(globalIndices) != 0")
 			return
 		}
-		input, err = DynamoDBEnsureInput(
+		input, ttl, err = DynamoDBEnsureInput(
 			"",
 			name,
 			[]string{
@@ -787,7 +787,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 			t.Errorf("%v", err)
 			return
 		}
-		err = DynamoDBEnsure(ctx, input, false)
+		err = DynamoDBEnsure(ctx, input, ttl, false)
 		if err != nil {
 			t.Errorf("%v", err)
 			return
@@ -858,7 +858,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	input, err := DynamoDBEnsureInput(
+	input, ttl, err := DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -875,7 +875,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -906,7 +906,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		t.Errorf("\nattr mismatch indexName != index")
 		return
 	}
-	input, err = DynamoDBEnsureInput(
+	input, ttl, err = DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -918,7 +918,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -949,7 +949,7 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	input, err := DynamoDBEnsureInput(
+	input, ttl, err := DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -968,7 +968,7 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -1029,7 +1029,7 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 	checkAccountDynamoDB()
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
-	input, err := DynamoDBEnsureInput(
+	input, ttl, err := DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -1048,7 +1048,7 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err != nil {
 		t.Errorf("%v", err)
 		return
@@ -1079,7 +1079,7 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		t.Errorf("\nattr mismatch indexName != index")
 		return
 	}
-	input, err = DynamoDBEnsureInput(
+	input, ttl, err = DynamoDBEnsureInput(
 		"",
 		name,
 		[]string{
@@ -1092,7 +1092,7 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		t.Errorf("%v", err)
 		return
 	}
-	err = DynamoDBEnsure(ctx, input, false)
+	err = DynamoDBEnsure(ctx, input, ttl, false)
 	if err == nil {
 		t.Errorf("expected error")
 		return

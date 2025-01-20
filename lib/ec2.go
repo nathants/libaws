@@ -446,7 +446,7 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 		}
 	}
 	if len(errors) != 0 {
-		err = fmt.Errorf(strings.Join(errors, "\n"))
+		err = fmt.Errorf("%s", strings.Join(errors, "\n"))
 		Logger.Println("error: spot fleet history error:", err)
 		return err
 	}
