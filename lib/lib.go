@@ -28,7 +28,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/mattn/go-isatty"
 	"github.com/mikesmitty/edkey"
-	"github.com/pkg/term"
 	"github.com/r3labs/diff/v2"
 	"golang.org/x/crypto/ssh"
 )
@@ -204,50 +203,6 @@ func IsDigit(s string) bool {
 
 func Last(parts []string) string {
 	return parts[len(parts)-1]
-}
-
-func getch() (string, error) {
-	t, err := term.Open("/dev/tty")
-	if err != nil {
-		return "", err
-	}
-	err = term.RawMode(t)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		_ = t.Restore()
-		_ = t.Close()
-	}()
-	bytes := make([]byte, 1)
-	n, err := t.Read(bytes)
-	if err != nil {
-		return "", err
-	}
-	switch n {
-	case 1:
-		if bytes[0] == 3 {
-			_ = t.Restore()
-			_ = t.Close()
-			os.Exit(1)
-		}
-		return string(bytes), nil
-	default:
-	}
-	return "", nil
-}
-
-func PromptProceed(prompt string) error {
-	fmt.Println(prompt)
-	fmt.Println("proceed? y/n")
-	ch, err := getch()
-	if err != nil {
-		return err
-	}
-	if ch != "y" {
-		return fmt.Errorf("prompt failed")
-	}
-	return nil
 }
 
 func shell(format string, a ...interface{}) error {
