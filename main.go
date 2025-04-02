@@ -58,16 +58,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "\nunknown command:", cmd)
 		os.Exit(1)
 	}
-	var args []string
-	for _, a := range os.Args[1:] {
-		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
-			for _, k := range a[1:] {
-				args = append(args, fmt.Sprintf("-%s", string(k)))
-			}
-		} else {
-			args = append(args, a)
-		}
-	}
-	os.Args = args
+	os.Args = os.Args[1:]
 	fn()
 }
