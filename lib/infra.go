@@ -619,7 +619,7 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 		lambdaErr <- nil
 	}()
 
-	for i := 0; i < count; i++ {
+	for range count {
 		err := <-errs
 		if err != nil {
 			Logger.Fatal("error: ", err)

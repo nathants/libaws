@@ -339,7 +339,7 @@ func EC2WaitState(ctx context.Context, instanceIDs []string, state string) error
 		defer d.Log()
 	}
 	Logger.Println("wait for state", state, "for", len(instanceIDs), "instanceIDs")
-	for i := 0; i < 300; i++ {
+	for range 300 {
 		instances, err := EC2DescribeInstances(ctx, instanceIDs)
 		if err != nil {
 			Logger.Println("error:", err)
@@ -459,7 +459,7 @@ func ec2WaitSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) 
 		defer d.Log()
 	}
 	Logger.Println("wait for spot fleet", *spotFleetRequestId, "with", num, "instances")
-	for i := 0; i < 300; i++ {
+	for range 300 {
 		config, err := EC2DescribeSpotFleet(ctx, spotFleetRequestId)
 		if err != nil {
 			Logger.Println("error:", err)
@@ -1090,7 +1090,7 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		result.Err = err
 		return result
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		err := <-done
 		if err != nil {
 			Logger.Println("error:", err)
@@ -1284,7 +1284,7 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 		result.Err = err
 		return result
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		err := <-done
 		if err != nil {
 			Logger.Println("error:", err)
@@ -1542,7 +1542,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 		result.Err = err
 		return result
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		err := <-done
 		if err != nil {
 			result.Err = err
