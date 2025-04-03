@@ -69,7 +69,7 @@ const (
 	lambdaEventRuleNameSeparator = "___"
 	LambdaWebsocketSuffix        = lambdaEventRuleNameSeparator + "websocket"
 
-	lambdaRuntimePython    = "python3.12"
+	lambdaRuntimePython    = "python3.13"
 	lambdaRuntimeGo        = "provided.al2023"
 	lambdaRuntimeContainer = "container"
 )
