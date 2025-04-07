@@ -1,14 +1,15 @@
-package cliaws
+package libaws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/codecommit"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/codecommit"
+	cctypes "github.com/aws/aws-sdk-go-v2/service/codecommit/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -32,7 +33,7 @@ func codeCommitEnsure() {
 	var args codeCommitEnsureArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	createOut, err := lib.CodeCommitClient().CreateRepositoryWithContext(ctx, &codecommit.CreateRepositoryInput{
+	createOut, err := lib.CodeCommitClient().CreateRepository(ctx, &codecommit.CreateRepositoryInput{
 		RepositoryName:        aws.String(args.Name),
 		RepositoryDescription: aws.String(args.Descr),
 	})
@@ -41,8 +42,9 @@ func codeCommitEnsure() {
 		fmt.Println(lib.Pformat(createOut.RepositoryMetadata))
 		return
 	}
-	aerr, ok := err.(awserr.Error)
-	if !ok || aerr.Code() != codecommit.ErrCodeRepositoryNameExistsException {
+	var rne *cctypes.RepositoryNameExistsException
+	if errors.As(err, &rne) {
+	} else {
 		lib.Logger.Fatal("error: ", err)
 	}
 }

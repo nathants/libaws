@@ -1,10 +1,11 @@
-package cliaws
+package libaws
 
 import (
 	"context"
+
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -25,7 +26,7 @@ func ec2RmSnapshot() {
 	var args ec2RmSnapshotArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	_, err := lib.EC2Client().DeleteSnapshotWithContext(ctx, &ec2.DeleteSnapshotInput{
+	_, err := lib.EC2Client().DeleteSnapshot(ctx, &ec2.DeleteSnapshotInput{
 		SnapshotId: aws.String(args.SnapshotID),
 	})
 	if err != nil {

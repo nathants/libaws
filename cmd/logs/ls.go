@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func (logsLsArgs) Description() string {
 	return "\nlist logs\n"
 }
 
-func zeroOnNil(x *int64) int64 {
+func zeroOnNil(x *int32) int32 {
 	if x == nil {
 		return 0
 	}

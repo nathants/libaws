@@ -1,11 +1,12 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -27,7 +28,7 @@ func lambdaSetVar() {
 	var args lambdaSetVarArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	out, err := lib.LambdaClient().GetFunctionWithContext(ctx, &lambda.GetFunctionInput{
+	out, err := lib.LambdaClient().GetFunction(ctx, &lambda.GetFunctionInput{
 		FunctionName: aws.String(args.Name),
 	})
 	if err != nil {
@@ -37,10 +38,10 @@ func lambdaSetVar() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	out.Configuration.Environment.Variables[k] = aws.String(v)
-	_, err = lib.LambdaClient().UpdateFunctionConfigurationWithContext(ctx, &lambda.UpdateFunctionConfigurationInput{
+	out.Configuration.Environment.Variables[k] = v
+	_, err = lib.LambdaClient().UpdateFunctionConfiguration(ctx, &lambda.UpdateFunctionConfigurationInput{
 		FunctionName: aws.String(args.Name),
-		Environment: &lambda.Environment{
+		Environment: &lambdatypes.Environment{
 			Variables: out.Configuration.Environment.Variables,
 		},
 	})

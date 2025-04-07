@@ -6,23 +6,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/gofrs/uuid"
 )
 
-var cloudwatchClient *cloudwatch.CloudWatch
-var cloudwatchClientLock sync.RWMutex
+var cloudwatchClient *cloudwatch.Client
+var cloudwatchClientLock sync.Mutex
 
-func CloudwatchClientExplicit(accessKeyID, accessKeySecret, region string) *cloudwatch.CloudWatch {
-	return cloudwatch.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func CloudwatchClientExplicit(accessKeyID, accessKeySecret, region string) *cloudwatch.Client {
+	return cloudwatch.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func CloudwatchClient() *cloudwatch.CloudWatch {
+func CloudwatchClient() *cloudwatch.Client {
 	cloudwatchClientLock.Lock()
 	defer cloudwatchClientLock.Unlock()
 	if cloudwatchClient == nil {
-		cloudwatchClient = cloudwatch.New(Session())
+		cloudwatchClient = cloudwatch.NewFromConfig(*Session())
 	}
 	return cloudwatchClient
 }
@@ -33,31 +34,31 @@ type CloudwatchAlarm struct {
 	stateReasonData       *string
 	stateUpdatedTimestamp *time.Time
 
-	ActionsEnabled                     *bool                         `json:",omitempty"`
-	AlarmActions                       []*string                     `json:",omitempty"`
-	AlarmConfigurationUpdatedTimestamp *time.Time                    `json:",omitempty"`
-	AlarmName                          *string                       `json:",omitempty"`
-	ComparisonOperator                 *string                       `json:",omitempty"`
-	DatapointsToAlarm                  *int64                        `json:",omitempty"`
-	Dimensions                         []*cloudwatch.Dimension       `json:",omitempty"`
-	EvaluateLowSampleCountPercentile   *string                       `json:",omitempty"`
-	EvaluationPeriods                  *int64                        `json:",omitempty"`
-	ExtendedStatistic                  *string                       `json:",omitempty"`
-	InsufficientDataActions            []*string                     `json:",omitempty"`
-	MetricName                         *string                       `json:",omitempty"`
-	Metrics                            []*cloudwatch.MetricDataQuery `json:",omitempty"`
-	Namespace                          *string                       `json:",omitempty"`
-	OKActions                          []*string                     `json:",omitempty"`
-	Period                             *int64                        `json:",omitempty"`
-	StateValue                         *string                       `json:",omitempty"`
-	Statistic                          *string                       `json:",omitempty"`
-	Threshold                          *float64                      `json:",omitempty"`
-	ThresholdMetricId                  *string                       `json:",omitempty"`
-	TreatMissingData                   *string                       `json:",omitempty"`
-	Unit                               *string                       `json:",omitempty"`
+	ActionsEnabled                     *bool                      `json:",omitempty"`
+	AlarmActions                       []string                   `json:",omitempty"`
+	AlarmConfigurationUpdatedTimestamp *time.Time                 `json:",omitempty"`
+	AlarmName                          *string                    `json:",omitempty"`
+	ComparisonOperator                 cwtypes.ComparisonOperator `json:",omitempty"`
+	DatapointsToAlarm                  *int32                     `json:",omitempty"`
+	Dimensions                         []cwtypes.Dimension        `json:",omitempty"`
+	EvaluateLowSampleCountPercentile   *string                    `json:",omitempty"`
+	EvaluationPeriods                  *int32                     `json:",omitempty"`
+	ExtendedStatistic                  *string                    `json:",omitempty"`
+	InsufficientDataActions            []string                   `json:",omitempty"`
+	MetricName                         *string                    `json:",omitempty"`
+	Metrics                            []cwtypes.MetricDataQuery  `json:",omitempty"`
+	Namespace                          *string                    `json:",omitempty"`
+	OKActions                          []string                   `json:",omitempty"`
+	Period                             *int32                     `json:",omitempty"`
+	StateValue                         cwtypes.StateValue         `json:",omitempty"`
+	Statistic                          cwtypes.Statistic          `json:",omitempty"`
+	Threshold                          *float64                   `json:",omitempty"`
+	ThresholdMetricId                  *string                    `json:",omitempty"`
+	TreatMissingData                   *string                    `json:",omitempty"`
+	Unit                               cwtypes.StandardUnit       `json:",omitempty"`
 }
 
-func (a *CloudwatchAlarm) FromAlarm(alarm *cloudwatch.MetricAlarm) {
+func (a *CloudwatchAlarm) FromAlarm(alarm *cwtypes.MetricAlarm) {
 	a.alarmArn = alarm.AlarmArn
 	a.stateReason = alarm.StateReason
 	a.stateReasonData = alarm.StateReasonData
@@ -94,7 +95,7 @@ func CloudwatchListAlarms(ctx context.Context) ([]*CloudwatchAlarm, error) {
 	var token *string
 	var result []*CloudwatchAlarm
 	for {
-		out, err := CloudwatchClient().DescribeAlarmsWithContext(ctx, &cloudwatch.DescribeAlarmsInput{
+		out, err := CloudwatchClient().DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -103,7 +104,7 @@ func CloudwatchListAlarms(ctx context.Context) ([]*CloudwatchAlarm, error) {
 		}
 		for _, alarm := range out.MetricAlarms {
 			a := &CloudwatchAlarm{}
-			a.FromAlarm(alarm)
+			a.FromAlarm(&alarm)
 			result = append(result, a)
 		}
 		if out.NextToken == nil {
@@ -119,9 +120,9 @@ func CloudwatchEnsureAlarm(ctx context.Context, name string) error {
 		d := &Debug{start: time.Now(), name: "CloudwatchEnsureAlarm"}
 		defer d.Log()
 	}
-	out, err := CloudwatchClient().DescribeAlarmsWithContext(ctx, &cloudwatch.DescribeAlarmsInput{
-		AlarmNames: []*string{
-			aws.String(name),
+	out, err := CloudwatchClient().DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{
+		AlarmNames: []string{
+			name,
 		},
 	})
 	if err != nil {
@@ -129,19 +130,19 @@ func CloudwatchEnsureAlarm(ctx context.Context, name string) error {
 		return err
 	}
 	_ = out
-	_, _ = CloudwatchClient().PutMetricAlarmWithContext(ctx, &cloudwatch.PutMetricAlarmInput{})
+	_, _ = CloudwatchClient().PutMetricAlarm(ctx, &cloudwatch.PutMetricAlarmInput{})
 	return nil
 }
 
-func CloudwatchListMetrics(ctx context.Context, namespace, metric *string) ([]*cloudwatch.Metric, error) {
+func CloudwatchListMetrics(ctx context.Context, namespace, metric *string) ([]cwtypes.Metric, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CloudwatchListMetrics"}
 		defer d.Log()
 	}
 	var token *string
-	var metrics []*cloudwatch.Metric
+	var metrics []cwtypes.Metric
 	for {
-		out, err := CloudwatchClient().ListMetricsWithContext(ctx, &cloudwatch.ListMetricsInput{
+		out, err := CloudwatchClient().ListMetrics(ctx, &cloudwatch.ListMetricsInput{
 			NextToken:  token,
 			Namespace:  namespace,
 			MetricName: metric,
@@ -159,30 +160,30 @@ func CloudwatchListMetrics(ctx context.Context, namespace, metric *string) ([]*c
 	return metrics, nil
 }
 
-func CloudwatchGetMetricData(ctx context.Context, period int, stat string, fromTime, toTime *time.Time, namespace string, metrics []string, dimension string) ([]*cloudwatch.MetricDataResult, error) {
+func CloudwatchGetMetricData(ctx context.Context, period int, stat string, fromTime, toTime *time.Time, namespace string, metrics []string, dimension string) ([]cwtypes.MetricDataResult, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CloudwatchGetMetricData"}
 		defer d.Log()
 	}
 	var token *string
-	var result []*cloudwatch.MetricDataResult
+	var result []cwtypes.MetricDataResult
 	for {
 		input := &cloudwatch.GetMetricDataInput{
 			EndTime:           toTime,
 			StartTime:         fromTime,
 			NextToken:         token,
-			MetricDataQueries: []*cloudwatch.MetricDataQuery{},
+			MetricDataQueries: []cwtypes.MetricDataQuery{},
 		}
 		for _, metric := range metrics {
-			input.MetricDataQueries = append(input.MetricDataQueries, &cloudwatch.MetricDataQuery{
+			input.MetricDataQueries = append(input.MetricDataQueries, cwtypes.MetricDataQuery{
 				Id: aws.String("a" + strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")),
-				MetricStat: &cloudwatch.MetricStat{
-					Period: aws.Int64(int64(period)),
+				MetricStat: &cwtypes.MetricStat{
+					Period: aws.Int32(int32(period)),
 					Stat:   aws.String(stat),
-					Metric: &cloudwatch.Metric{
+					Metric: &cwtypes.Metric{
 						Namespace:  aws.String(namespace),
 						MetricName: aws.String(metric),
-						Dimensions: []*cloudwatch.Dimension{{
+						Dimensions: []cwtypes.Dimension{{
 							Name:  aws.String(strings.Split(dimension, "=")[0]),
 							Value: aws.String(strings.Split(dimension, "=")[1]),
 						}},
@@ -190,7 +191,7 @@ func CloudwatchGetMetricData(ctx context.Context, period int, stat string, fromT
 				},
 			})
 		}
-		out, err := CloudwatchClient().GetMetricDataWithContext(ctx, input)
+		out, err := CloudwatchClient().GetMetricData(ctx, input)
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err

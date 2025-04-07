@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -44,7 +44,7 @@ func ec2WaitGoSsh() {
 		lib.Logger.Fatal("error: provide some selectors")
 	}
 	start := time.Now()
-	var instances []*ec2.Instance
+	var instances []ec2types.Instance
 	var err error
 	for {
 		instances, err = lib.EC2ListInstances(ctx, args.Selectors, "")
@@ -62,7 +62,11 @@ func ec2WaitGoSsh() {
 		}
 	}
 	for _, instance := range instances {
-		if lib.Contains([]string{ec2.InstanceStateNamePending, ec2.InstanceStateNameRunning}, *instance.State.Name) {
+		states := []ec2types.InstanceStateName{
+			ec2types.InstanceStateNamePending,
+			ec2types.InstanceStateNameRunning,
+		}
+		if lib.Contains(states, instance.State.Name) {
 			lib.Logger.Println(lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}

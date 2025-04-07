@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	s3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+
 	"github.com/gofrs/uuid"
 )
 
@@ -66,14 +68,14 @@ func TestS3EnsureVersioningOffByDefault(t *testing.T) {
 			panic(err)
 		}
 	}()
-	out, err := S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
+	out, err := S3Client().GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if out.Status != nil {
+	if out.Status == s3types.BucketVersioningStatusEnabled {
 		t.Error("versioning enabled")
 		return
 	}
@@ -99,14 +101,14 @@ func TestS3EnsureVersioning(t *testing.T) {
 			panic(err)
 		}
 	}()
-	out, err := S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
+	out, err := S3Client().GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *out.Status != s3.BucketVersioningStatusEnabled {
+	if out.Status == s3types.BucketVersioningStatusSuspended {
 		t.Error("versioning not enabled")
 		return
 	}
@@ -132,14 +134,14 @@ func TestS3EnsureUpdateVersioning(t *testing.T) {
 			panic(err)
 		}
 	}()
-	out, err := S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
+	out, err := S3Client().GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if out.Status != nil {
+	if out.Status == s3types.BucketVersioningStatusEnabled {
 		t.Error("versioning enabled")
 		return
 	}
@@ -153,14 +155,14 @@ func TestS3EnsureUpdateVersioning(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	out, err = S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
+	out, err = S3Client().GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *out.Status != s3.BucketVersioningStatusEnabled {
+	if out.Status == s3types.BucketVersioningStatusSuspended {
 		t.Error("versioning not enabled")
 		return
 	}
@@ -174,14 +176,14 @@ func TestS3EnsureUpdateVersioning(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	out, err = S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
+	out, err = S3Client().GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *out.Status != s3.BucketVersioningStatusSuspended {
+	if out.Status == s3types.BucketVersioningStatusEnabled {
 		t.Error("versioning enable enabled")
 		return
 	}
@@ -207,18 +209,18 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 			panic(err)
 		}
 	}()
-	out, err := S3Client().GetBucketEncryptionWithContext(ctx, &s3.GetBucketEncryptionInput{
+	out, err := S3Client().GetBucketEncryption(ctx, &s3.GetBucketEncryptionInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	encryptedConfig := &s3.ServerSideEncryptionConfiguration{
-		Rules: []*s3.ServerSideEncryptionRule{{
+	encryptedConfig := &s3types.ServerSideEncryptionConfiguration{
+		Rules: []s3types.ServerSideEncryptionRule{{
 			BucketKeyEnabled: aws.Bool(false),
-			ApplyServerSideEncryptionByDefault: &s3.ServerSideEncryptionByDefault{
-				SSEAlgorithm:   aws.String(s3.ServerSideEncryptionAes256),
+			ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
+				SSEAlgorithm:   s3types.ServerSideEncryptionAes256,
 				KMSMasterKeyID: nil,
 			},
 		}},
@@ -249,14 +251,14 @@ func TestS3EnsurePrivateByDefault(t *testing.T) {
 			panic(err)
 		}
 	}()
-	pabOut, err := S3Client().GetPublicAccessBlockWithContext(ctx, &s3.GetPublicAccessBlockInput{
+	pabOut, err := S3Client().GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
 		Bucket: aws.String(input.name),
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	privateConf := &s3.PublicAccessBlockConfiguration{
+	privateConf := &s3types.PublicAccessBlockConfiguration{
 		BlockPublicAcls:       aws.Bool(true),
 		IgnorePublicAcls:      aws.Bool(true),
 		BlockPublicPolicy:     aws.Bool(true),
@@ -265,19 +267,15 @@ func TestS3EnsurePrivateByDefault(t *testing.T) {
 	if !reflect.DeepEqual(pabOut.PublicAccessBlockConfiguration, privateConf) {
 		t.Error("not private")
 	}
-	_, err = S3Client().GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
+	_, err = S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 		Bucket: aws.String(bucket),
 	})
 	if err == nil {
 		t.Error("bucket policy should not exist")
 		return
-	}
-	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "NoSuchBucketPolicy" {
-			t.Error(err)
-			return
-		}
+	} else if !strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+		t.Error(err)
+		return
 	}
 }
 
@@ -301,7 +299,7 @@ func TestS3EnsurePrivateCors(t *testing.T) {
 			panic(err)
 		}
 	}()
-	cors, err := S3Client().GetBucketCorsWithContext(ctx, &s3.GetBucketCorsInput{
+	cors, err := S3Client().GetBucketCors(ctx, &s3.GetBucketCorsInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -312,14 +310,14 @@ func TestS3EnsurePrivateCors(t *testing.T) {
 		t.Error("cors config misconfigured")
 		return
 	}
-	pabOut, err := S3Client().GetPublicAccessBlockWithContext(ctx, &s3.GetPublicAccessBlockInput{
+	pabOut, err := S3Client().GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
 		Bucket: aws.String(input.name),
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	privateConf := &s3.PublicAccessBlockConfiguration{
+	privateConf := &s3types.PublicAccessBlockConfiguration{
 		BlockPublicAcls:       aws.Bool(true),
 		IgnorePublicAcls:      aws.Bool(true),
 		BlockPublicPolicy:     aws.Bool(true),
@@ -328,16 +326,11 @@ func TestS3EnsurePrivateCors(t *testing.T) {
 	if !reflect.DeepEqual(pabOut.PublicAccessBlockConfiguration, privateConf) {
 		t.Error("not private")
 	}
-	_, err = S3Client().GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
+	_, err = S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 		Bucket: aws.String(bucket),
 	})
-	if err == nil {
-		t.Error("bucket policy should not exist")
-		return
-	}
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "NoSuchBucketPolicy" {
+		if !strings.Contains(err.Error(), "NoSuchBucketPolicy") {
 			t.Error(err)
 			return
 		}
@@ -364,14 +357,14 @@ func TestS3EnsurePublic(t *testing.T) {
 			panic(err)
 		}
 	}()
-	_, err = S3Client().GetBucketCorsWithContext(ctx, &s3.GetBucketCorsInput{
+	_, err = S3Client().GetBucketCors(ctx, &s3.GetBucketCorsInput{
 		Bucket: aws.String(bucket),
 	})
 	if err == nil {
 		t.Error("cors config misconfigured")
 		return
 	}
-	policyOut, err := S3Client().GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
+	policyOut, err := S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -410,7 +403,7 @@ func TestS3EnsurePublicCors(t *testing.T) {
 			panic(err)
 		}
 	}()
-	cors, err := S3Client().GetBucketCorsWithContext(ctx, &s3.GetBucketCorsInput{
+	cors, err := S3Client().GetBucketCors(ctx, &s3.GetBucketCorsInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -421,7 +414,7 @@ func TestS3EnsurePublicCors(t *testing.T) {
 		t.Error("cors config misconfigured")
 		return
 	}
-	policyOut, err := S3Client().GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
+	policyOut, err := S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {

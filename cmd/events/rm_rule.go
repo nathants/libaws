@@ -1,12 +1,13 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+
 	"github.com/nathants/libaws/lib"
 )
 
@@ -33,7 +34,7 @@ func eventsRmRule() {
 		busName = aws.String(args.BusName)
 	}
 	ctx := context.Background()
-	rule, err := lib.EventsClient().DescribeRuleWithContext(ctx, &cloudwatchevents.DescribeRuleInput{
+	rule, err := lib.EventsClient().DescribeRule(ctx, &eventbridge.DescribeRuleInput{
 		EventBusName: busName,
 		Name:         aws.String(args.RuleName),
 	})
@@ -44,13 +45,13 @@ func eventsRmRule() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	var ids []*string
+	var ids []string
 	for _, target := range targets {
 		fmt.Println(lib.PreviewString(args.Preview)+"delete target:", lib.Pformat(target))
-		ids = append(ids, target.Id)
+		ids = append(ids, *target.Id)
 	}
 	if !args.Preview {
-		_, err = lib.EventsClient().RemoveTargetsWithContext(ctx, &cloudwatchevents.RemoveTargetsInput{
+		_, err = lib.EventsClient().RemoveTargets(ctx, &eventbridge.RemoveTargetsInput{
 			EventBusName: busName,
 			Rule:         aws.String(args.RuleName),
 			Ids:          ids,
@@ -61,7 +62,7 @@ func eventsRmRule() {
 	}
 	fmt.Println(lib.PreviewString(args.Preview)+"delete rule:", lib.Pformat(rule))
 	if !args.Preview {
-		_, err := lib.EventsClient().DeleteRuleWithContext(ctx, &cloudwatchevents.DeleteRuleInput{
+		_, err := lib.EventsClient().DeleteRule(ctx, &eventbridge.DeleteRuleInput{
 			EventBusName: busName,
 			Name:         aws.String(args.RuleName),
 		})

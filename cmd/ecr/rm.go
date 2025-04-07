@@ -1,12 +1,13 @@
-package cliaws
+package libaws
 
 import (
 	"context"
+	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+
 	"github.com/nathants/libaws/lib"
 )
 
@@ -28,13 +29,12 @@ func ecrRm() {
 	var args ecrRmArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	_, err := lib.EcrClient().DeleteRepositoryWithContext(ctx, &ecr.DeleteRepositoryInput{
+	_, err := lib.EcrClient().DeleteRepository(ctx, &ecr.DeleteRepositoryInput{
 		RepositoryName: aws.String(args.Name),
-		Force:          aws.Bool(true),
+		Force:          true,
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "RepositoryNotFoundException" {
+		if !strings.Contains(err.Error(), "RepositoryNotFoundException") {
 			lib.Logger.Fatal("error: ", err)
 		}
 	}

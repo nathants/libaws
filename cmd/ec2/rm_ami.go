@@ -1,13 +1,17 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
-	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/nathants/libaws/lib"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
 	"time"
+
+	"github.com/alexflint/go-arg"
+	"github.com/nathants/libaws/lib"
 )
 
 func init() {
@@ -32,9 +36,9 @@ func ec2RmAmi() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	// find image
-	images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners:  []*string{aws.String(account)},
-		Filters: []*ec2.Filter{{Name: aws.String("image-id"), Values: []*string{aws.String(args.AmiID)}}},
+	images, err := lib.EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners:  []string{account},
+		Filters: []ec2types.Filter{{Name: aws.String("image-id"), Values: []string{args.AmiID}}},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
@@ -43,9 +47,9 @@ func ec2RmAmi() {
 		lib.Logger.Fatal("didn't find image for id:", args.AmiID)
 	}
 	// find backing snapshot
-	snaps, err := lib.EC2Client().DescribeSnapshotsWithContext(ctx, &ec2.DescribeSnapshotsInput{
-		OwnerIds: []*string{aws.String(account)},
-		Filters:  []*ec2.Filter{{Name: aws.String("description"), Values: []*string{aws.String(fmt.Sprintf("* %s *", args.AmiID))}}},
+	snaps, err := lib.EC2Client().DescribeSnapshots(ctx, &ec2.DescribeSnapshotsInput{
+		OwnerIds: []string{account},
+		Filters:  []ec2types.Filter{{Name: aws.String("description"), Values: []string{fmt.Sprintf("* %s *", args.AmiID)}}},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
@@ -54,7 +58,7 @@ func ec2RmAmi() {
 		lib.Logger.Println("found backing snapshot:", *snapshot.SnapshotId)
 	}
 	// deregister image
-	_, err = lib.EC2Client().DeregisterImageWithContext(ctx, &ec2.DeregisterImageInput{
+	_, err = lib.EC2Client().DeregisterImage(ctx, &ec2.DeregisterImageInput{
 		ImageId: aws.String(args.AmiID),
 	})
 	if err != nil {
@@ -63,14 +67,14 @@ func ec2RmAmi() {
 	lib.Logger.Println("deregistered:", args.AmiID)
 	//
 	for {
-		images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-			Owners:  []*string{aws.String(account)},
-			Filters: []*ec2.Filter{{Name: aws.String("image-id"), Values: []*string{aws.String(args.AmiID)}}},
+		images, err := lib.EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+			Owners:  []string{account},
+			Filters: []ec2types.Filter{{Name: aws.String("image-id"), Values: []string{args.AmiID}}},
 		})
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
-		if len(images.Images) == 0 || (len(images.Images) == 1 && *images.Images[0].State == ec2.ImageStateDeregistered) {
+		if len(images.Images) == 0 || (len(images.Images) == 1 && images.Images[0].State == ec2types.ImageStateDeregistered) {
 			break
 		}
 		lib.Logger.Println("wait for image to delete before deleting backing snapshot")
@@ -78,7 +82,7 @@ func ec2RmAmi() {
 	}
 	// delete snapshot
 	for _, snapshot := range snaps.Snapshots {
-		_, err := lib.EC2Client().DeleteSnapshotWithContext(ctx, &ec2.DeleteSnapshotInput{
+		_, err := lib.EC2Client().DeleteSnapshot(ctx, &ec2.DeleteSnapshotInput{
 			SnapshotId: snapshot.SnapshotId,
 		})
 		if err != nil {

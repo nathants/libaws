@@ -1,9 +1,10 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 	"github.com/alexflint/go-arg"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 	"os"
 )
@@ -28,7 +29,7 @@ func ec2Ls() {
 	var args ec2LsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	instances, err := lib.EC2ListInstances(ctx, args.Selectors, args.State)
+	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2types.InstanceStateName(args.State))
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
@@ -57,8 +58,8 @@ func ec2Ls() {
 
 		fmt.Println(
 			lib.EC2NameColored(instance),
-			*instance.InstanceType,
-			*instance.State.Name,
+			instance.InstanceType,
+			instance.State.Name,
 			*instance.InstanceId,
 			*instance.ImageId,
 			lib.EC2Kind(instance),

@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -40,7 +40,7 @@ func ec2WaitState() {
 	}
 	start := time.Now()
 	for {
-		var instances []*ec2.Instance
+		var instances []ec2types.Instance
 		var err error
 		for {
 			instances, err = lib.EC2ListInstances(ctx, args.Selectors, "")
@@ -59,8 +59,8 @@ func ec2WaitState() {
 		}
 		pass := true
 		for _, instance := range instances {
-			if args.State != *instance.State.Name {
-				fmt.Println(*instance.State.Name, *instance.InstanceId)
+			if args.State != string(instance.State.Name) {
+				fmt.Println(instance.State.Name, *instance.InstanceId)
 				pass = false
 			}
 		}

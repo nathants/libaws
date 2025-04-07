@@ -1,11 +1,12 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ses"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+
 	"github.com/nathants/libaws/lib"
 )
 
@@ -32,7 +33,7 @@ func sesLsReceiptRules() {
 	for _, rule := range rules {
 		fmt.Println()
 		fmt.Println(*rule.Name)
-		out, err := lib.SesClient().DescribeReceiptRuleSet(&ses.DescribeReceiptRuleSetInput{
+		out, err := lib.SesClient().DescribeReceiptRuleSet(ctx, &ses.DescribeReceiptRuleSetInput{
 			RuleSetName: rule.Name,
 		})
 		if err != nil {

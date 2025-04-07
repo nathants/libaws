@@ -1,6 +1,7 @@
-package cliaws
+package libaws
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -8,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -27,7 +28,8 @@ func (ecrLoginArgs) Description() string {
 func ecrLogin() {
 	var args ecrLoginArgs
 	arg.MustParse(&args)
-	token, err := lib.EcrClient().GetAuthorizationToken(&ecr.GetAuthorizationTokenInput{})
+	ctx := context.Background()
+	token, err := lib.EcrClient().GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

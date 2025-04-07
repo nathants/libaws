@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/alexflint/go-arg"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -27,7 +28,7 @@ func ec2Id() {
 	var args ec2IdArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	instances, err := lib.EC2ListInstances(ctx, args.Selectors, args.State)
+	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2types.InstanceStateName(args.State))
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

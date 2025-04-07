@@ -11,33 +11,44 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 const (
-	s3MetricsId = "S3MetricsEntireBucket"
+	s3MetricsId                                     = "S3MetricsEntireBucket"
+	s3ErrCodeNotFound                               = "NotFound"
+	s3ErrCodeNoSuchBucket                           = "NoSuchBucket"
+	s3ErrCodeBucketAlreadyOwnedByYou                = "BucketAlreadyOwnedByYou"
+	s3ErrCodeNoSuchBucketPolicy                     = "NoSuchBucketPolicy"
+	s3ErrCodeNoSuchConfiguration                    = "NoSuchConfiguration"
+	s3ErrCodeNoSuchPublicAccessBlockConfiguration   = "NoSuchPublicAccessBlockConfiguration"
+	s3ErrCodeServerSideEncryptionConfigurationError = "ServerSideEncryptionConfigurationNotFoundError"
+	s3ErrCodeReplicationConfigurationNotFoundError  = "ReplicationConfigurationNotFoundError"
+	s3ErrCodeNoSuchCORSConfiguration                = "NoSuchCORSConfiguration"
+	s3ErrCodeNoSuchLifecycleConfiguration           = "NoSuchLifecycleConfiguration"
+	s3ErrCodeNoSuchTagSet                           = "NoSuchTagSet"
 )
 
-var s3Client *s3.S3
-var s3ClientLock sync.RWMutex
-var s3ClientsRegional = make(map[string]*s3.S3)
+var s3Client *s3.Client
+var s3ClientLock sync.Mutex
+var s3ClientsRegional = make(map[string]*s3.Client)
 
-func S3ClientExplicit(accessKeyID, accessKeySecret, region string) *s3.S3 {
-	return s3.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func S3ClientExplicit(accessKeyID, accessKeySecret, region string) *s3.Client {
+	return s3.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func S3Client() *s3.S3 {
+func S3Client() *s3.Client {
 	s3ClientLock.Lock()
 	defer s3ClientLock.Unlock()
 	if s3Client == nil {
-		s3Client = s3.New(Session())
+		s3Client = s3.NewFromConfig(*Session())
 	}
 	return s3Client
 }
 
-func S3ClientRegion(region string) (*s3.S3, error) {
+func S3ClientRegion(region string) (*s3.Client, error) {
 	s3ClientLock.Lock()
 	defer s3ClientLock.Unlock()
 	s3Client, ok := s3ClientsRegional[region]
@@ -46,13 +57,13 @@ func S3ClientRegion(region string) (*s3.S3, error) {
 		if err != nil {
 			return nil, err
 		}
-		s3Client = s3.New(sess)
+		s3Client = s3.NewFromConfig(*sess)
 		s3ClientsRegional[region] = s3Client
 	}
 	return s3Client, nil
 }
 
-func S3ClientRegionMust(region string) *s3.S3 {
+func S3ClientRegionMust(region string) *s3.Client {
 	client, err := S3ClientRegion(region)
 	if err != nil {
 		panic(err)
@@ -60,7 +71,7 @@ func S3ClientRegionMust(region string) *s3.S3 {
 	return client
 }
 
-var s3BucketRegionLock sync.RWMutex
+var s3BucketRegionLock sync.Mutex
 var s3BucketRegion = make(map[string]string)
 
 func S3BucketRegion(bucket string) (string, error) {
@@ -81,17 +92,13 @@ func S3BucketRegion(bucket string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			err = resp.Body.Close()
-			if err != nil {
-				return "", err
-			}
+			defer func() { _ = resp.Body.Close() }()
 			switch resp.StatusCode {
 			case 200:
 			case 400:
 			case 403:
 			case 404:
-				err := awserr.New(s3.ErrCodeNoSuchBucket, bucket, nil)
-				return "", err
+				return "", fmt.Errorf("no such bucket: %s", bucket)
 			default:
 				err := fmt.Errorf("http %d for %s", resp.StatusCode, bucket)
 				Logger.Println("error:", err)
@@ -112,16 +119,15 @@ func S3BucketRegion(bucket string) (string, error) {
 	return region, nil
 }
 
-func S3ClientBucketRegion(bucket string) (*s3.S3, error) {
-	var s3Client *s3.S3
+func S3ClientBucketRegion(bucket string) (*s3.Client, error) {
+	var s3Client *s3.Client
 	var expectedErr error
 	err := Retry(context.Background(), func() error {
 		var region string
 		var err error
 		region, err = S3BucketRegion(bucket)
 		if err != nil {
-			aerr, ok := err.(awserr.Error)
-			if ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
+			if strings.Contains(err.Error(), "no such bucket") {
 				expectedErr = err
 				return nil
 			}
@@ -145,7 +151,7 @@ func S3ClientBucketRegion(bucket string) (*s3.S3, error) {
 	return s3Client, nil
 }
 
-func S3ClientBucketRegionMust(bucket string) *s3.S3 {
+func S3ClientBucketRegionMust(bucket string) *s3.Client {
 	client, err := S3ClientBucketRegion(bucket)
 	if err != nil {
 		panic(err)
@@ -289,23 +295,23 @@ func s3PublicPolicy(bucket string) IamPolicyDocument {
 	}
 }
 
-func s3Cors(allowedOrigins []string) []*s3.CORSRule {
+func s3Cors(allowedOrigins []string) []s3types.CORSRule {
 	if len(allowedOrigins) == 0 {
 		allowedOrigins = append(allowedOrigins, "*")
 	}
-	return []*s3.CORSRule{{
-		AllowedHeaders: []*string{aws.String("Authorization"), aws.String("Range")},
-		AllowedMethods: []*string{aws.String("GET"), aws.String("PUT"), aws.String("POST"), aws.String("HEAD")},
-		AllowedOrigins: aws.StringSlice(allowedOrigins),
-		ExposeHeaders:  []*string{aws.String("Content-Length"), aws.String("Content-Type"), aws.String("ETag")},
-		MaxAgeSeconds:  aws.Int64(int64(3000)),
+	return []s3types.CORSRule{{
+		AllowedHeaders: []string{"Authorization", "Range"},
+		AllowedMethods: []string{"GET", "PUT", "POST", "HEAD"},
+		AllowedOrigins: allowedOrigins,
+		ExposeHeaders:  []string{"Content-Length", "Content-Type", "ETag"},
+		MaxAgeSeconds:  aws.Int32(int32(3000)),
 	}}
 }
 
-var s3EncryptionConfig = &s3.ServerSideEncryptionConfiguration{
-	Rules: []*s3.ServerSideEncryptionRule{{
-		ApplyServerSideEncryptionByDefault: &s3.ServerSideEncryptionByDefault{
-			SSEAlgorithm: aws.String(s3.ServerSideEncryptionAes256),
+var s3EncryptionConfig = &s3types.ServerSideEncryptionConfiguration{
+	Rules: []s3types.ServerSideEncryptionRule{{
+		ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
+			SSEAlgorithm: s3types.ServerSideEncryptionAes256,
 		},
 		BucketKeyEnabled: aws.Bool(false),
 	}},
@@ -321,26 +327,24 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	_, err = S3Client().HeadBucketWithContext(ctx, &s3.HeadBucketInput{
-		Bucket:              aws.String(input.name),
+	_, err = S3Client().HeadBucket(ctx, &s3.HeadBucketInput{
 		ExpectedBucketOwner: aws.String(account),
+		Bucket:              aws.String(input.name),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "NotFound" {
+		if !strings.Contains(err.Error(), s3ErrCodeNotFound) {
 			Logger.Println("error:", err)
 			return err
 		}
 		if !preview {
-			_, err := S3Client().CreateBucketWithContext(ctx, &s3.CreateBucketInput{
+			_, err := S3Client().CreateBucket(ctx, &s3.CreateBucketInput{
 				Bucket: aws.String(input.name),
-				CreateBucketConfiguration: &s3.CreateBucketConfiguration{
-					LocationConstraint: aws.String(Region()),
+				CreateBucketConfiguration: &s3types.CreateBucketConfiguration{
+					LocationConstraint: s3types.BucketLocationConstraint(Region()),
 				},
 			})
 			if err != nil {
-				aerr, ok := err.(awserr.Error)
-				if !ok || aerr.Code() != s3.ErrCodeBucketAlreadyOwnedByYou {
+				if !strings.Contains(err.Error(), s3ErrCodeBucketAlreadyOwnedByYou) {
 					Logger.Println("error:", err)
 					return err
 				}
@@ -349,13 +353,12 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		Logger.Println(PreviewString(preview)+"created bucket:", input.name)
 	}
 	exists := false
-	getTagOut, err := S3Client().GetBucketTaggingWithContext(ctx, &s3.GetBucketTaggingInput{
-		Bucket:              aws.String(input.name),
+	getTagOut, err := S3Client().GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 		ExpectedBucketOwner: aws.String(account),
+		Bucket:              aws.String(input.name),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || !Contains([]string{"NoSuchBucket", "NoSuchTagSet"}, aerr.Code()) {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) && !strings.Contains(err.Error(), s3ErrCodeNoSuchTagSet) {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -369,11 +372,11 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	}
 	if !exists {
 		if !preview {
-			_, err := S3Client().PutBucketTaggingWithContext(ctx, &s3.PutBucketTaggingInput{
-				Bucket:              aws.String(input.name),
+			_, err := S3Client().PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
 				ExpectedBucketOwner: aws.String(account),
-				Tagging: &s3.Tagging{
-					TagSet: []*s3.Tag{{
+				Bucket:              aws.String(input.name),
+				Tagging: &s3types.Tagging{
+					TagSet: []s3types.Tag{{
 						Key:   aws.String(infraSetTagName),
 						Value: aws.String(input.infraSetName),
 					}},
@@ -386,18 +389,15 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 		Logger.Println(PreviewString(preview)+"created bucket tags for:", input.name)
 	}
-	exists = true
-	pabOut, err := S3Client().GetPublicAccessBlockWithContext(ctx, &s3.GetPublicAccessBlockInput{
-		Bucket:              aws.String(input.name),
+	pabOut, err := S3Client().GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
 		ExpectedBucketOwner: aws.String(account),
+		Bucket:              aws.String(input.name),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || !Contains([]string{"NoSuchPublicAccessBlockConfiguration", "NoSuchBucket"}, aerr.Code()) {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchPublicAccessBlockConfiguration) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
 			Logger.Println("error:", err)
 			return err
 		}
-		exists = false
 	}
 	if exists {
 		conf := pabOut.PublicAccessBlockConfiguration
@@ -417,10 +417,10 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	}
 	if !exists {
 		if !preview {
-			_, err := S3Client().PutPublicAccessBlockWithContext(ctx, &s3.PutPublicAccessBlockInput{
-				Bucket:              aws.String(input.name),
+			_, err := S3Client().PutPublicAccessBlock(ctx, &s3.PutPublicAccessBlockInput{
 				ExpectedBucketOwner: aws.String(account),
-				PublicAccessBlockConfiguration: &s3.PublicAccessBlockConfiguration{
+				Bucket:              aws.String(input.name),
+				PublicAccessBlockConfiguration: &s3types.PublicAccessBlockConfiguration{
 					BlockPublicAcls:       aws.Bool(input.acl == "private"),
 					IgnorePublicAcls:      aws.Bool(input.acl == "private"),
 					BlockPublicPolicy:     aws.Bool(input.acl == "private"),
@@ -434,13 +434,12 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 		Logger.Printf(PreviewString(preview)+"created public access block for %s: %s\n", input.name, input.acl)
 	}
-	policyOut, err := S3Client().GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
-		Bucket:              aws.String(input.name),
+	policyOut, err := S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 		ExpectedBucketOwner: aws.String(account),
+		Bucket:              aws.String(input.name),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || !Contains([]string{"NoSuchBucketPolicy", "NoSuchBucket"}, aerr.Code()) {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchBucketPolicy) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -459,9 +458,9 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				}
 			}
 			if !preview {
-				_, err = S3Client().PutBucketPolicyWithContext(ctx, &s3.PutBucketPolicyInput{
-					Bucket:              aws.String(input.name),
+				_, err = S3Client().PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
 					ExpectedBucketOwner: aws.String(account),
+					Bucket:              aws.String(input.name),
 					Policy:              aws.String(string(policyBytes)),
 				})
 				if err != nil {
@@ -492,7 +491,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			}
 		} else {
 			if !preview {
-				_, err := S3Client().DeleteBucketPolicyWithContext(ctx, &s3.DeleteBucketPolicyInput{
+				_, err := S3Client().DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
 					Bucket: aws.String(input.name),
 				})
 				if err != nil {
@@ -525,22 +524,23 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			return err
 		}
 	}
-	corsOut, err := S3Client().GetBucketCorsWithContext(ctx, &s3.GetBucketCorsInput{
-		Bucket:              aws.String(input.name),
+	corsOut, err := S3Client().GetBucketCors(ctx, &s3.GetBucketCorsInput{
 		ExpectedBucketOwner: aws.String(account),
+		Bucket:              aws.String(input.name),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || !Contains([]string{"NoSuchCORSConfiguration", "NoSuchBucket"}, aerr.Code()) {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchCORSConfiguration) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
 			Logger.Println("error:", err)
 			return err
 		}
 		if input.cors != nil && *input.cors {
 			if !preview {
-				_, err := S3Client().PutBucketCorsWithContext(ctx, &s3.PutBucketCorsInput{
-					Bucket:              aws.String(input.name),
+				_, err := S3Client().PutBucketCors(ctx, &s3.PutBucketCorsInput{
 					ExpectedBucketOwner: aws.String(account),
-					CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3Cors(input.corsOrigins)},
+					Bucket:              aws.String(input.name),
+					CORSConfiguration: &s3types.CORSConfiguration{
+						CORSRules: s3Cors(input.corsOrigins),
+					},
 				})
 				if err != nil {
 					Logger.Println("error:", err)
@@ -551,9 +551,9 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 	} else if input.cors == nil || !*input.cors {
 		if !preview {
-			_, err := S3Client().DeleteBucketCorsWithContext(ctx, &s3.DeleteBucketCorsInput{
-				Bucket:              aws.String(input.name),
+			_, err := S3Client().DeleteBucketCors(ctx, &s3.DeleteBucketCorsInput{
 				ExpectedBucketOwner: aws.String(account),
+				Bucket:              aws.String(input.name),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -567,10 +567,12 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		return err
 	} else if !reflect.DeepEqual(corsOut.CORSRules, s3Cors(input.corsOrigins)) {
 		if !preview {
-			_, err := S3Client().PutBucketCorsWithContext(ctx, &s3.PutBucketCorsInput{
-				Bucket:              aws.String(input.name),
+			_, err := S3Client().PutBucketCors(ctx, &s3.PutBucketCorsInput{
 				ExpectedBucketOwner: aws.String(account),
-				CORSConfiguration:   &s3.CORSConfiguration{CORSRules: s3Cors(input.corsOrigins)},
+				Bucket:              aws.String(input.name),
+				CORSConfiguration: &s3types.CORSConfiguration{
+					CORSRules: s3Cors(input.corsOrigins),
+				},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -580,23 +582,27 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		have := corsOut.CORSRules[0]
 		want := s3Cors(input.corsOrigins)[0]
 		if !reflect.DeepEqual(have.AllowedHeaders, want.AllowedHeaders) {
-			Logger.Printf(PreviewString(preview)+"updated cors allowed headers for %s: %s -> %s\n", input.name, Json(StringSlice(have.AllowedHeaders)), Json(StringSlice(want.AllowedHeaders)))
+			Logger.Printf(PreviewString(preview)+"updated cors allowed headers for %s: %s -> %s\n",
+				input.name, Json(have.AllowedHeaders), Json(want.AllowedHeaders))
 		}
 		if !reflect.DeepEqual(have.AllowedMethods, want.AllowedMethods) {
-			Logger.Printf(PreviewString(preview)+"updated cors allowed methods: %s -> %s\n", input.name, Json(StringSlice(have.AllowedMethods)), Json(StringSlice(want.AllowedMethods)))
+			Logger.Printf(PreviewString(preview)+"updated cors allowed methods: %s -> %s\n",
+				input.name, Json(have.AllowedMethods), Json(want.AllowedMethods))
 		}
 		if !reflect.DeepEqual(have.AllowedOrigins, want.AllowedOrigins) {
-			Logger.Printf(PreviewString(preview)+"updated cors allowed origins for %s: %s -> %s\n", input.name, Json(StringSlice(have.AllowedOrigins)), Json(StringSlice(want.AllowedOrigins)))
+			Logger.Printf(PreviewString(preview)+"updated cors allowed origins for %s: %s -> %s\n",
+				input.name, Json(have.AllowedOrigins), Json(want.AllowedOrigins))
 		}
 		if !reflect.DeepEqual(have.ExposeHeaders, want.ExposeHeaders) {
-			Logger.Printf(PreviewString(preview)+"updated cors expose headers for %s: %s -> %s\n", input.name, Json(StringSlice(have.ExposeHeaders)), Json(StringSlice(want.ExposeHeaders)))
+			Logger.Printf(PreviewString(preview)+"updated cors expose headers for %s: %s -> %s\n",
+				input.name, Json(have.ExposeHeaders), Json(want.ExposeHeaders))
 		}
 		if !reflect.DeepEqual(have.MaxAgeSeconds, want.MaxAgeSeconds) {
-			haveMax := int64(0)
+			haveMax := int32(0)
 			if have.MaxAgeSeconds != nil {
 				haveMax = *have.MaxAgeSeconds
 			}
-			wantMax := int64(0)
+			wantMax := int32(0)
 			if want.MaxAgeSeconds != nil {
 				wantMax = *want.MaxAgeSeconds
 			}
@@ -604,32 +610,34 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 	}
 	needsUpdate := false
-	versionOut, err := S3Client().GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
-		Bucket:              aws.String(input.name),
+	versionOut, err := S3Client().GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		ExpectedBucketOwner: aws.String(account),
+		Bucket:              aws.String(input.name),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "NoSuchBucket" {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
 			Logger.Println("error:", err)
 			return err
 		}
+		if preview {
+			versionOut = &s3.GetBucketVersioningOutput{}
+		}
 	}
-	if (input.versioning && (versionOut.Status == nil || *versionOut.Status != s3.BucketVersioningStatusEnabled)) ||
-		(!input.versioning && versionOut.Status != nil && *versionOut.Status != s3.BucketVersioningStatusSuspended) {
+	if (input.versioning && (versionOut.Status == "" || versionOut.Status != s3types.BucketVersioningStatusEnabled)) ||
+		(!input.versioning && versionOut.Status != "" && versionOut.Status != s3types.BucketVersioningStatusSuspended) {
 		needsUpdate = true
 	}
 	if needsUpdate {
 		if !preview {
-			status := s3.BucketVersioningStatusSuspended
+			status := s3types.BucketVersioningStatusSuspended
 			if input.versioning {
-				status = s3.BucketVersioningStatusEnabled
+				status = s3types.BucketVersioningStatusEnabled
 			}
-			_, err := S3Client().PutBucketVersioningWithContext(ctx, &s3.PutBucketVersioningInput{
-				Bucket:              aws.String(input.name),
+			_, err := S3Client().PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
 				ExpectedBucketOwner: aws.String(account),
-				VersioningConfiguration: &s3.VersioningConfiguration{
-					Status: aws.String(status),
+				Bucket:              aws.String(input.name),
+				VersioningConfiguration: &s3types.VersioningConfiguration{
+					Status: status,
 				},
 			})
 			if err != nil {
@@ -640,14 +648,13 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		Logger.Printf(PreviewString(preview)+"updated versioning for %s: %v\n", input.name, input.versioning)
 	}
 	needsUpdate = false
-	encOut, err := S3Client().GetBucketEncryptionWithContext(ctx, &s3.GetBucketEncryptionInput{
+	encOut, err := S3Client().GetBucketEncryption(ctx, &s3.GetBucketEncryptionInput{
 		Bucket:              aws.String(input.name),
 		ExpectedBucketOwner: aws.String(account),
 	})
 	exists = true
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || !Contains([]string{"ServerSideEncryptionConfigurationNotFoundError", "NoSuchBucket"}, aerr.Code()) {
+		if !strings.Contains(err.Error(), s3ErrCodeServerSideEncryptionConfigurationError) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -660,9 +667,9 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	if needsUpdate {
 		if !preview {
 			if input.encryption {
-				_, err := S3Client().PutBucketEncryptionWithContext(ctx, &s3.PutBucketEncryptionInput{
-					Bucket:                            aws.String(input.name),
+				_, err := S3Client().PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
 					ExpectedBucketOwner:               aws.String(account),
+					Bucket:                            aws.String(input.name),
 					ServerSideEncryptionConfiguration: s3EncryptionConfig,
 				})
 				if err != nil {
@@ -670,9 +677,9 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					return err
 				}
 			} else {
-				_, err := S3Client().DeleteBucketEncryptionWithContext(ctx, &s3.DeleteBucketEncryptionInput{
-					Bucket:              aws.String(input.name),
+				_, err := S3Client().DeleteBucketEncryption(ctx, &s3.DeleteBucketEncryptionInput{
 					ExpectedBucketOwner: aws.String(account),
+					Bucket:              aws.String(input.name),
 				})
 				if err != nil {
 					Logger.Println("error:", err)
@@ -686,24 +693,23 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Printf(PreviewString(preview)+"updated encryption for %s: %v\n", input.name, input.encryption)
 		}
 	}
-	metrics, err := S3Client().GetBucketMetricsConfigurationWithContext(ctx, &s3.GetBucketMetricsConfigurationInput{
-		Bucket:              aws.String(input.name),
+	metrics, err := S3Client().GetBucketMetricsConfiguration(ctx, &s3.GetBucketMetricsConfigurationInput{
 		ExpectedBucketOwner: aws.String(account),
+		Bucket:              aws.String(input.name),
 		Id:                  aws.String(s3MetricsId),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || !Contains([]string{"NoSuchConfiguration", "NoSuchBucket"}, aerr.Code()) {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchConfiguration) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
 			Logger.Println("error:", err)
 			return err
 		}
 		if input.metrics {
 			if !preview {
-				_, err := S3Client().PutBucketMetricsConfigurationWithContext(ctx, &s3.PutBucketMetricsConfigurationInput{
-					Bucket:              aws.String(input.name),
+				_, err := S3Client().PutBucketMetricsConfiguration(ctx, &s3.PutBucketMetricsConfigurationInput{
 					ExpectedBucketOwner: aws.String(account),
+					Bucket:              aws.String(input.name),
 					Id:                  aws.String(s3MetricsId),
-					MetricsConfiguration: &s3.MetricsConfiguration{
+					MetricsConfiguration: &s3types.MetricsConfiguration{
 						Id: aws.String(s3MetricsId),
 					},
 				})
@@ -723,9 +729,9 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			}
 		} else {
 			if !preview {
-				_, err := S3Client().DeleteBucketMetricsConfigurationWithContext(ctx, &s3.DeleteBucketMetricsConfigurationInput{
-					Bucket:              aws.String(input.name),
+				_, err := S3Client().DeleteBucketMetricsConfiguration(ctx, &s3.DeleteBucketMetricsConfigurationInput{
 					ExpectedBucketOwner: aws.String(account),
+					Bucket:              aws.String(input.name),
 					Id:                  aws.String(s3MetricsId),
 				})
 				if err != nil {
@@ -736,29 +742,28 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 			Logger.Println(PreviewString(preview)+"delete bucket metrics for:", input.name)
 		}
 	}
-	ttlOut, err := S3Client().GetBucketLifecycleConfigurationWithContext(ctx, &s3.GetBucketLifecycleConfigurationInput{
-		Bucket:              aws.String(input.name),
+	ttlOut, err := S3Client().GetBucketLifecycleConfiguration(ctx, &s3.GetBucketLifecycleConfigurationInput{
 		ExpectedBucketOwner: aws.String(account),
+		Bucket:              aws.String(input.name),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || !Contains([]string{"NoSuchLifecycleConfiguration", "NoSuchBucket"}, aerr.Code()) {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchLifecycleConfiguration) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
 			Logger.Println("error:", err)
 			return err
 		}
 		if input.ttlDays != 0 {
 			if !preview {
-				_, err := S3Client().PutBucketLifecycleConfigurationWithContext(ctx, &s3.PutBucketLifecycleConfigurationInput{
-					Bucket:              aws.String(input.name),
+				_, err := S3Client().PutBucketLifecycleConfiguration(ctx, &s3.PutBucketLifecycleConfigurationInput{
 					ExpectedBucketOwner: aws.String(account),
-					LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
-						Rules: []*s3.LifecycleRule{{
-							Expiration: &s3.LifecycleExpiration{
-								Days: aws.Int64(int64(input.ttlDays)),
+					Bucket:              aws.String(input.name),
+					LifecycleConfiguration: &s3types.BucketLifecycleConfiguration{
+						Rules: []s3types.LifecycleRule{{
+							Expiration: &s3types.LifecycleExpiration{
+								Days: aws.Int32(int32(input.ttlDays)),
 							},
 							ID:     aws.String(fmt.Sprintf("ttlDays=%d", input.ttlDays)),
 							Prefix: aws.String(""),
-							Status: aws.String("Enabled"),
+							Status: s3types.ExpirationStatusEnabled,
 						}},
 					},
 				})
@@ -772,9 +777,9 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	} else {
 		if input.ttlDays == 0 {
 			if !preview {
-				_, err := S3Client().DeleteBucketLifecycleWithContext(ctx, &s3.DeleteBucketLifecycleInput{
-					Bucket:              aws.String(input.name),
+				_, err := S3Client().DeleteBucketLifecycle(ctx, &s3.DeleteBucketLifecycleInput{
 					ExpectedBucketOwner: aws.String(account),
+					Bucket:              aws.String(input.name),
 				})
 				if err != nil {
 					Logger.Println("error:", err)
@@ -789,19 +794,19 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				return err
 			}
 			ttlDays := ttlOut.Rules[0].Expiration.Days
-			if ttlDays == nil || *ttlDays != int64(input.ttlDays) {
+			if ttlDays == nil || *ttlDays != int32(input.ttlDays) {
 				if !preview {
-					_, err := S3Client().PutBucketLifecycleConfigurationWithContext(ctx, &s3.PutBucketLifecycleConfigurationInput{
-						Bucket:              aws.String(input.name),
+					_, err := S3Client().PutBucketLifecycleConfiguration(ctx, &s3.PutBucketLifecycleConfigurationInput{
 						ExpectedBucketOwner: aws.String(account),
-						LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
-							Rules: []*s3.LifecycleRule{
+						Bucket:              aws.String(input.name),
+						LifecycleConfiguration: &s3types.BucketLifecycleConfiguration{
+							Rules: []s3types.LifecycleRule{
 								{
 									Prefix: aws.String(""),
-									Expiration: &s3.LifecycleExpiration{
-										Days: aws.Int64(int64(input.ttlDays)),
+									Expiration: &s3types.LifecycleExpiration{
+										Days: aws.Int32(int32(input.ttlDays)),
 									},
-									Status: aws.String("Enabled"),
+									Status: s3types.ExpirationStatusEnabled,
 								},
 							},
 						},
@@ -812,7 +817,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 					}
 				}
 				if ttlDays == nil {
-					*ttlDays = 0
+					ttlDays = aws.Int32(0)
 				}
 				Logger.Printf(PreviewString(preview)+"updated bucket ttl for %s: %d => %d\n", input.name, *ttlDays, input.ttlDays)
 			}
@@ -828,7 +833,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	}
 	resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
 	if err == nil {
-		_ = resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode == 404 { // already deleted
 			return nil
 		}
@@ -841,7 +846,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	// rm objects
 	var token *string
 	for {
-		out, err := s3Client.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
+		out, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket:            aws.String(bucket),
 			ContinuationToken: token,
 		})
@@ -849,25 +854,25 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		var objects []*s3.ObjectIdentifier
+		var objects []s3types.ObjectIdentifier
 		for _, obj := range out.Contents {
-			objects = append(objects, &s3.ObjectIdentifier{
+			objects = append(objects, s3types.ObjectIdentifier{
 				Key: obj.Key,
 			})
 		}
 		if len(objects) != 0 {
 			var errs []string
 			if !preview {
-				deleteOut, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+				deleteOut, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 					Bucket: aws.String(bucket),
-					Delete: &s3.Delete{Objects: objects},
+					Delete: &s3types.Delete{Objects: objects},
 				})
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
 				for _, err := range deleteOut.Errors {
-					Logger.Println("error:", *err.Key, *err.Code, *err.Message)
+					Logger.Println("error:", *err.Key, err.Code, *err.Message)
 					errs = append(errs, *err.Key)
 				}
 			}
@@ -887,9 +892,8 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	var keyMarker *string
 	var versionMarker *string
 	for {
-		out, err := s3Client.ListObjectVersionsWithContext(ctx, &s3.ListObjectVersionsInput{
+		out, err := s3Client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
 			Bucket:          aws.String(bucket),
-			Prefix:          nil,
 			KeyMarker:       keyMarker,
 			VersionIdMarker: versionMarker,
 		})
@@ -897,44 +901,47 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
-		var objects []*s3.ObjectIdentifier
+		var objects []s3types.ObjectIdentifier
 		for _, obj := range out.Versions {
 			if obj.VersionId != nil && *obj.VersionId == "null" {
 				continue // "null" means unversioned
 			}
-			objects = append(objects, &s3.ObjectIdentifier{
+			objects = append(objects, s3types.ObjectIdentifier{
 				Key:       obj.Key,
 				VersionId: obj.VersionId,
 			})
 		}
 		for _, obj := range out.DeleteMarkers {
-			objects = append(objects, &s3.ObjectIdentifier{
+			objects = append(objects, s3types.ObjectIdentifier{
 				Key:       obj.Key,
 				VersionId: obj.VersionId,
 			})
 		}
-		if !preview {
-			if len(objects) != 0 {
-				deleteOut, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
-					Bucket: aws.String(bucket),
-					Delete: &s3.Delete{Objects: objects},
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				var keys []string
-				for _, err := range deleteOut.Errors {
-					version := *err.VersionId
+		if !preview && len(objects) != 0 {
+			deleteOut, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: aws.String(bucket),
+				Delete: &s3types.Delete{Objects: objects},
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			var keys []string
+			for _, err := range deleteOut.Errors {
+				var version string
+				if err.VersionId == nil {
+					version = "-"
+				} else {
+					version = *err.VersionId
 					if version == "" {
 						version = "-"
 					}
-					Logger.Println("error:", *err.Key, version, *err.Code, *err.Message)
-					keys = append(keys, *err.Key)
 				}
-				if len(deleteOut.Errors) != 0 {
-					return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, keys)
-				}
+				Logger.Println("error:", *err.Key, version, err.Code, *err.Message)
+				keys = append(keys, *err.Key)
+			}
+			if len(deleteOut.Errors) != 0 {
+				return fmt.Errorf("errors while deleting objects in bucket: %s %v", bucket, keys)
 			}
 		}
 		for _, obj := range objects {
@@ -954,7 +961,7 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	}
 	// rm bucket
 	if !preview {
-		_, err = s3Client.DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+		_, err = s3Client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 			Bucket: aws.String(bucket),
 		})
 		if err != nil {
@@ -967,17 +974,17 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 }
 
 type S3BucketDescription struct {
-	Metrics       *s3.MetricsConfiguration
+	Metrics       *s3types.MetricsConfiguration
 	Versioning    bool
 	Acl           *s3.GetBucketAclOutput
-	Cors          []*s3.CORSRule
-	Encryption    *s3.ServerSideEncryptionConfiguration
-	Lifecycle     []*s3.LifecycleRule
+	Cors          []s3types.CORSRule
+	Encryption    *s3types.ServerSideEncryptionConfiguration
+	Lifecycle     []s3types.LifecycleRule
 	Region        string
-	Logging       *s3.LoggingEnabled
-	Notifications *s3.NotificationConfiguration
+	Logging       *s3types.LoggingEnabled
+	Notifications *s3.GetBucketNotificationConfigurationOutput
 	Policy        *IamPolicyDocument
-	Replication   *s3.ReplicationConfiguration
+	Replication   *s3types.ReplicationConfiguration
 }
 
 func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescription, error) {
@@ -990,17 +997,17 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	if err != nil {
 		return nil, err
 	}
-	version, err := s3Client.GetBucketVersioningWithContext(ctx, &s3.GetBucketVersioningInput{
+	version, err := s3Client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	if version.Status != nil {
-		descr.Versioning = *version.Status == s3.BucketVersioningStatusEnabled
+	if version.Status == s3types.BucketVersioningStatusEnabled {
+		descr.Versioning = true
 	}
-	acl, err := s3Client.GetBucketAclWithContext(ctx, &s3.GetBucketAclInput{
+	acl, err := s3Client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -1008,36 +1015,33 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 		return nil, err
 	}
 	descr.Acl = acl
-	cors, err := s3Client.GetBucketCorsWithContext(ctx, &s3.GetBucketCorsInput{
+	cors, err := s3Client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "NoSuchCORSConfiguration" {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchCORSConfiguration) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 	} else {
 		descr.Cors = cors.CORSRules
 	}
-	encryption, err := s3Client.GetBucketEncryptionWithContext(ctx, &s3.GetBucketEncryptionInput{
+	encryption, err := s3Client.GetBucketEncryption(ctx, &s3.GetBucketEncryptionInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "ServerSideEncryptionConfigurationNotFoundError" {
+		if !strings.Contains(err.Error(), s3ErrCodeServerSideEncryptionConfigurationError) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 	} else {
 		descr.Encryption = encryption.ServerSideEncryptionConfiguration
 	}
-	lifecycle, err := s3Client.GetBucketLifecycleConfigurationWithContext(ctx, &s3.GetBucketLifecycleConfigurationInput{
+	lifecycle, err := s3Client.GetBucketLifecycleConfiguration(ctx, &s3.GetBucketLifecycleConfigurationInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "NoSuchLifecycleConfiguration" {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchLifecycleConfiguration) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
@@ -1050,7 +1054,7 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 		return nil, err
 	}
 	descr.Region = region
-	logging, err := s3Client.GetBucketLoggingWithContext(ctx, &s3.GetBucketLoggingInput{
+	logging, err := s3Client.GetBucketLogging(ctx, &s3.GetBucketLoggingInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -1058,22 +1062,21 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 		return nil, err
 	}
 	descr.Logging = logging.LoggingEnabled
-	notif, err := s3Client.GetBucketNotificationConfigurationWithContext(ctx, &s3.GetBucketNotificationConfigurationRequest{
+	notif, err := s3Client.GetBucketNotificationConfiguration(ctx, &s3.GetBucketNotificationConfigurationInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	if notif.LambdaFunctionConfigurations != nil || notif.QueueConfigurations != nil || notif.TopicConfigurations != nil {
+	if len(notif.LambdaFunctionConfigurations) != 0 || len(notif.QueueConfigurations) != 0 || len(notif.TopicConfigurations) != 0 {
 		descr.Notifications = notif
 	}
-	policy, err := s3Client.GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
+	policy, err := s3Client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "NoSuchBucketPolicy" {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchBucketPolicy) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
@@ -1085,25 +1088,23 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 			return nil, err
 		}
 	}
-	replication, err := s3Client.GetBucketReplicationWithContext(ctx, &s3.GetBucketReplicationInput{
+	replication, err := s3Client.GetBucketReplication(ctx, &s3.GetBucketReplicationInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "ReplicationConfigurationNotFoundError" {
+		if !strings.Contains(err.Error(), s3ErrCodeReplicationConfigurationNotFoundError) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
 	} else {
 		descr.Replication = replication.ReplicationConfiguration
 	}
-	metrics, err := s3Client.GetBucketMetricsConfigurationWithContext(ctx, &s3.GetBucketMetricsConfigurationInput{
+	metrics, err := s3Client.GetBucketMetricsConfiguration(ctx, &s3.GetBucketMetricsConfigurationInput{
 		Bucket: aws.String(bucket),
 		Id:     aws.String(s3MetricsId),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "NoSuchConfiguration" {
+		if !strings.Contains(err.Error(), s3ErrCodeNoSuchConfiguration) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
@@ -1114,18 +1115,22 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 }
 
 func S3PresignPut(bucket, key string, expire time.Duration) string {
-	req, _ := S3Client().PutObjectRequest(&s3.PutObjectInput{
+	presignClient := s3.NewPresignClient(S3Client())
+	input := &s3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
+	}
+	req, err := presignClient.PresignPutObject(context.TODO(), input, func(po *s3.PresignOptions) {
+		po.Expires = expire
 	})
-	url, err := req.Presign(expire)
 	if err != nil {
 		panic(err)
 	}
-	return url
+	return req.URL
 }
 
 func S3PresignGet(bucket, key, byterange string, expire time.Duration) string {
+	presignClient := s3.NewPresignClient(S3Client())
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -1133,10 +1138,11 @@ func S3PresignGet(bucket, key, byterange string, expire time.Duration) string {
 	if byterange != "" {
 		input.Range = aws.String(byterange)
 	}
-	req, _ := S3Client().GetObjectRequest(input)
-	url, err := req.Presign(expire)
+	req, err := presignClient.PresignGetObject(context.TODO(), input, func(po *s3.PresignOptions) {
+		po.Expires = expire
+	})
 	if err != nil {
 		panic(err)
 	}
-	return url
+	return req.URL
 }

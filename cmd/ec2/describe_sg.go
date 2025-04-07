@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -46,8 +46,8 @@ func ec2DescribeSg() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	out, err := lib.EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-		GroupIds: []*string{aws.String(sgID)},
+	out, err := lib.EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+		GroupIds: []string{sgID},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
@@ -55,10 +55,10 @@ func ec2DescribeSg() {
 	fmt.Fprintln(os.Stderr, "protocol port source")
 	for _, perm := range out.SecurityGroups[0].IpPermissions {
 		if perm.FromPort == nil {
-			perm.FromPort = aws.Int64(0)
+			perm.FromPort = aws.Int32(0)
 		}
 		if perm.ToPort == nil {
-			perm.ToPort = aws.Int64(65535)
+			perm.ToPort = aws.Int32(65535)
 		}
 		for _, ip := range perm.IpRanges {
 			printSg(*perm.IpProtocol, int(*perm.FromPort), int(*perm.ToPort), *ip.CidrIp)

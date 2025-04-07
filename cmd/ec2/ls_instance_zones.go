@@ -1,9 +1,10 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 	"github.com/alexflint/go-arg"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -24,7 +25,8 @@ func ec2LsInstanceZones() {
 	var args ec2LsInstanceZonesArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	zones, err := lib.EC2ZonesWithInstance(ctx, args.Type)
+
+	zones, err := lib.EC2ZonesWithInstance(ctx, ec2types.InstanceType(args.Type))
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

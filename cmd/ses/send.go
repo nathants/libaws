@@ -1,11 +1,12 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ses"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -30,19 +31,19 @@ func sesSend() {
 	var args sesSendArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	_, err := lib.SesClient().SendEmailWithContext(ctx, &ses.SendEmailInput{
+	_, err := lib.SesClient().SendEmail(ctx, &ses.SendEmailInput{
 		ConfigurationSetName: aws.String(args.ConfigurationSet),
-		Destination: &ses.Destination{
-			ToAddresses: []*string{
-				aws.String(args.To),
+		Destination: &sestypes.Destination{
+			ToAddresses: []string{
+				args.To,
 			},
 		},
-		Message: &ses.Message{
-			Subject: &ses.Content{
+		Message: &sestypes.Message{
+			Subject: &sestypes.Content{
 				Data: aws.String(args.Subject),
 			},
-			Body: &ses.Body{
-				Text: &ses.Content{
+			Body: &sestypes.Body{
+				Text: &sestypes.Content{
 					Data: aws.String(args.Body),
 				},
 			},

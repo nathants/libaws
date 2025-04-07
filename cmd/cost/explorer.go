@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/costexplorer"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -35,51 +36,51 @@ func costExplorer() {
 	ctx := context.Background()
 	start := time.Now().UTC().Add(time.Duration(args.DaysAgoStart) * -1 * 24 * time.Hour).Truncate(time.Hour)
 	end := time.Now().UTC()
-	filter := &costexplorer.Expression{
-		Dimensions: &costexplorer.DimensionValues{
-			Key:    aws.String(costexplorer.DimensionLinkedAccount),
-			Values: []*string{aws.String(args.AccountNum)},
+	filter := &cetypes.Expression{
+		Dimensions: &cetypes.DimensionValues{
+			Key:    cetypes.DimensionLinkedAccount,
+			Values: []string{args.AccountNum},
 		},
 	}
 	if args.Region != "" {
-		filter = &costexplorer.Expression{
-			And: []*costexplorer.Expression{
+		filter = &cetypes.Expression{
+			And: []cetypes.Expression{
 				{
-					Dimensions: &costexplorer.DimensionValues{
-						Key:    aws.String(costexplorer.DimensionLinkedAccount),
-						Values: []*string{aws.String(args.AccountNum)},
+					Dimensions: &cetypes.DimensionValues{
+						Key:    cetypes.DimensionLinkedAccount,
+						Values: []string{args.AccountNum},
 					},
 				},
 				{
-					Dimensions: &costexplorer.DimensionValues{
-						Key:    aws.String(costexplorer.DimensionRegion),
-						Values: []*string{aws.String(args.Region)},
+					Dimensions: &cetypes.DimensionValues{
+						Key:    cetypes.DimensionRegion,
+						Values: []string{args.Region},
 					},
 				},
 			},
 		}
 	}
-	var results []*costexplorer.ResultByTime
+	var results []cetypes.ResultByTime
 	var token *string
-	granularity := aws.String(costexplorer.GranularityHourly)
+	granularity := cetypes.GranularityHourly
 	formatDate := func(s string) string { return s }
 	if args.Daily {
-		granularity = aws.String(costexplorer.GranularityDaily)
+		granularity = cetypes.GranularityDaily
 		formatDate = func(s string) string { return s[:10] } // yyyy-MM-dd
 	}
 	for {
-		out, err := lib.CostExplorerClient().GetCostAndUsageWithContext(ctx, &costexplorer.GetCostAndUsageInput{
+		out, err := lib.CostExplorerClient().GetCostAndUsage(ctx, &costexplorer.GetCostAndUsageInput{
 			NextPageToken: token,
 			Filter:        filter,
 			Granularity:   granularity,
-			GroupBy: []*costexplorer.GroupDefinition{{
-				Type: aws.String(costexplorer.GroupDefinitionTypeDimension),
-				Key:  aws.String(costexplorer.DimensionService),
+			GroupBy: []cetypes.GroupDefinition{{
+				Type: cetypes.GroupDefinitionTypeDimension,
+				Key:  aws.String(string(cetypes.DimensionService)),
 			}},
-			Metrics: []*string{
-				aws.String(costexplorer.MetricUnblendedCost),
+			Metrics: []string{
+				string(cetypes.MetricUnblendedCost),
 			},
-			TimePeriod: &costexplorer.DateInterval{
+			TimePeriod: &cetypes.DateInterval{
 				Start: aws.String(formatDate(start.Format(time.RFC3339))),
 				End:   aws.String(formatDate(end.Format(time.RFC3339))),
 			},
@@ -100,7 +101,7 @@ func costExplorer() {
 			if len(group.Keys) != 1 {
 				panic(lib.PformatAlways(group))
 			}
-			key := *group.Keys[0]
+			key := group.Keys[0]
 			key = strings.ReplaceAll(key, "AWS ", "")
 			key = strings.ReplaceAll(key, "Amazon Simple Storage Service", "S3")
 			key = strings.ReplaceAll(key, "Amazon EC2 Container Registry (ECR)", "ECR")

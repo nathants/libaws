@@ -6,8 +6,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/gofrs/uuid"
 )
 
@@ -68,16 +69,22 @@ func TestSQSEnsureDelaySeconds(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("DelaySeconds"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err := SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameDelaySeconds,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["DelaySeconds"] != "7" {
-		t.Errorf("expected 7, got %s", *attrs.Attributes["DelaySeconds"])
+	if attrs.Attributes["DelaySeconds"] != "7" {
+		t.Errorf("expected 7, got %s", attrs.Attributes["DelaySeconds"])
 		return
 	}
 	//
@@ -91,16 +98,22 @@ func TestSQSEnsureDelaySeconds(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err = SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("DelaySeconds"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err = SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameDelaySeconds,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["DelaySeconds"] != "15" {
-		t.Errorf("expected 15, got %s", *attrs.Attributes["DelaySeconds"])
+	if attrs.Attributes["DelaySeconds"] != "15" {
+		t.Errorf("expected 15, got %s", attrs.Attributes["DelaySeconds"])
 		return
 	}
 }
@@ -130,16 +143,22 @@ func TestSQSEnsureMaximumMessageSize(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("MaximumMessageSize"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err := SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["MaximumMessageSize"] != "2048" {
-		t.Errorf("expected 2048, got %s", *attrs.Attributes["MaximumMessageSize"])
+	if attrs.Attributes["MaximumMessageSize"] != "2048" {
+		t.Errorf("expected 2048, got %s", attrs.Attributes["MaximumMessageSize"])
 		return
 	}
 	//
@@ -153,16 +172,22 @@ func TestSQSEnsureMaximumMessageSize(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err = SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("MaximumMessageSize"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err = SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["MaximumMessageSize"] != "4096" {
-		t.Errorf("expected 4096, got %s", *attrs.Attributes["MaximumMessageSize"])
+	if attrs.Attributes["MaximumMessageSize"] != "4096" {
+		t.Errorf("expected 4096, got %s", attrs.Attributes["MaximumMessageSize"])
 		return
 	}
 }
@@ -192,16 +217,22 @@ func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("MessageRetentionPeriod"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err := SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["MessageRetentionPeriod"] != "90" {
-		t.Errorf("expected 90, got %s", *attrs.Attributes["MessageRetentionPeriod"])
+	if attrs.Attributes["MessageRetentionPeriod"] != "90" {
+		t.Errorf("expected 90, got %s", attrs.Attributes["MessageRetentionPeriod"])
 		return
 	}
 	//
@@ -215,16 +246,22 @@ func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err = SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("MessageRetentionPeriod"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err = SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["MessageRetentionPeriod"] != "120" {
-		t.Errorf("expected 120, got %s", *attrs.Attributes["MessageRetentionPeriod"])
+	if attrs.Attributes["MessageRetentionPeriod"] != "120" {
+		t.Errorf("expected 120, got %s", attrs.Attributes["MessageRetentionPeriod"])
 		return
 	}
 }
@@ -254,16 +291,22 @@ func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err := SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["ReceiveMessageWaitTimeSeconds"] != "7" {
-		t.Errorf("expected 7, got %s", *attrs.Attributes["ReceiveMessageWaitTimeSeconds"])
+	if attrs.Attributes["ReceiveMessageWaitTimeSeconds"] != "7" {
+		t.Errorf("expected 7, got %s", attrs.Attributes["ReceiveMessageWaitTimeSeconds"])
 		return
 	}
 	//
@@ -277,16 +320,22 @@ func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err = SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err = SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["ReceiveMessageWaitTimeSeconds"] != "3" {
-		t.Errorf("expected 3, got %s", *attrs.Attributes["ReceiveMessageWaitTimeSeconds"])
+	if attrs.Attributes["ReceiveMessageWaitTimeSeconds"] != "3" {
+		t.Errorf("expected 3, got %s", attrs.Attributes["ReceiveMessageWaitTimeSeconds"])
 		return
 	}
 }
@@ -316,16 +365,22 @@ func TestSQSEnsureVisibilityTimeout(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("VisibilityTimeout"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err := SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["VisibilityTimeout"] != "7" {
-		t.Errorf("expected 7, got %s", *attrs.Attributes["VisibilityTimeout"])
+	if attrs.Attributes["VisibilityTimeout"] != "7" {
+		t.Errorf("expected 7, got %s", attrs.Attributes["VisibilityTimeout"])
 		return
 	}
 	//
@@ -339,16 +394,22 @@ func TestSQSEnsureVisibilityTimeout(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	attrs, err = SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
-		QueueUrl:       aws.String(url),
-		AttributeNames: []*string{aws.String("VisibilityTimeout"), aws.String("MaximumMessageSize"), aws.String("MessageRetentionPeriod"), aws.String("ReceiveMessageWaitTimeSeconds"), aws.String("VisibilityTimeout")},
+	attrs, err = SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+		QueueUrl: aws.String(url),
+		AttributeNames: []sqstypes.QueueAttributeName{
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+			sqstypes.QueueAttributeNameMaximumMessageSize,
+			sqstypes.QueueAttributeNameMessageRetentionPeriod,
+			sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+			sqstypes.QueueAttributeNameVisibilityTimeout,
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if *attrs.Attributes["VisibilityTimeout"] != "15" {
-		t.Errorf("expected 15, got %s", *attrs.Attributes["VisibilityTimeout"])
+	if attrs.Attributes["VisibilityTimeout"] != "15" {
+		t.Errorf("expected 15, got %s", attrs.Attributes["VisibilityTimeout"])
 		return
 	}
 }

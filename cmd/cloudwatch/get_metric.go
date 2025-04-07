@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -48,7 +48,7 @@ func cloudwatchGetMetric() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	timesMap := make(map[string]interface{})
+	timesMap := make(map[string]any)
 	var times []string
 	vals := make(map[string][]float64)
 	for i, o := range out {
@@ -66,7 +66,7 @@ func cloudwatchGetMetric() {
 				times = append(times, t)
 				timesMap[t] = nil
 			}
-			vals[t] = append(vals[t], *v)
+			vals[t] = append(vals[t], v)
 		}
 	}
 	for _, t := range times {

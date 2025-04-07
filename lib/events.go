@@ -5,35 +5,36 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	eventbridgetypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 )
 
-var eventsClient *cloudwatchevents.CloudWatchEvents
-var eventsClientLock sync.RWMutex
+var eventsClient *eventbridge.Client
+var eventsClientLock sync.Mutex
 
-func EventsClient() *cloudwatchevents.CloudWatchEvents {
+func EventsClient() *eventbridge.Client {
 	eventsClientLock.Lock()
 	defer eventsClientLock.Unlock()
 	if eventsClient == nil {
-		eventsClient = cloudwatchevents.New(Session())
+		eventsClient = eventbridge.NewFromConfig(*Session())
 	}
 	return eventsClient
 }
 
-func EventsClientExplicit(accessKeyID, accessKeySecret, region string) *cloudwatchevents.CloudWatchEvents {
-	return cloudwatchevents.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func EventsClientExplicit(accessKeyID, accessKeySecret, region string) *eventbridge.Client {
+	return eventbridge.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func EventsListBuses(ctx context.Context) ([]*cloudwatchevents.EventBus, error) {
+func EventsListBuses(ctx context.Context) ([]eventbridgetypes.EventBus, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EventsListBuses"}
 		defer d.Log()
 	}
 	var token *string
-	var buses []*cloudwatchevents.EventBus
+	var buses []eventbridgetypes.EventBus
 	for {
-		out, err := EventsClient().ListEventBusesWithContext(ctx, &cloudwatchevents.ListEventBusesInput{
+		out, err := EventsClient().ListEventBuses(ctx, &eventbridge.ListEventBusesInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -49,15 +50,15 @@ func EventsListBuses(ctx context.Context) ([]*cloudwatchevents.EventBus, error) 
 	return buses, nil
 }
 
-func EventsListRules(ctx context.Context, busName *string) ([]*cloudwatchevents.Rule, error) {
+func EventsListRules(ctx context.Context, busName *string) ([]eventbridgetypes.Rule, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EventsListRules"}
 		defer d.Log()
 	}
 	var token *string
-	var rules []*cloudwatchevents.Rule
+	var rules []eventbridgetypes.Rule
 	for {
-		out, err := EventsClient().ListRulesWithContext(ctx, &cloudwatchevents.ListRulesInput{
+		out, err := EventsClient().ListRules(ctx, &eventbridge.ListRulesInput{
 			NextToken:    token,
 			EventBusName: busName,
 		})
@@ -74,15 +75,15 @@ func EventsListRules(ctx context.Context, busName *string) ([]*cloudwatchevents.
 	return rules, nil
 }
 
-func EventsListRuleTargets(ctx context.Context, ruleName string, busName *string) ([]*cloudwatchevents.Target, error) {
+func EventsListRuleTargets(ctx context.Context, ruleName string, busName *string) ([]eventbridgetypes.Target, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EventsListRuleTargets"}
 		defer d.Log()
 	}
-	var targets []*cloudwatchevents.Target
+	var targets []eventbridgetypes.Target
 	var token *string
 	for {
-		out, err := EventsClient().ListTargetsByRuleWithContext(ctx, &cloudwatchevents.ListTargetsByRuleInput{
+		out, err := EventsClient().ListTargetsByRule(ctx, &eventbridge.ListTargetsByRuleInput{
 			Rule:         aws.String(ruleName),
 			NextToken:    token,
 			EventBusName: busName,

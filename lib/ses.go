@@ -2,41 +2,42 @@ package lib
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/ses"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	sesv2 "github.com/aws/aws-sdk-go-v2/service/ses"
+	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
 )
 
-var sesClient *ses.SES
-var sesClientLock sync.RWMutex
+var sesClient *sesv2.Client
+var sesClientLock sync.Mutex
 
-func SesClientExplicit(accessKeyID, accessKeySecret, region string) *ses.SES {
-	return ses.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func SesClientExplicit(accessKeyID, accessKeySecret, region string) *sesv2.Client {
+	return sesv2.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func SesClient() *ses.SES {
+func SesClient() *sesv2.Client {
 	sesClientLock.Lock()
 	defer sesClientLock.Unlock()
 	if sesClient == nil {
-		sesClient = ses.New(Session())
+		sesClient = sesv2.NewFromConfig(*Session())
 	}
 	return sesClient
 }
 
-func SesListReceiptRulesets(ctx context.Context) ([]*ses.ReceiptRuleSetMetadata, error) {
+func SesListReceiptRulesets(ctx context.Context) ([]sestypes.ReceiptRuleSetMetadata, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SesListReceiptRulesets"}
 		defer d.Log()
 	}
 	var token *string
-	var result []*ses.ReceiptRuleSetMetadata
+	var result []sestypes.ReceiptRuleSetMetadata
 	for {
-		out, err := SesClient().ListReceiptRuleSetsWithContext(ctx, &ses.ListReceiptRuleSetsInput{
+		out, err := SesClient().ListReceiptRuleSets(ctx, &sesv2.ListReceiptRuleSetsInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -69,20 +70,20 @@ func SesRmReceiptRuleset(ctx context.Context, domain string, preview bool) error
 		}
 		if !preview {
 			// TODO improve this, we ignore errors to make deletes idempotent. instead only delete things that exist, and check errors.
-			_, err := SesClient().SetActiveReceiptRuleSet(&ses.SetActiveReceiptRuleSetInput{
+			_, err = SesClient().SetActiveReceiptRuleSet(ctx, &sesv2.SetActiveReceiptRuleSetInput{
 				RuleSetName: nil,
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 			}
-			_, err = SesClient().DeleteReceiptRuleWithContext(ctx, &ses.DeleteReceiptRuleInput{
+			_, err = SesClient().DeleteReceiptRule(ctx, &sesv2.DeleteReceiptRuleInput{
 				RuleName:    aws.String(domain),
 				RuleSetName: aws.String(domain),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 			}
-			_, err = SesClient().DeleteReceiptRuleSetWithContext(ctx, &ses.DeleteReceiptRuleSetInput{
+			_, err = SesClient().DeleteReceiptRuleSet(ctx, &sesv2.DeleteReceiptRuleSetInput{
 				RuleSetName: aws.String(name),
 			})
 			if err != nil {
@@ -122,29 +123,29 @@ func SesEnsureReceiptRuleset(ctx context.Context, domain string, bucket string, 
 			break
 		}
 	}
-	prefixParam := aws.String(prefix)
-	if prefix == "" {
-		prefixParam = nil
+	var prefixParam *string
+	if prefix != "" {
+		prefixParam = aws.String(prefix)
 	}
-	ruleInput := &ses.CreateReceiptRuleInput{
+	ruleInput := &sesv2.CreateReceiptRuleInput{
 		RuleSetName: aws.String(domain),
-		Rule: &ses.ReceiptRule{
-			Enabled:     aws.Bool(true),
+		Rule: &sestypes.ReceiptRule{
+			Enabled:     true,
 			Name:        aws.String(domain),
-			Recipients:  []*string{aws.String(domain)},
-			TlsPolicy:   aws.String(ses.TlsPolicyRequire),
-			ScanEnabled: aws.Bool(false),
-			Actions: []*ses.ReceiptAction{
-				&ses.ReceiptAction{
-					S3Action: &ses.S3Action{
+			Recipients:  []string{domain},
+			TlsPolicy:   sestypes.TlsPolicyRequire,
+			ScanEnabled: false,
+			Actions: []sestypes.ReceiptAction{
+				{
+					S3Action: &sestypes.S3Action{
 						BucketName:      aws.String(bucket),
 						ObjectKeyPrefix: prefixParam,
 					},
 				},
-				&ses.ReceiptAction{
-					LambdaAction: &ses.LambdaAction{
+				{
+					LambdaAction: &sestypes.LambdaAction{
 						FunctionArn:    aws.String(lambdaArn),
-						InvocationType: aws.String(ses.InvocationTypeEvent),
+						InvocationType: sestypes.InvocationTypeEvent,
 					},
 				},
 			},
@@ -152,24 +153,25 @@ func SesEnsureReceiptRuleset(ctx context.Context, domain string, bucket string, 
 	}
 	if !found {
 		if !preview {
-			_, err := SesClient().CreateReceiptRuleSetWithContext(ctx, &ses.CreateReceiptRuleSetInput{
+			_, err = SesClient().CreateReceiptRuleSet(ctx, &sesv2.CreateReceiptRuleSetInput{
 				RuleSetName: aws.String(domain),
 			})
 			if err != nil {
-				aerr, ok := err.(awserr.Error)
-				if !ok || aerr.Code() != ses.ErrCodeAlreadyExistsException {
+				var exists *sestypes.AlreadyExistsException
+				if errors.As(err, &exists) {
+				} else {
 					Logger.Println("error:", err)
 					return sid, err
 				}
 			}
-			_, err = SesClient().SetActiveReceiptRuleSet(&ses.SetActiveReceiptRuleSetInput{
+			_, err = SesClient().SetActiveReceiptRuleSet(ctx, &sesv2.SetActiveReceiptRuleSetInput{
 				RuleSetName: aws.String(domain),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return sid, err
 			}
-			_, err = SesClient().CreateReceiptRuleWithContext(ctx, ruleInput)
+			_, err = SesClient().CreateReceiptRule(ctx, ruleInput)
 			if err != nil {
 				Logger.Println("error:", err)
 				return sid, err
@@ -178,7 +180,7 @@ func SesEnsureReceiptRuleset(ctx context.Context, domain string, bucket string, 
 		Logger.Println(PreviewString(preview)+"created ses receive rule:", "domain="+domain, "bucket="+bucket, "prefix="+prefix)
 	} else {
 		if !preview {
-			out, err := SesClient().DescribeReceiptRuleWithContext(ctx, &ses.DescribeReceiptRuleInput{
+			out, err := SesClient().DescribeReceiptRule(ctx, &sesv2.DescribeReceiptRuleInput{
 				RuleName:    aws.String(domain),
 				RuleSetName: aws.String(domain),
 			})
@@ -191,7 +193,7 @@ func SesEnsureReceiptRuleset(ctx context.Context, domain string, bucket string, 
 				oldBucket := ""
 				oldPrefix := ""
 				if len(out.Rule.Recipients) > 0 {
-					oldDomain = *out.Rule.Recipients[0]
+					oldDomain = out.Rule.Recipients[0]
 				}
 				Logger.Println(PformatAlways(*out))
 				if len(out.Rule.Actions) > 0 {
@@ -205,7 +207,7 @@ func SesEnsureReceiptRuleset(ctx context.Context, domain string, bucket string, 
 					}
 				}
 				if !preview {
-					_, err := SesClient().UpdateReceiptRuleWithContext(ctx, &ses.UpdateReceiptRuleInput{
+					_, err = SesClient().UpdateReceiptRule(ctx, &sesv2.UpdateReceiptRuleInput{
 						Rule:        ruleInput.Rule,
 						RuleSetName: aws.String(domain),
 					})

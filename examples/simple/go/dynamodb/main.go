@@ -7,19 +7,21 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+
 	"github.com/nathants/libaws/lib"
 )
 
 type RecordKey struct {
-	UserID  string `json:"userid"`
-	Version int    `json:"version"`
+	UserID  string `json:"userid"  dynamodbav:"userid"`
+	Version int    `json:"version" dynamodbav:"version"`
 }
 
 type RecordData struct {
-	Data string `json:"data"`
+	Data string `json:"data" dynamodbav:"data"`
 }
 
 type Record struct {
@@ -41,12 +43,12 @@ func handleRequest(ctx context.Context, event events.DynamoDBEvent) (events.APIG
 			UserID:  userid,
 			Version: int(version),
 		}
-		item, err := dynamodbattribute.MarshalMap(key)
+		item, err := attributevalue.MarshalMap(key)
 		if err != nil {
 			lib.Logger.Println("error:", err)
 			return events.APIGatewayProxyResponse{StatusCode: 500, Body: err.Error()}, nil
 		}
-		out, err := lib.DynamoDBClient().GetItemWithContext(ctx, &dynamodb.GetItemInput{
+		out, err := lib.DynamoDBClient().GetItem(ctx, &dynamodb.GetItemInput{
 			TableName: aws.String("test-table-" + uid),
 			Key:       item,
 		})
@@ -58,7 +60,7 @@ func handleRequest(ctx context.Context, event events.DynamoDBEvent) (events.APIG
 			lib.Logger.Println("error:", err)
 			return events.APIGatewayProxyResponse{StatusCode: 404}, nil
 		}
-		_, err = lib.DynamoDBClient().PutItemWithContext(ctx, &dynamodb.PutItemInput{
+		_, err = lib.DynamoDBClient().PutItem(ctx, &dynamodb.PutItemInput{
 			TableName: aws.String("test-other-table-" + uid),
 			Item:      out.Item,
 		})

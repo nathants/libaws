@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -43,17 +44,17 @@ func ec2Stop() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	var ids []*string
+	var ids []string
 	for _, instance := range instances {
-		if *instance.State.Name == ec2.InstanceStateNameRunning {
-			ids = append(ids, instance.InstanceId)
+		if instance.State.Name == ec2types.InstanceStateNameRunning {
+			ids = append(ids, *instance.InstanceId)
 			lib.Logger.Println(lib.PreviewString(args.Preview)+"stopping:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
 	if args.Preview {
 		os.Exit(0)
 	}
-	_, err = lib.EC2Client().StopInstancesWithContext(ctx, &ec2.StopInstancesInput{
+	_, err = lib.EC2Client().StopInstances(ctx, &ec2.StopInstancesInput{
 		InstanceIds: ids,
 	})
 	if err != nil {
@@ -62,12 +63,12 @@ func ec2Stop() {
 	if args.Wait {
 		for {
 			pass := true
-			instances, err := lib.EC2ListInstances(ctx, lib.StringSlice(ids), "")
+			instances, err := lib.EC2ListInstances(ctx, ids, "")
 			if err != nil {
 				lib.Logger.Fatal("error: ", err)
 			}
 			for _, instance := range instances {
-				if ec2.InstanceStateNameStopped != *instance.State.Name {
+				if ec2types.InstanceStateNameStopped != instance.State.Name {
 					pass = false
 				}
 			}

@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -39,8 +39,8 @@ func lambdaLs() {
 			name = *fn.FunctionName
 		}
 		runtime := "-"
-		if fn.Runtime != nil {
-			runtime = *fn.Runtime
+		if fn.Runtime != "" {
+			runtime = string(fn.Runtime)
 		}
 		timeout := "-"
 		if fn.Timeout != nil {

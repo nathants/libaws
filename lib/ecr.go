@@ -2,41 +2,42 @@ package lib
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 )
 
-var ecrClient *ecr.ECR
-var ecrClientLock sync.RWMutex
+var ecrClient *ecr.Client
+var ecrClientLock sync.Mutex
 
-func EcrClientExplicit(accessKeyID, accessKeySecret, region string) *ecr.ECR {
-	return ecr.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func EcrClientExplicit(accessKeyID, accessKeySecret, region string) *ecr.Client {
+	return ecr.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func EcrClient() *ecr.ECR {
+func EcrClient() *ecr.Client {
 	ecrClientLock.Lock()
 	defer ecrClientLock.Unlock()
 	if ecrClient == nil {
-		ecrClient = ecr.New(Session())
+		ecrClient = ecr.NewFromConfig(*Session())
 	}
 	return ecrClient
 }
 
-func EcrDescribeRepos(ctx context.Context) ([]*ecr.Repository, error) {
+func EcrDescribeRepos(ctx context.Context) ([]ecrtypes.Repository, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EcrDescribeRepos"}
 		defer d.Log()
 	}
-	var repos []*ecr.Repository
+	var repos []ecrtypes.Repository
 	var token *string
 	for {
-		out, err := EcrClient().DescribeRepositoriesWithContext(ctx, &ecr.DescribeRepositoriesInput{
+		out, err := EcrClient().DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -52,8 +53,8 @@ func EcrDescribeRepos(ctx context.Context) ([]*ecr.Repository, error) {
 	return repos, nil
 }
 
-var ecrEncryptionConfig = &ecr.EncryptionConfiguration{
-	EncryptionType: aws.String("AES256"),
+var ecrEncryptionConfig = &ecrtypes.EncryptionConfiguration{
+	EncryptionType: ecrtypes.EncryptionTypeAes256,
 }
 
 func EcrEnsure(ctx context.Context, name string, preview bool) error {
@@ -61,17 +62,17 @@ func EcrEnsure(ctx context.Context, name string, preview bool) error {
 		d := &Debug{start: time.Now(), name: "EcrEnsure"}
 		defer d.Log()
 	}
-	out, err := EcrClient().DescribeRepositoriesWithContext(ctx, &ecr.DescribeRepositoriesInput{
-		RepositoryNames: []*string{aws.String(name)},
+	out, err := EcrClient().DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
+		RepositoryNames: []string{name},
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != ecr.ErrCodeRepositoryNotFoundException {
+		var notFound *ecrtypes.RepositoryNotFoundException
+		if !errors.As(err, &notFound) {
 			Logger.Println("error:", err)
 			return err
 		}
 		if !preview {
-			_, err := EcrClient().CreateRepositoryWithContext(ctx, &ecr.CreateRepositoryInput{
+			_, err := EcrClient().CreateRepository(ctx, &ecr.CreateRepositoryInput{
 				EncryptionConfiguration: ecrEncryptionConfig,
 				RepositoryName:          aws.String(name),
 			})

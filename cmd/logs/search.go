@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+
 	"github.com/nathants/libaws/lib"
 )
 
@@ -42,9 +43,8 @@ func logsSearch() {
 	fromTime := aws.Int64(lib.NowUnixMilli() - offset.Milliseconds())
 	count := 0
 	var token *string
-
 	for {
-		out, err := lib.LogsClient().FilterLogEventsWithContext(ctx, &cloudwatchlogs.FilterLogEventsInput{
+		out, err := lib.LogsClient().FilterLogEvents(ctx, &cloudwatchlogs.FilterLogEventsInput{
 			EndTime:       toTime,
 			StartTime:     fromTime,
 			FilterPattern: aws.String(args.Query),
@@ -55,7 +55,7 @@ func logsSearch() {
 			lib.Logger.Fatal("error: ", err)
 		}
 		for _, e := range out.Events {
-			val := make(map[string]interface{})
+			val := make(map[string]any)
 			err := json.Unmarshal([]byte(*e.Message), &val)
 			if err != nil {
 				fmt.Printf("timestamp=%d %s", *e.Timestamp, *e.Message)

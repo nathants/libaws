@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -41,11 +41,10 @@ func s3Head() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-
-	out, err := s3Client.HeadObjectWithContext(ctx, &s3.HeadObjectInput{
+	out, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket:       aws.String(bucket),
 		Key:          aws.String(key),
-		ChecksumMode: aws.String(s3.ChecksumModeEnabled),
+		ChecksumMode: s3types.ChecksumModeEnabled,
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
@@ -55,13 +54,13 @@ func s3Head() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	var outMap map[string]interface{}
+	var outMap map[string]any
 	err = json.Unmarshal(data, &outMap)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 
-	val := map[string]interface{}{}
+	val := map[string]any{}
 	for k, v := range outMap {
 		if v != nil {
 			val[k] = v

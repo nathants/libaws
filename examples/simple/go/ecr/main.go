@@ -8,7 +8,7 @@ import (
 	"github.com/nathants/libaws/lib"
 )
 
-func handleRequest(_ context.Context, event interface{}) (events.APIGatewayProxyResponse, error) {
+func handleRequest(_ context.Context, event any) (events.APIGatewayProxyResponse, error) {
 	lib.Logger.Println(lib.Pformat(event))
 	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
 }

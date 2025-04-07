@@ -2,27 +2,28 @@ package lib
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/sns"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
+	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 )
 
-var snsClient *sns.SNS
-var snsClientLock sync.RWMutex
+var snsClient *sns.Client
+var snsClientLock sync.Mutex
 
-func SNSClientExplicit(accessKeyID, accessKeySecret, region string) *sns.SNS {
-	return sns.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func SNSClientExplicit(accessKeyID, accessKeySecret, region string) *sns.Client {
+	return sns.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func SNSClient() *sns.SNS {
+func SNSClient() *sns.Client {
 	snsClientLock.Lock()
 	defer snsClientLock.Unlock()
 	if snsClient == nil {
-		snsClient = sns.New(Session())
+		snsClient = sns.NewFromConfig(*Session())
 	}
 	return snsClient
 }
@@ -36,15 +37,15 @@ func SNSArn(ctx context.Context, name string) (string, error) {
 	return fmt.Sprintf("arn:aws:sns:%s:%s:%s", Region(), account, name), nil
 }
 
-func SNSListSubscriptions(ctx context.Context, topicArn string) ([]*sns.Subscription, error) {
+func SNSListSubscriptions(ctx context.Context, topicArn string) ([]snstypes.Subscription, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SNSListSubscriptions"}
 		defer d.Log()
 	}
 	var nextToken *string
-	var subscriptions []*sns.Subscription
+	var subscriptions []snstypes.Subscription
 	for {
-		out, err := SNSClient().ListSubscriptionsByTopicWithContext(ctx, &sns.ListSubscriptionsByTopicInput{
+		out, err := SNSClient().ListSubscriptionsByTopic(ctx, &sns.ListSubscriptionsByTopicInput{
 			NextToken: nextToken,
 			TopicArn:  aws.String(topicArn),
 		})
@@ -70,19 +71,19 @@ func SNSEnsure(ctx context.Context, name string, preview bool) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	_, err = SNSClient().GetTopicAttributesWithContext(ctx, &sns.GetTopicAttributesInput{
+	_, err = SNSClient().GetTopicAttributes(ctx, &sns.GetTopicAttributesInput{
 		TopicArn: aws.String(snsArn),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != sns.ErrCodeNotFoundException {
+		var nfe *snstypes.NotFoundException
+		if !errors.As(err, &nfe) {
 			return err
 		}
 		if !preview {
-			_, err := SNSClient().CreateTopicWithContext(ctx, &sns.CreateTopicInput{
+			_, err = SNSClient().CreateTopic(ctx, &sns.CreateTopicInput{
 				Name: aws.String(name),
-				Attributes: map[string]*string{
-					"KmsMasterKeyId": aws.String("alias/aws/sns"),
+				Attributes: map[string]string{
+					"KmsMasterKeyId": "alias/aws/sns",
 				},
 			})
 			if err != nil {

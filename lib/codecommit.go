@@ -5,34 +5,35 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/codecommit"
+	"github.com/aws/aws-sdk-go-v2/service/codecommit"
+	codecommittypes "github.com/aws/aws-sdk-go-v2/service/codecommit/types"
 )
 
-var codeCommitClient *codecommit.CodeCommit
-var codeCommitClientLock sync.RWMutex
+var codeCommitClient *codecommit.Client
+var codeCommitClientLock sync.Mutex
 
-func CodeCommitClientExplicit(accessKeyID, accessKeySecret, region string) *codecommit.CodeCommit {
-	return codecommit.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func CodeCommitClientExplicit(accessKeyID, accessKeySecret, region string) *codecommit.Client {
+	return codecommit.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func CodeCommitClient() *codecommit.CodeCommit {
+func CodeCommitClient() *codecommit.Client {
 	codeCommitClientLock.Lock()
 	defer codeCommitClientLock.Unlock()
 	if codeCommitClient == nil {
-		codeCommitClient = codecommit.New(Session())
+		codeCommitClient = codecommit.NewFromConfig(*Session())
 	}
 	return codeCommitClient
 }
 
-func CodeCommitListRepos(ctx context.Context) ([]*codecommit.RepositoryNameIdPair, error) {
+func CodeCommitListRepos(ctx context.Context) ([]codecommittypes.RepositoryNameIdPair, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CodeCommitListRepos"}
 		defer d.Log()
 	}
 	var token *string
-	var repos []*codecommit.RepositoryNameIdPair
+	var repos []codecommittypes.RepositoryNameIdPair
 	for {
-		out, err := CodeCommitClient().ListRepositoriesWithContext(ctx, &codecommit.ListRepositoriesInput{
+		out, err := CodeCommitClient().ListRepositories(ctx, &codecommit.ListRepositoriesInput{
 			NextToken: token,
 		})
 		if err != nil {

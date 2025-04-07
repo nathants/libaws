@@ -1,12 +1,13 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/codecommit"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/codecommit"
+
 	"github.com/nathants/libaws/lib"
 )
 
@@ -29,7 +30,7 @@ func codeCommitDescribe() {
 	var args codeCommitDescribeArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	getOut, err := lib.CodeCommitClient().GetRepositoryWithContext(ctx, &codecommit.GetRepositoryInput{
+	getOut, err := lib.CodeCommitClient().GetRepository(ctx, &codecommit.GetRepositoryInput{
 		RepositoryName: aws.String(args.Name),
 	})
 	if err != nil {

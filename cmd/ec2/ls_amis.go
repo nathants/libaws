@@ -1,11 +1,10 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/nathants/libaws/lib"
 	"sort"
 )
@@ -30,14 +29,19 @@ func ec2LsAmis() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String(account)},
+	images, err := lib.EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners: []string{account},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 	sort.Slice(images.Images, func(i, j int) bool { return *images.Images[i].CreationDate > *images.Images[j].CreationDate })
 	for _, image := range images.Images {
-		fmt.Println(*image.ImageId, *image.CreationDate, lib.StringOr(image.Description, "-"), lib.EC2Tags(image.Tags), *image.State)
+		fmt.Println(
+			*image.ImageId,
+			*image.CreationDate,
+			lib.StringOr(image.Description, "-"),
+			lib.EC2Tags(image.Tags),
+			string(image.State))
 	}
 }

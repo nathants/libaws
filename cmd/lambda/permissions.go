@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -28,13 +28,13 @@ func lambdaPermissions() {
 	var args lambdaPermissionsArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	out, err := lib.LambdaClient().GetPolicyWithContext(ctx, &lambda.GetPolicyInput{
+	out, err := lib.LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{
 		FunctionName: aws.String(args.Name),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	val := map[string]interface{}{}
+	val := map[string]any{}
 	err = json.Unmarshal([]byte(*out.Policy), &val)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

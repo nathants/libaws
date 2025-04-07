@@ -20,10 +20,10 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/gofrs/uuid"
 )
 
@@ -44,27 +44,22 @@ const (
 	EC2AmiDebianBullseye = "bullseye"
 	EC2AmiDebianBuster   = "buster"
 	EC2AmiDebianStretch  = "stretch"
-
-	EC2AmiAlpine3160 = "alpine-3.16.0"
-	EC2AmiAlpine3182 = "alpine-3.18.2"
-	EC2AmiAlpine3183 = "alpine-3.18.3"
-	EC2AmiAlpine3184 = "alpine-3.18.4"
 )
 
 var ec2RegexpAlpine = regexp.MustCompile(`alpine\-\d\d?\.\d\d?\.\d\d?`)
 
-var ec2Client *ec2.EC2
-var ec2ClientLock sync.RWMutex
+var ec2Client *ec2.Client
+var ec2ClientLock sync.Mutex
 
-func EC2ClientExplicit(accessKeyID, accessKeySecret, region string) *ec2.EC2 {
-	return ec2.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func EC2ClientExplicit(accessKeyID, accessKeySecret, region string) *ec2.Client {
+	return ec2.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func EC2Client() *ec2.EC2 {
+func EC2Client() *ec2.Client {
 	ec2ClientLock.Lock()
 	defer ec2ClientLock.Unlock()
 	if ec2Client == nil {
-		ec2Client = ec2.New(Session())
+		ec2Client = ec2.NewFromConfig(*Session())
 	}
 	return ec2Client
 }
@@ -82,7 +77,7 @@ type EC2Config struct {
 	UserName       string // instance ssh username
 	Key            string
 	TempKey        bool
-	InstanceType   string
+	InstanceType   ec2types.InstanceType
 	SubnetIds      []string
 	Gigs           int
 	Throughput     int
@@ -93,7 +88,7 @@ type EC2Config struct {
 	SecondsTimeout int
 }
 
-func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2.SpotFleetRequestConfig, error) {
+func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2types.SpotFleetRequestConfig, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2DescribeSpotFleet"}
 		defer d.Log()
@@ -102,8 +97,8 @@ func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2
 	var output *ec2.DescribeSpotFleetRequestsOutput
 	err := Retry(ctx, func() error {
 		var err error
-		output, err = EC2Client().DescribeSpotFleetRequestsWithContext(ctx, &ec2.DescribeSpotFleetRequestsInput{
-			SpotFleetRequestIds: []*string{spotFleetRequestId},
+		output, err = EC2Client().DescribeSpotFleetRequests(ctx, &ec2.DescribeSpotFleetRequestsInput{
+			SpotFleetRequestIds: []string{*spotFleetRequestId},
 		})
 		if err != nil {
 			return err
@@ -119,22 +114,22 @@ func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	return output.SpotFleetRequestConfigs[0], nil
+	return &output.SpotFleetRequestConfigs[0], nil
 }
 
-func EC2DescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequestId *string) ([]*ec2.ActiveInstance, error) {
+func EC2DescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequestId *string) ([]ec2types.ActiveInstance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2DescribeSpotFleetActiveInstances"}
 		defer d.Log()
 	}
 	Logger.Println("describe spot fleet instances", *spotFleetRequestId)
-	var instances []*ec2.ActiveInstance
+	var instances []ec2types.ActiveInstance
 	var nextToken *string
 	for {
 		var output *ec2.DescribeSpotFleetInstancesOutput
 		err := Retry(ctx, func() error {
 			var err error
-			output, err = EC2Client().DescribeSpotFleetInstancesWithContext(ctx, &ec2.DescribeSpotFleetInstancesInput{
+			output, err = EC2Client().DescribeSpotFleetInstances(ctx, &ec2.DescribeSpotFleetInstancesInput{
 				NextToken:          nextToken,
 				SpotFleetRequestId: spotFleetRequestId,
 			})
@@ -182,17 +177,19 @@ func isIPAddress(s string) bool {
 	return true
 }
 
-func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]*ec2.Instance, error) {
+func EC2ListInstances(ctx context.Context, selectors []string, state ec2types.InstanceStateName) ([]ec2types.Instance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2ListInstances"}
 		defer d.Log()
 	}
-	var filterss [][]*ec2.Filter
+	var filterss [][]ec2types.Filter
 	if len(selectors) == 0 {
 		if state != "" {
-			filterss = append(filterss, []*ec2.Filter{{Name: aws.String("instance-state-name"), Values: []*string{aws.String(state)}}})
+			filterss = append(filterss, []ec2types.Filter{
+				{Name: aws.String("instance-state-name"), Values: []string{string(state)}},
+			})
 		} else {
-			filterss = append(filterss, []*ec2.Filter{{}})
+			filterss = append(filterss, []ec2types.Filter{{}})
 		}
 	} else {
 		kind := KindTags
@@ -220,34 +217,37 @@ func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]
 			selectors[0] = fmt.Sprintf("Name=%s", selectors[0])
 		}
 		for _, chunk := range Chunk(selectors, 195) { // max aws api params per query is 200
-			var filterKind ec2.Filter
-			var filters []*ec2.Filter
+			var filterKind ec2types.Filter
+			var filters []ec2types.Filter
 			if state != "" {
-				filters = append(filters, &ec2.Filter{Name: aws.String("instance-state-name"), Values: []*string{aws.String(state)}})
+				filters = append(filters, ec2types.Filter{Name: aws.String("instance-state-name"), Values: []string{string(state)}})
 			}
 			for _, selector := range chunk {
 				if kind == KindTags {
 					parts := strings.Split(selector, "=")
 					k := parts[0]
 					v := parts[1]
-					filters = append(filters, &ec2.Filter{Name: aws.String(fmt.Sprintf("tag:%s", k)), Values: []*string{aws.String(v)}})
+					filters = append(filters, ec2types.Filter{
+						Name:   aws.String(fmt.Sprintf("tag:%s", k)),
+						Values: []string{v},
+					})
 				} else {
 					filterKind.Name = aws.String(string(kind))
-					filterKind.Values = append(filterKind.Values, aws.String(selector))
+					filterKind.Values = append(filterKind.Values, selector)
 				}
 			}
-			filters = append(filters, &filterKind)
+			filters = append(filters, filterKind)
 			filterss = append(filterss, filters)
 		}
 	}
-	var instances []*ec2.Instance
-	var nextToken *string
+	var instances []ec2types.Instance
 	for _, filters := range filterss {
+		var nextToken *string
 		for {
 			var output *ec2.DescribeInstancesOutput
 			err := Retry(ctx, func() error {
 				var err error
-				output, err = EC2Client().DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
+				output, err = EC2Client().DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 					Filters:   filters,
 					NextToken: nextToken,
 				})
@@ -269,15 +269,19 @@ func EC2ListInstances(ctx context.Context, selectors []string, state string) ([]
 			nextToken = output.NextToken
 		}
 	}
-	sort.SliceStable(instances, func(i, j int) bool { return *instances[i].InstanceId < *instances[j].InstanceId })
+	sort.SliceStable(instances, func(i, j int) bool {
+		return *instances[i].InstanceId < *instances[j].InstanceId
+	})
 	sort.SliceStable(instances, func(i, j int) bool {
 		return EC2GetTag(instances[i].Tags, "Name", "") < EC2GetTag(instances[j].Tags, "Name", "")
 	})
-	sort.SliceStable(instances, func(i, j int) bool { return instances[i].LaunchTime.UnixNano() > instances[j].LaunchTime.UnixNano() })
+	sort.SliceStable(instances, func(i, j int) bool {
+		return instances[i].LaunchTime.UnixNano() > instances[j].LaunchTime.UnixNano()
+	})
 	return instances, nil
 }
 
-func ec2Tags(tags []*ec2.Tag) map[string]string {
+func ec2Tags(tags []ec2types.Tag) map[string]string {
 	val := make(map[string]string)
 	for _, tag := range tags {
 		val[*tag.Key] = *tag.Value
@@ -285,7 +289,7 @@ func ec2Tags(tags []*ec2.Tag) map[string]string {
 	return val
 }
 
-func EC2GetTag(tags []*ec2.Tag, key string, defaultValue string) string {
+func EC2GetTag(tags []ec2types.Tag, key string, defaultValue string) string {
 	val, ok := ec2Tags(tags)[key]
 	if !ok {
 		val = defaultValue
@@ -293,7 +297,7 @@ func EC2GetTag(tags []*ec2.Tag, key string, defaultValue string) string {
 	return val
 }
 
-func EC2DescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Instance, error) {
+func EC2DescribeInstances(ctx context.Context, instanceIDs []string) ([]ec2types.Instance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2DescribeInstances"}
 		defer d.Log()
@@ -307,8 +311,8 @@ func EC2DescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Ins
 	var output *ec2.DescribeInstancesOutput
 	err := Retry(ctx, func() error {
 		var err error
-		output, err = EC2Client().DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-			InstanceIds: aws.StringSlice(instanceIDs),
+		output, err = EC2Client().DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: instanceIDs,
 		})
 		if err != nil {
 			return err
@@ -319,21 +323,21 @@ func EC2DescribeInstances(ctx context.Context, instanceIDs []string) ([]*ec2.Ins
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	var instances []*ec2.Instance
+	var instances []ec2types.Instance
 	for _, reservation := range output.Reservations {
 		instances = append(instances, reservation.Instances...)
 	}
 	return instances, nil
 }
 
-var ec2FailedStates = []string{
-	ec2.BatchStateCancelled,
-	ec2.BatchStateFailed,
-	ec2.BatchStateCancelledRunning,
-	ec2.BatchStateCancelledTerminating,
+var ec2FailedStates = []ec2types.BatchState{
+	ec2types.BatchStateCancelled,
+	ec2types.BatchStateFailed,
+	ec2types.BatchStateCancelledRunning,
+	ec2types.BatchStateCancelledTerminatingInstances,
 }
 
-func EC2WaitState(ctx context.Context, instanceIDs []string, state string) error {
+func EC2WaitState(ctx context.Context, instanceIDs []string, state ec2types.InstanceStateName) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2WaitState"}
 		defer d.Log()
@@ -347,7 +351,7 @@ func EC2WaitState(ctx context.Context, instanceIDs []string, state string) error
 		}
 		ready := 0
 		for _, instance := range instances {
-			if *instance.State.Name == state {
+			if instance.State.Name == state {
 				ready++
 			}
 		}
@@ -372,8 +376,8 @@ func ec2FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 		defer d.Log()
 	}
 	Logger.Println("teardown spot fleet", *spotFleetRequestId)
-	_, err := EC2Client().CancelSpotFleetRequestsWithContext(ctx, &ec2.CancelSpotFleetRequestsInput{
-		SpotFleetRequestIds: []*string{spotFleetRequestId},
+	_, err := EC2Client().CancelSpotFleetRequests(ctx, &ec2.CancelSpotFleetRequestsInput{
+		SpotFleetRequestIds: []string{*spotFleetRequestId},
 		TerminateInstances:  aws.Bool(false),
 	})
 	if err != nil {
@@ -389,8 +393,8 @@ func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 		defer d.Log()
 	}
 	Logger.Println("teardown spot fleet", *spotFleetRequestId)
-	_, err := EC2Client().CancelSpotFleetRequestsWithContext(ctx, &ec2.CancelSpotFleetRequestsInput{
-		SpotFleetRequestIds: []*string{spotFleetRequestId},
+	_, err := EC2Client().CancelSpotFleetRequests(ctx, &ec2.CancelSpotFleetRequestsInput{
+		SpotFleetRequestIds: []string{*spotFleetRequestId},
 		TerminateInstances:  aws.Bool(true),
 	})
 	if err != nil {
@@ -409,13 +413,13 @@ func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 	if len(ids) == 0 {
 		return nil
 	}
-	err = EC2WaitState(ctx, ids, ec2.InstanceStateNameRunning)
+	err = EC2WaitState(ctx, ids, ec2types.InstanceStateNameRunning)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	_, err = EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
-		InstanceIds: aws.StringSlice(ids),
+	_, err = EC2Client().TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: ids,
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -431,7 +435,7 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 	}
 	t := time.Now().UTC().Add(-24 * time.Hour)
 	timestamp := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
-	output, err := EC2Client().DescribeSpotFleetRequestHistoryWithContext(ctx, &ec2.DescribeSpotFleetRequestHistoryInput{
+	output, err := EC2Client().DescribeSpotFleetRequestHistory(ctx, &ec2.DescribeSpotFleetRequestHistoryInput{
 		SpotFleetRequestId: spotFleetRequestId,
 		StartTime:          aws.Time(timestamp),
 	})
@@ -439,14 +443,14 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 		Logger.Println("error:", err)
 		return err
 	}
-	var errors []string
+	var errorsFound []string
 	for _, record := range output.HistoryRecords {
 		if record.EventInformation.EventDescription != nil {
-			errors = append(errors, *record.EventInformation.EventDescription)
+			errorsFound = append(errorsFound, *record.EventInformation.EventDescription)
 		}
 	}
-	if len(errors) != 0 {
-		err = fmt.Errorf("%s", strings.Join(errors, "\n"))
+	if len(errorsFound) != 0 {
+		err = fmt.Errorf("%s", strings.Join(errorsFound, "\n"))
 		Logger.Println("error: spot fleet history error:", err)
 		return err
 	}
@@ -466,7 +470,7 @@ func ec2WaitSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) 
 			return err
 		}
 		for _, state := range ec2FailedStates {
-			if state == *config.SpotFleetRequestState {
+			if state == config.SpotFleetRequestState {
 				err = fmt.Errorf("spot fleet request failed with state: %s", state)
 				Logger.Println("error:", err)
 				return err
@@ -648,25 +652,25 @@ echo ${disk}p1 /mnt ext4 nodiscard,noatime 0 1 | sudo tee -a /etc/fstab
 set +x
 `
 
-func makeBlockDeviceMapping(config *EC2Config) []*ec2.BlockDeviceMapping {
+func makeBlockDeviceMapping(config *EC2Config) []ec2types.BlockDeviceMapping {
 	deviceName := "/dev/sda1"
 	if config.UserName == "alpine" || config.UserName == "admin" { // alpine and debian use /dev/xvda
 		deviceName = "/dev/xvda"
 	}
-	return []*ec2.BlockDeviceMapping{{
+	return []ec2types.BlockDeviceMapping{{
 		DeviceName: aws.String(deviceName),
-		Ebs: &ec2.EbsBlockDevice{
+		Ebs: &ec2types.EbsBlockDevice{
 			DeleteOnTermination: aws.Bool(true),
 			Encrypted:           aws.Bool(true),
-			VolumeType:          aws.String(ec2.VolumeTypeGp3),
-			Iops:                aws.Int64(max(3000, int64(config.Iops))),
-			Throughput:          aws.Int64(max(125, int64(config.Throughput))),
-			VolumeSize:          aws.Int64(int64(config.Gigs)),
+			VolumeType:          ec2types.VolumeTypeGp3,
+			Iops:                aws.Int32(int32(max(3000, int64(config.Iops)))),
+			Throughput:          aws.Int32(int32(max(125, int64(config.Throughput)))),
+			VolumeSize:          aws.Int32(int32(config.Gigs)),
 		},
 	}}
 }
 
-func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Config) ([]*ec2.Instance, error) {
+func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationStrategy, config *EC2Config) ([]ec2types.Instance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2RequestSpotFleet"}
 		defer d.Log()
@@ -682,10 +686,13 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		return nil, err
 	}
 	config = ec2ConfigDefaults(config)
-	if !Contains(ec2.AllocationStrategy_Values(), spotStrategy) {
+
+	var allocStrategy ec2types.AllocationStrategy
+	if !Contains(allocStrategy.Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
 	}
-	role, err := IamClient().GetRoleWithContext(ctx, &iam.GetRoleInput{
+
+	role, err := IamClient().GetRole(ctx, &iam.GetRoleInput{
 		RoleName: aws.String(EC2SpotFleetTaggingRole),
 	})
 	if err != nil {
@@ -697,37 +704,41 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy string, config *EC2Co
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	launchSpecs := []*ec2.SpotFleetLaunchSpecification{}
+	launchSpecs := []ec2types.SpotFleetLaunchSpecification{}
 	for _, subnetId := range config.SubnetIds {
-		launchSpec := &ec2.SpotFleetLaunchSpecification{
-			ImageId:             aws.String(config.AmiID),
-			KeyName:             aws.String(config.Key),
-			SubnetId:            aws.String(subnetId),
-			InstanceType:        aws.String(config.InstanceType),
-			UserData:            aws.String(init),
-			EbsOptimized:        aws.Bool(true),
-			SecurityGroups:      []*ec2.GroupIdentifier{{GroupId: aws.String(config.SgID)}},
+		launchSpec := ec2types.SpotFleetLaunchSpecification{
+			ImageId:      aws.String(config.AmiID),
+			KeyName:      aws.String(config.Key),
+			SubnetId:     aws.String(subnetId),
+			InstanceType: config.InstanceType,
+			UserData:     aws.String(init),
+			EbsOptimized: aws.Bool(true),
+			SecurityGroups: []ec2types.GroupIdentifier{{
+				GroupId: aws.String(config.SgID),
+			}},
 			BlockDeviceMappings: makeBlockDeviceMapping(config),
-			TagSpecifications: []*ec2.SpotFleetTagSpecification{{
-				ResourceType: aws.String(ec2.ResourceTypeInstance),
+			TagSpecifications: []ec2types.SpotFleetTagSpecification{{
+				ResourceType: ec2types.ResourceTypeInstance,
 				Tags:         makeTags(config),
 			}},
 		}
 		if config.Profile != "" {
-			launchSpec.IamInstanceProfile = &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
+			launchSpec.IamInstanceProfile = &ec2types.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
 		}
 		launchSpecs = append(launchSpecs, launchSpec)
 	}
-	spotFleet, err := EC2Client().RequestSpotFleetWithContext(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2.SpotFleetRequestConfigData{
-		IamFleetRole:                     role.Role.Arn,
-		LaunchSpecifications:             launchSpecs,
-		AllocationStrategy:               aws.String(spotStrategy),
-		InstanceInterruptionBehavior:     aws.String(ec2.InstanceInterruptionBehaviorTerminate),
-		Type:                             aws.String(ec2.FleetTypeRequest),
-		TargetCapacity:                   aws.Int64(int64(config.NumInstances)),
-		ReplaceUnhealthyInstances:        aws.Bool(false),
-		TerminateInstancesWithExpiration: aws.Bool(false),
-	}})
+	spotFleet, err := EC2Client().RequestSpotFleet(ctx, &ec2.RequestSpotFleetInput{
+		SpotFleetRequestConfig: &ec2types.SpotFleetRequestConfigData{
+			IamFleetRole:                     role.Role.Arn,
+			LaunchSpecifications:             launchSpecs,
+			AllocationStrategy:               spotStrategy,
+			InstanceInterruptionBehavior:     ec2types.InstanceInterruptionBehaviorTerminate,
+			Type:                             ec2types.FleetTypeRequest,
+			TargetCapacity:                   aws.Int32(int32(config.NumInstances)),
+			ReplaceUnhealthyInstances:        aws.Bool(false),
+			TerminateInstancesWithExpiration: aws.Bool(false),
+		},
+	})
 	Logger.Println("type:", config.InstanceType)
 	Logger.Println("subnets:", config.SubnetIds)
 	launchSpecs[0].UserData = nil
@@ -776,7 +787,7 @@ func makeInit(config *EC2Config) (string, error) {
 	}
 	init := config.Init
 	for _, instanceType := range []string{"i3", "i3en", "i4i", "c5d", "m5d", "r5d", "z1d", "c6gd", "c6id", "m6gd", "r6gd", "c5ad", "is4gen", "im4gn"} {
-		if instanceType == strings.Split(config.InstanceType, ".")[0] {
+		if instanceType == strings.Split(string(config.InstanceType), ".")[0] {
 			init = nvmeInit + init
 			break
 		}
@@ -814,14 +825,14 @@ func makeInit(config *EC2Config) (string, error) {
 	return init, nil
 }
 
-func makeTags(config *EC2Config) []*ec2.Tag {
-	tags := []*ec2.Tag{
+func makeTags(config *EC2Config) []ec2types.Tag {
+	tags := []ec2types.Tag{
 		{Key: aws.String("Name"), Value: aws.String(config.Name)},
 		{Key: aws.String("user"), Value: aws.String(config.UserName)},
 		{Key: aws.String("creation-date"), Value: aws.String(time.Now().UTC().Format(time.RFC3339))},
 	}
 	for _, tag := range config.Tags {
-		tags = append(tags, &ec2.Tag{
+		tags = append(tags, ec2types.Tag{
 			Key:   aws.String(tag.Name),
 			Value: aws.String(tag.Value),
 		})
@@ -842,7 +853,7 @@ func ec2ConfigDefaults(config *EC2Config) *EC2Config {
 	return config
 }
 
-func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, error) {
+func EC2NewInstances(ctx context.Context, config *EC2Config) ([]ec2types.Instance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2NewInstances"}
 		defer d.Log()
@@ -872,42 +883,41 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]*ec2.Instance, e
 		ImageId:             aws.String(config.AmiID),
 		KeyName:             aws.String(config.Key),
 		SubnetId:            aws.String(config.SubnetIds[0]),
-		InstanceType:        aws.String(config.InstanceType),
+		InstanceType:        config.InstanceType,
 		UserData:            aws.String(init),
 		EbsOptimized:        aws.Bool(true),
-		SecurityGroupIds:    []*string{&config.SgID},
+		SecurityGroupIds:    []string{config.SgID},
 		BlockDeviceMappings: makeBlockDeviceMapping(config),
-		MinCount:            aws.Int64(int64(config.NumInstances)),
-		MaxCount:            aws.Int64(int64(config.NumInstances)),
-		TagSpecifications: []*ec2.TagSpecification{{
-			ResourceType: aws.String(ec2.ResourceTypeInstance),
+		MinCount:            aws.Int32(int32(config.NumInstances)),
+		MaxCount:            aws.Int32(int32(config.NumInstances)),
+		TagSpecifications: []ec2types.TagSpecification{{
+			ResourceType: ec2types.ResourceTypeInstance,
 			Tags:         makeTags(config),
 		}},
 	}
 	if config.Profile != "" {
-		runInstancesInput.IamInstanceProfile = &ec2.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
+		runInstancesInput.IamInstanceProfile = &ec2types.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
 	}
-	reservation, err := EC2Client().RunInstancesWithContext(ctx, runInstancesInput)
+	reservation, err := EC2Client().RunInstances(ctx, runInstancesInput)
 	runInstancesInput.UserData = nil
 	Logger.Println("run instances", Pformat(runInstancesInput))
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-
 	return reservation.Instances, nil
 }
 
 type EC2RsyncInput struct {
 	Source           string
 	Destination      string
-	Instances        []*ec2.Instance
+	Instances        []ec2types.Instance
 	TimeoutSeconds   int
 	MaxConcurrency   int
 	User             string
 	PrivateIP        bool
 	Key              string
-	PrintLock        sync.RWMutex
+	PrintLock        sync.Mutex
 	AccumulateResult bool
 }
 
@@ -951,7 +961,7 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	for _, instance := range input.Instances {
-		go func(instance *ec2.Instance) {
+		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					logRecover(r)
@@ -964,7 +974,7 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 			}
 			defer concurrency.Release(1)
 			resultChan <- ec2Rsync(cancelCtx, instance, input)
-		}(instance)
+		}()
 	}
 	var errLast error
 	var result []*ec2SshResult
@@ -978,7 +988,7 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 	return result, errLast
 }
 
-func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput) *ec2SshResult {
+func ec2Rsync(ctx context.Context, instance ec2types.Instance, input *EC2RsyncInput) *ec2SshResult {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2Rsync"}
 		defer d.Log()
@@ -1044,7 +1054,7 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 		result.Err = err
 		return result
 	}
-	resultLock := &sync.RWMutex{}
+	resultLock := &sync.Mutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
 		// defer func() {}()
@@ -1110,13 +1120,13 @@ func ec2Rsync(ctx context.Context, instance *ec2.Instance, input *EC2RsyncInput)
 type EC2ScpInput struct {
 	Source           string
 	Destination      string
-	Instances        []*ec2.Instance
+	Instances        []ec2types.Instance
 	TimeoutSeconds   int
 	MaxConcurrency   int
 	User             string
 	PrivateIP        bool
 	Key              string
-	PrintLock        sync.RWMutex
+	PrintLock        sync.Mutex
 	AccumulateResult bool
 }
 
@@ -1160,7 +1170,7 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	for _, instance := range input.Instances {
-		go func(instance *ec2.Instance) {
+		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					logRecover(r)
@@ -1173,7 +1183,7 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 			}
 			defer concurrency.Release(1)
 			resultChan <- ec2Scp(cancelCtx, instance, input)
-		}(instance)
+		}()
 	}
 	var errLast error
 	var result []*ec2SshResult
@@ -1188,7 +1198,7 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 	return result, errLast
 }
 
-func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec2SshResult {
+func ec2Scp(ctx context.Context, instance ec2types.Instance, input *EC2ScpInput) *ec2SshResult {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2Scp"}
 		defer d.Log()
@@ -1238,7 +1248,7 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 		result.Err = err
 		return result
 	}
-	resultLock := &sync.RWMutex{}
+	resultLock := &sync.Mutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
 		// defer func() {}()
@@ -1302,7 +1312,7 @@ func ec2Scp(ctx context.Context, instance *ec2.Instance, input *EC2ScpInput) *ec
 }
 
 type EC2SshInput struct {
-	Instances        []*ec2.Instance
+	Instances        []ec2types.Instance
 	Cmd              string
 	TimeoutSeconds   int
 	MaxConcurrency   int
@@ -1311,7 +1321,7 @@ type EC2SshInput struct {
 	PrivateIP        bool
 	Key              string
 	AccumulateResult bool
-	PrintLock        sync.RWMutex
+	PrintLock        sync.Mutex
 	NoPrint          bool
 	IPNotID          bool
 }
@@ -1404,7 +1414,7 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	for _, instance := range input.Instances {
-		go func(instance *ec2.Instance) {
+		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					logRecover(r)
@@ -1417,7 +1427,7 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 			}
 			defer concurrency.Release(1)
 			resultChan <- ec2Ssh(cancelCtx, instance, input)
-		}(instance)
+		}()
 	}
 	var errLast error
 	var result []*ec2SshResult
@@ -1438,7 +1448,7 @@ type ec2SshResult struct {
 	Stdout     []string
 }
 
-func ec2EphemeralKey(tags []*ec2.Tag) string {
+func ec2EphemeralKey(tags []ec2types.Tag) string {
 	for _, tag := range tags {
 		if *tag.Key == "ssh-id" {
 			path := fmt.Sprintf("/tmp/libaws/%s/id_ed25519", *tag.Value)
@@ -1450,7 +1460,7 @@ func ec2EphemeralKey(tags []*ec2.Tag) string {
 	return ""
 }
 
-func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec2SshResult {
+func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput) *ec2SshResult {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2Ssh"}
 		defer d.Log()
@@ -1493,7 +1503,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 		result.Err = err
 		return result
 	}
-	resultLock := &sync.RWMutex{}
+	resultLock := &sync.Mutex{}
 	done := make(chan error)
 	tail := func(kind string, buf *bufio.Reader) {
 		// defer func() {}()
@@ -1557,7 +1567,7 @@ func ec2Ssh(ctx context.Context, instance *ec2.Instance, input *EC2SshInput) *ec
 	return result
 }
 
-func EC2SshLogin(instance *ec2.Instance, user, key string) error {
+func EC2SshLogin(instance ec2types.Instance, user, key string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2SshLogin"}
 		defer d.Log()
@@ -1599,9 +1609,9 @@ func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
 		d := &Debug{start: time.Now(), name: "EC2AmiUser"}
 		defer d.Log()
 	}
-	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Filters: []*ec2.Filter{
-			{Name: aws.String("image-id"), Values: []*string{aws.String(amiID)}},
+	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("image-id"), Values: []string{amiID}},
 		},
 	})
 	if err != nil {
@@ -1622,11 +1632,11 @@ func ec2AmiAmzn2023(ctx context.Context, arch string) (string, error) {
 		d := &Debug{start: time.Now(), name: "ec2AmiLambda"}
 		defer d.Log()
 	}
-	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String("137112412989")},
-		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String("al2023-ami-2023*")}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners: []string{"137112412989"},
+		Filters: []ec2types.Filter{
+			{Name: aws.String("name"), Values: []string{"al2023-ami-2023*"}},
+			{Name: aws.String("architecture"), Values: []string{arch}},
 		},
 	})
 	if err != nil {
@@ -1637,7 +1647,9 @@ func ec2AmiAmzn2023(ctx context.Context, arch string) (string, error) {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
+	sort.Slice(out.Images, func(i, j int) bool {
+		return *out.Images[i].CreationDate > *out.Images[j].CreationDate
+	})
 	return *out.Images[0].ImageId, nil
 }
 
@@ -1675,18 +1687,20 @@ func ec2AmiUbuntu(ctx context.Context, name, arch string) (string, error) {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String("099720109477")},
-		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String(fmt.Sprintf("%s*", fragment))}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners: []string{"099720109477"},
+		Filters: []ec2types.Filter{
+			{Name: aws.String("name"), Values: []string{fmt.Sprintf("%s*", fragment)}},
+			{Name: aws.String("architecture"), Values: []string{arch}},
 		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
+	sort.Slice(out.Images, func(i, j int) bool {
+		return *out.Images[i].CreationDate > *out.Images[j].CreationDate
+	})
 	return *out.Images[0].ImageId, nil
 }
 
@@ -1702,18 +1716,20 @@ func ec2AmiDebian(ctx context.Context, name, arch string) (string, error) {
 		return "", err
 	}
 	_ = fragment
-	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String("136693071363")},
-		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String(fmt.Sprintf("%s*", fragment))}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners: []string{"136693071363"},
+		Filters: []ec2types.Filter{
+			{Name: aws.String("name"), Values: []string{fmt.Sprintf("%s*", fragment)}},
+			{Name: aws.String("architecture"), Values: []string{arch}},
 		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
+	sort.Slice(out.Images, func(i, j int) bool {
+		return *out.Images[i].CreationDate > *out.Images[j].CreationDate
+	})
 	return *out.Images[0].ImageId, nil
 }
 
@@ -1722,18 +1738,20 @@ func ec2AmiAmzn2(ctx context.Context, arch string) (string, error) {
 		d := &Debug{start: time.Now(), name: "ec2AmiAmzn"}
 		defer d.Log()
 	}
-	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String("137112412989")},
-		Filters: []*ec2.Filter{
-			{Name: aws.String("name"), Values: []*string{aws.String("amzn2-ami-hvm-2.0*-ebs")}},
-			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners: []string{"137112412989"},
+		Filters: []ec2types.Filter{
+			{Name: aws.String("name"), Values: []string{"amzn2-ami-hvm-2.0*-ebs"}},
+			{Name: aws.String("architecture"), Values: []string{arch}},
 		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	sort.Slice(out.Images, func(i, j int) bool { return *out.Images[i].CreationDate > *out.Images[j].CreationDate })
+	sort.Slice(out.Images, func(i, j int) bool {
+		return *out.Images[i].CreationDate > *out.Images[j].CreationDate
+	})
 	return *out.Images[0].ImageId, nil
 }
 
@@ -1742,27 +1760,29 @@ func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 		d := &Debug{start: time.Now(), name: "ec2AmiAlpine"}
 		defer d.Log()
 	}
-	out, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String("538276064493")},
-		Filters: []*ec2.Filter{
+	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners: []string{"538276064493"},
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("name"),
-				Values: []*string{aws.String(name + "-*")},
+				Values: []string{name + "-*"},
 			},
-			{Name: aws.String("architecture"), Values: []*string{aws.String(arch)}},
+			{Name: aws.String("architecture"), Values: []string{arch}},
 		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	var images []*ec2.Image
+	var images []ec2types.Image
 	for _, image := range out.Images {
 		if strings.Contains(*image.Name, "-tiny-") && ec2RegexpAlpine.FindString(*image.Name) != "" {
 			images = append(images, image)
 		}
 	}
-	sort.SliceStable(images, func(i, j int) bool { return *images[i].CreationDate > *images[j].CreationDate })
+	sort.SliceStable(images, func(i, j int) bool {
+		return *images[i].CreationDate > *images[j].CreationDate
+	})
 	sort.SliceStable(images, func(i, j int) bool {
 		versionsA := strings.SplitN(strings.SplitN(*images[i].Name, "-", 3)[1], ".", 3)
 		versionsB := strings.SplitN(strings.SplitN(*images[j].Name, "-", 3)[1], ".", 3)
@@ -1816,14 +1836,16 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 	return amiID, sshUser, err
 }
 
-func EC2ZonesWithInstance(ctx context.Context, instanceType string) (zones []string, err error) {
+func EC2ZonesWithInstance(ctx context.Context, instanceType ec2types.InstanceType) (zones []string, err error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2ZonesWithInstance"}
 		defer d.Log()
 	}
-	out, err := EC2Client().DescribeInstanceTypeOfferingsWithContext(ctx, &ec2.DescribeInstanceTypeOfferingsInput{
-		LocationType: aws.String("availability-zone"),
-		Filters:      []*ec2.Filter{{Name: aws.String("instance-type"), Values: []*string{aws.String(instanceType)}}},
+	out, err := EC2Client().DescribeInstanceTypeOfferings(ctx, &ec2.DescribeInstanceTypeOfferingsInput{
+		LocationType: ec2types.LocationTypeAvailabilityZone,
+		Filters: []ec2types.Filter{
+			{Name: aws.String("instance-type"), Values: []string{string(instanceType)}},
+		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1852,10 +1874,10 @@ func EC2SgID(ctx context.Context, vpcName, sgName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	out, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-		Filters: []*ec2.Filter{
-			{Name: aws.String("group-name"), Values: []*string{aws.String(sgName)}},
-			{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+	out, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("group-name"), Values: []string{sgName}},
+			{Name: aws.String("vpc-id"), Values: []string{vpcID}},
 		},
 	})
 	if err != nil {
@@ -1868,7 +1890,7 @@ func EC2SgID(ctx context.Context, vpcName, sgName string) (string, error) {
 	return *out.SecurityGroups[0].GroupId, nil
 }
 
-func EC2Tags(tags []*ec2.Tag) string {
+func EC2Tags(tags []ec2types.Tag) string {
 	var res []string
 	for _, tag := range tags {
 		if !Contains([]string{"Name", "aws:ec2spot:fleet-request-id", "creation-date", "user"}, *tag.Key) {
@@ -1879,7 +1901,7 @@ func EC2Tags(tags []*ec2.Tag) string {
 	return strings.Join(res, ",")
 }
 
-func EC2TagsAll(tags []*ec2.Tag) string {
+func EC2TagsAll(tags []ec2types.Tag) string {
 	var res []string
 	for _, tag := range tags {
 		if *tag.Key != "Name" {
@@ -1889,7 +1911,7 @@ func EC2TagsAll(tags []*ec2.Tag) string {
 	return strings.Join(res, ",")
 }
 
-func EC2Name(tags []*ec2.Tag) string {
+func EC2Name(tags []ec2types.Tag) string {
 	for _, tag := range tags {
 		if *tag.Key == "Name" {
 			return *tag.Value
@@ -1898,7 +1920,7 @@ func EC2Name(tags []*ec2.Tag) string {
 	return "-"
 }
 
-func EC2NameColored(instance *ec2.Instance) string {
+func EC2NameColored(instance ec2types.Instance) string {
 	name := "-"
 	for _, tag := range instance.Tags {
 		if *tag.Key == "Name" {
@@ -1906,10 +1928,10 @@ func EC2NameColored(instance *ec2.Instance) string {
 			break
 		}
 	}
-	switch *instance.State.Name {
-	case "running":
+	switch instance.State.Name {
+	case ec2types.InstanceStateNameRunning:
 		name = Green(name)
-	case "pending":
+	case ec2types.InstanceStateNamePending:
 		name = Cyan(name)
 	default:
 		name = Red(name)
@@ -1917,12 +1939,12 @@ func EC2NameColored(instance *ec2.Instance) string {
 	return name
 }
 
-func EC2SecurityGroups(sgs []*ec2.GroupIdentifier) string {
+func EC2SecurityGroups(sgs []ec2types.GroupIdentifier) string {
 	var res []string
 	for _, sg := range sgs {
-		if *sg.GroupName != "" {
+		if sg.GroupName != nil && *sg.GroupName != "" {
 			res = append(res, *sg.GroupName)
-		} else {
+		} else if sg.GroupId != nil {
 			res = append(res, *sg.GroupId)
 		}
 	}
@@ -1932,7 +1954,7 @@ func EC2SecurityGroups(sgs []*ec2.GroupIdentifier) string {
 	return strings.Join(res, ",")
 }
 
-func EC2Kind(instance *ec2.Instance) string {
+func EC2Kind(instance ec2types.Instance) string {
 	if instance.SpotInstanceRequestId != nil {
 		return "spot"
 	}
@@ -1960,13 +1982,13 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		var instances []*ec2.Instance
-		var pendingInstances []*ec2.Instance
+		var instances []ec2types.Instance
+		var pendingInstances []ec2types.Instance
 		for _, instance := range allInstances {
-			switch *instance.State.Name {
-			case ec2.InstanceStateNameRunning:
+			switch instance.State.Name {
+			case ec2types.InstanceStateNameRunning:
 				instances = append(instances, instance)
-			case ec2.InstanceStateNamePending:
+			case ec2types.InstanceStateNamePending:
 				pendingInstances = append(pendingInstances, instance)
 			default:
 			}
@@ -1983,6 +2005,7 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 		// will be invoked with the ipv4 of all instances to be waited
 		// before each attempt
 		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(ips, " "))).Run()
+
 		results, err := EC2Ssh(context.Background(), &EC2SshInput{
 			User:           input.User,
 			TimeoutSeconds: 60,
@@ -1991,7 +2014,7 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 			PrivateIP:      input.PrivateIP,
 			MaxConcurrency: input.MaxConcurrency,
 			Key:            input.Key,
-			PrintLock:      sync.RWMutex{},
+			PrintLock:      sync.Mutex{},
 			NoPrint:        true,
 		})
 		for _, result := range results {
@@ -2022,8 +2045,8 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 					ready = append(ready, result.InstanceID)
 				}
 			}
-			_, err = EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
-				InstanceIds: aws.StringSlice(terminate),
+			_, err = EC2Client().TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+				InstanceIds: terminate,
 			})
 			if err != nil {
 				return nil, err
@@ -2071,13 +2094,13 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 		if err != nil {
 			return nil, err
 		}
-		var instances []*ec2.Instance
-		var pendingInstances []*ec2.Instance
+		var instances []ec2types.Instance
+		var pendingInstances []ec2types.Instance
 		for _, instance := range allInstances {
-			switch *instance.State.Name {
-			case ec2.InstanceStateNameRunning:
+			switch instance.State.Name {
+			case ec2types.InstanceStateNameRunning:
 				instances = append(instances, instance)
-			case ec2.InstanceStateNamePending:
+			case ec2types.InstanceStateNamePending:
 				pendingInstances = append(pendingInstances, instance)
 			default:
 			}
@@ -2131,12 +2154,12 @@ func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, erro
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			var ids []*string
+			var ids []string
 			for _, instance := range instances {
-				ids = append(ids, instance.InstanceId)
+				ids = append(ids, *instance.InstanceId)
 			}
 			if len(ids) > 0 {
-				_, err = EC2Client().TerminateInstancesWithContext(context.Background(), &ec2.TerminateInstancesInput{
+				_, err := EC2Client().TerminateInstances(context.Background(), &ec2.TerminateInstancesInput{
 					InstanceIds: ids,
 				})
 				if err != nil {
@@ -2180,14 +2203,14 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 	}
 	i := out[0]
 	name := EC2Name(i.Tags)
-	image, err := EC2Client().CreateImageWithContext(ctx, &ec2.CreateImageInput{
+	image, err := EC2Client().CreateImage(ctx, &ec2.CreateImageInput{
 		Name:        aws.String(fmt.Sprintf("%s__%d", name, time.Now().Unix())),
 		Description: aws.String(name),
 		InstanceId:  i.InstanceId,
 		NoReboot:    aws.Bool(false),
-		TagSpecifications: []*ec2.TagSpecification{{
-			ResourceType: aws.String(ec2.ResourceTypeImage),
-			Tags: []*ec2.Tag{{
+		TagSpecifications: []ec2types.TagSpecification{{
+			ResourceType: ec2types.ResourceTypeImage,
+			Tags: []ec2types.Tag{{
 				Key:   aws.String("user"),
 				Value: aws.String(EC2GetTag(i.Tags, "user", "")),
 			}},
@@ -2200,32 +2223,32 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 	if input.Wait {
 		start := time.Now()
 		for {
-			status, err := EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-				ImageIds: []*string{image.ImageId},
+			status, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+				ImageIds: []string{aws.ToString(image.ImageId)},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return "", err
 			}
-			if *status.Images[0].State == ec2.ImageStateAvailable {
+			if len(status.Images) > 0 && status.Images[0].State == ec2types.ImageStateAvailable {
 				break
 			}
 			Logger.Println("wait for image", fmt.Sprintf("t+%d", int(time.Since(start).Seconds())))
 			time.Sleep(1 * time.Second)
 		}
 	}
-	return *image.ImageId, nil
+	return aws.ToString(image.ImageId), nil
 }
 
-func EC2ListSgs(ctx context.Context) ([]*ec2.SecurityGroup, error) {
+func EC2ListSgs(ctx context.Context) ([]ec2types.SecurityGroup, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2ListSgs"}
 		defer d.Log()
 	}
-	var res []*ec2.SecurityGroup
+	var res []ec2types.SecurityGroup
 	var token *string
 	for {
-		out, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
+		out, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -2246,7 +2269,7 @@ type EC2SgRule struct {
 	Source string `json:"source"`
 }
 
-func EC2SgRules(p *ec2.IpPermission) ([]EC2SgRule, error) {
+func EC2SgRules(p ec2types.IpPermission) ([]EC2SgRule, error) {
 	var rules []EC2SgRule
 	if !(p.FromPort == nil && p.ToPort == nil) && *p.FromPort != *p.ToPort {
 		err := fmt.Errorf("expected ports to match: %s", Pformat(p))
@@ -2339,9 +2362,9 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 			return err
 		}
 	}
-	tags := []*ec2.TagSpecification{{
-		ResourceType: aws.String(ec2.ResourceTypeSecurityGroup),
-		Tags: []*ec2.Tag{
+	tags := []ec2types.TagSpecification{{
+		ResourceType: ec2types.ResourceTypeSecurityGroup,
+		Tags: []ec2types.Tag{
 			{
 				Key:   aws.String("Name"),
 				Value: aws.String(input.SgName),
@@ -2358,7 +2381,7 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 			return err
 		}
 		if !preview {
-			out, err := EC2Client().CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
+			out, err := EC2Client().CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
 				GroupName:         aws.String(input.SgName),
 				Description:       aws.String(input.SgName),
 				VpcId:             aws.String(vpcID),
@@ -2368,13 +2391,13 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 				Logger.Println("error:", err)
 				return err
 			}
-			sgID = *out.GroupId
+			sgID = aws.ToString(out.GroupId)
 			// wait for security group instantiation
 			err = RetryAttempts(ctx, 11, func() error {
-				sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-					Filters: []*ec2.Filter{
-						{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}},
-						{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+				sgs, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+					Filters: []ec2types.Filter{
+						{Name: aws.String("group-id"), Values: []string{sgID}},
+						{Name: aws.String("vpc-id"), Values: []string{vpcID}},
 					},
 				})
 				if err != nil {
@@ -2392,18 +2415,21 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 		}
 		Logger.Println(PreviewString(preview)+"created security group:", input.VpcName, input.SgName)
 	}
-	sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-		Filters: []*ec2.Filter{
-			{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}},
-			{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+	sgs, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+		Filters: []ec2types.Filter{
+			{Name: aws.String("group-id"), Values: []string{sgID}},
+			{Name: aws.String("vpc-id"), Values: []string{vpcID}},
 		},
 	})
-	if err != nil {
-		_, ok := err.(awserr.Error)
-		if !ok || !preview || strings.Split(err.Error(), "\n")[0] != "InvalidParameterValue: vpc-id" {
+	if err != nil && !preview {
+		line := strings.Split(err.Error(), "\n")[0]
+		if line != "InvalidParameterValue: vpc-id" {
 			Logger.Println("error:", err)
 			return err
 		}
+	}
+	if sgs == nil {
+		sgs = &ec2.DescribeSecurityGroupsOutput{}
 	}
 	if !preview && len(sgs.SecurityGroups) != 1 {
 		err := fmt.Errorf("expected exactly 1 sg: %s", Pformat(sgs))
@@ -2436,47 +2462,46 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 		} else {
 			if !preview {
 				sg := sgs.SecurityGroups[0]
-				var port *int64
+				var port *int32
 				if r.Port != 0 {
-					port = aws.Int64(int64(r.Port))
+					port = aws.Int32(int32(r.Port))
 				}
 				proto := "-1" // all ports
 				if r.Proto != "" {
 					proto = r.Proto
 				}
-				var ipPermission *ec2.IpPermission
+				var ipPermission ec2types.IpPermission
 				if strings.HasPrefix(r.Source, "sg-") {
-					ipPermission = &ec2.IpPermission{
-						UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(r.Source)}},
+					ipPermission = ec2types.IpPermission{
+						UserIdGroupPairs: []ec2types.UserIdGroupPair{{GroupId: aws.String(r.Source)}},
 						FromPort:         port,
 						ToPort:           port,
 						IpProtocol:       aws.String(proto),
 					}
 				} else {
-					ipPermission = &ec2.IpPermission{
-						IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(r.Source)}},
+					ipPermission = ec2types.IpPermission{
+						IpRanges:   []ec2types.IpRange{{CidrIp: aws.String(r.Source)}},
 						FromPort:   port,
 						ToPort:     port,
 						IpProtocol: aws.String(proto),
 					}
 				}
-				_, err := EC2Client().AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+				_, err := EC2Client().AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
 					GroupId:       sg.GroupId,
-					IpPermissions: []*ec2.IpPermission{ipPermission},
+					IpPermissions: []ec2types.IpPermission{ipPermission},
 				})
 				if err != nil {
-					aerr, ok := err.(awserr.Error)
-					if !ok || aerr.Code() != "InvalidPermission.Duplicate" {
+					if !strings.Contains(err.Error(), "InvalidPermission.Duplicate") {
 						Logger.Println("error:", err)
 						return err
 					}
 				}
 				// wait for rule instantiation
 				err = RetryAttempts(ctx, 11, func() error {
-					sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-						Filters: []*ec2.Filter{
-							{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}},
-							{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+					sgs, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+						Filters: []ec2types.Filter{
+							{Name: aws.String("group-id"), Values: []string{sgID}},
+							{Name: aws.String("vpc-id"), Values: []string{vpcID}},
 						},
 					})
 					if err != nil {
@@ -2493,8 +2518,8 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 								Logger.Println("error:", err)
 								return err
 							}
-							for _, rule := range rules {
-								if rule == r {
+							for _, ruleFound := range rules {
+								if ruleFound == r {
 									return nil
 								}
 							}
@@ -2517,34 +2542,34 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 			continue
 		}
 		if !preview {
-			var port *int64
+			var port *int32
 			if k.Port != 0 {
-				port = aws.Int64(int64(k.Port))
+				port = aws.Int32(int32(k.Port))
 			}
 			proto := "-1" // all ports
 			if k.Proto != "" {
 				proto = k.Proto
 			}
 			sg := sgs.SecurityGroups[0]
-			var permission *ec2.IpPermission
+			var permission ec2types.IpPermission
 			if strings.HasPrefix(k.Source, "sg-") {
-				permission = &ec2.IpPermission{
-					UserIdGroupPairs: []*ec2.UserIdGroupPair{{GroupId: aws.String(k.Source)}},
+				permission = ec2types.IpPermission{
+					UserIdGroupPairs: []ec2types.UserIdGroupPair{{GroupId: aws.String(k.Source)}},
 					FromPort:         port,
 					ToPort:           port,
 					IpProtocol:       aws.String(proto),
 				}
 			} else {
-				permission = &ec2.IpPermission{
-					IpRanges:   []*ec2.IpRange{{CidrIp: aws.String(k.Source)}},
+				permission = ec2types.IpPermission{
+					IpRanges:   []ec2types.IpRange{{CidrIp: aws.String(k.Source)}},
 					FromPort:   port,
 					ToPort:     port,
 					IpProtocol: aws.String(proto),
 				}
 			}
-			_, err := EC2Client().RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
+			_, err := EC2Client().RevokeSecurityGroupIngress(ctx, &ec2.RevokeSecurityGroupIngressInput{
 				GroupId:       sg.GroupId,
-				IpPermissions: []*ec2.IpPermission{permission},
+				IpPermissions: []ec2types.IpPermission{permission},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -2552,10 +2577,10 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 			}
 			// wait for rule de-instantiation
 			err = RetryAttempts(ctx, 11, func() error {
-				sgs, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-					Filters: []*ec2.Filter{
-						{Name: aws.String("group-id"), Values: []*string{aws.String(sgID)}},
-						{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}},
+				sgs, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+					Filters: []ec2types.Filter{
+						{Name: aws.String("group-id"), Values: []string{sgID}},
+						{Name: aws.String("vpc-id"), Values: []string{vpcID}},
 					},
 				})
 				if err != nil {
@@ -2572,9 +2597,9 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 							Logger.Println("error:", err)
 							return err
 						}
-						for _, rule := range rules {
-							if rule == k {
-								return fmt.Errorf("still found rule %#v", rule)
+						for _, ruleFound := range rules {
+							if ruleFound == k {
+								return fmt.Errorf("still found rule %#v", ruleFound)
 							}
 						}
 					}
@@ -2604,7 +2629,7 @@ func EC2DeleteSg(ctx context.Context, vpcName, sgName string, preview bool) erro
 		return err
 	}
 	if !preview {
-		_, err := EC2Client().DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
+		_, err := EC2Client().DeleteSecurityGroup(ctx, &ec2.DeleteSecurityGroupInput{
 			GroupId: aws.String(sgID),
 		})
 		if err != nil {
@@ -2693,7 +2718,6 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 		defer timeoutCancel()
 		ctx = timeoutCtx
 	}
-	// done := make(chan error, len(input.Instances))
 	resultChan := make(chan *ec2GoSshResult, len(input.TargetAddrs))
 	concurrency := semaphore.NewWeighted(int64(input.MaxConcurrency))
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -2762,9 +2786,6 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, 
 		return err
 	}
 	defer func() { _ = sshSession.Close() }()
-	if err != nil {
-		return err
-	}
 	sshSession.Stdout = input.Stdout
 	sshSession.Stderr = input.Stderr
 	if !input.NoTTY {
@@ -2794,19 +2815,18 @@ func EC2DeleteKeypair(ctx context.Context, keypairName string, preview bool) err
 		d := &Debug{start: time.Now(), name: "EC2DeleteKeypair"}
 		defer d.Log()
 	}
-	out, err := EC2Client().DescribeKeyPairsWithContext(ctx, &ec2.DescribeKeyPairsInput{
-		KeyNames: []*string{aws.String(keypairName)},
+	out, err := EC2Client().DescribeKeyPairs(ctx, &ec2.DescribeKeyPairsInput{
+		KeyNames: []string{keypairName},
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "InvalidKeyPair.NotFound" {
+		if !strings.Contains(err.Error(), "InvalidKeyPair.NotFound") {
 			Logger.Println("error:", err)
 			return err
 		}
 	}
 	if len(out.KeyPairs) > 0 {
 		if !preview {
-			_, err := EC2Client().DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
+			_, err := EC2Client().DeleteKeyPair(ctx, &ec2.DeleteKeyPairInput{
 				KeyName: aws.String(keypairName),
 			})
 			if err != nil {
@@ -2829,19 +2849,21 @@ func EC2EnsureKeypair(ctx context.Context, infraSetName, keyName, pubkeyContent 
 		Logger.Println("error:", err)
 		return err
 	}
-	out, err := EC2Client().DescribeKeyPairsWithContext(ctx, &ec2.DescribeKeyPairsInput{
-		KeyNames: []*string{aws.String(keyName)},
+	out, err := EC2Client().DescribeKeyPairs(ctx, &ec2.DescribeKeyPairsInput{
+		KeyNames: []string{keyName},
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != "InvalidKeyPair.NotFound" {
+		if !strings.Contains(err.Error(), "InvalidKeyPair.NotFound") {
 			Logger.Println("error:", err)
 			return err
 		}
 	}
-	tags := []*ec2.TagSpecification{{
-		ResourceType: aws.String(ec2.ResourceTypeKeyPair),
-		Tags: []*ec2.Tag{{
+	if out == nil {
+		out = &ec2.DescribeKeyPairsOutput{}
+	}
+	tags := []ec2types.TagSpecification{{
+		ResourceType: ec2types.ResourceTypeKeyPair,
+		Tags: []ec2types.Tag{{
 			Key:   aws.String(infraSetTagName),
 			Value: aws.String(infraSetName),
 		}},
@@ -2849,7 +2871,7 @@ func EC2EnsureKeypair(ctx context.Context, infraSetName, keyName, pubkeyContent 
 	switch len(out.KeyPairs) {
 	case 0:
 		if !preview {
-			_, err := EC2Client().ImportKeyPairWithContext(ctx, &ec2.ImportKeyPairInput{
+			_, err := EC2Client().ImportKeyPair(ctx, &ec2.ImportKeyPairInput{
 				KeyName:           aws.String(keyName),
 				PublicKeyMaterial: []byte(pubkeyContent),
 				TagSpecifications: tags,
@@ -2864,21 +2886,18 @@ func EC2EnsureKeypair(ctx context.Context, infraSetName, keyName, pubkeyContent 
 	case 1:
 		switch pubkey.Type() {
 		case ssh.KeyAlgoED25519:
-			remoteFingerprint := *out.KeyPairs[0].KeyFingerprint
-			if remoteFingerprint[len(remoteFingerprint)-1] == '=' {
-				remoteFingerprint = remoteFingerprint[:len(remoteFingerprint)-1]
-			}
+			remoteFingerprint := strings.TrimSuffix(*out.KeyPairs[0].KeyFingerprint, "=")
 			localFingerprint := strings.SplitN(ssh.FingerprintSHA256(pubkey), ":", 2)[1]
 			if remoteFingerprint != localFingerprint {
 				if !preview {
-					_, err := EC2Client().DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
+					_, err := EC2Client().DeleteKeyPair(ctx, &ec2.DeleteKeyPairInput{
 						KeyName: aws.String(keyName),
 					})
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
 					}
-					_, err = EC2Client().ImportKeyPairWithContext(ctx, &ec2.ImportKeyPairInput{
+					_, err = EC2Client().ImportKeyPair(ctx, &ec2.ImportKeyPairInput{
 						KeyName:           aws.String(keyName),
 						PublicKeyMaterial: []byte(pubkeyContent),
 						TagSpecifications: tags,
@@ -2911,18 +2930,18 @@ func EC2EnsureKeypair(ctx context.Context, infraSetName, keyName, pubkeyContent 
 				Logger.Println("error:", err)
 				return err
 			}
-			remoteFingerprint := *out.KeyPairs[0].KeyFingerprint
+			remoteFingerprint := out.KeyPairs[0].KeyFingerprint
 			localFingerprint := strings.TrimRight(stdout.String(), "\n")
-			if remoteFingerprint != localFingerprint {
+			if *remoteFingerprint != localFingerprint {
 				if !preview {
-					_, err := EC2Client().DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
+					_, err := EC2Client().DeleteKeyPair(ctx, &ec2.DeleteKeyPairInput{
 						KeyName: aws.String(keyName),
 					})
 					if err != nil {
 						Logger.Println("error:", err)
 						return err
 					}
-					_, err = EC2Client().ImportKeyPairWithContext(ctx, &ec2.ImportKeyPairInput{
+					_, err = EC2Client().ImportKeyPair(ctx, &ec2.ImportKeyPairInput{
 						KeyName:           aws.String(keyName),
 						PublicKeyMaterial: []byte(pubkeyContent),
 						TagSpecifications: tags,

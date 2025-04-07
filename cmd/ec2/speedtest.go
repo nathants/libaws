@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/buger/goterm"
 	"github.com/nathants/libaws/lib"
 )
@@ -60,11 +60,11 @@ func ec2Speedtest() {
 	if strings.Contains(strings.Split(args.Type, ".")[0][1:], "g") { // slice first char, since arm64 g is never first char
 		arch = lib.EC2ArchArm64
 	}
-	amiID, sshUser, err := lib.EC2AmiBase(ctx, lib.EC2AmiAlpine3160, arch)
+	amiID, sshUser, err := lib.EC2AmiBase(ctx, lib.EC2AmiDebianBookworm, arch)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	instances, err := lib.EC2RequestSpotFleet(ctx, ec2.AllocationStrategyLowestPrice, &lib.EC2Config{
+	instances, err := lib.EC2RequestSpotFleet(ctx, ec2types.AllocationStrategyLowestPrice, &lib.EC2Config{
 		NumInstances:   1,
 		Name:           "speedtest",
 		SgID:           args.Sg,
@@ -72,7 +72,7 @@ func ec2Speedtest() {
 		AmiID:          amiID,
 		UserName:       sshUser,
 		Key:            args.Key,
-		InstanceType:   args.Type,
+		InstanceType:   ec2types.InstanceType(args.Type),
 		Gigs:           1,
 		SecondsTimeout: 300,
 	})
@@ -92,7 +92,7 @@ func ec2Speedtest() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	instances, err = lib.EC2ListInstances(ctx, selectors, ec2.InstanceStateNameRunning)
+	instances, err = lib.EC2ListInstances(ctx, selectors, ec2types.InstanceStateNameRunning)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
@@ -201,8 +201,8 @@ func ec2Speedtest() {
 			break
 		}
 	}
-	_, err = lib.EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
-		InstanceIds: aws.StringSlice([]string{*instances[0].InstanceId}),
+	_, err = lib.EC2Client().TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: []string{*instances[0].InstanceId},
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

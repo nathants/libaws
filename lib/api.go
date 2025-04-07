@@ -6,36 +6,37 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/apigatewaymanagementapi"
-	"github.com/aws/aws-sdk-go/service/apigatewayv2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
+	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
+	apitypes "github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
 )
 
-var apiClient *apigatewayv2.ApiGatewayV2
-var apiClientLock sync.RWMutex
+var apiClient *apigatewayv2.Client
+var apiClientLock sync.Mutex
 
-func ApiClientExplicit(accessKeyID, accessKeySecret, region string) *apigatewayv2.ApiGatewayV2 {
-	return apigatewayv2.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func ApiClientExplicit(accessKeyID, accessKeySecret, region string) *apigatewayv2.Client {
+	return apigatewayv2.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func ApiClient() *apigatewayv2.ApiGatewayV2 {
+func ApiClient() *apigatewayv2.Client {
 	apiClientLock.Lock()
 	defer apiClientLock.Unlock()
 	if apiClient == nil {
-		apiClient = apigatewayv2.New(Session())
+		apiClient = apigatewayv2.NewFromConfig(*Session())
 	}
 	return apiClient
 }
 
-func ApiList(ctx context.Context) ([]*apigatewayv2.Api, error) {
+func ApiList(ctx context.Context) ([]apitypes.Api, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ApiList"}
 		defer d.Log()
 	}
 	var token *string
-	var items []*apigatewayv2.Api
+	var items []apitypes.Api
 	for {
-		out, err := ApiClient().GetApisWithContext(ctx, &apigatewayv2.GetApisInput{
+		out, err := ApiClient().GetApis(ctx, &apigatewayv2.GetApisInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -55,13 +56,13 @@ const (
 	ErrApiNotFound = "ErrApiNotFound"
 )
 
-func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
+func Api(ctx context.Context, name string) (*apitypes.Api, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ApiList"}
 		defer d.Log()
 	}
 	var count int
-	var result *apigatewayv2.Api
+	var result *apitypes.Api
 	apis, err := ApiList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -70,7 +71,7 @@ func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
 	for _, api := range apis {
 		if api.Name != nil && *api.Name == name {
 			count++
-			result = api
+			result = &api
 		}
 	}
 	switch count {
@@ -85,15 +86,15 @@ func Api(ctx context.Context, name string) (*apigatewayv2.Api, error) {
 	}
 }
 
-func ApiListDomains(ctx context.Context) ([]*apigatewayv2.DomainName, error) {
+func ApiListDomains(ctx context.Context) ([]apitypes.DomainName, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ApiListDomains"}
 		defer d.Log()
 	}
 	var token *string
-	var result []*apigatewayv2.DomainName
+	var result []apitypes.DomainName
 	for {
-		out, err := ApiClient().GetDomainNamesWithContext(ctx, &apigatewayv2.GetDomainNamesInput{
+		out, err := ApiClient().GetDomainNames(ctx, &apigatewayv2.GetDomainNamesInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -126,15 +127,17 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 	return url, nil
 }
 
-func apiWebsocketApi(domain string) *apigatewaymanagementapi.ApiGatewayManagementApi {
-	return apigatewaymanagementapi.New(
-		Session(),
-		aws.NewConfig().WithEndpoint("https://"+domain),
+func apiWebsocketApi(domain string) *apigatewaymanagementapi.Client {
+	return apigatewaymanagementapi.NewFromConfig(
+		*Session(),
+		func(o *apigatewaymanagementapi.Options) {
+			o.BaseEndpoint = aws.String("https://" + domain)
+		},
 	)
 }
 
 func ApiWebsocketSend(ctx context.Context, domain, connectionID string, data []byte) error {
-	_, err := apiWebsocketApi(domain).PostToConnectionWithContext(ctx, &apigatewaymanagementapi.PostToConnectionInput{
+	_, err := apiWebsocketApi(domain).PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
 		ConnectionId: aws.String(connectionID),
 		Data:         data,
 	})
@@ -142,7 +145,7 @@ func ApiWebsocketSend(ctx context.Context, domain, connectionID string, data []b
 }
 
 func ApiWebsocketClose(ctx context.Context, domain, connectionID string) error {
-	_, err := apiWebsocketApi(domain).DeleteConnectionWithContext(ctx, &apigatewaymanagementapi.DeleteConnectionInput{
+	_, err := apiWebsocketApi(domain).DeleteConnection(ctx, &apigatewaymanagementapi.DeleteConnectionInput{
 		ConnectionId: aws.String(connectionID),
 	})
 	return err

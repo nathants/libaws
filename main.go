@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 
+	"github.com/alexflint/go-arg"
 	_ "github.com/nathants/libaws/cmd/acm"
 	_ "github.com/nathants/libaws/cmd/api"
 	_ "github.com/nathants/libaws/cmd/aws"
@@ -40,9 +43,30 @@ func usage() {
 		maxLen = lib.Max(maxLen, len(fn))
 	}
 	sort.Strings(fns)
-	fmtStr := "%-" + fmt.Sprint(maxLen) + "s - %s\n"
+	fmtStr := "%-" + fmt.Sprint(maxLen) + "s %s\n"
 	for _, fn := range fns {
-		fmt.Printf(fmtStr, fn, strings.Split(strings.Trim(lib.Args[fn].Description(), "\n"), "\n")[0])
+		args := lib.Args[fn]
+		val := reflect.ValueOf(args)
+		newVal := reflect.New(val.Type())
+		newVal.Elem().Set(val)
+		p, err := arg.NewParser(arg.Config{}, newVal.Interface())
+		if err != nil {
+			fmt.Println("Error creating parser:", err)
+			return
+		}
+		var buffer bytes.Buffer
+		p.WriteHelp(&buffer)
+		descr := buffer.String()
+		lines := strings.Split(descr, "\n")
+		var line string
+		for _, l := range lines {
+			l = strings.TrimSpace(l)
+			if strings.HasPrefix(l, "Usage:") {
+				line = l
+			}
+		}
+		line = strings.ReplaceAll(line, "Usage: libaws", "")
+		fmt.Printf(fmtStr, fn, line)
 	}
 }
 

@@ -1,13 +1,12 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
-	"strings"
-
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/nathants/libaws/lib"
+	"strings"
 )
 
 func init() {
@@ -31,7 +30,7 @@ func iamGetPolicy() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	var matches []*iam.Policy
+	var matches []iamtypes.Policy
 	for _, policy := range policies {
 		if strings.EqualFold(lib.Last(strings.Split(*policy.Arn, "/")), args.Name) {
 			matches = append(matches, policy)

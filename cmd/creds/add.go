@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"fmt"

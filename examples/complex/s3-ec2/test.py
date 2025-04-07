@@ -58,8 +58,8 @@ def test():
                     }
                 },
                 "s3": {
-                    f"in-bucket-{uid}": {},
-                    f"out-bucket-{uid}": {},
+                    f"in-bucket-{uid}": {'attr': ['acl=private']},
+                    f"out-bucket-{uid}": {'attr': ['acl=private']},
                 },
                 "vpc": {
                     f"test-vpc-{uid}": {

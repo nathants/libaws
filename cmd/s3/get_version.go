@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,10 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -42,8 +41,7 @@ func s3Getversion() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-
-	out, err := s3Client.GetObjectWithContext(ctx, &s3.GetObjectInput{
+	out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket:    aws.String(bucket),
 		Key:       aws.String(key),
 		VersionId: aws.String(args.Version),

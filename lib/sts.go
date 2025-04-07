@@ -6,27 +6,27 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-var stsClient *sts.STS
-var stsClientLock sync.RWMutex
+var stsClient *sts.Client
+var stsClientLock sync.Mutex
 
-func STSClientExplicit(accessKeyID, accessKeySecret, region string) *sts.STS {
-	return sts.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func STSClientExplicit(accessKeyID, accessKeySecret, region string) *sts.Client {
+	return sts.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func STSClient() *sts.STS {
+func STSClient() *sts.Client {
 	stsClientLock.Lock()
 	defer stsClientLock.Unlock()
 	if stsClient == nil {
-		stsClient = sts.New(Session())
+		stsClient = sts.NewFromConfig(*Session())
 	}
 	return stsClient
 }
 
 var stsAccount *string
-var stsAccountLock sync.RWMutex
+var stsAccountLock sync.Mutex
 
 func StsAccount(ctx context.Context) (string, error) {
 	stsAccountLock.Lock()
@@ -36,7 +36,7 @@ func StsAccount(ctx context.Context) (string, error) {
 			d := &Debug{start: time.Now(), name: "StsAccount"}
 			defer d.Log()
 		}
-		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+		out, err := STSClient().GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
 			return "", err
 		}
@@ -46,7 +46,7 @@ func StsAccount(ctx context.Context) (string, error) {
 }
 
 var stsArn *string
-var stsArnLock sync.RWMutex
+var stsArnLock sync.Mutex
 
 func StsArn(ctx context.Context) (string, error) {
 	stsArnLock.Lock()
@@ -56,7 +56,7 @@ func StsArn(ctx context.Context) (string, error) {
 			d := &Debug{start: time.Now(), name: "StsArn"}
 			defer d.Log()
 		}
-		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+		out, err := STSClient().GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
 			return "", err
 		}
@@ -66,7 +66,7 @@ func StsArn(ctx context.Context) (string, error) {
 }
 
 var stsUser *string
-var stsUserLock sync.RWMutex
+var stsUserLock sync.Mutex
 
 func StsUser(ctx context.Context) (string, error) {
 	stsUserLock.Lock()
@@ -76,7 +76,7 @@ func StsUser(ctx context.Context) (string, error) {
 			d := &Debug{start: time.Now(), name: "StsUser"}
 			defer d.Log()
 		}
-		out, err := STSClient().GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+		out, err := STSClient().GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
 			return "", err
 		}

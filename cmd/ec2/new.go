@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -46,7 +47,7 @@ func (ec2NewArgs) Description() string {
 
 func useSubnetsFromVpc(ctx context.Context, args *ec2NewArgs) {
 	if args.Vpc != "" {
-		zones, err := lib.EC2ZonesWithInstance(ctx, args.Type)
+		zones, err := lib.EC2ZonesWithInstance(ctx, ec2types.InstanceType(args.Type))
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
@@ -105,12 +106,10 @@ func ec2New() {
 		useSubnetsFromVpc(ctx, &args)
 	}
 	if strings.HasPrefix(args.Ami, "ami-") {
-		images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-			Filters: []*ec2.Filter{{
-				Name: aws.String("image-id"),
-				Values: []*string{
-					aws.String(args.Ami),
-				},
+		images, err := lib.EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+			Filters: []ec2types.Filter{{
+				Name:   aws.String("image-id"),
+				Values: []string{args.Ami},
 			}},
 		})
 		if err != nil {
@@ -141,7 +140,7 @@ func ec2New() {
 		}
 		args.Sg = sgID
 	}
-	var instances []*ec2.Instance
+	var instances []ec2types.Instance
 	var tags []lib.EC2Tag
 	for _, tag := range lib.SplitWhiteSpace(args.Tags) {
 		parts := strings.Split(tag, "=")
@@ -154,7 +153,7 @@ func ec2New() {
 		NumInstances:   args.Num,
 		AmiID:          args.Ami,
 		UserName:       args.UserName,
-		InstanceType:   args.Type,
+		InstanceType:   ec2types.InstanceType(args.Type),
 		Name:           args.Name,
 		Key:            args.Key,
 		TempKey:        args.EphemeralKey,
@@ -170,7 +169,7 @@ func ec2New() {
 	}
 	var err error
 	if args.SpotStrategy != "" {
-		instances, err = lib.EC2RequestSpotFleet(ctx, args.SpotStrategy, fleetConfig)
+		instances, err = lib.EC2RequestSpotFleet(ctx, ec2types.AllocationStrategy(args.SpotStrategy), fleetConfig)
 	} else {
 		instances, err = lib.EC2NewInstances(ctx, fleetConfig)
 	}

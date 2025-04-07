@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -32,10 +32,10 @@ func ec2LsSnapshots() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	var nextToken *string
-	var snapshots []*ec2.Snapshot
+	var snapshots []ec2types.Snapshot
 	for {
-		out, err := lib.EC2Client().DescribeSnapshotsWithContext(ctx, &ec2.DescribeSnapshotsInput{
-			OwnerIds:  []*string{aws.String(account)},
+		out, err := lib.EC2Client().DescribeSnapshots(ctx, &ec2.DescribeSnapshotsInput{
+			OwnerIds:  []string{account},
 			NextToken: nextToken,
 		})
 		if err != nil {

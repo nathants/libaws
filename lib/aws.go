@@ -6,31 +6,34 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/endpoints"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
-var sess *session.Session
-var sessLock sync.RWMutex
-var sessRegional = make(map[string]*session.Session)
+var sess *aws.Config
+var sessLock sync.Mutex
+var sessRegional = make(map[string]*aws.Config)
 
-func SessionExplicit(accessKeyID, accessKeySecret, region string) *session.Session {
-	sess, err := session.NewSession(&aws.Config{
-		Region:              aws.String(region),
-		STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
-		MaxRetries:          aws.Int(5),
-		Credentials:         credentials.NewStaticCredentials(accessKeyID, accessKeySecret, ""),
-	})
+func SessionExplicit(accessKeyID, accessKeySecret, region string) *aws.Config {
+	err := os.Setenv("AWS_STS_REGIONAL_ENDPOINTS", "regional")
 	if err != nil {
 		panic(err)
 	}
-	return sess
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKeyID, accessKeySecret, "")),
+		config.WithRetryMaxAttempts(5),
+	)
+	if err != nil {
+		panic(err)
+	}
+	return &cfg
 }
 
-func Session() *session.Session {
+func Session() *aws.Config {
 	sessLock.Lock()
 	defer sessLock.Unlock()
 	if sess == nil {
@@ -38,15 +41,22 @@ func Session() *session.Session {
 		if err != nil {
 			panic(err)
 		}
-		sess = session.Must(session.NewSession(&aws.Config{
-			STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
-			MaxRetries:          aws.Int(5),
-		}))
+		err = os.Setenv("AWS_STS_REGIONAL_ENDPOINTS", "regional")
+		if err != nil {
+			panic(err)
+		}
+		cfg, err := config.LoadDefaultConfig(context.Background(),
+			config.WithRetryMaxAttempts(5),
+		)
+		if err != nil {
+			panic(err)
+		}
+		sess = &cfg
 	}
 	return sess
 }
 
-func SessionRegion(region string) (*session.Session, error) {
+func SessionRegion(region string) (*aws.Config, error) {
 	sessLock.Lock()
 	defer sessLock.Unlock()
 	sess, ok := sessRegional[region]
@@ -55,14 +65,18 @@ func SessionRegion(region string) (*session.Session, error) {
 		if err != nil {
 			return nil, err
 		}
-		sess, err = session.NewSession(&aws.Config{
-			Region:              aws.String(region),
-			STSRegionalEndpoint: endpoints.RegionalSTSEndpoint,
-			MaxRetries:          aws.Int(5),
-		})
+		err = os.Setenv("AWS_STS_REGIONAL_ENDPOINTS", "regional")
 		if err != nil {
 			return nil, err
 		}
+		cfg, err := config.LoadDefaultConfig(context.Background(),
+			config.WithRegion(region),
+			config.WithRetryMaxAttempts(5),
+		)
+		if err != nil {
+			return nil, err
+		}
+		sess = &cfg
 		sessRegional[region] = sess
 	}
 	return sess, nil
@@ -70,12 +84,12 @@ func SessionRegion(region string) (*session.Session, error) {
 
 func Region() string {
 	sess := Session()
-	return *sess.Config.Region
+	return sess.Region
 }
 
 func Regions() ([]string, error) {
-	out, err := EC2Client().DescribeRegions(&ec2.DescribeRegionsInput{
-		AllRegions: aws.Bool(true), // Set to true to include all regions
+	out, err := EC2Client().DescribeRegions(context.Background(), &ec2.DescribeRegionsInput{
+		AllRegions: aws.Bool(true),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -88,12 +102,12 @@ func Regions() ([]string, error) {
 	return regions, nil
 }
 
-func Zones(ctx context.Context) ([]*ec2.AvailabilityZone, error) {
+func Zones(ctx context.Context) ([]ec2types.AvailabilityZone, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Zones"}
 		defer d.Log()
 	}
-	out, err := EC2Client().DescribeAvailabilityZonesWithContext(ctx, &ec2.DescribeAvailabilityZonesInput{})
+	out, err := EC2Client().DescribeAvailabilityZones(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err

@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/acm"
+	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -32,7 +32,7 @@ func acmLs() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, cert := range certs {
-		out, err := lib.AcmClient().DescribeCertificateWithContext(ctx, &acm.DescribeCertificateInput{
+		out, err := lib.AcmClient().DescribeCertificate(ctx, &acm.DescribeCertificateInput{
 			CertificateArn: cert.CertificateArn,
 		})
 		if err != nil {
@@ -40,9 +40,9 @@ func acmLs() {
 		}
 
 		fmt.Println(
-			strings.Join(lib.StringSlice(out.Certificate.SubjectAlternativeNames), " "),
-			"renewal="+*out.Certificate.RenewalEligibility,
-			"status="+*out.Certificate.Status,
+			strings.Join(out.Certificate.SubjectAlternativeNames, " "),
+			"renewal="+out.Certificate.RenewalEligibility,
+			"status="+out.Certificate.Status,
 			"expires="+out.Certificate.NotAfter.Format(time.RFC3339),
 		)
 	}

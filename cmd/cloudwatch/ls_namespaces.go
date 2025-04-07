@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func cloudwatchLsNamespaces() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	namespacesMap := make(map[string]interface{})
+	namespacesMap := make(map[string]any)
 	for _, m := range metrics {
 		namespacesMap[*m.Namespace] = nil
 	}

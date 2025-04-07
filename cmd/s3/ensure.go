@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -36,6 +36,8 @@ optional attrs:
 setting 'cors=true' uses '*' for allowed origins. to specify one or more explicit origins, do this instead:
  - corsorigin=http://localhost:8080
  - corsorigin=https://example.com
+
+note: bucket acl can only be set at bucket creation time
 
 `
 }

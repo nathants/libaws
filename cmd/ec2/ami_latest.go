@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -7,8 +7,9 @@ import (
 	"sort"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -33,19 +34,19 @@ func ec2LatestAmi() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	images, err := lib.EC2Client().DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
-		Owners: []*string{aws.String(account)},
-		Filters: []*ec2.Filter{
+	images, err := lib.EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners: []string{account},
+		Filters: []ec2types.Filter{
 			{
 				Name: aws.String("description"),
-				Values: []*string{
-					&args.Name,
+				Values: []string{
+					args.Name,
 				},
 			},
 			{
 				Name: aws.String("state"),
-				Values: []*string{
-					aws.String("available"),
+				Values: []string{
+					"available",
 				},
 			},
 		},

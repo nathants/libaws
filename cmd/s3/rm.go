@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -52,7 +52,7 @@ func s3Rm() {
 
 	var token *string
 	for {
-		out, err := s3Client.ListObjectsV2WithContext(ctx, &s3.ListObjectsV2Input{
+		out, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket:            aws.String(bucket),
 			Prefix:            aws.String(key),
 			Delimiter:         delimiter,
@@ -62,10 +62,10 @@ func s3Rm() {
 			lib.Logger.Fatal("error: ", err)
 		}
 
-		var objects []*s3.ObjectIdentifier
+		var objects []s3types.ObjectIdentifier
 
 		for _, obj := range out.Contents {
-			objects = append(objects, &s3.ObjectIdentifier{
+			objects = append(objects, s3types.ObjectIdentifier{
 				Key: obj.Key,
 			})
 		}
@@ -74,9 +74,9 @@ func s3Rm() {
 
 			if !args.Preview {
 
-				deleteOut, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+				deleteOut, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 					Bucket: aws.String(bucket),
-					Delete: &s3.Delete{Objects: objects},
+					Delete: &s3types.Delete{Objects: objects},
 				})
 				if err != nil {
 					lib.Logger.Fatal("error: ", err)

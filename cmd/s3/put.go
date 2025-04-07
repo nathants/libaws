@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"bytes"
@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -59,11 +59,10 @@ func s3Put() {
 
 	if args.Sha256 {
 		hash := sha256.Sum256(val)
-		input.ChecksumAlgorithm = aws.String(s3.ChecksumAlgorithmSha256)
+		input.ChecksumAlgorithm = s3types.ChecksumAlgorithmSha256
 		input.ChecksumSHA256 = aws.String(base64.StdEncoding.EncodeToString(hash[:]))
 	}
-
-	_, err = s3Client.PutObjectWithContext(ctx, input)
+	_, err = s3Client.PutObject(ctx, input)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -8,10 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -35,7 +34,7 @@ func s3LsVersions() {
 	ctx := context.Background()
 
 	if args.Path == "" {
-		out, err := lib.S3Client().ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
+		out, err := lib.S3Client().ListBuckets(ctx, &s3.ListBucketsInput{})
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
@@ -71,7 +70,7 @@ func s3LsVersions() {
 		var keyMarker *string
 		var versionMarker *string
 		for {
-			out, err := s3Client.ListObjectVersionsWithContext(ctx, &s3.ListObjectVersionsInput{
+			out, err := s3Client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
 				Bucket:          aws.String(bucket),
 				Prefix:          aws.String(key),
 				Delimiter:       delimiter,
@@ -112,7 +111,7 @@ func s3LsVersions() {
 					Date:         fmt.Sprint(obj.LastModified.In(loc))[:19],
 					Size:         fmt.Sprintf("%10v", *obj.Size),
 					Key:          objKey,
-					StorageClass: *obj.StorageClass,
+					StorageClass: string(obj.StorageClass),
 					Version:      version,
 					Kind:         kind,
 				})

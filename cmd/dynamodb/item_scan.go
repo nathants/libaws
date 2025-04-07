@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,9 +6,10 @@ import (
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -30,13 +31,13 @@ func dynamodbItemScan() {
 	var args dynamodbItemScanArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	var start map[string]*dynamodb.AttributeValue
+	var start map[string]ddbtypes.AttributeValue
 	count := 0
 	for {
-		out, err := lib.DynamoDBClient().ScanWithContext(ctx, &dynamodb.ScanInput{
+		out, err := lib.DynamoDBClient().Scan(ctx, &dynamodb.ScanInput{
 			TableName:         aws.String(args.Table),
 			ExclusiveStartKey: start,
-			Limit:             aws.Int64(1000),
+			Limit:             aws.Int32(1000),
 		})
 		if err != nil {
 			panic(err)
@@ -46,8 +47,8 @@ func dynamodbItemScan() {
 				break
 			}
 			count++
-			val := make(map[string]interface{})
-			err := dynamodbattribute.UnmarshalMap(item, &val)
+			val := make(map[string]any)
+			err = attributevalue.UnmarshalMap(item, &val)
 			if err != nil {
 				panic(err)
 			}

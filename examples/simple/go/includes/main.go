@@ -9,7 +9,7 @@ import (
 	"github.com/nathants/libaws/lib"
 )
 
-func handleRequest(_ context.Context, _ interface{}) (interface{}, error) {
+func handleRequest(_ context.Context, _ any) (any, error) {
 	data, err := os.ReadFile("include_me.txt")
 	if err != nil {
 		lib.Logger.Println("error:", err)

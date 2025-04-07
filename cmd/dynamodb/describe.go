@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,8 +6,9 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -28,21 +29,21 @@ func dynamodbDescribe() {
 	var args dynamodbDescribeArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	out, err := lib.DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
+	out, err := lib.DynamoDBClient().DescribeTable(ctx, &dynamodb.DescribeTableInput{
 		TableName: aws.String(args.Table),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	attrs := make(map[string]string)
+	attrs := map[string]ddbtypes.ScalarAttributeType{}
 	for _, attr := range out.Table.AttributeDefinitions {
-		attrs[*attr.AttributeName] = *attr.AttributeType
+		attrs[*attr.AttributeName] = attr.AttributeType
 	}
 	for _, key := range out.Table.KeySchema {
 		vals := []string{
 			*key.AttributeName,
-			attrs[*key.AttributeName],
-			*key.KeyType,
+			string(attrs[*key.AttributeName]),
+			string(key.KeyType),
 		}
 		fmt.Println(strings.ToLower(strings.Join(vals, ":")))
 	}

@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -49,7 +49,7 @@ func ec2Ssh() {
 	if fail {
 		lib.Logger.Fatal("error: provide some selectors")
 	}
-	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2.InstanceStateNameRunning)
+	instances, err := lib.EC2ListInstances(ctx, args.Selectors, ec2types.InstanceStateNameRunning)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
@@ -94,7 +94,7 @@ func ec2Ssh() {
 			PrivateIP:      args.PrivateIP,
 			MaxConcurrency: args.MaxConcurrency,
 			Key:            args.Key,
-			PrintLock:      sync.RWMutex{},
+			PrintLock:      sync.Mutex{},
 			IPNotID:        args.IPNotID,
 		})
 		for _, result := range results {

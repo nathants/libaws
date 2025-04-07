@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -33,6 +33,6 @@ func iamLsSSHKeys() {
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
-		fmt.Println(*key.Status, *key.SSHPublicKeyId, *data.Fingerprint)
+		fmt.Println(key.Status, *key.SSHPublicKeyId, *data.Fingerprint)
 	}
 }

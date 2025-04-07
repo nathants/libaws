@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -25,8 +25,8 @@ var (
 const initTemplate = `#!/bin/bash
 (
     set -xeou pipefail
-    sudo apk update
-    sudo apk add aws-cli
+    sudo apt-get update -y
+    sudo apt-get install -y awscli
     echo "$(aws s3 cp s3://%s/%s -) from ec2" | aws s3 cp - s3://%s/%s
     sudo poweroff
 ) &> /tmp/log.txt
@@ -41,7 +41,7 @@ func handleRequest(ctx context.Context, event events.S3Event) (events.APIGateway
 	if err != nil {
 		panic(err)
 	}
-	amiID, user, err := lib.EC2AmiBase(ctx, lib.EC2AmiAlpine3160, lib.EC2ArchAmd64)
+	amiID, user, err := lib.EC2AmiBase(ctx, lib.EC2AmiDebianBookworm, lib.EC2ArchAmd64)
 	if err != nil {
 		panic(err)
 	}
@@ -49,7 +49,7 @@ func handleRequest(ctx context.Context, event events.S3Event) (events.APIGateway
 	if err != nil {
 		panic(err)
 	}
-	zones, err := lib.EC2ZonesWithInstance(ctx, ec2.InstanceTypeT3Small)
+	zones, err := lib.EC2ZonesWithInstance(ctx, ec2types.InstanceTypeT3Small)
 	if err != nil {
 		panic(err)
 	}
@@ -71,7 +71,7 @@ func handleRequest(ctx context.Context, event events.S3Event) (events.APIGateway
 	}
 	for _, record := range event.Records {
 		key := record.S3.Object.Key
-		_, err := lib.EC2RequestSpotFleet(ctx, ec2.AllocationStrategyLowestPrice, &lib.EC2Config{
+		_, err := lib.EC2RequestSpotFleet(ctx, ec2types.AllocationStrategyLowestPrice, &lib.EC2Config{
 			NumInstances:   1,
 			SgID:           sgID,
 			SubnetIds:      spotSubnetIDs,
@@ -80,7 +80,7 @@ func handleRequest(ctx context.Context, event events.S3Event) (events.APIGateway
 			Key:            keypairName,
 			Profile:        profileName,
 			UserName:       user,
-			InstanceType:   ec2.InstanceTypeT3Small,
+			InstanceType:   ec2types.InstanceTypeT3Small,
 			SecondsTimeout: 900,
 			Gigs:           8,
 			Init:           formatInitTemplate(inBucket, key, outBucket, key),

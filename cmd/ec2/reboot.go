@@ -1,11 +1,13 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"os"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -42,17 +44,17 @@ func ec2Reboot() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	var ids []*string
+	var ids []string
 	for _, instance := range instances {
-		ids = append(ids, instance.InstanceId)
-		if *instance.State.Name == ec2.InstanceStateNameRunning || *instance.State.Name == ec2.InstanceStateNameStopped {
+		ids = append(ids, *instance.InstanceId)
+		if instance.State.Name == ec2types.InstanceStateNameRunning || instance.State.Name == ec2types.InstanceStateNameStopped {
 			lib.Logger.Println(lib.PreviewString(args.Preview)+"rebooting:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
 	if args.Preview {
 		os.Exit(0)
 	}
-	_, err = lib.EC2Client().RebootInstancesWithContext(ctx, &ec2.RebootInstancesInput{
+	_, err = lib.EC2Client().RebootInstances(ctx, &ec2.RebootInstancesInput{
 		InstanceIds: ids,
 	})
 	if err != nil {
@@ -60,7 +62,7 @@ func ec2Reboot() {
 	}
 	if args.Wait {
 		_, err := lib.EC2WaitSsh(ctx, &lib.EC2WaitSshInput{
-			Selectors:      lib.StringSlice(ids),
+			Selectors:      ids,
 			MaxWaitSeconds: 300,
 			User:           lib.EC2GetTag(instances[0].Tags, "user", ""),
 		})

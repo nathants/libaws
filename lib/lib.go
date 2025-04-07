@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/avast/retry-go"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/mattn/go-isatty"
 	"github.com/mikesmitty/edkey"
 	"github.com/r3labs/diff/v2"
@@ -65,7 +64,7 @@ outer:
 	return strings.Join(lines, "\n")
 }
 
-func Json(i interface{}) string {
+func Json(i any) string {
 	val, err := json.Marshal(i)
 	if err != nil {
 		panic(err)
@@ -73,7 +72,7 @@ func Json(i interface{}) string {
 	return string(val)
 }
 
-func PformatAlways(i interface{}) string {
+func PformatAlways(i any) string {
 	val, err := json.MarshalIndent(i, "", "    ")
 	if err != nil {
 		panic(err)
@@ -81,7 +80,7 @@ func PformatAlways(i interface{}) string {
 	return string(val)
 }
 
-func Pformat(i interface{}) string {
+func Pformat(i any) string {
 	if !isatty.IsTerminal(os.Stdout.Fd()) {
 		val, err := json.Marshal(i)
 		if err != nil {
@@ -123,7 +122,7 @@ func RetryAttempts(ctx context.Context, attempts int, fn func() error) error {
 	)
 }
 
-func Contains(parts []string, part string) bool {
+func Contains[T comparable](parts []T, part T) bool {
 	for _, p := range parts {
 		if p == part {
 			return true
@@ -201,11 +200,11 @@ func IsDigit(s string) bool {
 	return err == nil
 }
 
-func Last(parts []string) string {
-	return parts[len(parts)-1]
+func Last[T any](xs []T) T {
+	return xs[len(xs)-1]
 }
 
-func shell(format string, a ...interface{}) error {
+func shell(format string, a ...any) error {
 	cmd := exec.Command("bash", "-c", fmt.Sprintf(format, a...))
 	var stderr bytes.Buffer
 	var stdout bytes.Buffer
@@ -221,7 +220,7 @@ func shell(format string, a ...interface{}) error {
 	return nil
 }
 
-func shellAt(dir string, format string, a ...interface{}) error {
+func shellAt(dir string, format string, a ...any) error {
 	cmdString := fmt.Sprintf(format, a...)
 	cmd := exec.Command("bash", "-c", cmdString)
 	cmd.Dir = dir
@@ -247,8 +246,8 @@ func Max(i, j int) int {
 	return j
 }
 
-func zipSha256Hex(data []byte) (map[string]*string, error) {
-	results := make(map[string]*string)
+func zipSha256Hex(data []byte) (map[string]string, error) {
+	results := make(map[string]string)
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		Logger.Println("error:", err)
@@ -265,7 +264,7 @@ func zipSha256Hex(data []byte) (map[string]*string, error) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		results["./"+f.Name] = aws.String(sha256Short(rd))
+		results["./"+f.Name] = sha256Short(rd)
 	}
 	return results, nil
 }
@@ -279,14 +278,14 @@ func sha256Short(data []byte) string {
 	return "sha256:" + sha256Hex(data)[:16]
 }
 
-func diffMapStringStringPointers(a, b map[string]*string, logPrefix string, logValues bool) (bool, error) {
+func diffMapStringString(a, b map[string]string, logPrefix string, logValues bool) (bool, error) {
 	for k, v := range a {
-		if v == nil {
+		if v == "" {
 			delete(a, k)
 		}
 	}
 	for k, v := range b {
-		if v == nil {
+		if v == "" {
 			delete(b, k)
 		}
 	}
@@ -373,7 +372,7 @@ func ToUnixMilli(t time.Time) int64 {
 	return t.UnixNano() / int64(time.Millisecond)
 }
 
-func logRecover(r interface{}) {
+func logRecover(r any) {
 	stack := string(debug.Stack())
 	Logger.Println(r)
 	Logger.Println(stack)

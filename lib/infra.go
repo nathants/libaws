@@ -3,7 +3,9 @@ package lib
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,17 +17,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/apigatewayv2"
-	"github.com/aws/aws-sdk-go/service/cloudwatchevents"
-	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/lambda"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/ses"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	logstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	events "github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -72,8 +78,8 @@ type InfraSet struct {
 	// "none" infraset gets a few extra slots for resources not associated with any infraset
 	User  map[string]*InfraUser  `yaml:"user,omitempty"`
 	Role  map[string]*InfraRole  `yaml:"role,omitempty"`  // any role  not associated with an infraset shows up here
-	Api   map[string]*InfraApi   `yaml:"api,omitempty"`   // any api   not associated with an infraset shows up here
-	Event map[string]*InfraEvent `yaml:"event,omitempty"` // any event not associated with an infraset shows up here
+	Api   map[string]*InfraApi   `yaml:"api,omitempty"`   // any api  not associated with an infraset shows up here
+	Event map[string]*InfraEvent `yaml:"event,omitempty"` // any event  not associated with an infraset shows up here
 }
 
 type InfraApi struct {
@@ -81,7 +87,7 @@ type InfraApi struct {
 	infraSetName string
 	Dns          string `json:"dns,omitempty"    yaml:"dns,omitempty"`
 	Domain       string `json:"domain,omitempty" yaml:"domain,omitempty"`
-	ReadOnlyUrl  string `json:"url,omitempty" yaml:"url,omitempty"`
+	ReadOnlyUrl  string `json:"url,omitempty"    yaml:"url,omitempty"`
 }
 
 type InfraUser struct {
@@ -240,7 +246,7 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 		defer d.Log()
 	}
 	var err error
-	lock := &sync.RWMutex{}
+	lock := &sync.Mutex{}
 	infra := &InfraListOutput{
 		InfraSet: map[string]*InfraSet{},
 	}
@@ -512,9 +518,7 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 		if infra.InfraSet[infraSetNameNone].User == nil {
 			infra.InfraSet[infraSetNameNone].User = map[string]*InfraUser{}
 		}
-		for name, user := range users {
-			infra.InfraSet[infraSetNameNone].User[name] = user
-		}
+		maps.Copy(infra.InfraSet[infraSetNameNone].User, users)
 		lock.Unlock()
 		errs <- nil
 	}()
@@ -636,9 +640,6 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 	var lambdaNames []string
 	var websocketNames []string
 	for _, infraSet := range infra.InfraSet {
-		if infraSet.Name == infraSetNameNone {
-			continue
-		}
 		for name := range infraSet.Lambda {
 			lambdaNames = append(lambdaNames, name)
 			websocketNames = append(websocketNames, name+LambdaWebsocketSuffix)
@@ -649,9 +650,6 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 	}
 
 	for _, infraSet := range infra.InfraSet {
-		if infraSet.Name == infraSetNameNone {
-			continue
-		}
 
 		for _, vpc := range infraSet.Vpc {
 			for sgName, sg := range vpc.SecurityGroup {
@@ -704,14 +702,24 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 					}
 					infraLambda.Env[i] = k + "=" + sha256Short([]byte(v))
 				}
-
 			}
 		}
-
 	}
 
 	if filter != "" {
 		infra.InfraSet[infraSetNameNone] = nil
+	}
+
+	infraSet, ok := infra.InfraSet[infraSetNameNone]
+	if ok {
+		data, err := yaml.Marshal(infraSet)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		if strings.Trim(string(data), "\n") == "{}" {
+			delete(infra.InfraSet, infraSetNameNone)
+		}
 	}
 
 	return infra, nil
@@ -723,7 +731,7 @@ func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map
 		defer d.Log()
 	}
 	results := make(map[string]*InfraEvent)
-	lock := sync.RWMutex{}
+	lock := sync.Mutex{}
 	rules, err := EventsListRules(ctx, nil)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -744,7 +752,7 @@ func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map
 				errChan <- err
 				return
 			}
-			tagsOut, err := EventsClient().ListTagsForResourceWithContext(ctx, &cloudwatchevents.ListTagsForResourceInput{
+			tagsOut, err := EventsClient().ListTagsForResource(ctx, &events.ListTagsForResourceInput{
 				ResourceARN: rule.Arn,
 			})
 			if err != nil {
@@ -815,7 +823,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	var fns []*lambda.FunctionConfiguration
+	var fns []lambdatypes.FunctionConfiguration
 	for _, fn := range allFns {
 		if filter != "" && !strings.Contains(*fn.FunctionName, filter) {
 			continue
@@ -838,13 +846,11 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 			}
 			if fn.Environment != nil {
 				for k, v := range fn.Environment.Variables {
-					if v != nil {
-						infraLambda.Env = append(infraLambda.Env, k+"="+*v)
-					}
+					infraLambda.Env = append(infraLambda.Env, k+"="+v)
 				}
 			}
 			sort.Strings(infraLambda.Env)
-			tagsOut, err := LambdaClient().ListTagsWithContext(ctx, &lambda.ListTagsInput{
+			tagsOut, err := LambdaClient().ListTags(ctx, &lambda.ListTagsInput{
 				Resource: fn.FunctionArn,
 			})
 			if err != nil {
@@ -854,18 +860,18 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 			}
 			for k, v := range tagsOut.Tags {
 				if k == infraSetTagName {
-					infraLambda.infraSetName = *v
+					infraLambda.infraSetName = v
 					break
 				}
 			}
 			res[infraLambda.Name] = infraLambda
-			if *fn.MemorySize != lambdaAttrMemoryDefault {
+			if fn.MemorySize != nil && *fn.MemorySize != lambdaAttrMemoryDefault {
 				infraLambda.Attr = append(infraLambda.Attr, fmt.Sprintf("memory=%d", *fn.MemorySize))
 			}
-			if *fn.Timeout != lambdaAttrTimeoutDefault {
+			if fn.Timeout != nil && *fn.Timeout != lambdaAttrTimeoutDefault {
 				infraLambda.Attr = append(infraLambda.Attr, fmt.Sprintf("timeout=%d", *fn.Timeout))
 			}
-			out, err := LambdaClient().GetFunctionConcurrencyWithContext(ctx, &lambda.GetFunctionConcurrencyInput{
+			out, err := LambdaClient().GetFunctionConcurrency(ctx, &lambda.GetFunctionConcurrencyInput{
 				FunctionName: aws.String(*fn.FunctionName),
 			})
 			if err != nil {
@@ -877,7 +883,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 				infraLambda.Attr = append(infraLambda.Attr, fmt.Sprintf("concurrency=%d", *out.ReservedConcurrentExecutions))
 			}
 			logGroupName := "/aws/lambda/" + *fn.FunctionName
-			outGroups, err := LogsClient().DescribeLogGroupsWithContext(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+			outGroups, err := LogsClient().DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
 				LogGroupNamePrefix: aws.String(logGroupName),
 			})
 			if err != nil {
@@ -885,17 +891,17 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 				errChan <- err
 				return
 			}
-			var logGroup *cloudwatchlogs.LogGroup
+			var logGroup *logstypes.LogGroup
 			for _, lg := range outGroups.LogGroups {
 				if logGroupName == *lg.LogGroupName {
-					logGroup = lg
+					logGroup = &lg
 					break
 				}
 			}
 			if logGroup != nil {
 				if logGroup.RetentionInDays == nil {
 					infraLambda.Attr = append(infraLambda.Attr, "logs-ttl-days=0")
-				} else if int(*logGroup.RetentionInDays) != lambdaAttrLogsTTLDaysDefault {
+				} else if *logGroup.RetentionInDays != lambdaAttrLogsTTLDaysDefault {
 					infraLambda.Attr = append(infraLambda.Attr, fmt.Sprintf("logs-ttl-days=%d", *logGroup.RetentionInDays))
 				}
 			}
@@ -922,7 +928,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 				return
 			}
 			for _, rule := range rules {
-				out, err := SesClient().DescribeReceiptRuleWithContext(ctx, &ses.DescribeReceiptRuleInput{
+				out, err := SesClient().DescribeReceiptRule(ctx, &ses.DescribeReceiptRuleInput{
 					RuleName:    rule.Name,
 					RuleSetName: rule.Name,
 				})
@@ -943,7 +949,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 							action.LambdaAction.FunctionArn != nil &&
 							*action.LambdaAction.FunctionArn == *fn.FunctionArn &&
 							len(out.Rule.Recipients) == 1 &&
-							*out.Rule.Recipients[0] == *rule.Name {
+							out.Rule.Recipients[0] == *rule.Name {
 							dns = *rule.Name
 						}
 					}
@@ -966,7 +972,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 			}
 			var marker *string
 			for {
-				out, err := LambdaClient().ListEventSourceMappingsWithContext(ctx, &lambda.ListEventSourceMappingsInput{
+				out, err := LambdaClient().ListEventSourceMappings(ctx, &lambda.ListEventSourceMappingsInput{
 					FunctionName: fn.FunctionArn,
 					Marker:       marker,
 				})
@@ -976,7 +982,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					return
 				}
 				for _, mapping := range out.EventSourceMappings {
-					if Contains([]string{"Disabled", "Disabling"}, *mapping.State) {
+					if mapping.State != nil && Contains([]string{"Disabled", "Disabling"}, *mapping.State) {
 						continue
 					}
 					infra := ArnToInfraName(*mapping.EventSourceArn)
@@ -990,7 +996,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 								fmt.Sprintf("batch=%d", *mapping.BatchSize),
 								fmt.Sprintf("parallel=%d", *mapping.ParallelizationFactor),
 								fmt.Sprintf("retry=%d", *mapping.MaximumRetryAttempts),
-								fmt.Sprintf("start=%s", strings.ToLower(*mapping.StartingPosition)),
+								fmt.Sprintf("start=%s", strings.ToLower(string(mapping.StartingPosition))),
 								fmt.Sprintf("window=%d", *mapping.MaximumBatchingWindowInSeconds),
 							},
 						})
@@ -1053,7 +1059,7 @@ func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
 		defer d.Log()
 	}
 	result := make(map[string]*InfraKeypair)
-	out, err := EC2Client().DescribeKeyPairsWithContext(ctx, &ec2.DescribeKeyPairsInput{
+	out, err := EC2Client().DescribeKeyPairs(ctx, &ec2.DescribeKeyPairsInput{
 		IncludePublicKey: aws.Bool(true),
 	})
 	if err != nil {
@@ -1061,6 +1067,10 @@ func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
 		return nil, err
 	}
 	for _, keypair := range out.KeyPairs {
+		if keypair.KeyName == nil || keypair.PublicKey == nil {
+			Logger.Println("skipping keypair without name:", keypair.Tags)
+			continue
+		}
 		infraKeypair := &InfraKeypair{
 			PubkeyContent: strings.TrimSpace(*keypair.PublicKey),
 		}
@@ -1094,7 +1104,7 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 	}
 	apiToDomain := make(map[string]string)
 	for _, domain := range domains {
-		mappings, err := ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
+		mappings, err := ApiClient().GetApiMappings(ctx, &apigatewayv2.GetApiMappingsInput{
 			DomainName: domain.DomainName,
 			MaxResults: aws.String(fmt.Sprint(500)),
 		})
@@ -1107,9 +1117,11 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		for _, mapping := range mappings.Items {
-			if *mapping.Stage == lambdaDollarDefault {
-				apiToDomain[*mapping.ApiId] = *domain.DomainName
+		if mappings.Items != nil {
+			for _, mapping := range mappings.Items {
+				if *mapping.Stage == lambdaDollarDefault {
+					apiToDomain[*mapping.ApiId] = *domain.DomainName
+				}
 			}
 		}
 	}
@@ -1128,25 +1140,27 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 		for _, record := range records {
 			if record.Name != nil {
 				domain := strings.TrimRight(*record.Name, ".")
-				mappings, err := ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
+				mappings, err := ApiClient().GetApiMappings(ctx, &apigatewayv2.GetApiMappingsInput{
 					DomainName: aws.String(domain),
 					MaxResults: aws.String(fmt.Sprint(500)),
 				})
 				if err != nil {
-					aerr, ok := err.(awserr.Error)
-					if !ok || aerr.Code() != apigatewayv2.ErrCodeNotFoundException {
-						Logger.Println("error:", err)
-						return nil, err
+					if strings.Contains(err.Error(), "NotFoundException") {
+						continue
 					}
+					Logger.Println("error:", err)
+					return nil, err
 				}
 				if len(mappings.Items) == 500 {
 					err := fmt.Errorf("api overflow without pagination")
 					Logger.Println("error:", err)
 					return nil, err
 				}
-				for _, mapping := range mappings.Items {
-					if *mapping.Stage == lambdaDollarDefault {
-						apiToDns[*mapping.ApiId] = domain
+				if mappings.Items != nil {
+					for _, mapping := range mappings.Items {
+						if mapping.Stage != nil && *mapping.Stage == lambdaDollarDefault && mapping.ApiId != nil {
+							apiToDns[*mapping.ApiId] = domain
+						}
 					}
 				}
 			}
@@ -1164,13 +1178,15 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 			infraApi := &InfraApi{
 				apiID: *api.ApiId,
 			}
-			for k, v := range api.Tags {
-				if k == infraSetTagName {
-					infraApi.infraSetName = *v
-					break
+			if api.Tags != nil {
+				for k, v := range api.Tags {
+					if k == infraSetTagName {
+						infraApi.infraSetName = v
+						break
+					}
 				}
 			}
-			out, err := ApiClient().GetIntegrationsWithContext(ctx, &apigatewayv2.GetIntegrationsInput{
+			out, err := ApiClient().GetIntegrations(ctx, &apigatewayv2.GetIntegrationsInput{
 				ApiId:      api.ApiId,
 				MaxResults: aws.String(fmt.Sprint(500)),
 			})
@@ -1224,7 +1240,9 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 				Attr:       attrs,
 			}
 			lock.Lock()
-			result[*api.Name] = infraApi
+			if api.Name != nil {
+				result[*api.Name] = infraApi
+			}
 			lock.Unlock()
 			errChan <- nil
 		}()
@@ -1261,12 +1279,12 @@ func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 				}
 			}()
 			infraDynamoDB := &InfraDynamoDB{}
-			out, err := DynamoDBClient().DescribeTableWithContext(ctx, &dynamodb.DescribeTableInput{
+			out, err := DynamoDBClient().DescribeTable(ctx, &dynamodb.DescribeTableInput{
 				TableName: aws.String(tableName),
 			})
 			if err != nil {
-				aerr, ok := err.(awserr.Error)
-				if ok || aerr.Code() == dynamodb.ErrCodeResourceNotFoundException {
+				var notFoundErr *dynamodbtypes.ResourceNotFoundException
+				if errors.As(err, &notFoundErr) {
 					errChan <- nil
 					return
 				}
@@ -1274,43 +1292,72 @@ func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 				errChan <- err
 				return
 			}
-			attrTypes := make(map[string]string)
+			if out.Table == nil {
+				errChan <- nil
+				return
+			}
+			attrTypes := map[string]string{}
 			for _, attr := range out.Table.AttributeDefinitions {
-				attrTypes[*attr.AttributeName] = *attr.AttributeType
+				attrTypes[*attr.AttributeName] = string(attr.AttributeType)
 			}
 			for _, key := range out.Table.KeySchema {
-				infraDynamoDB.Key = append(infraDynamoDB.Key, fmt.Sprintf("%s:%s:%s", *key.AttributeName, strings.ToLower(attrTypes[*key.AttributeName]), strings.ToLower(*key.KeyType)))
+				infraDynamoDB.Key = append(infraDynamoDB.Key, fmt.Sprintf("%s:%s:%s",
+					*key.AttributeName,
+					strings.ToLower(attrTypes[*key.AttributeName]),
+					strings.ToLower(string(key.KeyType)),
+				))
 			}
-			if *out.Table.ProvisionedThroughput.ReadCapacityUnits != 0 {
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("read=%d", *out.Table.ProvisionedThroughput.ReadCapacityUnits))
-			}
-			if *out.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("write=%d", *out.Table.ProvisionedThroughput.WriteCapacityUnits))
+			if out.Table.ProvisionedThroughput != nil {
+				if out.Table.ProvisionedThroughput.ReadCapacityUnits != nil && *out.Table.ProvisionedThroughput.ReadCapacityUnits != 0 {
+					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("read=%d",
+						*out.Table.ProvisionedThroughput.ReadCapacityUnits))
+				}
+				if out.Table.ProvisionedThroughput.WriteCapacityUnits != nil && *out.Table.ProvisionedThroughput.WriteCapacityUnits != 0 {
+					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("write=%d",
+						*out.Table.ProvisionedThroughput.WriteCapacityUnits))
+				}
 			}
 			if out.Table.StreamSpecification != nil {
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("stream=%s", strings.ToLower(*out.Table.StreamSpecification.StreamViewType)))
+				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("stream=%s",
+					strings.ToLower(string(out.Table.StreamSpecification.StreamViewType))))
 			}
-			for i, index := range out.Table.LocalSecondaryIndexes {
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
-				for j, key := range index.KeySchema {
-					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
-				}
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
-				for j, attr := range index.Projection.NonKeyAttributes {
-					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
+			if out.Table.LocalSecondaryIndexes != nil {
+				for i, index := range out.Table.LocalSecondaryIndexes {
+					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.IndexName=%s",
+						i, *index.IndexName))
+					for j, key := range index.KeySchema {
+						infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Key.%d=%s:%s:%s",
+							i, j, *key.AttributeName, attrTypes[*key.AttributeName], string(key.KeyType)))
+					}
+					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.ProjectionType=%s",
+						i, string(index.Projection.ProjectionType)))
+					for j, attr := range index.Projection.NonKeyAttributes {
+						infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s",
+							i, j, attr))
+					}
 				}
 			}
-			for i, index := range out.Table.GlobalSecondaryIndexes {
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.IndexName=%s", i, *index.IndexName))
-				for j, key := range index.KeySchema {
-					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Key.%d=%s:%s:%s", i, j, *key.AttributeName, attrTypes[*key.AttributeName], *key.KeyType))
+			if out.Table.GlobalSecondaryIndexes != nil {
+				for i, index := range out.Table.GlobalSecondaryIndexes {
+					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.IndexName=%s",
+						i, *index.IndexName))
+					for j, key := range index.KeySchema {
+						if key.AttributeName != nil && key.KeyType != "" {
+							infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Key.%d=%s:%s:%s",
+								i, j, *key.AttributeName, attrTypes[*key.AttributeName], string(key.KeyType)))
+						}
+					}
+					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s",
+						i, string(index.Projection.ProjectionType)))
+					for j, attr := range index.Projection.NonKeyAttributes {
+						infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s",
+							i, j, attr))
+					}
+					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.ReadCapacityUnits=%d",
+						i, *index.ProvisionedThroughput.ReadCapacityUnits))
+					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.WriteCapacityUnits=%d",
+						i, *index.ProvisionedThroughput.WriteCapacityUnits))
 				}
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s", i, *index.Projection.ProjectionType))
-				for j, attr := range index.Projection.NonKeyAttributes {
-					infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.NonKeyAttributes.%d=%s", i, j, *attr))
-				}
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.ReadCapacityUnits=%d", i, *index.ProvisionedThroughput.ReadCapacityUnits))
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.WriteCapacityUnits=%d", i, *index.ProvisionedThroughput.WriteCapacityUnits))
 			}
 			tags, err := DynamoDBListTags(ctx, tableName)
 			if err != nil {
@@ -1319,13 +1366,12 @@ func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 				return
 			}
 			for _, tag := range tags {
-				if *tag.Key == infraSetTagName {
+				if tag.Key != nil && *tag.Key == infraSetTagName && tag.Value != nil {
 					infraDynamoDB.infraSetName = *tag.Value
 					break
 				}
 			}
-
-			ttlOut, err := DynamoDBClient().DescribeTimeToLiveWithContext(ctx, &dynamodb.DescribeTimeToLiveInput{
+			ttlOut, err := DynamoDBClient().DescribeTimeToLive(ctx, &dynamodb.DescribeTimeToLiveInput{
 				TableName: aws.String(tableName),
 			})
 			if err != nil {
@@ -1333,22 +1379,16 @@ func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 				errChan <- err
 				return
 			}
-			if ttlOut == nil {
-				err := fmt.Errorf("ttlOut was nil without error")
-				Logger.Println("error:", err)
-				errChan <- err
-				return
-			}
 			for {
-				status := *ttlOut.TimeToLiveDescription.TimeToLiveStatus
-				if status == dynamodb.TimeToLiveStatusDisabled ||
-					status == dynamodb.TimeToLiveStatusEnabled {
+				status := ttlOut.TimeToLiveDescription.TimeToLiveStatus
+				if status == dynamodbtypes.TimeToLiveStatusDisabled ||
+					status == dynamodbtypes.TimeToLiveStatusEnabled {
 					break
 				}
 				Logger.Println("waiting for table ttl status to finish updating:", tableName, status)
 				time.Sleep(2 * time.Second)
 			}
-			if *ttlOut.TimeToLiveDescription.TimeToLiveStatus == dynamodb.TimeToLiveStatusEnabled {
+			if ttlOut.TimeToLiveDescription.TimeToLiveStatus == dynamodbtypes.TimeToLiveStatusEnabled {
 				infraDynamoDB.Attr = append(infraDynamoDB.Attr, "ttl="+*ttlOut.TimeToLiveDescription.AttributeName)
 			}
 			lock.Lock()
@@ -1400,29 +1440,29 @@ func InfraListVpc(ctx context.Context) (map[string]*InfraVpc, error) {
 			}
 		}
 		for name, ec2 := range ec2s {
-			if ec2.vpcID != *vpc.VpcId {
-				continue
+			if ec2.vpcID == *vpc.VpcId {
+				infraVpc.ReadOnlyEC2[name] = ec2
 			}
-			infraVpc.ReadOnlyEC2[name] = ec2
 		}
 		for _, sg := range sgs {
-			if *sg.VpcId != *vpc.VpcId {
-				continue
-			}
-			sgName := *sg.GroupName
-			var rule []string
-			for _, p := range sg.IpPermissions {
-				rs, err := EC2SgRules(p)
-				if err != nil {
-					Logger.Println("error:", err)
-					return nil, err
+			if *sg.VpcId == *vpc.VpcId {
+				sgName := *sg.GroupName
+				var rule []string
+				if sg.IpPermissions != nil {
+					for _, p := range sg.IpPermissions {
+						rs, err := EC2SgRules(p)
+						if err != nil {
+							Logger.Println("error:", err)
+							return nil, err
+						}
+						for _, r := range rs {
+							rule = append(rule, r.String())
+						}
+					}
 				}
-				for _, r := range rs {
-					rule = append(rule, r.String())
+				infraVpc.SecurityGroup[sgName] = &InfraSecurityGroup{
+					Rule: rule,
 				}
-			}
-			infraVpc.SecurityGroup[sgName] = &InfraSecurityGroup{
-				Rule: rule,
 			}
 		}
 		result[EC2Name(vpc.Tags)] = infraVpc
@@ -1450,7 +1490,7 @@ func InfraListEC2(ctx context.Context) (map[string]*InfraEC2, error) {
 	}
 	ec2s := make(map[string][]*InfraEC2)
 	for _, instance := range instances {
-		if *instance.State.Name == ec2.InstanceStateNameTerminated {
+		if instance.State.Name == ec2types.InstanceStateNameTerminated {
 			continue
 		}
 		infraEC2 := &InfraEC2{}
@@ -1458,15 +1498,15 @@ func InfraListEC2(ctx context.Context) (map[string]*InfraEC2, error) {
 		infraEC2.instanceID = *instance.InstanceId
 		infraEC2.vpcID = orDash(instance.VpcId)
 		infraEC2.Count = 1
-		infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("type=%s", *instance.InstanceType))
+		infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("type=%s", instance.InstanceType))
 		infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("ami=%s", *instance.ImageId))
 		infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("kind=%s", EC2Kind(instance)))
-		infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("vpc=%s", orDash(instance.VpcId)))
+		infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("vpc=%s", infraEC2.vpcID))
 		for _, sg := range instance.SecurityGroups {
 			infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("sg=%s", orDash(sg.GroupName)))
 		}
-		if *instance.State.Name != ec2.InstanceStateNameRunning {
-			infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("state=%s", *instance.State.Name))
+		if instance.State.Name != ec2types.InstanceStateNameRunning {
+			infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("state=%s", instance.State.Name))
 		}
 		for _, tag := range instance.Tags {
 			if *tag.Key != "creation-date" && *tag.Key != "Name" && *tag.Key != "aws:ec2spot:fleet-request-id" {
@@ -1541,7 +1581,7 @@ func InfraListRole(ctx context.Context) (map[string]*InfraRole, error) {
 			Policy: role.Policy,
 		}
 		for _, tag := range role.Tags {
-			if *tag.Key == infraSetTagName {
+			if tag.Key != nil && *tag.Key == infraSetTagName && tag.Value != nil {
 				infraRole.infraSetName = *tag.Value
 				break
 			}
@@ -1565,7 +1605,7 @@ func InfraListInstanceProfile(ctx context.Context) (map[string]*InfraInstancePro
 	for _, profile := range out {
 		infraProfile := &InfraInstanceProfile{}
 		for _, tag := range profile.tags {
-			if *tag.Key == infraSetTagName {
+			if tag.Key != nil && *tag.Key == infraSetTagName && tag.Value != nil {
 				infraProfile.infraSetName = *tag.Value
 				break
 			}
@@ -1586,7 +1626,7 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 	}
 	lock := &sync.Mutex{}
 	res := make(map[string]*InfraS3)
-	buckets, err := S3Client().ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
+	buckets, err := S3Client().ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -1607,12 +1647,12 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				errChan <- err
 				return
 			}
-			policyOut, err := s3Client.GetBucketPolicyWithContext(ctx, &s3.GetBucketPolicyInput{
+			policyOut, err := s3Client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 				Bucket: bucket.Name,
 			})
 			if err == nil {
 				policy := IamPolicyDocument{}
-				err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
+				err := json.Unmarshal([]byte(*policyOut.Policy), &policy)
 				if err != nil {
 					Logger.Println("error:", err)
 					errChan <- err
@@ -1623,17 +1663,18 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 						statement.Action == "s3:PutObject" &&
 						statement.Resource == "arn:aws:s3:::"+*bucket.Name+"/*" &&
 						strings.HasPrefix(statement.Sid, "allow put from ") {
-						principal := statement.Principal.(map[string]interface{})["Service"].(string)
+						principal := statement.Principal.(map[string]any)["Service"].(string)
 						infraS3.Attr = append(infraS3.Attr, "allow_put="+principal)
 					}
 				}
 			}
-			tagsOut, err := s3Client.GetBucketTaggingWithContext(ctx, &s3.GetBucketTaggingInput{
+
+			tagsOut, err := s3Client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 				Bucket: bucket.Name,
 			})
 			if err != nil {
-				aerr, ok := err.(awserr.Error)
-				if !ok && aerr.Code() != "NoSuchTagSet" {
+				if strings.Contains(err.Error(), "NoSuchTagSet") {
+				} else {
 					Logger.Println("error:", err)
 					errChan <- nil
 					return
@@ -1682,13 +1723,13 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				return
 			} else if len(descr.Cors) == 1 {
 				var allowedOrigins []string
-				allowedOrigins = append(allowedOrigins, StringSlice(descr.Cors[0].AllowedOrigins)...)
+				allowedOrigins = append(allowedOrigins, descr.Cors[0].AllowedOrigins...)
 				if reflect.DeepEqual(s3Cors(allowedOrigins), descr.Cors) {
 					for _, origin := range allowedOrigins {
 						infraS3.Attr = append(infraS3.Attr, "corsorigin="+origin)
 					}
 				} else {
-					err := fmt.Errorf("cors misconfigured for %s: %s", bucket, Pformat(descr.Cors))
+					err := fmt.Errorf("cors misconfigured for %s: %s", *bucket.Name, Pformat(descr.Cors))
 					Logger.Println("error:", err)
 					errChan <- err
 					return
@@ -1706,15 +1747,17 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				infraS3.Attr = append(infraS3.Attr, fmt.Sprintf("metrics=%t", metrics))
 			}
 			ttl := descr.Lifecycle
-			if len(ttl) == 1 && int64(s3Default.ttlDays) != *ttl[0].Expiration.Days {
+			if len(ttl) == 1 && int32(s3Default.ttlDays) != *ttl[0].Expiration.Days {
 				infraS3.Attr = append(infraS3.Attr, fmt.Sprintf("ttldays=%d", *ttl[0].Expiration.Days))
 			}
 			if descr.Notifications != nil {
 				for _, conf := range descr.Notifications.LambdaFunctionConfigurations {
-					triggersChan <- &InfraTrigger{
-						lambdaName: LambdaArnToLambdaName(*conf.LambdaFunctionArn),
-						Type:       lambdaTrigerS3,
-						Attr:       []string{*bucket.Name},
+					if conf.LambdaFunctionArn != nil {
+						triggersChan <- &InfraTrigger{
+							lambdaName: LambdaArnToLambdaName(*conf.LambdaFunctionArn),
+							Type:       lambdaTrigerS3,
+							Attr:       []string{*bucket.Name},
+						}
 					}
 				}
 			}
@@ -1755,20 +1798,19 @@ func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 					logRecover(r)
 				}
 			}()
-			out, err := SQSClient().GetQueueAttributesWithContext(ctx, &sqs.GetQueueAttributesInput{
+			out, err := SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
 				QueueUrl: aws.String(url),
-				AttributeNames: []*string{
-					aws.String(sqs.QueueAttributeNameDelaySeconds),
-					aws.String(sqs.QueueAttributeNameMaximumMessageSize),
-					aws.String(sqs.QueueAttributeNameMessageRetentionPeriod),
-					aws.String(sqs.QueueAttributeNameReceiveMessageWaitTimeSeconds),
-					aws.String(sqs.QueueAttributeNameVisibilityTimeout),
-					aws.String(sqs.QueueAttributeNameKmsDataKeyReusePeriodSeconds),
+				AttributeNames: []sqstypes.QueueAttributeName{
+					sqstypes.QueueAttributeNameDelaySeconds,
+					sqstypes.QueueAttributeNameMaximumMessageSize,
+					sqstypes.QueueAttributeNameMessageRetentionPeriod,
+					sqstypes.QueueAttributeNameReceiveMessageWaitTimeSeconds,
+					sqstypes.QueueAttributeNameVisibilityTimeout,
+					sqstypes.QueueAttributeNameKmsDataKeyReusePeriodSeconds,
 				},
 			})
 			if err != nil {
-				aerr, ok := err.(awserr.Error)
-				if ok && aerr.Code() == "AWS.SimpleQueueService.NonExistentQueue" {
+				if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
 					errChan <- nil
 					return
 				}
@@ -1777,7 +1819,7 @@ func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 				return
 			}
 			infraSQS := &InfraSQS{}
-			outTags, err := SQSClient().ListQueueTagsWithContext(ctx, &sqs.ListQueueTagsInput{
+			outTags, err := SQSClient().ListQueueTags(ctx, &sqs.ListQueueTagsInput{
 				QueueUrl: aws.String(url),
 			})
 			if err != nil {
@@ -1787,27 +1829,27 @@ func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 			}
 			for k, v := range outTags.Tags {
 				if k == infraSetTagName {
-					infraSQS.infraSetName = *v
+					infraSQS.infraSetName = v
 					break
 				}
 			}
-			if out.Attributes["DelaySeconds"] != nil && *out.Attributes["DelaySeconds"] != "0" { // default
-				infraSQS.Attr = append(infraSQS.Attr, "DelaySeconds="+*out.Attributes["DelaySeconds"])
+			if out.Attributes["DelaySeconds"] != "0" { // default
+				infraSQS.Attr = append(infraSQS.Attr, "DelaySeconds="+out.Attributes["DelaySeconds"])
 			}
-			if out.Attributes["MaximumMessageSize"] != nil && *out.Attributes["MaximumMessageSize"] != "262144" { // default
-				infraSQS.Attr = append(infraSQS.Attr, "MaximumMessageSize="+*out.Attributes["MaximumMessageSize"])
+			if out.Attributes["MaximumMessageSize"] != "262144" { // default
+				infraSQS.Attr = append(infraSQS.Attr, "MaximumMessageSize="+out.Attributes["MaximumMessageSize"])
 			}
-			if out.Attributes["MessageRetentionPeriod"] != nil && *out.Attributes["MessageRetentionPeriod"] != "345600" { // default
-				infraSQS.Attr = append(infraSQS.Attr, "MessageRetentionPeriod="+*out.Attributes["MessageRetentionPeriod"])
+			if out.Attributes["MessageRetentionPeriod"] != "345600" { // default
+				infraSQS.Attr = append(infraSQS.Attr, "MessageRetentionPeriod="+out.Attributes["MessageRetentionPeriod"])
 			}
-			if out.Attributes["ReceiveMessageWaitTimeSeconds"] != nil && *out.Attributes["ReceiveMessageWaitTimeSeconds"] != "0" { // default
-				infraSQS.Attr = append(infraSQS.Attr, "ReceiveMessageWaitTimeSeconds="+*out.Attributes["ReceiveMessageWaitTimeSeconds"])
+			if out.Attributes["ReceiveMessageWaitTimeSeconds"] != "0" { // default
+				infraSQS.Attr = append(infraSQS.Attr, "ReceiveMessageWaitTimeSeconds="+out.Attributes["ReceiveMessageWaitTimeSeconds"])
 			}
-			if out.Attributes["VisibilityTimeout"] != nil && *out.Attributes["VisibilityTimeout"] != "30" { // default
-				infraSQS.Attr = append(infraSQS.Attr, "VisibilityTimeout="+*out.Attributes["VisibilityTimeout"])
+			if out.Attributes["VisibilityTimeout"] != "30" { // default
+				infraSQS.Attr = append(infraSQS.Attr, "VisibilityTimeout="+out.Attributes["VisibilityTimeout"])
 			}
-			if out.Attributes["KmsDataKeyReusePeriodSeconds"] != nil && *out.Attributes["KmsDataKeyReusePeriodSeconds"] != "300" { // default
-				infraSQS.Attr = append(infraSQS.Attr, "KmsDataKeyReusePeriodSeconds="+*out.Attributes["KmsDataKeyReusePeriodSeconds"])
+			if out.Attributes["KmsDataKeyReusePeriodSeconds"] != "300" { // default
+				infraSQS.Attr = append(infraSQS.Attr, "KmsDataKeyReusePeriodSeconds="+out.Attributes["KmsDataKeyReusePeriodSeconds"])
 			}
 			lock.Lock()
 			res[SQSUrlToName(url)] = infraSQS
@@ -2135,7 +2177,6 @@ func resolveEnvVars(s string, ignore []string) (string, error) {
 }
 
 func lambdaUpdateZipFake(_ *InfraLambda) error { return nil }
-
 func lambdaCreateZipFake(_ *InfraLambda) error { return nil }
 
 func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool) error {
@@ -2183,23 +2224,24 @@ func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview,
 	return nil
 }
 
-func infraParseValidateDynamoDBIndex(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateDynamoDBIndex(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraDynamoDB should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraDynamoDB should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for name, index := range val.(map[string]interface{}) {
+	for name, index := range val.(map[string]any) {
+		_, ok := index.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraDynamoDBIndex should be type: map[string]interface{}, got: %s %#v", name, index)
+			err := fmt.Errorf("infraDynamoDBIndex should be type: map[string]any, got: %s %#v", name, index)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range index.(map[string]interface{}) {
+		for k, v := range index.(map[string]any) {
 			switch k {
 			case infraKeyDynamoDBIndexKey, infraKeyDynamoDBIndexNonKey, infraKeyDynamoDBIndexAttr:
-				xs, ok := v.([]interface{})
+				xs, ok := v.([]any)
 				if !ok {
 					err := fmt.Errorf("infraDynamoDBIndex key %s should be type: []string, got: %#v", k, v)
 					Logger.Println("error:", err)
@@ -2223,21 +2265,21 @@ func infraParseValidateDynamoDBIndex(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateDynamoDB(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateDynamoDB(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraDynamoDB should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraDynamoDB should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for name, dynamodb := range val.(map[string]interface{}) {
-		_, ok := dynamodb.(map[string]interface{})
+	for name, dynamodbVal := range val.(map[string]any) {
+		_, ok := dynamodbVal.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraDynamoDB should be type: map[string]interface{}, got: %s %#v", name, dynamodb)
+			err := fmt.Errorf("infraDynamoDB should be type: map[string]any, got: %s %#v", name, dynamodbVal)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range dynamodb.(map[string]interface{}) {
+		for k, v := range dynamodbVal.(map[string]any) {
 			switch k {
 			case infraKeyDynamoDBGlobalIndex, infraKeyDynamoDBLocalIndex:
 				err := infraParseValidateDynamoDBIndex(v)
@@ -2246,7 +2288,7 @@ func infraParseValidateDynamoDB(val interface{}) error {
 					return err
 				}
 			case infraKeyDynamoDBKey, infraKeyDynamoDBAttr:
-				xs, ok := v.([]interface{})
+				xs, ok := v.([]any)
 				if !ok {
 					err := fmt.Errorf("infraDynamoDB key %s should be type: []string, got: %#v", k, v)
 					Logger.Println("error:", err)
@@ -2270,24 +2312,24 @@ func infraParseValidateDynamoDB(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateS3(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateS3(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraS3 should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraS3 should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for name, s3 := range val.(map[string]interface{}) {
-		_, ok := s3.(map[string]interface{})
+	for name, s3Val := range val.(map[string]any) {
+		_, ok := s3Val.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraS3 should be type: map[string]interface{}, got: %s %#v", name, s3)
+			err := fmt.Errorf("infraS3 should be type: map[string]any, got: %s %#v", name, s3Val)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range s3.(map[string]interface{}) {
+		for k, v := range s3Val.(map[string]any) {
 			switch k {
 			case infraKeyS3Attr:
-				xs, ok := v.([]interface{})
+				xs, ok := v.([]any)
 				if !ok {
 					err := fmt.Errorf("infraS3 key %s should be type: []string, got: %#v", k, v)
 					Logger.Println("error:", err)
@@ -2311,21 +2353,21 @@ func infraParseValidateS3(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateTrigger(val interface{}) error {
-	_, ok := val.([]interface{})
+func infraParseValidateTrigger(val any) error {
+	_, ok := val.([]any)
 	if !ok {
-		err := fmt.Errorf("infraTrigger should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraTrigger should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for i, trigger := range val.([]interface{}) {
-		_, ok := trigger.(map[string]interface{})
+	for i, trigger := range val.([]any) {
+		_, ok := trigger.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraTrigger should be type: map[string]interface{}, got: %d %#v", i, trigger)
+			err := fmt.Errorf("infraTrigger should be type: map[string]any, got: %d %#v", i, trigger)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range trigger.(map[string]interface{}) {
+		for k, v := range trigger.(map[string]any) {
 			switch k {
 			case infraKeyTriggerType:
 				_, ok := v.(string)
@@ -2335,7 +2377,7 @@ func infraParseValidateTrigger(val interface{}) error {
 					return err
 				}
 			case infraKeyTriggerAttr:
-				xs, ok := v.([]interface{})
+				xs, ok := v.([]any)
 				if !ok {
 					err := fmt.Errorf("infraTrigger key %s should be type: []string, got: %#v", k, v)
 					Logger.Println("error:", err)
@@ -2359,21 +2401,21 @@ func infraParseValidateTrigger(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateKeypair(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateKeypair(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraKeypair should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraKeypair should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for name, keypair := range val.(map[string]interface{}) {
-		_, ok := keypair.(map[string]interface{})
+	for name, keypair := range val.(map[string]any) {
+		_, ok := keypair.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraKeypair should be type: map[string]interface{}, got: %s %#v", name, keypair)
+			err := fmt.Errorf("infraKeypair should be type: map[string]any, got: %s %#v", name, keypair)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range keypair.(map[string]interface{}) {
+		for k, v := range keypair.(map[string]any) {
 			switch k {
 			case infraKeyKeypairPubkeyContent:
 				_, ok := v.(string)
@@ -2392,24 +2434,24 @@ func infraParseValidateKeypair(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateSQS(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateSQS(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraSQS should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraSQS should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for name, sqs := range val.(map[string]interface{}) {
-		_, ok := sqs.(map[string]interface{})
+	for name, sqsVal := range val.(map[string]any) {
+		_, ok := sqsVal.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraSQS should be type: map[string]interface{}, got: %s %#v", name, sqs)
+			err := fmt.Errorf("infraSQS should be type: map[string]any, got: %s %#v", name, sqsVal)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range sqs.(map[string]interface{}) {
+		for k, v := range sqsVal.(map[string]any) {
 			switch k {
 			case infraKeySQSAttr:
-				xs, ok := v.([]interface{})
+				xs, ok := v.([]any)
 				if !ok {
 					err := fmt.Errorf("infraSQS key %s should be type: []string, got: %#v", k, v)
 					Logger.Println("error:", err)
@@ -2433,24 +2475,24 @@ func infraParseValidateSQS(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateInstanceProfile(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateInstanceProfile(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraInstanceProfile should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraInstanceProfile should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for name, instanceProfile := range val.(map[string]interface{}) {
-		_, ok := instanceProfile.(map[string]interface{})
+	for name, instanceProfile := range val.(map[string]any) {
+		_, ok := instanceProfile.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraInstanceProfile should be type: map[string]interface{}, got: %s %#v", name, instanceProfile)
+			err := fmt.Errorf("infraInstanceProfile should be type: map[string]any, got: %s %#v", name, instanceProfile)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range instanceProfile.(map[string]interface{}) {
+		for k, v := range instanceProfile.(map[string]any) {
 			switch k {
 			case infraKeyInstanceProfileAllow, infraKeyInstanceProfilePolicy:
-				xs, ok := v.([]interface{})
+				xs, ok := v.([]any)
 				if !ok {
 					err := fmt.Errorf("infraInstanceProfile key %s should be type: []string, got: %#v", k, v)
 					Logger.Println("error:", err)
@@ -2474,24 +2516,24 @@ func infraParseValidateInstanceProfile(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateSecurityGroup(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateSecurityGroup(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraSecurityGroup should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraSecurityGroup should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for sgName, infraSg := range val.(map[string]interface{}) {
-		_, ok := infraSg.(map[string]interface{})
+	for sgName, infraSg := range val.(map[string]any) {
+		_, ok := infraSg.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraSecurityGroup should be type: map[string]interface{}, got: %s %#v", sgName, infraSg)
+			err := fmt.Errorf("infraSecurityGroup should be type: map[string]any, got: %s %#v", sgName, infraSg)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range infraSg.(map[string]interface{}) {
+		for k, v := range infraSg.(map[string]any) {
 			switch k {
 			case infraKeySecurityGroupRule:
-				xs, ok := v.([]interface{})
+				xs, ok := v.([]any)
 				if !ok {
 					err := fmt.Errorf("infraSecurityGroup key %s should be type: []string, got: %#v", k, v)
 					Logger.Println("error:", err)
@@ -2515,21 +2557,21 @@ func infraParseValidateSecurityGroup(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateVpc(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateVpc(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraVpc should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraVpc should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for name, vpc := range val.(map[string]interface{}) {
-		_, ok := vpc.(map[string]interface{})
+	for name, vpcVal := range val.(map[string]any) {
+		_, ok := vpcVal.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraVpc should be type: map[string]interface{}, got: %s %#v", name, vpc)
+			err := fmt.Errorf("infraVpc should be type: map[string]any, got: %s %#v", name, vpcVal)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range vpc.(map[string]interface{}) {
+		for k, v := range vpcVal.(map[string]any) {
 			switch k {
 			case infraKeyVpcEC2:
 				err := fmt.Errorf("infraVpc will list, but cannot declare ec2 instances. instead manage ec2 with a lambda in the infraset: %#v", v)
@@ -2551,21 +2593,21 @@ func infraParseValidateVpc(val interface{}) error {
 	return nil
 }
 
-func infraParseValidateLambda(val interface{}) error {
-	_, ok := val.(map[string]interface{})
+func infraParseValidateLambda(val any) error {
+	_, ok := val.(map[string]any)
 	if !ok {
-		err := fmt.Errorf("infraLambda should be type: map[string]interface{}, got: %#v", val)
+		err := fmt.Errorf("infraLambda should be type: map[string]any, got: %#v", val)
 		Logger.Println("error:", err)
 		return err
 	}
-	for name, lambda := range val.(map[string]interface{}) {
-		_, ok := lambda.(map[string]interface{})
+	for name, lambdaVal := range val.(map[string]any) {
+		_, ok := lambdaVal.(map[string]any)
 		if !ok {
-			err := fmt.Errorf("infraLambda should be type: map[string]interface{}, got: %s %#v", name, lambda)
+			err := fmt.Errorf("infraLambda should be type: map[string]any, got: %s %#v", name, lambdaVal)
 			Logger.Println("error:", err)
 			return err
 		}
-		for k, v := range lambda.(map[string]interface{}) {
+		for k, v := range lambdaVal.(map[string]any) {
 			switch k {
 			case infraKeyLambdaName:
 				_, ok := v.(string)
@@ -2597,7 +2639,7 @@ func infraParseValidateLambda(val interface{}) error {
 					return err
 				}
 			case infraKeyLambdaPolicy, infraKeyLambdaAllow, infraKeyLambdaInclude, infraKeyLambdaRequire, infraKeyLambdaEnv, infraKeyLambdaAttr:
-				xs, ok := v.([]interface{})
+				xs, ok := v.([]any)
 				if !ok {
 					err := fmt.Errorf("infraLambda key %s should be type: []string, got: %#v", k, v)
 					Logger.Println("error:", err)
@@ -2633,7 +2675,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 		return nil, err
 	}
 	data = []byte(resolved)
-	val := make(map[string]interface{})
+	val := make(map[string]any)
 	err = yaml.Unmarshal(data, &val)
 	if err != nil {
 		Logger.Println("error:", err)

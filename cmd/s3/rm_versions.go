@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -49,10 +49,10 @@ func s3RmVersions() {
 
 		if !args.Preview {
 
-			out, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+			out, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 				Bucket: aws.String(bucket),
-				Delete: &s3.Delete{
-					Objects: []*s3.ObjectIdentifier{{
+				Delete: &s3types.Delete{
+					Objects: []s3types.ObjectIdentifier{{
 						Key:       aws.String(key),
 						VersionId: aws.String(args.Version),
 					}},
@@ -88,7 +88,7 @@ func s3RmVersions() {
 		var keyMarker *string
 		var versionMarker *string
 		for {
-			out, err := s3Client.ListObjectVersionsWithContext(ctx, &s3.ListObjectVersionsInput{
+			out, err := s3Client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
 				Bucket:          aws.String(bucket),
 				Prefix:          aws.String(key),
 				Delimiter:       delimiter,
@@ -99,17 +99,17 @@ func s3RmVersions() {
 				lib.Logger.Fatal("error: ", err)
 			}
 
-			var objects []*s3.ObjectIdentifier
+			var objects []s3types.ObjectIdentifier
 
 			for _, obj := range out.Versions {
-				objects = append(objects, &s3.ObjectIdentifier{
+				objects = append(objects, s3types.ObjectIdentifier{
 					Key:       obj.Key,
 					VersionId: obj.VersionId,
 				})
 			}
 
 			for _, obj := range out.DeleteMarkers {
-				objects = append(objects, &s3.ObjectIdentifier{
+				objects = append(objects, s3types.ObjectIdentifier{
 					Key:       obj.Key,
 					VersionId: obj.VersionId,
 				})
@@ -119,9 +119,9 @@ func s3RmVersions() {
 
 				if !args.Preview {
 
-					deleteOut, err := s3Client.DeleteObjectsWithContext(ctx, &s3.DeleteObjectsInput{
+					deleteOut, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 						Bucket: aws.String(bucket),
-						Delete: &s3.Delete{Objects: objects},
+						Delete: &s3types.Delete{Objects: objects},
 					})
 					if err != nil {
 						lib.Logger.Fatal("error: ", err)

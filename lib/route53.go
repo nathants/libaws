@@ -9,23 +9,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	r53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/gofrs/uuid"
 )
 
-var r53Client *route53.Route53
-var r53ClientLock sync.RWMutex
+var r53Client *route53.Client
+var r53ClientLock sync.Mutex
 
-func Route53ClientExplicit(accessKeyID, accessKeySecret, region string) *route53.Route53 {
-	return route53.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func Route53ClientExplicit(accessKeyID, accessKeySecret, region string) *route53.Client {
+	return route53.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func Route53Client() *route53.Route53 {
+func Route53Client() *route53.Client {
 	r53ClientLock.Lock()
 	defer r53ClientLock.Unlock()
 	if r53Client == nil {
-		r53Client = route53.New(Session())
+		r53Client = route53.NewFromConfig(*Session())
 	}
 	return r53Client
 }
@@ -45,7 +46,7 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 		Logger.Println("error:", err)
 		return err
 	}
-	var record *route53.ResourceRecordSet
+	var record *r53types.ResourceRecordSet
 	for _, r := range records {
 		if strings.TrimRight(*r.Name, ".") != *input.change.ResourceRecordSet.Name {
 			continue
@@ -53,7 +54,7 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 		if input.change.ResourceRecordSet.TTL != nil && *r.TTL != *input.change.ResourceRecordSet.TTL {
 			continue
 		}
-		if *r.Type != *input.change.ResourceRecordSet.Type {
+		if r.Type != input.change.ResourceRecordSet.Type {
 			continue
 		}
 		if r.AliasTarget != nil && input.change.ResourceRecordSet.AliasTarget != nil {
@@ -65,16 +66,18 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 				continue
 			}
 		}
-		record = r
+		record = &r
 	}
 	if record != nil {
 		if !preview {
-			_, err = Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
+			_, err = Route53Client().ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
 				HostedZoneId: aws.String(id),
-				ChangeBatch: &route53.ChangeBatch{Changes: []*route53.Change{{
-					Action:            aws.String(route53.ChangeActionDelete),
-					ResourceRecordSet: record,
-				}}},
+				ChangeBatch: &r53types.ChangeBatch{
+					Changes: []r53types.Change{{
+						Action:            r53types.ChangeActionDelete,
+						ResourceRecordSet: record,
+					}},
+				},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -86,9 +89,19 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 			for _, r := range input.change.ResourceRecordSet.ResourceRecords {
 				vals = append(vals, "Value="+*r.Value)
 			}
-			Logger.Printf(PreviewString(preview)+"route53 deleted record %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "TTL="+fmt.Sprint(*input.change.ResourceRecordSet.TTL), "Type="+*input.change.ResourceRecordSet.Type, strings.Join(vals, " "))
+			Logger.Printf(PreviewString(preview)+"route53 deleted record %s: %s %s %s\n",
+				strings.TrimRight(*input.change.ResourceRecordSet.Name, "."),
+				"TTL="+fmt.Sprint(*input.change.ResourceRecordSet.TTL),
+				"Type="+string(input.change.ResourceRecordSet.Type),
+				strings.Join(vals, " "),
+			)
 		} else {
-			Logger.Printf(PreviewString(preview)+"route53 deleted record %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "Type=Alias", "Value="+*input.change.ResourceRecordSet.AliasTarget.DNSName, "HostedZoneId="+*input.change.ResourceRecordSet.AliasTarget.HostedZoneId)
+			Logger.Printf(PreviewString(preview)+"route53 deleted record %s: %s %s %s\n",
+				strings.TrimRight(*input.change.ResourceRecordSet.Name, "."),
+				"Type=Alias",
+				"Value="+*input.change.ResourceRecordSet.AliasTarget.DNSName,
+				"HostedZoneId="+*input.change.ResourceRecordSet.AliasTarget.HostedZoneId,
+			)
 		}
 	}
 	return nil
@@ -105,7 +118,7 @@ func Route53DeleteZone(ctx context.Context, name string, preview bool) error {
 		return err
 	}
 	if !preview {
-		_, err := Route53Client().DeleteHostedZoneWithContext(ctx, &route53.DeleteHostedZoneInput{
+		_, err := Route53Client().DeleteHostedZone(ctx, &route53.DeleteHostedZoneInput{
 			Id: aws.String(id),
 		})
 		if err != nil {
@@ -119,7 +132,7 @@ func Route53DeleteZone(ctx context.Context, name string, preview bool) error {
 
 type route53EnsureRecordInput struct {
 	zoneName string
-	change   *route53.Change
+	change   *r53types.Change
 }
 
 func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*route53EnsureRecordInput, error) {
@@ -127,9 +140,9 @@ func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*rou
 	recordName = strings.Trim(recordName, ".")
 	input := &route53EnsureRecordInput{
 		zoneName: zoneName,
-		change: &route53.Change{
-			Action:            aws.String(route53.ChangeActionUpsert),
-			ResourceRecordSet: &route53.ResourceRecordSet{},
+		change: &r53types.Change{
+			Action:            r53types.ChangeActionUpsert,
+			ResourceRecordSet: &r53types.ResourceRecordSet{},
 		},
 	}
 	if !strings.HasSuffix(recordName, zoneName) {
@@ -165,23 +178,24 @@ func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*rou
 			input.change.ResourceRecordSet.TTL = aws.Int64(int64(ttl))
 		case "type":
 			if value == "Alias" {
-				input.change.ResourceRecordSet.Type = aws.String("A")
-				input.change.ResourceRecordSet.AliasTarget = &route53.AliasTarget{
-					EvaluateTargetHealth: aws.Bool(false),
+				input.change.ResourceRecordSet.Type = r53types.RRTypeA
+				input.change.ResourceRecordSet.AliasTarget = &r53types.AliasTarget{
+					EvaluateTargetHealth: false,
 				}
 			} else {
-				if !Contains(route53.RRType_Values(), value) {
+				var rrtype r53types.RRType
+				if !Contains(rrtype.Values(), r53types.RRType(value)) {
 					err := fmt.Errorf("route53 unknown type: %s", attr)
 					Logger.Println("error:", err)
 					return nil, err
 				}
-				input.change.ResourceRecordSet.Type = aws.String(value)
+				input.change.ResourceRecordSet.Type = r53types.RRType(value)
 			}
 		case "value":
 			if input.change.ResourceRecordSet.AliasTarget == nil {
 				input.change.ResourceRecordSet.ResourceRecords = append(
 					input.change.ResourceRecordSet.ResourceRecords,
-					&route53.ResourceRecord{Value: aws.String(value)},
+					r53types.ResourceRecord{Value: aws.String(value)},
 				)
 			} else {
 				input.change.ResourceRecordSet.AliasTarget.DNSName = aws.String(value)
@@ -253,23 +267,35 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 			continue
 		}
 		// only update records when type matches
-		if *record.Type != *input.change.ResourceRecordSet.Type {
+		if record.Type != input.change.ResourceRecordSet.Type {
 			continue
 		}
 		// found the record, assume it's already correct until we find a value that isn't
 		exists = true
 		if record.AliasTarget != nil && input.change.ResourceRecordSet.AliasTarget != nil {
 			if !reflect.DeepEqual(record.AliasTarget.DNSName, input.change.ResourceRecordSet.AliasTarget.DNSName) {
-				Logger.Printf(PreviewString(preview)+"route53 update Alias for %s: %v => %v\n", strings.TrimRight(*record.Name, "."), *record.AliasTarget.DNSName, *input.change.ResourceRecordSet.AliasTarget.DNSName)
+				Logger.Printf(PreviewString(preview)+"route53 update Alias for %s: %v => %v\n",
+					strings.TrimRight(*record.Name, "."),
+					*record.AliasTarget.DNSName,
+					*input.change.ResourceRecordSet.AliasTarget.DNSName,
+				)
 				needsUpdate = true
 			}
 			if !reflect.DeepEqual(record.AliasTarget.HostedZoneId, input.change.ResourceRecordSet.AliasTarget.HostedZoneId) {
-				Logger.Printf(PreviewString(preview)+"route53 update HostedZoneId for %s: %v => %v\n", strings.TrimRight(*record.Name, "."), *record.AliasTarget.HostedZoneId, *input.change.ResourceRecordSet.AliasTarget.HostedZoneId)
+				Logger.Printf(PreviewString(preview)+"route53 update HostedZoneId for %s: %v => %v\n",
+					strings.TrimRight(*record.Name, "."),
+					*record.AliasTarget.HostedZoneId,
+					*input.change.ResourceRecordSet.AliasTarget.HostedZoneId,
+				)
 				needsUpdate = true
 			}
 		} else {
 			if !reflect.DeepEqual(record.TTL, input.change.ResourceRecordSet.TTL) {
-				Logger.Printf(PreviewString(preview)+"route53 update TTL for %s: %d => %d\n", strings.TrimRight(*record.Name, "."), *record.TTL, *input.change.ResourceRecordSet.TTL)
+				Logger.Printf(PreviewString(preview)+"route53 update TTL for %s: %d => %d\n",
+					strings.TrimRight(*record.Name, "."),
+					*record.TTL,
+					*input.change.ResourceRecordSet.TTL,
+				)
 				needsUpdate = true
 			}
 			if !reflect.DeepEqual(record.ResourceRecords, input.change.ResourceRecordSet.ResourceRecords) {
@@ -281,7 +307,11 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 				for _, r := range input.change.ResourceRecordSet.ResourceRecords {
 					new = append(new, *r.Value)
 				}
-				Logger.Printf(PreviewString(preview)+"route53 update Values for %s: %s => %s\n", strings.TrimRight(*record.Name, "."), Json(old), Json(new))
+				Logger.Printf(PreviewString(preview)+"route53 update Values for %s: %s => %s\n",
+					strings.TrimRight(*record.Name, "."),
+					Json(old),
+					Json(new),
+				)
 				needsUpdate = true
 			}
 		}
@@ -293,15 +323,27 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 				for _, r := range input.change.ResourceRecordSet.ResourceRecords {
 					vals = append(vals, "Value="+*r.Value)
 				}
-				Logger.Printf(PreviewString(preview)+"route53 create record %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "TTL="+fmt.Sprint(*input.change.ResourceRecordSet.TTL), "Type="+*input.change.ResourceRecordSet.Type, strings.Join(vals, " "))
+				Logger.Printf(PreviewString(preview)+"route53 create record %s: %s %s %s\n",
+					strings.TrimRight(*input.change.ResourceRecordSet.Name, "."),
+					"TTL="+fmt.Sprint(*input.change.ResourceRecordSet.TTL),
+					"Type="+string(input.change.ResourceRecordSet.Type),
+					strings.Join(vals, " "),
+				)
 			} else {
-				Logger.Printf(PreviewString(preview)+"route53 create record %s: %s %s %s\n", strings.TrimRight(*input.change.ResourceRecordSet.Name, "."), "Type=Alias", "Value="+*input.change.ResourceRecordSet.AliasTarget.DNSName, "HostedZoneId="+*input.change.ResourceRecordSet.AliasTarget.HostedZoneId)
+				Logger.Printf(PreviewString(preview)+"route53 create record %s: %s %s %s\n",
+					strings.TrimRight(*input.change.ResourceRecordSet.Name, "."),
+					"Type=Alias",
+					"Value="+*input.change.ResourceRecordSet.AliasTarget.DNSName,
+					"HostedZoneId="+*input.change.ResourceRecordSet.AliasTarget.HostedZoneId,
+				)
 			}
 		}
 		if !preview {
-			_, err = Route53Client().ChangeResourceRecordSetsWithContext(ctx, &route53.ChangeResourceRecordSetsInput{
+			_, err = Route53Client().ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
 				HostedZoneId: aws.String(id),
-				ChangeBatch:  &route53.ChangeBatch{Changes: []*route53.Change{input.change}},
+				ChangeBatch: &r53types.ChangeBatch{
+					Changes: []r53types.Change{*input.change},
+				},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -340,7 +382,7 @@ func Route53EnsureZone(ctx context.Context, name string, preview bool) error {
 		return err
 	}
 	if !preview {
-		_, err = Route53Client().CreateHostedZoneWithContext(ctx, &route53.CreateHostedZoneInput{
+		_, err = Route53Client().CreateHostedZone(ctx, &route53.CreateHostedZoneInput{
 			Name:            aws.String(name),
 			CallerReference: aws.String(uuid.Must(uuid.NewV4()).String()),
 		})
@@ -368,17 +410,17 @@ func Route53EnsureZone(ctx context.Context, name string, preview bool) error {
 	return nil
 }
 
-func Route53ListRecords(ctx context.Context, zoneId string) ([]*route53.ResourceRecordSet, error) {
+func Route53ListRecords(ctx context.Context, zoneId string) ([]r53types.ResourceRecordSet, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53ListRecords"}
 		defer d.Log()
 	}
 	var nextId *string
 	var nextName *string
-	var nextType *string
-	var records []*route53.ResourceRecordSet
+	var nextType r53types.RRType
+	var records []r53types.ResourceRecordSet
 	for {
-		out, err := Route53Client().ListResourceRecordSetsWithContext(ctx, &route53.ListResourceRecordSetsInput{
+		out, err := Route53Client().ListResourceRecordSets(ctx, &route53.ListResourceRecordSetsInput{
 			HostedZoneId:          aws.String(zoneId),
 			StartRecordIdentifier: nextId,
 			StartRecordName:       nextName,
@@ -389,7 +431,7 @@ func Route53ListRecords(ctx context.Context, zoneId string) ([]*route53.Resource
 			return nil, err
 		}
 		records = append(records, out.ResourceRecordSets...)
-		if out.NextRecordIdentifier == nil && out.NextRecordName == nil && out.NextRecordType == nil {
+		if out.NextRecordIdentifier == nil && out.NextRecordName == nil && out.NextRecordType == "" {
 			break
 		}
 		nextId = out.NextRecordIdentifier
@@ -399,16 +441,16 @@ func Route53ListRecords(ctx context.Context, zoneId string) ([]*route53.Resource
 	return records, nil
 }
 
-func Route53ListZones(ctx context.Context) ([]*route53.HostedZone, error) {
+func Route53ListZones(ctx context.Context) ([]r53types.HostedZone, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53ListZones"}
 		defer d.Log()
 	}
 	var nextDns *string
 	var nextId *string
-	var zones []*route53.HostedZone
+	var zones []r53types.HostedZone
 	for {
-		out, err := Route53Client().ListHostedZonesByNameWithContext(ctx, &route53.ListHostedZonesByNameInput{
+		out, err := Route53Client().ListHostedZonesByName(ctx, &route53.ListHostedZonesByNameInput{
 			DNSName:      nextDns,
 			HostedZoneId: nextId,
 		})

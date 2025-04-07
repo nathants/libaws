@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -7,10 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
-
 	"github.com/alexflint/go-arg"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -36,7 +35,7 @@ func s3Ls() {
 	ctx := context.Background()
 
 	if args.Path == "" || !strings.Contains(args.Path, "/") {
-		out, err := lib.S3Client().ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
+		out, err := lib.S3Client().ListBuckets(ctx, &s3.ListBucketsInput{})
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}
@@ -91,7 +90,7 @@ func s3Ls() {
 				Delimiter:         delimiter,
 				ContinuationToken: token,
 			}
-			out, err := s3Client.ListObjectsV2WithContext(ctx, input)
+			out, err := s3Client.ListObjectsV2(ctx, input)
 			if err != nil {
 				lib.Logger.Fatal("error: ", err)
 			}
@@ -136,7 +135,7 @@ func s3Ls() {
 						fmt.Sprint(obj.LastModified.In(loc))[:19],
 						fmt.Sprintf("%10v", *obj.Size),
 						objKey,
-						*obj.StorageClass,
+						obj.StorageClass,
 					)
 				}
 			}

@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -8,9 +8,10 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -39,7 +40,7 @@ func dynamodbItemGet() {
 	var args dynamodbItemGetArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	item := map[string]*dynamodb.AttributeValue{}
+	item := map[string]ddbtypes.AttributeValue{}
 	for _, key := range args.Keys {
 		name, kind, val, err := lib.SplitTwice(key, ":")
 		if err != nil {
@@ -47,14 +48,18 @@ func dynamodbItemGet() {
 		}
 		switch strings.ToUpper(kind) {
 		case "S":
-			item[name] = &dynamodb.AttributeValue{S: aws.String(val)}
+			item[name] = &ddbtypes.AttributeValueMemberS{
+				Value: val,
+			}
 		case "N":
-			item[name] = &dynamodb.AttributeValue{N: aws.String(val)}
+			item[name] = &ddbtypes.AttributeValueMemberN{
+				Value: val,
+			}
 		default:
 			panic(kind)
 		}
 	}
-	out, err := lib.DynamoDBClient().GetItemWithContext(ctx, &dynamodb.GetItemInput{
+	out, err := lib.DynamoDBClient().GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(args.Table),
 		Key:       item,
 	})
@@ -64,8 +69,8 @@ func dynamodbItemGet() {
 	if out.Item == nil {
 		os.Exit(1)
 	}
-	val := make(map[string]interface{})
-	err = dynamodbattribute.UnmarshalMap(out.Item, &val)
+	val := make(map[string]any)
+	err = attributevalue.UnmarshalMap(out.Item, &val)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

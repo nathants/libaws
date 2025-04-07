@@ -9,13 +9,13 @@ import (
 )
 
 type LoggerStruct struct {
-	Print    func(args ...interface{})
+	Print    func(args ...any)
 	Flush    func()
 	disabled bool
 }
 
 var Logger = &LoggerStruct{
-	Print: func(args ...interface{}) {
+	Print: func(args ...any) {
 		fmt.Fprint(os.Stderr, args...)
 	},
 	Flush:    func() {},
@@ -33,9 +33,9 @@ func Caller(n int) string {
 	return fmt.Sprintf("%s:%d: ", file, line)
 }
 
-func (l *LoggerStruct) Println(v ...interface{}) {
+func (l *LoggerStruct) Println(v ...any) {
 	if !l.disabled {
-		var r []interface{}
+		var r []any
 		r = append(r, Caller(2))
 		var xs []string
 		for _, x := range v {
@@ -47,14 +47,14 @@ func (l *LoggerStruct) Println(v ...interface{}) {
 	}
 }
 
-func (l *LoggerStruct) Printf(format string, v ...interface{}) {
+func (l *LoggerStruct) Printf(format string, v ...any) {
 	if !l.disabled {
 		l.Print(fmt.Sprintf(Caller(2)+format, v...))
 	}
 }
 
-func (l *LoggerStruct) Fatal(v ...interface{}) {
-	var r []interface{}
+func (l *LoggerStruct) Fatal(v ...any) {
+	var r []any
 	r = append(r, Caller(2))
 	var xs []string
 	for _, x := range v {
@@ -67,7 +67,7 @@ func (l *LoggerStruct) Fatal(v ...interface{}) {
 	os.Exit(1)
 }
 
-func (l *LoggerStruct) Fatalf(format string, v ...interface{}) {
+func (l *LoggerStruct) Fatalf(format string, v ...any) {
 	l.Print(fmt.Sprintf(Caller(2)+format, v...))
 	l.Flush()
 	os.Exit(1)
@@ -78,8 +78,8 @@ type Debug struct {
 	name  string
 }
 
-func (d *Debug) Println(v ...interface{}) {
-	var r []interface{}
+func (d *Debug) Println(v ...any) {
+	var r []any
 	r = append(r, Caller(3))
 	var xs []string
 	for _, x := range v {

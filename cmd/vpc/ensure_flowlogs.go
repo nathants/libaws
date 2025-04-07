@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,8 +6,9 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -92,10 +93,10 @@ func vpcEnsureFlowlogs() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	out, err := lib.EC2Client().DescribeFlowLogsWithContext(ctx, &ec2.DescribeFlowLogsInput{
-		Filter: []*ec2.Filter{{
+	out, err := lib.EC2Client().DescribeFlowLogs(ctx, &ec2.DescribeFlowLogsInput{
+		Filter: []ec2types.Filter{{
 			Name:   aws.String("resource-id"),
-			Values: []*string{aws.String(vpcID)},
+			Values: []string{vpcID},
 		}},
 	})
 	if err != nil {
@@ -103,17 +104,17 @@ func vpcEnsureFlowlogs() {
 	}
 	logFormat := "${instance-id} ${start} ${bytes} ${pkt-dstaddr} ${pkt-dst-aws-service}"
 	bucketArn := fmt.Sprintf("arn:aws:s3:::%s", bucketName)
-	aggregationInterval := int64(60)
+	aggregationInterval := int32(60)
 	switch len(out.FlowLogs) {
 	case 0:
-		_, err := lib.EC2Client().CreateFlowLogsWithContext(ctx, &ec2.CreateFlowLogsInput{
+		_, err := lib.EC2Client().CreateFlowLogs(ctx, &ec2.CreateFlowLogsInput{
 			LogDestination:         aws.String(bucketArn),
-			LogDestinationType:     aws.String(ec2.LogDestinationTypeS3),
-			MaxAggregationInterval: aws.Int64(aggregationInterval),
-			TrafficType:            aws.String(ec2.TrafficTypeAll),
+			LogDestinationType:     ec2types.LogDestinationTypeS3,
+			MaxAggregationInterval: aws.Int32(aggregationInterval),
+			TrafficType:            ec2types.TrafficTypeAll,
 			LogFormat:              aws.String(logFormat),
-			ResourceType:           aws.String(ec2.FlowLogsResourceTypeVpc),
-			ResourceIds:            []*string{aws.String(vpcID)},
+			ResourceType:           ec2types.FlowLogsResourceTypeVpc,
+			ResourceIds:            []string{vpcID},
 		})
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
@@ -130,10 +131,10 @@ func vpcEnsureFlowlogs() {
 		if *flowLogs.LogDestination != bucketArn {
 			panic("invalid log destination")
 		}
-		if *flowLogs.LogDestinationType != ec2.LogDestinationTypeS3 {
+		if flowLogs.LogDestinationType != ec2types.LogDestinationTypeS3 {
 			panic("invalid log destination type")
 		}
-		if *flowLogs.TrafficType != ec2.TrafficTypeAll {
+		if flowLogs.TrafficType != ec2types.TrafficTypeAll {
 			panic("invalid traffic type")
 		}
 		if *flowLogs.ResourceId != vpcID {

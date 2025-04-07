@@ -1,11 +1,11 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -15,7 +15,7 @@ func init() {
 }
 
 type logsSetRetentionALlArgs struct {
-	Days int64 `arg:"positional,required" help:"days to retain log data"`
+	Days int32 `arg:"positional,required" help:"days to retain log data"`
 }
 
 func (logsSetRetentionALlArgs) Description() string {
@@ -35,9 +35,9 @@ func logsSetRetentionALl() {
 		if log.RetentionInDays != nil {
 			old = int(*log.RetentionInDays)
 		}
-		_, err := lib.LogsClient().PutRetentionPolicyWithContext(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
+		_, err := lib.LogsClient().PutRetentionPolicy(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
 			LogGroupName:    log.LogGroupName,
-			RetentionInDays: aws.Int64(args.Days),
+			RetentionInDays: aws.Int32(args.Days),
 		})
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)

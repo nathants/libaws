@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -48,7 +48,13 @@ func route53Ls() {
 						vals = append(vals, "Value="+*val.Value)
 					}
 				}
-				res = append(res, strings.Join([]string{strings.TrimRight(*zone.Name, "."), strings.TrimRight(*record.Name, "."), "Type=" + *record.Type, "TTL=" + fmt.Sprint(*record.TTL), strings.Join(vals, " ")}, " "))
+				res = append(res, strings.Join([]string{
+					strings.TrimRight(*zone.Name, "."),
+					strings.TrimRight(*record.Name, "."),
+					"Type=" + string(record.Type),
+					"TTL=" + fmt.Sprint(*record.TTL),
+					strings.Join(vals, " "),
+				}, " "))
 			}
 		}
 	}

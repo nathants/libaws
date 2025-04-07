@@ -1,11 +1,12 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -26,9 +27,9 @@ func organizationsLs() {
 	arg.MustParse(&args)
 	ctx := context.Background()
 	var token *string
-	var accounts []*organizations.Account
+	var accounts []orgtypes.Account
 	for {
-		out, err := lib.OrganizationsClient().ListAccountsWithContext(ctx, &organizations.ListAccountsInput{
+		out, err := lib.OrganizationsClient().ListAccounts(ctx, &organizations.ListAccountsInput{
 			NextToken: token,
 		})
 		if err != nil {

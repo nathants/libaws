@@ -1,12 +1,14 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
+
 	"github.com/nathants/libaws/lib"
 )
 
@@ -30,9 +32,9 @@ func ecrRmTag() {
 	parts := strings.Split(args.Name, ":")
 	name := parts[0]
 	tag := parts[1]
-	_, err := lib.EcrClient().BatchDeleteImageWithContext(ctx, &ecr.BatchDeleteImageInput{
+	_, err := lib.EcrClient().BatchDeleteImage(ctx, &ecr.BatchDeleteImageInput{
 		RepositoryName: aws.String(name),
-		ImageIds: []*ecr.ImageIdentifier{
+		ImageIds: []ecrtypes.ImageIdentifier{
 			{
 				ImageTag: aws.String(tag),
 			},

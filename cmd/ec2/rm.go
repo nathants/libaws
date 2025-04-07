@@ -1,11 +1,13 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"os"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -42,13 +44,13 @@ func ec2Rm() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	var ids []*string
+	var ids []string
 	for _, instance := range instances {
-		if *instance.State.Name == ec2.InstanceStateNameTerminated {
+		if instance.State.Name == ec2types.InstanceStateNameTerminated {
 			continue
 		}
-		ids = append(ids, instance.InstanceId)
-		if *instance.State.Name == ec2.InstanceStateNameRunning || *instance.State.Name == ec2.InstanceStateNameStopped {
+		ids = append(ids, *instance.InstanceId)
+		if instance.State.Name == ec2types.InstanceStateNameRunning || instance.State.Name == ec2types.InstanceStateNameStopped {
 			lib.Logger.Println(lib.PreviewString(args.Preview)+"terminating:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
@@ -58,14 +60,14 @@ func ec2Rm() {
 	if len(ids) == 0 {
 		os.Exit(0)
 	}
-	_, err = lib.EC2Client().TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
+	_, err = lib.EC2Client().TerminateInstances(ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: ids,
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 	if args.Wait {
-		err = lib.EC2WaitState(ctx, lib.StringSlice(ids), "terminated")
+		err = lib.EC2WaitState(ctx, ids, "terminated")
 		if err != nil {
 			lib.Logger.Fatal("error: ", err)
 		}

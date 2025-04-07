@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -33,7 +33,7 @@ func organizationsEnsureWithDns() {
 	ctx := context.Background()
 	var str string
 
-	creds, err := lib.Session().Config.Credentials.Get()
+	creds, err := lib.Session().Credentials.Retrieve(ctx)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

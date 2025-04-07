@@ -1,12 +1,12 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/apigatewayv2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -32,7 +32,7 @@ func apiLsDomains() {
 	}
 	for _, domain := range domains {
 		api := ""
-		mappings, err := lib.ApiClient().GetApiMappingsWithContext(ctx, &apigatewayv2.GetApiMappingsInput{
+		mappings, err := lib.ApiClient().GetApiMappings(ctx, &apigatewayv2.GetApiMappingsInput{
 			DomainName: domain.DomainName,
 			MaxResults: aws.String(fmt.Sprint(500)),
 		})
@@ -41,7 +41,7 @@ func apiLsDomains() {
 		}
 		for _, mapping := range mappings.Items {
 			if *mapping.Stage == "$default" {
-				out, err := lib.ApiClient().GetApiWithContext(ctx, &apigatewayv2.GetApiInput{
+				out, err := lib.ApiClient().GetApi(ctx, &apigatewayv2.GetApiInput{
 					ApiId: mapping.ApiId,
 				})
 				if err != nil {

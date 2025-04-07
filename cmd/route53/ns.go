@@ -1,12 +1,13 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+
 	"github.com/nathants/libaws/lib"
 )
 
@@ -31,13 +32,13 @@ func route53NS() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	out, err := lib.Route53Client().GetHostedZoneWithContext(ctx, &route53.GetHostedZoneInput{
+	out, err := lib.Route53Client().GetHostedZone(ctx, &route53.GetHostedZoneInput{
 		Id: aws.String(id),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
 	for _, ns := range out.DelegationSet.NameServers {
-		fmt.Println(*ns)
+		fmt.Println(ns)
 	}
 }

@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"sort"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -32,7 +32,7 @@ func cloudwatchLsDimensions() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	dimensionsMap := make(map[string]interface{})
+	dimensionsMap := make(map[string]any)
 	for _, m := range metrics {
 		for _, d := range m.Dimensions {
 			dimensionsMap[*d.Name+"="+*d.Value] = nil

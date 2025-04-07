@@ -33,7 +33,7 @@ def test():
                                      "type": "s3"}],
                     }
                 },
-                "s3": {f"test-bucket-{uid}": {}},
+                "s3": {f"test-bucket-{uid}": {'attr': ['acl=private']}},
             }
         }
     }

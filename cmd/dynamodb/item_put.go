@@ -1,12 +1,13 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -36,7 +37,8 @@ func dynamodbItemPut() {
 	var args dynamodbItemPutArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	item := map[string]*dynamodb.AttributeValue{}
+	item := map[string]ddbtypes.AttributeValue{}
+
 	for _, key := range args.Attr {
 		name, kind, val, err := lib.SplitTwice(key, ":")
 		if err != nil {
@@ -44,19 +46,27 @@ func dynamodbItemPut() {
 		}
 		switch strings.ToUpper(kind) {
 		case "S":
-			item[name] = &dynamodb.AttributeValue{S: aws.String(val)}
+			item[name] = &ddbtypes.AttributeValueMemberS{
+				Value: val,
+			}
 		case "B":
-			item[name] = &dynamodb.AttributeValue{BOOL: aws.Bool(val == "true")}
+			item[name] = &ddbtypes.AttributeValueMemberBOOL{
+				Value: val == "true",
+			}
 		case "N":
-			item[name] = &dynamodb.AttributeValue{N: aws.String(val)}
+			item[name] = &ddbtypes.AttributeValueMemberN{
+				Value: val,
+			}
 		default:
 			panic(kind)
 		}
 	}
-	_, err := lib.DynamoDBClient().PutItemWithContext(ctx, &dynamodb.PutItemInput{
+
+	_, err := lib.DynamoDBClient().PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(args.Table),
 		Item:      item,
 	})
+
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

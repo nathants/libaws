@@ -4,7 +4,7 @@
 
 ## why
 
-aws is amazing, but it's hard to see the forest for the trees.
+aws is amazing, but it's harder to use than it should be.
 
 aws should:
 - have fewer knobs
@@ -337,6 +337,8 @@ setting 'cors=true' uses '*' for allowed origins. to specify one or more explici
  - corsorigin=http://localhost:8080
  - corsorigin=https://example.com
 
+note: bucket acl can only be set at bucket creation time
+
 Usage: s3-ensure [--preview] NAME [ATTR [ATTR ...]]
 
 Positional arguments:
@@ -606,6 +608,8 @@ defines a [s3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
 - setting `cors=true` uses `*` for allowed origins. to specify one or more explicit origins, do this instead:
   - `corsorigin=http://localhost:8080`
   - `corsorigin=https://example.com`
+
+- note: bucket acl can only be set at bucket creation time
 
 - schema:
   ```yaml
@@ -1275,7 +1279,7 @@ source completions.d/libaws.sh
 
 ## extending
 
-drop down to the [aws go sdk](https://pkg.go.dev/github.com/aws/aws-sdk-go/service) and implement what you need.
+drop down to the [aws go sdk](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service) and implement what you need.
 
 extend an [existing](https://github.com/nathants/libaws/tree/master/cmd/sqs/ensure.go) [mutative](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) [operation](https://github.com/nathants/libaws/tree/master/cmd/dynamodb/ensure.go) or add a new one.
 
@@ -1299,7 +1303,7 @@ run all integration tests aws with [tox](https://tox.wiki/en/latest/):
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
-
+pip install tox
 tox
 ```
 
@@ -1307,6 +1311,6 @@ run one integration test aws with [tox](https://tox.wiki/en/latest/):
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
-
-tox -- bash -c 'cd examples/simple/python/api/ && python test.py'
+pip install tox
+tox -- bash -c 'make && cd examples/simple/python/api/ && python test.py'
 ```

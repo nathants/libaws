@@ -2,28 +2,29 @@ package lib
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	cwlogstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 )
 
-var logsClient *cloudwatchlogs.CloudWatchLogs
-var logsClientLock sync.RWMutex
+var logsClient *cloudwatchlogs.Client
+var logsClientLock sync.Mutex
 
-func LogsClientExplicit(accessKeyID, accessKeySecret, region string) *cloudwatchlogs.CloudWatchLogs {
-	return cloudwatchlogs.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func LogsClientExplicit(accessKeyID, accessKeySecret, region string) *cloudwatchlogs.Client {
+	return cloudwatchlogs.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func LogsClient() *cloudwatchlogs.CloudWatchLogs {
+func LogsClient() *cloudwatchlogs.Client {
 	logsClientLock.Lock()
 	defer logsClientLock.Unlock()
 	if logsClient == nil {
-		logsClient = cloudwatchlogs.New(Session())
+		logsClient = cloudwatchlogs.NewFromConfig(*Session())
 	}
 	return logsClient
 }
@@ -33,22 +34,22 @@ func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttl
 		d := &Debug{start: time.Now(), name: "LogsEnsureGroup"}
 		defer d.Log()
 	}
-	out, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
+	out, err := LogsClient().DescribeLogStreams(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(logGroupName),
 	})
 	if err != nil || out.LogStreams == nil {
 		if err != nil {
-			aerr, ok := err.(awserr.Error)
-			if !ok || aerr.Code() != cloudwatchlogs.ErrCodeResourceNotFoundException {
+			var rnfe *cwlogstypes.ResourceNotFoundException
+			if !errors.As(err, &rnfe) {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
 		if !preview {
-			_, err := LogsClient().CreateLogGroupWithContext(ctx, &cloudwatchlogs.CreateLogGroupInput{
+			_, err := LogsClient().CreateLogGroup(ctx, &cloudwatchlogs.CreateLogGroupInput{
 				LogGroupName: aws.String(logGroupName),
-				Tags: map[string]*string{
-					infraSetTagName: aws.String(infrasetName),
+				Tags: map[string]string{
+					infraSetTagName: infrasetName,
 				},
 			})
 			if err != nil {
@@ -58,17 +59,17 @@ func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttl
 		}
 		Logger.Println(PreviewString(preview)+"created log group:", logGroupName)
 	}
-	outGroups, err := LogsClient().DescribeLogGroupsWithContext(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+	outGroups, err := LogsClient().DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
 		LogGroupNamePrefix: aws.String(logGroupName),
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	var logGroup *cloudwatchlogs.LogGroup
-	for _, lg := range outGroups.LogGroups {
+	var logGroup *cwlogstypes.LogGroup
+	for i, lg := range outGroups.LogGroups {
 		if logGroupName == *lg.LogGroupName {
-			logGroup = lg
+			logGroup = &outGroups.LogGroups[i]
 			break
 		}
 	}
@@ -78,16 +79,16 @@ func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttl
 		return err
 	}
 	if logGroup == nil {
-		logGroup = &cloudwatchlogs.LogGroup{}
+		logGroup = &cwlogstypes.LogGroup{}
 	}
 	if logGroup.RetentionInDays == nil {
-		logGroup.RetentionInDays = aws.Int64(0)
+		logGroup.RetentionInDays = aws.Int32(0)
 	}
 	if ttlDays != int(*logGroup.RetentionInDays) {
 		if !preview {
-			_, err = LogsClient().PutRetentionPolicyWithContext(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
+			_, err = LogsClient().PutRetentionPolicy(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
 				LogGroupName:    aws.String(logGroupName),
-				RetentionInDays: aws.Int64(int64(ttlDays)),
+				RetentionInDays: aws.Int32(int32(ttlDays)),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
@@ -99,15 +100,15 @@ func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttl
 	return nil
 }
 
-func LogsListLogGroups(ctx context.Context) ([]*cloudwatchlogs.LogGroup, error) {
+func LogsListLogGroups(ctx context.Context) ([]cwlogstypes.LogGroup, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LogsListLogGroups"}
 		defer d.Log()
 	}
 	var token *string
-	var logs []*cloudwatchlogs.LogGroup
+	var logs []cwlogstypes.LogGroup
 	for {
-		out, err := LogsClient().DescribeLogGroupsWithContext(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
+		out, err := LogsClient().DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -128,24 +129,24 @@ func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
 		d := &Debug{start: time.Now(), name: "LogsDeleteGroup"}
 		defer d.Log()
 	}
-	_, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
+	_, err := LogsClient().DescribeLogStreams(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(name),
 	})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != cloudwatchlogs.ErrCodeResourceNotFoundException {
+		var rnfe *cwlogstypes.ResourceNotFoundException
+		if !errors.As(err, &rnfe) {
 			Logger.Println("error:", err)
 			return err
 		}
 		return nil
 	}
 	if !preview {
-		_, err := LogsClient().DeleteLogGroupWithContext(ctx, &cloudwatchlogs.DeleteLogGroupInput{
+		_, err := LogsClient().DeleteLogGroup(ctx, &cloudwatchlogs.DeleteLogGroupInput{
 			LogGroupName: aws.String(name),
 		})
 		if err != nil {
-			aerr, ok := err.(awserr.Error)
-			if !ok || aerr.Code() != "ResourceNotFoundException" {
+			var rnfe *cwlogstypes.ResourceNotFoundException
+			if !errors.As(err, &rnfe) {
 				Logger.Println("error:", err)
 				return err
 			}
@@ -155,15 +156,15 @@ func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
 	return nil
 }
 
-func LogsMostRecentStreams(ctx context.Context, name string) ([]*cloudwatchlogs.LogStream, error) {
+func LogsMostRecentStreams(ctx context.Context, name string) ([]cwlogstypes.LogStream, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LogsMostRecentStreams"}
 		defer d.Log()
 	}
-	out, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
+	out, err := LogsClient().DescribeLogStreams(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(name),
 		Descending:   aws.Bool(true),
-		OrderBy:      aws.String(cloudwatchlogs.OrderByLastEventTime),
+		OrderBy:      cwlogstypes.OrderByLastEventTime,
 	})
 	if err != nil {
 		return nil, err
@@ -171,18 +172,18 @@ func LogsMostRecentStreams(ctx context.Context, name string) ([]*cloudwatchlogs.
 	return out.LogStreams, nil
 }
 
-func LogsStreams(ctx context.Context, name string) ([]*cloudwatchlogs.LogStream, error) {
+func LogsStreams(ctx context.Context, name string) ([]cwlogstypes.LogStream, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LogStreams"}
 		defer d.Log()
 	}
-	var res []*cloudwatchlogs.LogStream
+	var res []cwlogstypes.LogStream
 	var token *string
 	for {
-		out, err := LogsClient().DescribeLogStreamsWithContext(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
+		out, err := LogsClient().DescribeLogStreams(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
 			LogGroupName: aws.String(name),
 			Descending:   aws.Bool(true),
-			OrderBy:      aws.String(cloudwatchlogs.OrderByLastEventTime),
+			OrderBy:      cwlogstypes.OrderByLastEventTime,
 			NextToken:    token,
 		})
 		if err != nil {
@@ -212,7 +213,7 @@ func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(
 		for _, stream := range streams {
 			streamName := *stream.LogStreamName
 			token := tokens[streamName]
-			out, err := LogsClient().GetLogEventsWithContext(ctx, &cloudwatchlogs.GetLogEventsInput{
+			out, err := LogsClient().GetLogEvents(ctx, &cloudwatchlogs.GetLogEventsInput{
 				LogGroupName:  aws.String(name),
 				LogStreamName: aws.String(streamName),
 				NextToken:     token,

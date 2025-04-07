@@ -1,4 +1,4 @@
-package cliaws
+package libaws
 
 import (
 	"context"
@@ -7,8 +7,9 @@ import (
 	"os"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -32,11 +33,11 @@ func lambdaInvoke() {
 	var args lambdaInvokeArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	invocationType := lambda.InvocationTypeRequestResponse
-	logType := lambda.LogTypeTail
+	invocationType := lambdatypes.InvocationTypeRequestResponse
+	logType := lambdatypes.LogTypeTail
 	if args.Event {
-		invocationType = lambda.InvocationTypeEvent
-		logType = lambda.LogTypeNone
+		invocationType = lambdatypes.InvocationTypeEvent
+		logType = lambdatypes.LogTypeNone
 	}
 	var payload []byte
 	if args.PayloadString != "" {
@@ -48,10 +49,10 @@ func lambdaInvoke() {
 			lib.Logger.Fatal("error: ", err)
 		}
 	}
-	out, err := lib.LambdaClient().InvokeWithContext(ctx, &lambda.InvokeInput{
+	out, err := lib.LambdaClient().Invoke(ctx, &lambda.InvokeInput{
 		FunctionName:   aws.String(args.Name),
-		InvocationType: aws.String(invocationType),
-		LogType:        aws.String(logType),
+		InvocationType: invocationType,
+		LogType:        logType,
 		Payload:        payload,
 	})
 	if err != nil {

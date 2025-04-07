@@ -3,21 +3,21 @@ package lib
 import (
 	"sync"
 
-	"github.com/aws/aws-sdk-go/service/costexplorer"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 )
 
-var costExplorerClient *costexplorer.CostExplorer
-var costExplorerClientLock sync.RWMutex
+var costExplorerClient *costexplorer.Client
+var costExplorerClientLock sync.Mutex
 
-func CostExplorerClientExplicit(accessKeyID, accessKeySecret, region string) *costexplorer.CostExplorer {
-	return costexplorer.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func CostExplorerClientExplicit(accessKeyID, accessKeySecret, region string) *costexplorer.Client {
+	return costexplorer.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func CostExplorerClient() *costexplorer.CostExplorer {
+func CostExplorerClient() *costexplorer.Client {
 	costExplorerClientLock.Lock()
 	defer costExplorerClientLock.Unlock()
 	if costExplorerClient == nil {
-		costExplorerClient = costexplorer.New(Session())
+		costExplorerClient = costexplorer.NewFromConfig(*Session())
 	}
 	return costExplorerClient
 }

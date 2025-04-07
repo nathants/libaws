@@ -19,7 +19,7 @@ def test():
     infra = yaml.safe_load(run('libaws infra-ls --env-values'))
     assert sorted(infra["infraset"].keys()) == ["none"], infra
     assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
-    run(f'docker build -t {container} --network host .')
+    run(f'docker buildx build -t {container} --network host .')
     run(f'libaws ecr-ensure {repo_name}')
     run('libaws ecr-login')
     lines = run(f"docker push {container}").splitlines()

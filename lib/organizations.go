@@ -6,22 +6,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/organizations"
+	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 )
 
-var organizationsClient *organizations.Organizations
-var organizationsClientLock sync.RWMutex
+var organizationsClient *organizations.Client
+var organizationsClientLock sync.Mutex
 
-func OrganizationsClientExplicit(accessKeyID, accessKeySecret, region string) *organizations.Organizations {
-	return organizations.New(SessionExplicit(accessKeyID, accessKeySecret, region))
+func OrganizationsClientExplicit(accessKeyID, accessKeySecret, region string) *organizations.Client {
+	return organizations.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
 }
 
-func OrganizationsClient() *organizations.Organizations {
+func OrganizationsClient() *organizations.Client {
 	organizationsClientLock.Lock()
 	defer organizationsClientLock.Unlock()
 	if organizationsClient == nil {
-		organizationsClient = organizations.New(Session())
+		organizationsClient = organizations.NewFromConfig(*Session())
 	}
 	return organizationsClient
 }
@@ -32,9 +33,9 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 		defer d.Log()
 	}
 	var token *string
-	var accounts []*organizations.Account
+	var accounts []orgtypes.Account
 	for {
-		out, err := OrganizationsClient().ListAccountsWithContext(ctx, &organizations.ListAccountsInput{
+		out, err := OrganizationsClient().ListAccounts(ctx, &organizations.ListAccountsInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -47,11 +48,11 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 		}
 		token = out.NextToken
 	}
-	var account organizations.Account
+	var account orgtypes.Account
 	count := 0
 	for _, a := range accounts {
 		if email == *a.Email && name == *a.Name {
-			account = *a
+			account = a
 			count++
 		}
 	}
@@ -66,7 +67,7 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 	}
 	Logger.Println(PreviewString(preview)+"organizations created account:", name, email)
 	if !preview {
-		createOut, err := OrganizationsClient().CreateAccountWithContext(ctx, &organizations.CreateAccountInput{
+		createOut, err := OrganizationsClient().CreateAccount(ctx, &organizations.CreateAccountInput{
 			AccountName: aws.String(name),
 			Email:       aws.String(email),
 		})
@@ -76,24 +77,24 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 		}
 		requestID := createOut.CreateAccountStatus.Id
 		for {
-			describeOut, err := OrganizationsClient().DescribeCreateAccountStatusWithContext(ctx, &organizations.DescribeCreateAccountStatusInput{
+			describeOut, err := OrganizationsClient().DescribeCreateAccountStatus(ctx, &organizations.DescribeCreateAccountStatusInput{
 				CreateAccountRequestId: requestID,
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return "", err
 			}
-			switch *describeOut.CreateAccountStatus.State {
-			case organizations.CreateAccountStateSucceeded:
+			switch describeOut.CreateAccountStatus.State {
+			case orgtypes.CreateAccountStateSucceeded:
 				return *describeOut.CreateAccountStatus.AccountId, nil
-			case organizations.CreateAccountStateFailed:
-				err := fmt.Errorf("account creation failed: %s", *describeOut.CreateAccountStatus.FailureReason)
+			case orgtypes.CreateAccountStateFailed:
+				err := fmt.Errorf("account creation failed: %s", describeOut.CreateAccountStatus.FailureReason)
 				Logger.Println("error:", err)
 				return "", err
-			case organizations.CreateAccountStateInProgress:
+			case orgtypes.CreateAccountStateInProgress:
 				time.Sleep(5 * time.Second)
 			default:
-				err := fmt.Errorf("unknown state: %s", *describeOut.CreateAccountStatus.State)
+				err := fmt.Errorf("unknown state: %s", describeOut.CreateAccountStatus.State)
 				Logger.Println("error:", err)
 				return "", err
 			}

@@ -1,12 +1,13 @@
-package cliaws
+package libaws
 
 import (
 	"context"
 	"strings"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -35,7 +36,7 @@ func dynamodbItemRm() {
 	var args dynamodbItemRmArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	item := map[string]*dynamodb.AttributeValue{}
+	item := map[string]ddbtypes.AttributeValue{}
 	for _, key := range args.Keys {
 		name, kind, val, err := lib.SplitTwice(key, ":")
 		if err != nil {
@@ -43,14 +44,14 @@ func dynamodbItemRm() {
 		}
 		switch strings.ToUpper(kind) {
 		case "S":
-			item[name] = &dynamodb.AttributeValue{S: aws.String(val)}
+			item[name] = &ddbtypes.AttributeValueMemberS{Value: val}
 		case "N":
-			item[name] = &dynamodb.AttributeValue{N: aws.String(val)}
+			item[name] = &ddbtypes.AttributeValueMemberN{Value: val}
 		default:
 			panic(kind)
 		}
 	}
-	_, err := lib.DynamoDBClient().DeleteItemWithContext(ctx, &dynamodb.DeleteItemInput{
+	_, err := lib.DynamoDBClient().DeleteItem(ctx, &dynamodb.DeleteItemInput{
 		TableName: aws.String(args.Table),
 		Key:       item,
 	})

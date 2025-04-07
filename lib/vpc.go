@@ -6,19 +6,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
-func VpcList(ctx context.Context) ([]*ec2.Vpc, error) {
+func VpcList(ctx context.Context) ([]ec2types.Vpc, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcList"}
 		defer d.Log()
 	}
 	var token *string
-	var res []*ec2.Vpc
+	var res []ec2types.Vpc
 	for {
-		out, err := EC2Client().DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
+		out, err := EC2Client().DescribeVpcs(ctx, &ec2.DescribeVpcsInput{
 			NextToken: token,
 		})
 		if err != nil {
@@ -33,20 +34,20 @@ func VpcList(ctx context.Context) ([]*ec2.Vpc, error) {
 	return res, nil
 }
 
-func VpcListSubnets(ctx context.Context, vpcID string) ([]*ec2.Subnet, error) {
+func VpcListSubnets(ctx context.Context, vpcID string) ([]ec2types.Subnet, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcListSubnets"}
 		defer d.Log()
 	}
 	input := &ec2.DescribeSubnetsInput{
-		Filters: []*ec2.Filter{
-			&ec2.Filter{
+		Filters: []ec2types.Filter{
+			{
 				Name:   aws.String("vpc-id"),
-				Values: []*string{aws.String(vpcID)},
+				Values: []string{vpcID},
 			},
 		},
 	}
-	out, err := EC2Client().DescribeSubnetsWithContext(ctx, input)
+	out, err := EC2Client().DescribeSubnets(ctx, input)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -62,8 +63,13 @@ func VpcID(ctx context.Context, name string) (string, error) {
 	if strings.HasPrefix(name, "vpc-") {
 		return name, nil
 	}
-	out, err := EC2Client().DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
-		Filters: []*ec2.Filter{{Name: aws.String("tag:Name"), Values: []*string{aws.String(name)}}},
+	out, err := EC2Client().DescribeVpcs(ctx, &ec2.DescribeVpcsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []string{name},
+			},
+		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -73,16 +79,21 @@ func VpcID(ctx context.Context, name string) (string, error) {
 		err := fmt.Errorf("%s vpc for name %s: %d", ErrPrefixDidntFindExactlyOne, name, len(out.Vpcs))
 		return "", err
 	}
-	return *out.Vpcs[0].VpcId, nil
+	return aws.ToString(out.Vpcs[0].VpcId), nil
 }
 
-func VpcSubnets(ctx context.Context, vpcID string) ([]*ec2.Subnet, error) {
+func VpcSubnets(ctx context.Context, vpcID string) ([]ec2types.Subnet, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcSubnets"}
 		defer d.Log()
 	}
-	out, err := EC2Client().DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
-		Filters: []*ec2.Filter{{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)}}},
+	out, err := EC2Client().DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []string{vpcID},
+			},
+		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -107,7 +118,7 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			Logger.Println("error:", err)
 			return "", err
 		}
-		tags := []*ec2.Tag{
+		tags := []ec2types.Tag{
 			{
 				Key:   aws.String("Name"),
 				Value: aws.String(vpcName),
@@ -119,30 +130,32 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 		}
 		// create vpc
 		cidr := strings.ReplaceAll("10.xx.0.0/16", "xx", fmt.Sprint(xx))
-		vpc, err := EC2Client().CreateVpcWithContext(ctx, &ec2.CreateVpcInput{
+		vpc, err := EC2Client().CreateVpc(ctx, &ec2.CreateVpcInput{
 			CidrBlock: aws.String(cidr),
-			TagSpecifications: []*ec2.TagSpecification{{
-				ResourceType: aws.String(ec2.ResourceTypeVpc),
-				Tags:         tags,
-			}},
+			TagSpecifications: []ec2types.TagSpecification{
+				{
+					ResourceType: ec2types.ResourceTypeVpc,
+					Tags:         tags,
+				},
+			},
 		})
 		if err != nil {
 			Logger.Println("error:", err)
 			return "", err
 		}
-		Logger.Println("created:", vpcName, *vpc.Vpc.VpcId, cidr)
-		err = EC2Client().WaitUntilVpcAvailableWithContext(ctx, &ec2.DescribeVpcsInput{
-			VpcIds: []*string{vpc.Vpc.VpcId},
-		})
+		Logger.Println("created:", vpcName, aws.ToString(vpc.Vpc.VpcId), cidr)
+		err = ec2.NewVpcAvailableWaiter(EC2Client()).Wait(ctx, &ec2.DescribeVpcsInput{
+			VpcIds: []string{aws.ToString(vpc.Vpc.VpcId)},
+		}, 10*time.Minute)
 		if err != nil {
 			Logger.Println("error:", err)
 			return "", err
 		}
 		// enable dns hostnames
 		err = Retry(ctx, func() error {
-			_, err := EC2Client().ModifyVpcAttributeWithContext(ctx, &ec2.ModifyVpcAttributeInput{
+			_, err := EC2Client().ModifyVpcAttribute(ctx, &ec2.ModifyVpcAttributeInput{
 				VpcId: vpc.Vpc.VpcId,
-				EnableDnsHostnames: &ec2.AttributeBooleanValue{
+				EnableDnsHostnames: &ec2types.AttributeBooleanValue{
 					Value: aws.Bool(true),
 				},
 			})
@@ -152,11 +165,14 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			Logger.Println("error:", err)
 			return "", err
 		}
-		Logger.Println("enabled dns hostnames:", *vpc.Vpc.VpcId)
+		Logger.Println("enabled dns hostnames:", aws.ToString(vpc.Vpc.VpcId))
 		// remove all rules from default security group
-		out, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-			Filters: []*ec2.Filter{
-				{Name: aws.String("vpc-id"), Values: []*string{vpc.Vpc.VpcId}},
+		out, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("vpc-id"),
+					Values: []string{aws.ToString(vpc.Vpc.VpcId)},
+				},
 			},
 		})
 		if err != nil {
@@ -169,7 +185,7 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			return "", err
 		}
 		securityGroup := out.SecurityGroups[0]
-		_, err = EC2Client().RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
+		_, err = EC2Client().RevokeSecurityGroupIngress(ctx, &ec2.RevokeSecurityGroupIngressInput{
 			GroupId:       securityGroup.GroupId,
 			IpPermissions: securityGroup.IpPermissions,
 		})
@@ -177,21 +193,23 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			Logger.Println("error:", err)
 			return "", err
 		}
-		Logger.Println("removed all rules from default security group:", *securityGroup.GroupId)
+		Logger.Println("removed all rules from default security group:", aws.ToString(securityGroup.GroupId))
 		// create and attach internet gateway
-		gateway, err := EC2Client().CreateInternetGatewayWithContext(ctx, &ec2.CreateInternetGatewayInput{
-			TagSpecifications: []*ec2.TagSpecification{{
-				ResourceType: aws.String(ec2.ResourceTypeInternetGateway),
-				Tags:         tags,
-			}},
+		gateway, err := EC2Client().CreateInternetGateway(ctx, &ec2.CreateInternetGatewayInput{
+			TagSpecifications: []ec2types.TagSpecification{
+				{
+					ResourceType: ec2types.ResourceTypeInternetGateway,
+					Tags:         tags,
+				},
+			},
 		})
 		if err != nil {
 			Logger.Println("error:", err)
 			return "", err
 		}
-		Logger.Println("created internet gateway:", *gateway.InternetGateway.InternetGatewayId)
+		Logger.Println("created internet gateway:", aws.ToString(gateway.InternetGateway.InternetGatewayId))
 		err = Retry(ctx, func() error {
-			_, err := EC2Client().AttachInternetGatewayWithContext(ctx, &ec2.AttachInternetGatewayInput{
+			_, err := EC2Client().AttachInternetGateway(ctx, &ec2.AttachInternetGatewayInput{
 				VpcId:             vpc.Vpc.VpcId,
 				InternetGatewayId: gateway.InternetGateway.InternetGatewayId,
 			})
@@ -201,13 +219,13 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			Logger.Println("error:", err)
 			return "", err
 		}
-		Logger.Println("attached internet gateway:", *gateway.InternetGateway.InternetGatewayId)
+		Logger.Println("attached internet gateway:", aws.ToString(gateway.InternetGateway.InternetGatewayId))
 		// create route to internet
-		routes, err := EC2Client().DescribeRouteTablesWithContext(ctx, &ec2.DescribeRouteTablesInput{
-			Filters: []*ec2.Filter{
+		routes, err := EC2Client().DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{
+			Filters: []ec2types.Filter{
 				{
 					Name:   aws.String("vpc-id"),
-					Values: []*string{vpc.Vpc.VpcId},
+					Values: []string{aws.ToString(vpc.Vpc.VpcId)},
 				},
 			},
 		})
@@ -220,7 +238,7 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			return "", err
 		}
 		table := routes.RouteTables[0]
-		_, err = EC2Client().CreateRouteWithContext(ctx, &ec2.CreateRouteInput{
+		_, err = EC2Client().CreateRoute(ctx, &ec2.CreateRouteInput{
 			DestinationCidrBlock: aws.String("0.0.0.0/0"),
 			GatewayId:            gateway.InternetGateway.InternetGatewayId,
 			RouteTableId:         table.RouteTableId,
@@ -229,7 +247,7 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			Logger.Println("error:", err)
 			return "", err
 		}
-		Logger.Println("created route to internet gateway:", *gateway.InternetGateway.InternetGatewayId, *table.RouteTableId)
+		Logger.Println("created route to internet gateway:", aws.ToString(gateway.InternetGateway.InternetGatewayId), aws.ToString(table.RouteTableId))
 		// create subnets
 		zones, err := Zones(ctx)
 		if err != nil {
@@ -242,24 +260,26 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			slice = append(slice, fmt.Sprint(16*i+1))
 			slice = append(slice, "0/20")
 			block := strings.Join(slice, ".")
-			subnet, err := EC2Client().CreateSubnetWithContext(ctx, &ec2.CreateSubnetInput{
+			subnet, err := EC2Client().CreateSubnet(ctx, &ec2.CreateSubnetInput{
 				VpcId:            vpc.Vpc.VpcId,
 				AvailabilityZone: zone.ZoneName,
 				CidrBlock:        aws.String(block),
-				TagSpecifications: []*ec2.TagSpecification{{
-					ResourceType: aws.String(ec2.ResourceTypeSubnet),
-					Tags:         tags,
-				}},
+				TagSpecifications: []ec2types.TagSpecification{
+					{
+						ResourceType: ec2types.ResourceTypeSubnet,
+						Tags:         tags,
+					},
+				},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return "", err
 			}
-			Logger.Println("created subnet:", *subnet.Subnet.SubnetId, *zone.ZoneName, block)
+			Logger.Println("created subnet:", aws.ToString(subnet.Subnet.SubnetId), aws.ToString(zone.ZoneName), block)
 			err = Retry(ctx, func() error {
-				_, err := EC2Client().ModifySubnetAttributeWithContext(ctx, &ec2.ModifySubnetAttributeInput{
+				_, err := EC2Client().ModifySubnetAttribute(ctx, &ec2.ModifySubnetAttributeInput{
 					SubnetId:            subnet.Subnet.SubnetId,
-					MapPublicIpOnLaunch: &ec2.AttributeBooleanValue{Value: aws.Bool(true)},
+					MapPublicIpOnLaunch: &ec2types.AttributeBooleanValue{Value: aws.Bool(true)},
 				})
 				return err
 			})
@@ -267,9 +287,9 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 				Logger.Println("error:", err)
 				return "", err
 			}
-			Logger.Println("enable map public ip on launch:", *subnet.Subnet.SubnetId)
+			Logger.Println("enable map public ip on launch:", aws.ToString(subnet.Subnet.SubnetId))
 			err = Retry(ctx, func() error {
-				_, err := EC2Client().AssociateRouteTableWithContext(ctx, &ec2.AssociateRouteTableInput{
+				_, err := EC2Client().AssociateRouteTable(ctx, &ec2.AssociateRouteTableInput{
 					RouteTableId: table.RouteTableId,
 					SubnetId:     subnet.Subnet.SubnetId,
 				})
@@ -280,7 +300,7 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 				return "", err
 			}
 		}
-		return *vpc.Vpc.VpcId, nil
+		return aws.ToString(vpc.Vpc.VpcId), nil
 	}
 	Logger.Println(PreviewString(preview)+"created vpc:", vpcName)
 	return "", nil
@@ -308,7 +328,7 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 	if len(instances) != 0 {
 		var ids []string
 		for _, instance := range instances {
-			if *instance.State.Name != ec2.InstanceStateNameTerminated {
+			if instance.State.Name != ec2types.InstanceStateNameTerminated {
 				ids = append(ids, *instance.InstanceId)
 			}
 		}
@@ -319,13 +339,16 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 		}
 	}
 	// delete internet gateways
-	var gateways []*ec2.InternetGateway
+	var gateways []ec2types.InternetGateway
 	var token *string
 	for {
-		out, err := EC2Client().DescribeInternetGatewaysWithContext(ctx, &ec2.DescribeInternetGatewaysInput{
-			Filters: []*ec2.Filter{{
-				Name: aws.String("attachment.vpc-id"), Values: []*string{aws.String(vpcID)},
-			}},
+		out, err := EC2Client().DescribeInternetGateways(ctx, &ec2.DescribeInternetGatewaysInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("attachment.vpc-id"),
+					Values: []string{vpcID},
+				},
+			},
 			NextToken: token,
 		})
 		if err != nil {
@@ -340,7 +363,7 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 	}
 	for _, gateway := range gateways {
 		if !preview {
-			_, err := EC2Client().DetachInternetGatewayWithContext(ctx, &ec2.DetachInternetGatewayInput{
+			_, err := EC2Client().DetachInternetGateway(ctx, &ec2.DetachInternetGatewayInput{
 				VpcId:             aws.String(vpcID),
 				InternetGatewayId: gateway.InternetGatewayId,
 			})
@@ -348,7 +371,7 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 				Logger.Println("error:", err)
 				return err
 			}
-			_, err = EC2Client().DeleteInternetGatewayWithContext(ctx, &ec2.DeleteInternetGatewayInput{
+			_, err = EC2Client().DeleteInternetGateway(ctx, &ec2.DeleteInternetGatewayInput{
 				InternetGatewayId: gateway.InternetGatewayId,
 			})
 			if err != nil {
@@ -356,16 +379,19 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"deleted:", *gateway.InternetGatewayId)
+		Logger.Println(PreviewString(preview)+"deleted:", aws.ToString(gateway.InternetGatewayId))
 	}
 	// delete route tables
-	var routeTables []*ec2.RouteTable
+	var routeTables []ec2types.RouteTable
 	token = nil
 	for {
-		out, err := EC2Client().DescribeRouteTablesWithContext(ctx, &ec2.DescribeRouteTablesInput{
-			Filters: []*ec2.Filter{{
-				Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)},
-			}},
+		out, err := EC2Client().DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("vpc-id"),
+					Values: []string{vpcID},
+				},
+			},
 			NextToken: token,
 		})
 		if err != nil {
@@ -376,13 +402,13 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 		if out.NextToken == nil {
 			break
 		}
-		out.NextToken = token
+		token = out.NextToken
 	}
 	for _, routeTable := range routeTables {
 		for _, association := range routeTable.Associations {
-			if !*association.Main {
+			if association.Main != nil && !*association.Main {
 				if !preview {
-					_, err := EC2Client().DisassociateRouteTableWithContext(ctx, &ec2.DisassociateRouteTableInput{
+					_, err := EC2Client().DisassociateRouteTable(ctx, &ec2.DisassociateRouteTableInput{
 						AssociationId: association.RouteTableAssociationId,
 					})
 					if err != nil {
@@ -390,18 +416,21 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 						return err
 					}
 				}
-				Logger.Println(PreviewString(preview)+"deleted:", *association.RouteTableAssociationId)
+				Logger.Println(PreviewString(preview)+"deleted:", aws.ToString(association.RouteTableAssociationId))
 			}
 		}
 	}
 	// delete vpc endpoints
 	token = nil
-	var vpcEndpoints []*ec2.VpcEndpoint
+	var vpcEndpoints []ec2types.VpcEndpoint
 	for {
-		out, err := EC2Client().DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
-			Filters: []*ec2.Filter{{
-				Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)},
-			}},
+		out, err := EC2Client().DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("vpc-id"),
+					Values: []string{vpcID},
+				},
+			},
 			NextToken: token,
 		})
 		if err != nil {
@@ -416,24 +445,27 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 	}
 	for _, vpcEndpoint := range vpcEndpoints {
 		if !preview {
-			_, err := EC2Client().DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
-				VpcEndpointIds: []*string{vpcEndpoint.VpcEndpointId},
+			_, err := EC2Client().DeleteVpcEndpoints(ctx, &ec2.DeleteVpcEndpointsInput{
+				VpcEndpointIds: []string{aws.ToString(vpcEndpoint.VpcEndpointId)},
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"deleted:", *vpcEndpoint.VpcEndpointId)
+		Logger.Println(PreviewString(preview)+"deleted:", aws.ToString(vpcEndpoint.VpcEndpointId))
 	}
 	// delete security groups
 	token = nil
-	var securityGroups []*ec2.SecurityGroup
+	var securityGroups []ec2types.SecurityGroup
 	for {
-		out, err := EC2Client().DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-			Filters: []*ec2.Filter{{
-				Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)},
-			}},
+		out, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("vpc-id"),
+					Values: []string{vpcID},
+				},
+			},
 			NextToken: token,
 		})
 		if err != nil {
@@ -447,11 +479,11 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 		token = out.NextToken
 	}
 	for _, securityGroup := range securityGroups {
-		if *securityGroup.GroupName == "default" {
+		if securityGroup.GroupName != nil && *securityGroup.GroupName == "default" {
 			continue // cannot delete default group
 		}
 		if !preview {
-			_, err := EC2Client().DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
+			_, err := EC2Client().DeleteSecurityGroup(ctx, &ec2.DeleteSecurityGroupInput{
 				GroupId: securityGroup.GroupId,
 			})
 			if err != nil {
@@ -459,16 +491,19 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"deleted:", *securityGroup.GroupId)
+		Logger.Println(PreviewString(preview)+"deleted:", aws.ToString(securityGroup.GroupId))
 	}
 	// delete peering connections
 	token = nil
-	var peeringConnections []*ec2.VpcPeeringConnection
+	var peeringConnections []ec2types.VpcPeeringConnection
 	for {
-		out, err := EC2Client().DescribeVpcPeeringConnectionsWithContext(ctx, &ec2.DescribeVpcPeeringConnectionsInput{
-			Filters: []*ec2.Filter{{
-				Name: aws.String("requester-vpc-info.vpc-id"), Values: []*string{aws.String(vpcID)},
-			}},
+		out, err := EC2Client().DescribeVpcPeeringConnections(ctx, &ec2.DescribeVpcPeeringConnectionsInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("requester-vpc-info.vpc-id"),
+					Values: []string{vpcID},
+				},
+			},
 			NextToken: token,
 		})
 		if err != nil {
@@ -483,7 +518,7 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 	}
 	for _, peeringConnection := range peeringConnections {
 		if !preview {
-			_, err := EC2Client().DeleteVpcPeeringConnectionWithContext(ctx, &ec2.DeleteVpcPeeringConnectionInput{
+			_, err := EC2Client().DeleteVpcPeeringConnection(ctx, &ec2.DeleteVpcPeeringConnectionInput{
 				VpcPeeringConnectionId: peeringConnection.VpcPeeringConnectionId,
 			})
 			if err != nil {
@@ -491,16 +526,19 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"deleted:", *peeringConnection.VpcPeeringConnectionId)
+		Logger.Println(PreviewString(preview)+"deleted:", aws.ToString(peeringConnection.VpcPeeringConnectionId))
 	}
 	// delete nacls
 	token = nil
-	var networkAcls []*ec2.NetworkAcl
+	var networkAcls []ec2types.NetworkAcl
 	for {
-		out, err := EC2Client().DescribeNetworkAclsWithContext(ctx, &ec2.DescribeNetworkAclsInput{
-			Filters: []*ec2.Filter{{
-				Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcID)},
-			}},
+		out, err := EC2Client().DescribeNetworkAcls(ctx, &ec2.DescribeNetworkAclsInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("vpc-id"),
+					Values: []string{vpcID},
+				},
+			},
 			NextToken: token,
 		})
 		if err != nil {
@@ -514,11 +552,11 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 		token = out.NextToken
 	}
 	for _, networkAcl := range networkAcls {
-		if *networkAcl.IsDefault {
+		if networkAcl.IsDefault != nil && *networkAcl.IsDefault {
 			continue // cannot delete default nacl
 		}
 		if !preview {
-			_, err := EC2Client().DeleteNetworkAclWithContext(ctx, &ec2.DeleteNetworkAclInput{
+			_, err := EC2Client().DeleteNetworkAcl(ctx, &ec2.DeleteNetworkAclInput{
 				NetworkAclId: networkAcl.NetworkAclId,
 			})
 			if err != nil {
@@ -526,7 +564,7 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"deleted:", *networkAcl.NetworkAclId)
+		Logger.Println(PreviewString(preview)+"deleted:", aws.ToString(networkAcl.NetworkAclId))
 	}
 	// delete subnets
 	subnets, err := VpcSubnets(ctx, vpcID)
@@ -536,7 +574,7 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 	}
 	for _, subnet := range subnets {
 		if !preview {
-			_, err := EC2Client().DeleteSubnetWithContext(ctx, &ec2.DeleteSubnetInput{
+			_, err := EC2Client().DeleteSubnet(ctx, &ec2.DeleteSubnetInput{
 				SubnetId: subnet.SubnetId,
 			})
 			if err != nil {
@@ -544,11 +582,11 @@ func VpcRm(ctx context.Context, name string, preview bool) error {
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"deleted:", *subnet.SubnetId)
+		Logger.Println(PreviewString(preview)+"deleted:", aws.ToString(subnet.SubnetId))
 	}
 	// delete vpc
 	if !preview {
-		_, err = EC2Client().DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
+		_, err = EC2Client().DeleteVpc(ctx, &ec2.DeleteVpcInput{
 			VpcId: aws.String(vpcID),
 		})
 		if err != nil {

@@ -1,13 +1,15 @@
-package cliaws
+package libaws
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -27,10 +29,11 @@ func (ecrLsTagsArgs) Description() string {
 func ecrLsTags() {
 	var args ecrLsTagsArgs
 	arg.MustParse(&args)
-	var imageDetails []*ecr.ImageDetail
+	ctx := context.Background()
+	var imageDetails []ecrtypes.ImageDetail
 	var token *string
 	for {
-		out, err := lib.EcrClient().DescribeImages(&ecr.DescribeImagesInput{
+		out, err := lib.EcrClient().DescribeImages(ctx, &ecr.DescribeImagesInput{
 			RepositoryName: aws.String(args.Image),
 			NextToken:      token,
 		})
@@ -48,7 +51,7 @@ func ecrLsTags() {
 	})
 	for _, image := range imageDetails {
 		for _, tag := range image.ImageTags {
-			fmt.Println(args.Image+":"+*tag, *image.ImageDigest, image.ImagePushedAt.Format(time.RFC3339))
+			fmt.Println(args.Image+":"+tag, *image.ImageDigest, image.ImagePushedAt.Format(time.RFC3339))
 		}
 	}
 }
