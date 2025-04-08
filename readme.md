@@ -1,10 +1,18 @@
-[![Go Reference](https://pkg.go.dev/badge/github.com/nathants/libaws.svg)](https://pkg.go.dev/github.com/nathants/libaws)
-
 # libaws
 
 ## why
 
-aws is amazing, but it's harder to use than it should be.
+aws is amazing, but it's hard to ship fast unless you're an expert.
+
+i want to write down best practices as code, then forget about them so i can just ship.
+
+i want to serve [http](#api), react to database [writes](#dynamodb-1), and use [cron](#schedule) to schedule actions.
+
+i want to [push data](https://github.com/nathants/libaws/tree/master/examples/complex/s3-ec2) s3 -> ec2 -> s3 with ephemeral spot instances that live for seconds.
+
+did you know that ec2 is billed by the second, that spot is 1/5 the price, and that spot in local zones is 1/2 that price?
+
+it's basically free. oh and no egress fees between ec2 and s3 in the same region. lambda's not the only thing that scales to zero. aws is pretty awesome.
 
 aws should:
 - have fewer knobs
@@ -29,6 +37,7 @@ it should be easy to create:
 - [security groups](#security-group)
 - [instance profiles](#instance-profile)
 - [keypairs](#keypair)
+- [instances](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/cmd/ec2/new.go#L22)
 
 ## how
 
@@ -62,7 +71,7 @@ there are two ways to use it:
 
 - [yaml](#infrayaml) and the [cli](#explore-the-cli)
 
-- [go structs](https://github.com/nathants/libaws/blob/master/lib/infra.go#L52) and the [go api](#explore-the-go-api)
+- [go structs](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/lib/infra.go#L60) and the [go api](#explore-the-go-api)
 
 the primary entrypoints are:
 
@@ -406,7 +415,7 @@ func main() {
 
 ## infrastructure set
 
-an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/blob/master/lib/infra.go#L52) and contains:
+an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/lib/infra.go#L60) and contains:
 
 - stateful infrastructure:
   - [s3](#s3)
@@ -461,7 +470,7 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
 
   - if you aren't already serializing your infrastructure mutations, lock around [dynamodb](https://github.com/nathants/go-dynamolock).
 
-- there are only two state locations:
+- no databases for infrastructure state. there are only two state locations:
   - aws.
   - your code.
 
@@ -482,10 +491,6 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
 - multiple infrastructure sets can be deployed into the same account/region.
 
 ## tradeoffs
-
-- no attempt is made to avoid vendor lock-in.
-  - migrating between cloud providers will always be non-trivial.
-  - attempting to mitigate future migrations has more cost than benefit in the typical case.
 
 - `ensure` operations are positive assertions. they assert that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
 
@@ -516,6 +521,8 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
     ```bash
     export DEBUG=yes
     ```
+
+- since `ensure` operations are idempotent, if you encounter errors like rate limits, just try again.
 
 - `infra-ls` is designed to list aws accounts managed with `infra-ensure`. it will not work well in other scenarios.
 
