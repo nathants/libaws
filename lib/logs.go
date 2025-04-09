@@ -203,7 +203,7 @@ func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(
 		d := &Debug{start: time.Now(), name: "LogsTail"}
 		defer d.Log()
 	}
-	tokens := make(map[string]*string)
+	tokens := map[string]*string{}
 	for {
 		streams, err := LogsMostRecentStreams(ctx, name)
 		if err != nil {

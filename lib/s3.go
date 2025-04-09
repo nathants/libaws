@@ -33,7 +33,7 @@ const (
 
 var s3Client *s3.Client
 var s3ClientLock sync.Mutex
-var s3ClientsRegional = make(map[string]*s3.Client)
+var s3ClientsRegional = map[string]*s3.Client{}
 
 func S3ClientExplicit(accessKeyID, accessKeySecret, region string) *s3.Client {
 	return s3.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
@@ -72,7 +72,7 @@ func S3ClientRegionMust(region string) *s3.Client {
 }
 
 var s3BucketRegionLock sync.Mutex
-var s3BucketRegion = make(map[string]string)
+var s3BucketRegion = map[string]string{}
 
 func S3BucketRegion(bucket string) (string, error) {
 	s3BucketRegionLock.Lock()

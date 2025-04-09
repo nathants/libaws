@@ -37,7 +37,7 @@ type ArgsStruct interface {
 	Description() string
 }
 
-var Args = make(map[string]ArgsStruct)
+var Args = map[string]ArgsStruct{}
 
 func SignalHandler(cancel func()) {
 	c := make(chan os.Signal, 1)
@@ -247,7 +247,7 @@ func Max(i, j int) int {
 }
 
 func zipSha256Hex(data []byte) (map[string]string, error) {
-	results := make(map[string]string)
+	results := map[string]string{}
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		Logger.Println("error:", err)

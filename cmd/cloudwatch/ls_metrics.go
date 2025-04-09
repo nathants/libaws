@@ -32,7 +32,7 @@ func cloudwatchLsMetrics() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	metricsMap := make(map[string]int)
+	metricsMap := map[string]int{}
 	for _, m := range metrics {
 		metricsMap[*m.MetricName] = 0
 		for range m.Dimensions {

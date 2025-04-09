@@ -15,7 +15,7 @@ import (
 
 var sess *aws.Config
 var sessLock sync.Mutex
-var sessRegional = make(map[string]*aws.Config)
+var sessRegional = map[string]*aws.Config{}
 
 func SessionExplicit(accessKeyID, accessKeySecret, region string) *aws.Config {
 	err := os.Setenv("AWS_STS_REGIONAL_ENDPOINTS", "regional")

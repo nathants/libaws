@@ -55,7 +55,7 @@ func logsSearch() {
 			lib.Logger.Fatal("error: ", err)
 		}
 		for _, e := range out.Events {
-			val := make(map[string]any)
+			val := map[string]any{}
 			err := json.Unmarshal([]byte(*e.Message), &val)
 			if err != nil {
 				fmt.Printf("timestamp=%d %s", *e.Timestamp, *e.Message)

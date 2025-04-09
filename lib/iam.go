@@ -579,8 +579,8 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 }
 
 func iamPolicyEqual(a, b string) (bool, error) {
-	aData := make(map[string]any)
-	bData := make(map[string]any)
+	aData := map[string]any{}
+	bData := map[string]any{}
 	err := json.Unmarshal([]byte(a), &aData)
 	if err != nil {
 		return false, err

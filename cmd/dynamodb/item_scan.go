@@ -47,7 +47,7 @@ func dynamodbItemScan() {
 				break
 			}
 			count++
-			val := make(map[string]any)
+			val := map[string]any{}
 			err = attributevalue.UnmarshalMap(item, &val)
 			if err != nil {
 				panic(err)

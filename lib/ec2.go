@@ -282,7 +282,7 @@ func EC2ListInstances(ctx context.Context, selectors []string, state ec2types.In
 }
 
 func ec2Tags(tags []ec2types.Tag) map[string]string {
-	val := make(map[string]string)
+	val := map[string]string{}
 	for _, tag := range tags {
 		val[*tag.Key] = *tag.Value
 	}
@@ -2441,7 +2441,7 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 		Logger.Println("error:", err)
 		return err
 	}
-	delete := make(map[EC2SgRule]bool)
+	delete := map[EC2SgRule]bool{}
 	if len(sgs.SecurityGroups) == 1 {
 		sg := sgs.SecurityGroups[0]
 		for _, r := range sg.IpPermissions {

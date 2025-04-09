@@ -69,7 +69,7 @@ func dynamodbItemGet() {
 	if out.Item == nil {
 		os.Exit(1)
 	}
-	val := make(map[string]any)
+	val := map[string]any{}
 	err = attributevalue.UnmarshalMap(out.Item, &val)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

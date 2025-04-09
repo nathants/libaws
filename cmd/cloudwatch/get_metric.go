@@ -48,9 +48,9 @@ func cloudwatchGetMetric() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	timesMap := make(map[string]any)
+	timesMap := map[string]any{}
 	var times []string
-	vals := make(map[string][]float64)
+	vals := map[string][]float64{}
 	for i, o := range out {
 		if metrics[i] != *o.Label {
 			panic(fmt.Sprint(metrics[i], *o.Label))

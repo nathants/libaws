@@ -30,7 +30,7 @@ func ec2SshUser() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	users := make(map[string]any)
+	users := map[string]any{}
 	for _, instance := range instances {
 		users[lib.EC2GetTag(instance.Tags, "user", "")] = nil
 	}

@@ -32,7 +32,7 @@ func cloudwatchLsDimensions() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	dimensionsMap := make(map[string]any)
+	dimensionsMap := map[string]any{}
 	for _, m := range metrics {
 		for _, d := range m.Dimensions {
 			dimensionsMap[*d.Name+"="+*d.Value] = nil

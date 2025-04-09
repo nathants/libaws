@@ -591,7 +591,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 			input.StreamSpecification.StreamViewType,
 		)
 	}
-	existingLocalIndices := make(map[string]ddbtypes.LocalSecondaryIndexDescription)
+	existingLocalIndices := map[string]ddbtypes.LocalSecondaryIndexDescription{}
 	for _, index := range table.Table.LocalSecondaryIndexes {
 		existingLocalIndices[*index.IndexName] = index
 	}
@@ -612,7 +612,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 			Logger.Println("error:", err)
 			return err
 		}
-		attrs := make(map[string]any)
+		attrs := map[string]any{}
 		for _, attr := range existing.Projection.NonKeyAttributes {
 			attrs[attr] = nil
 		}
@@ -625,7 +625,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 			}
 		}
 	}
-	updateLocalIndices := make(map[string]any)
+	updateLocalIndices := map[string]any{}
 	for _, index := range input.LocalSecondaryIndexes {
 		updateLocalIndices[*index.IndexName] = nil
 	}
@@ -637,7 +637,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 			return err
 		}
 	}
-	existingGlobalIndices := make(map[string]ddbtypes.GlobalSecondaryIndexDescription)
+	existingGlobalIndices := map[string]ddbtypes.GlobalSecondaryIndexDescription{}
 	for _, index := range table.Table.GlobalSecondaryIndexes {
 		existingGlobalIndices[*index.IndexName] = index
 	}
@@ -666,7 +666,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 				Logger.Println("error:", err)
 				return err
 			}
-			attrs := make(map[string]any)
+			attrs := map[string]any{}
 			for _, attr := range existing.Projection.NonKeyAttributes {
 				attrs[attr] = nil
 			}
@@ -717,7 +717,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 			}
 		}
 	}
-	updateGlobalIndices := make(map[string]any)
+	updateGlobalIndices := map[string]any{}
 	for _, index := range input.GlobalSecondaryIndexes {
 		updateGlobalIndices[*index.IndexName] = nil
 	}
@@ -791,7 +791,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 		ResourceArn: aws.String(arn),
 		Tags:        []ddbtypes.Tag{},
 	}
-	existingTags := make(map[string]string)
+	existingTags := map[string]string{}
 	for _, tag := range tags {
 		existingTags[*tag.Key] = *tag.Value
 	}
@@ -822,7 +822,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 		ResourceArn: aws.String(arn),
 		TagKeys:     []string{},
 	}
-	updateTags := make(map[string]any)
+	updateTags := map[string]any{}
 	for _, tag := range input.Tags {
 		updateTags[*tag.Key] = nil
 	}
@@ -1109,7 +1109,7 @@ func DynamoDBItemDeleteAll(ctx context.Context, tableName string, keyNames []str
 		}
 		reqs := []ddbtypes.WriteRequest{}
 		for _, item := range out.Items {
-			key := make(map[string]ddbtypes.AttributeValue)
+			key := map[string]ddbtypes.AttributeValue{}
 			for _, k := range keyNames {
 				key[k] = item[k]
 			}
@@ -1128,7 +1128,7 @@ func DynamoDBItemDeleteAll(ctx context.Context, tableName string, keyNames []str
 			}
 		}
 		for _, req := range reqs {
-			val := make(map[string]any)
+			val := map[string]any{}
 			err := attributevalue.UnmarshalMap(req.DeleteRequest.Key, &val)
 			if err != nil {
 				Logger.Println("error:", err)

@@ -730,7 +730,7 @@ func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map
 		d := &Debug{start: time.Now(), name: "InfraListEvent"}
 		defer d.Log()
 	}
-	results := make(map[string]*InfraEvent)
+	results := map[string]*InfraEvent{}
 	lock := sync.Mutex{}
 	rules, err := EventsListRules(ctx, nil)
 	if err != nil {
@@ -831,8 +831,8 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 		fns = append(fns, fn)
 	}
 	errChan := make(chan error)
-	triggers := make(map[string][]*InfraTrigger)
-	res := make(map[string]*InfraLambda)
+	triggers := map[string][]*InfraTrigger{}
+	res := map[string]*InfraLambda{}
 	for _, fn := range fns {
 		fn := fn
 		go func() {
@@ -1058,7 +1058,7 @@ func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
 		d := &Debug{start: time.Now(), name: "InfraListKeypair"}
 		defer d.Log()
 	}
-	result := make(map[string]*InfraKeypair)
+	result := map[string]*InfraKeypair{}
 	out, err := EC2Client().DescribeKeyPairs(ctx, &ec2.DescribeKeyPairsInput{
 		IncludePublicKey: aws.Bool(true),
 	})
@@ -1090,7 +1090,7 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 		d := &Debug{start: time.Now(), name: "InfraListApi"}
 		defer d.Log()
 	}
-	result := make(map[string]*InfraApi)
+	result := map[string]*InfraApi{}
 	lock := &sync.Mutex{}
 	apis, err := ApiList(ctx)
 	if err != nil {
@@ -1102,7 +1102,7 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	apiToDomain := make(map[string]string)
+	apiToDomain := map[string]string{}
 	for _, domain := range domains {
 		mappings, err := ApiClient().GetApiMappings(ctx, &apigatewayv2.GetApiMappingsInput{
 			DomainName: domain.DomainName,
@@ -1130,7 +1130,7 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	apiToDns := make(map[string]string)
+	apiToDns := map[string]string{}
 	for _, zone := range zones {
 		records, err := Route53ListRecords(ctx, *zone.Id)
 		if err != nil {
@@ -1263,7 +1263,7 @@ func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 		defer d.Log()
 	}
 	lock := &sync.Mutex{}
-	result := make(map[string]*InfraDynamoDB)
+	result := map[string]*InfraDynamoDB{}
 	tableNames, err := DynamoDBListTables(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1412,7 +1412,7 @@ func InfraListVpc(ctx context.Context) (map[string]*InfraVpc, error) {
 		d := &Debug{start: time.Now(), name: "InfraListVpc"}
 		defer d.Log()
 	}
-	result := make(map[string]*InfraVpc)
+	result := map[string]*InfraVpc{}
 	vpcs, err := VpcList(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1482,13 +1482,13 @@ func InfraListEC2(ctx context.Context) (map[string]*InfraEC2, error) {
 		d := &Debug{start: time.Now(), name: "InfraListEC2"}
 		defer d.Log()
 	}
-	result := make(map[string]*InfraEC2)
+	result := map[string]*InfraEC2{}
 	instances, err := EC2ListInstances(ctx, nil, "")
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	ec2s := make(map[string][]*InfraEC2)
+	ec2s := map[string][]*InfraEC2{}
 	for _, instance := range instances {
 		if instance.State.Name == ec2types.InstanceStateNameTerminated {
 			continue
@@ -1551,7 +1551,7 @@ func InfraListUser(ctx context.Context) (map[string]*InfraUser, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	result := make(map[string]*InfraUser)
+	result := map[string]*InfraUser{}
 	for _, user := range out {
 		result[*user.UserName] = &InfraUser{
 			Allow:  user.Allows,
@@ -1571,7 +1571,7 @@ func InfraListRole(ctx context.Context) (map[string]*InfraRole, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	result := make(map[string]*InfraRole)
+	result := map[string]*InfraRole{}
 	for _, role := range out {
 		if strings.HasPrefix(*role.RoleName, "AWSServiceRoleFor") || *role.RoleName == EC2SpotFleetTaggingRole {
 			continue
@@ -1601,7 +1601,7 @@ func InfraListInstanceProfile(ctx context.Context) (map[string]*InfraInstancePro
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	result := make(map[string]*InfraInstanceProfile)
+	result := map[string]*InfraInstanceProfile{}
 	for _, profile := range out {
 		infraProfile := &InfraInstanceProfile{}
 		for _, tag := range profile.tags {
@@ -1625,7 +1625,7 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 		defer d.Log()
 	}
 	lock := &sync.Mutex{}
-	res := make(map[string]*InfraS3)
+	res := map[string]*InfraS3{}
 	buckets, err := S3Client().ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1789,7 +1789,7 @@ func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 	}
 	errChan := make(chan error)
 	lock := &sync.Mutex{}
-	res := make(map[string]*InfraSQS)
+	res := map[string]*InfraSQS{}
 	for _, url := range urls {
 		url := url
 		go func() {
@@ -2675,7 +2675,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 		return nil, err
 	}
 	data = []byte(resolved)
-	val := make(map[string]any)
+	val := map[string]any{}
 	err = yaml.Unmarshal(data, &val)
 	if err != nil {
 		Logger.Println("error:", err)
