@@ -7,11 +7,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-
 	"github.com/nathants/libaws/lib"
 )
 
@@ -33,17 +30,7 @@ var uid = os.Getenv("uid")
 
 func handleRequest(ctx context.Context, event events.DynamoDBEvent) (events.APIGatewayProxyResponse, error) {
 	for _, record := range event.Records {
-		userid := record.Change.Keys["userid"].String()
-		version, err := record.Change.Keys["version"].Integer()
-		if err != nil {
-			lib.Logger.Println("error:", err)
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: err.Error()}, nil
-		}
-		key := RecordKey{
-			UserID:  userid,
-			Version: int(version),
-		}
-		item, err := attributevalue.MarshalMap(key)
+		item, err := lib.FromDynamoDBEventAVMap(record.Change.Keys)
 		if err != nil {
 			lib.Logger.Println("error:", err)
 			return events.APIGatewayProxyResponse{StatusCode: 500, Body: err.Error()}, nil
