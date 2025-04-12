@@ -230,7 +230,9 @@ func shellAt(dir string, format string, a ...any) error {
 	cmd.Stdout = &stdout
 	err := cmd.Run()
 	if err != nil {
-		Logger.Println("cmd:", cmdString)
+		if !strings.HasPrefix(cmdString, " ") {
+			Logger.Println("cmd:", cmdString)
+		}
 		Logger.Println(stderr.String())
 		Logger.Println(stdout.String())
 		Logger.Println("error:", err)

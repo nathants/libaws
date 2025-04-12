@@ -2070,8 +2070,14 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 		return err
 	}
 	_ = os.MkdirAll(dir, os.ModePerm)
-	err = shellAt(path.Dir(infraLambda.Entrypoint), "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s %s",
-		os.Getenv("LDFLAGS"),
+	prefix := ""
+	ldflags := os.Getenv("LDFLAGS")
+	if ldflags != " " {
+		prefix = " " // ldflags might contain secrets, shellAt() logs cmdString on error unless it starts with whitespace
+	}
+	err = shellAt(path.Dir(infraLambda.Entrypoint), "%sCGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s %s",
+		prefix,
+		ldflags,
 		path.Join(dir, "bootstrap"),
 		path.Base(infraLambda.Entrypoint),
 	)
