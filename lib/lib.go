@@ -333,8 +333,16 @@ func diffMapStringString(a, b map[string]string, logPrefix string, logValues boo
 }
 
 func SshKeygenEd25519() (string, string, error) {
-	pubKey, privKey, _ := ed25519.GenerateKey(rand.Reader)
-	publicKey, _ := ssh.NewPublicKey(pubKey)
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		Logger.Println("error:", err)
+	    return "", "", err
+	}
+	publicKey, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		Logger.Println("error:", err)
+	    return "", "", err
+	}
 	pemKey := &pem.Block{
 		Type:  "OPENSSH PRIVATE KEY",
 		Bytes: edkey.MarshalED25519PrivateKey(privKey),
