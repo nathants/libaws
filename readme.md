@@ -1040,7 +1040,7 @@ defines triggers for the lambda:
 
 defines an [ses](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html) email receiving trigger.
 
-- route53 and ses must already be configured to use this trigger.
+- route53 and ses must already be setup for the domain.
 
 - dns and bucket attrs are required, prefix is optional.
 
