@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -58,7 +59,7 @@ func (allow *IamAllow) policyName() string {
 	resource := strings.ReplaceAll(allow.Resource, "*", "ALL")
 	var parts []string
 	for _, part := range strings.Split(resource, ":") { // arn:aws:service:account:region:target
-		if !Contains([]string{"arn", "aws", "s3", "dynamodb", "sqs", "sns"}, part) {
+		if !slices.Contains([]string{"arn", "aws", "s3", "dynamodb", "sqs", "sns"}, part) {
 			parts = append(parts, strings.ReplaceAll(part, "/", "__"))
 		}
 	}
@@ -466,7 +467,7 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 		return err
 	}
 	for _, allow := range attachedAllows {
-		if !Contains(allowNames, allow.policyName()) {
+		if !slices.Contains(allowNames, allow.policyName()) {
 			if !preview {
 				_, err := IamClient().DeleteUserPolicy(ctx, &iam.DeleteUserPolicyInput{
 					UserName:   aws.String(username),
@@ -561,7 +562,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 		return err
 	}
 	for _, allow := range attachedAllows {
-		if !Contains(allowNames, allow.policyName()) {
+		if !slices.Contains(allowNames, allow.policyName()) {
 			if !preview {
 				_, err := IamClient().DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
 					RoleName:   aws.String(roleName),
@@ -652,7 +653,7 @@ outer:
 		return err
 	}
 	for _, policy := range attachedPolicies {
-		if !Contains(policyNames, *policy.PolicyName) {
+		if !slices.Contains(policyNames, *policy.PolicyName) {
 			if !preview {
 				_, err := IamClient().DetachUserPolicy(ctx, &iam.DetachUserPolicyInput{
 					UserName:  aws.String(username),
@@ -729,7 +730,7 @@ outer:
 	}
 	for _, policy := range attachedPolicies {
 		policyName := Last(strings.Split(*policy.PolicyArn, "/"))
-		if !Contains(policyNames, policyName) {
+		if !slices.Contains(policyNames, policyName) {
 			if !preview {
 				_, err := IamClient().DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
 					RoleName:  aws.String(roleName),

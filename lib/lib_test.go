@@ -2,6 +2,7 @@ package lib
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -33,7 +34,7 @@ func TestChunk(t *testing.T) {
 		{[]string{"a", "b", "c", "d"}, [][]string{{"a", "b", "c"}, {"d"}}},
 	}
 	for _, test := range tests {
-		output := Chunk(test.input, 3)
+		output := slices.Chunk(test.input, 3)
 		if !reflect.DeepEqual(output, test.output) {
 			t.Errorf("\ngot:\n%v\nwant:\n%v\n", output, test.output)
 		}

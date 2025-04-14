@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -184,7 +185,7 @@ func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*rou
 				}
 			} else {
 				var rrtype r53types.RRType
-				if !Contains(rrtype.Values(), r53types.RRType(value)) {
+				if !slices.Contains(rrtype.Values(), r53types.RRType(value)) {
 					err := fmt.Errorf("route53 unknown type: %s", attr)
 					Logger.Println("error:", err)
 					return nil, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -66,7 +67,7 @@ func ec2WaitGoSsh() {
 			ec2types.InstanceStateNamePending,
 			ec2types.InstanceStateNameRunning,
 		}
-		if lib.Contains(states, instance.State.Name) {
+		if slices.Contains(states, instance.State.Name) {
 			lib.Logger.Println(lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}

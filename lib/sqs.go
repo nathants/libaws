@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -286,7 +287,7 @@ func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 					Logger.Println("error:", err)
 					return err
 				}
-				if Contains(queues, input.name) {
+				if slices.Contains(queues, input.name) {
 					break
 				}
 				time.Sleep(1 * time.Second)

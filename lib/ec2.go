@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -216,7 +217,7 @@ func EC2ListInstances(ctx context.Context, selectors []string, state ec2types.In
 		if kind == KindTags && !strings.Contains(selectors[0], "=") {
 			selectors[0] = fmt.Sprintf("Name=%s", selectors[0])
 		}
-		for _, chunk := range Chunk(selectors, 195) { // max aws api params per query is 200
+		for chunk := range slices.Chunk(selectors, 195) { // max aws api params per query is 200
 			var filterKind ec2types.Filter
 			var filters []ec2types.Filter
 			if state != "" {
@@ -688,7 +689,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 	config = ec2ConfigDefaults(config)
 
 	var allocStrategy ec2types.AllocationStrategy
-	if !Contains(allocStrategy.Values(), spotStrategy) {
+	if !slices.Contains(allocStrategy.Values(), spotStrategy) {
 		return nil, fmt.Errorf("invalid spot allocation strategy: %s", spotStrategy)
 	}
 
@@ -1893,7 +1894,7 @@ func EC2SgID(ctx context.Context, vpcName, sgName string) (string, error) {
 func EC2Tags(tags []ec2types.Tag) string {
 	var res []string
 	for _, tag := range tags {
-		if !Contains([]string{"Name", "aws:ec2spot:fleet-request-id", "creation-date", "user"}, *tag.Key) {
+		if !slices.Contains([]string{"Name", "aws:ec2spot:fleet-request-id", "creation-date", "user"}, *tag.Key) {
 			res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
 		}
 	}

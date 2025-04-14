@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -669,22 +670,22 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 		}
 
 		for name := range infraSet.Event {
-			if Contains(lambdaNames, strings.Split(name, lambdaEventRuleNameSeparator)[0]) {
+			if slices.Contains(lambdaNames, strings.Split(name, lambdaEventRuleNameSeparator)[0]) {
 				delete(infraSet.Event, name) // shown as trigger of the lambda
 			}
 		}
 
 		for name := range infraSet.Api {
-			if Contains(lambdaNames, name) || Contains(websocketNames, name) {
+			if slices.Contains(lambdaNames, name) || slices.Contains(websocketNames, name) {
 				delete(infraSet.Api, name) // shown as trigger of the lambda
 			}
 		}
 
 		for name := range infraSet.Role {
-			if Contains(lambdaNames, name) {
+			if slices.Contains(lambdaNames, name) {
 				delete(infraSet.Role, name) // shown as allows/policies of the lambda
 			}
-			if Contains(instanceProfileNames, name) {
+			if slices.Contains(instanceProfileNames, name) {
 				delete(infraSet.Role, name) // shown as instanceProfile
 			}
 			if name == "OrganizationAccountAccessRole" {
@@ -982,7 +983,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					return
 				}
 				for _, mapping := range out.EventSourceMappings {
-					if mapping.State != nil && Contains([]string{"Disabled", "Disabling"}, *mapping.State) {
+					if mapping.State != nil && slices.Contains([]string{"Disabled", "Disabling"}, *mapping.State) {
 						continue
 					}
 					infra := ArnToInfraName(*mapping.EventSourceArn)
@@ -1930,7 +1931,7 @@ func InfraEnsureVpc(ctx context.Context, infraSet *InfraSet, preview bool) error
 			return err
 		}
 		for _, sg := range sgs {
-			if *sg.VpcId == vpcID && *sg.GroupName != "default" && !Contains(sgNames, *sg.GroupName) {
+			if *sg.VpcId == vpcID && *sg.GroupName != "default" && !slices.Contains(sgNames, *sg.GroupName) {
 				err := EC2DeleteSg(ctx, vpcName, *sg.GroupName, preview)
 				if err != nil {
 					Logger.Println("error:", err)
@@ -2163,7 +2164,7 @@ func resolveEnvVars(s string, ignore []string) (string, error) {
 	for _, variable := range regexp.MustCompile(`(\$\{[^\}]+})`).FindAllString(s, -1) {
 		variableName := variable[2 : len(variable)-1]
 		variableValue := os.Getenv(variableName)
-		if Contains(ignore, variableName) {
+		if slices.Contains(ignore, variableName) {
 			continue
 		}
 		if variableValue == "" {
@@ -2771,7 +2772,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 				return nil, err
 			}
 			validAttrs := []string{lambdaAttrConcurrency, lambdaAttrMemory, lambdaAttrTimeout, lambdaAttrLogsTTLDays}
-			if !Contains(validAttrs, k) {
+			if !slices.Contains(validAttrs, k) {
 				err := fmt.Errorf("unknown attr: %s", k)
 				Logger.Println("error:", err)
 				return nil, err
@@ -2784,7 +2785,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 		}
 		for _, trigger := range infraLambda.Trigger {
 			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket, lambdaTriggerSes}
-			if !Contains(validTriggers, trigger.Type) {
+			if !slices.Contains(validTriggers, trigger.Type) {
 				err := fmt.Errorf("unknown trigger: %#v", trigger)
 				Logger.Println("error:", err)
 				return nil, err

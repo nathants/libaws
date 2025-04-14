@@ -53,7 +53,7 @@ func SignalHandler(cancel func()) {
 func DropLinesWithAny(s string, tokens ...string) string {
 	var lines []string
 outer:
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		for _, token := range tokens {
 			if strings.Contains(line, token) {
 				continue outer
@@ -120,27 +120,6 @@ func RetryAttempts(ctx context.Context, attempts int, fn func() error) error {
 		retry.Attempts(uint(attempts)),
 		retry.Delay(150*time.Millisecond),
 	)
-}
-
-func Contains[T comparable](parts []T, part T) bool {
-	for _, p := range parts {
-		if p == part {
-			return true
-		}
-	}
-	return false
-}
-
-func Chunk(xs []string, chunkSize int) [][]string {
-	var xss [][]string
-	xss = append(xss, []string{})
-	for _, x := range xs {
-		xss[len(xss)-1] = append(xss[len(xss)-1], x)
-		if len(xss[len(xss)-1]) == chunkSize {
-			xss = append(xss, []string{})
-		}
-	}
-	return xss
 }
 
 func Exists(path string) bool {
@@ -336,12 +315,12 @@ func SshKeygenEd25519() (string, string, error) {
 	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		Logger.Println("error:", err)
-	    return "", "", err
+		return "", "", err
 	}
 	publicKey, err := ssh.NewPublicKey(pubKey)
 	if err != nil {
 		Logger.Println("error:", err)
-	    return "", "", err
+		return "", "", err
 	}
 	pemKey := &pem.Block{
 		Type:  "OPENSSH PRIVATE KEY",

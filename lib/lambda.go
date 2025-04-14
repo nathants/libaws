@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -252,7 +253,7 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 		if *out.Rules[0].Actions[1].LambdaAction.FunctionArn != infraLambda.Arn {
 			continue
 		}
-		if !Contains(domains, *rule.Name) {
+		if !slices.Contains(domains, *rule.Name) {
 			err := SesRmReceiptRuleset(ctx, *rule.Name, preview)
 			if err != nil {
 				Logger.Println("error:", err)
@@ -518,7 +519,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, previe
 		}
 		var confs []s3types.LambdaFunctionConfiguration
 		for _, conf := range out.LambdaFunctionConfigurations {
-			if *conf.LambdaFunctionArn != infraLambda.Arn || Contains(triggers, *bucket.Name) {
+			if *conf.LambdaFunctionArn != infraLambda.Arn || slices.Contains(triggers, *bucket.Name) {
 				confs = append(confs, conf)
 			} else {
 				Logger.Println(PreviewString(preview)+"deleted bucket notification:", infraLambda.Name, *bucket.Name)
@@ -566,7 +567,7 @@ func lambdaRemoveUnusedPermissions(ctx context.Context, name string, permissionS
 		return err
 	}
 	for _, statement := range policy.Statement {
-		if !Contains(permissionSids, statement.Sid) {
+		if !slices.Contains(permissionSids, statement.Sid) {
 			if !preview {
 				_, err := LambdaClient().RemovePermission(ctx, &lambda.RemovePermissionInput{
 					FunctionName: aws.String(name),
@@ -688,7 +689,7 @@ func lambdaEnsureTriggerApi(ctx context.Context, infraSetName, apiName, arnLambd
 		defer d.Log()
 	}
 	var pType apitypes.ProtocolType
-	if !Contains(pType.Values(), protocolType) {
+	if !slices.Contains(pType.Values(), protocolType) {
 		err := fmt.Errorf("invalid protocol type: %s", protocolType)
 		Logger.Println("error:", err)
 		return nil, err
@@ -980,7 +981,7 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, 
 					return err
 				}
 				wildcard := fmt.Sprintf("*.%s", parentDomain)
-				if Contains(descOut.Certificate.SubjectAlternativeNames, wildcard) {
+				if slices.Contains(descOut.Certificate.SubjectAlternativeNames, wildcard) {
 					arnCert = *cert.CertificateArn
 					break
 				}
@@ -1621,7 +1622,7 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 			return nil, err
 		}
 		for _, target := range targets {
-			if *target.Arn == infraLambda.Arn && rule.ScheduleExpression != nil && !Contains(triggers, *rule.ScheduleExpression) {
+			if *target.Arn == infraLambda.Arn && rule.ScheduleExpression != nil && !slices.Contains(triggers, *rule.ScheduleExpression) {
 				if !preview {
 					ids := []string{}
 					for _, target := range targets {
@@ -1836,7 +1837,7 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, infraLambda *InfraLambda, 
 				continue
 			}
 			tableName := DynamoDBStreamArnToTableName(*mapping.EventSourceArn)
-			if !Contains(triggerTables, tableName) {
+			if !slices.Contains(triggerTables, tableName) {
 				if !preview {
 					_, err := LambdaClient().DeleteEventSourceMapping(ctx, &lambda.DeleteEventSourceMappingInput{
 						UUID: mapping.UUID,
@@ -2025,7 +2026,7 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 				continue
 			}
 			queueName := SQSArnToName(*mapping.EventSourceArn)
-			if !Contains(queueNames, queueName) {
+			if !slices.Contains(queueNames, queueName) {
 				if !preview {
 					err := Retry(ctx, func() error {
 						_, err := LambdaClient().DeleteEventSourceMapping(ctx, &lambda.DeleteEventSourceMappingInput{

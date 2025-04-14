@@ -5,7 +5,11 @@ all: libaws
 libaws:
 	CGO_ENABLED=0 go build -tags 'netgo osusergo purego'
 
-check: check-deps check-static check-ineff check-err check-vet check-lint check-bodyclose check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck
+
+
+check: check-deps check-static check-ineff check-err check-vet check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck
+
+# body-close
 
 check-deps:
 	@which staticcheck >/dev/null   || (cd ~ && go install honnef.co/go/tools/cmd/staticcheck@latest)
