@@ -1061,6 +1061,32 @@ func ec2Rsync(ctx context.Context, instance ec2types.Instance, input *EC2RsyncIn
 		// defer func() {}()
 		for {
 			line, err := buf.ReadString('\n')
+			if line != "" && !strings.HasSuffix(line, "\n") {
+				line += "\n"
+			}
+			if strings.Contains(line, "Permission denied (publickey)") {
+				done <- fmt.Errorf("ec2 Permission denied (publickey)")
+				return
+			} else if !strings.Contains(line, " to the list of known hosts.") {
+				if len(input.Instances) > 1 {
+					line = *instance.InstanceId + ": " + line
+				}
+				if kind == "stdout" && input.AccumulateResult {
+					resultLock.Lock()
+					result.Stdout = append(result.Stdout, line)
+					resultLock.Unlock()
+				}
+				input.PrintLock.Lock()
+				switch kind {
+				case "stderr":
+					_, _ = fmt.Fprint(os.Stderr, line)
+				case "stdout":
+					_, _ = fmt.Fprint(os.Stdout, line)
+				default:
+					panic("unknown kind: " + kind)
+				}
+				input.PrintLock.Unlock()
+			}
 			if err != nil {
 				if err != io.EOF {
 					done <- err
@@ -1069,28 +1095,6 @@ func ec2Rsync(ctx context.Context, instance ec2types.Instance, input *EC2RsyncIn
 				}
 				return
 			}
-			if strings.Contains(line, "Permission denied (publickey)") {
-				done <- fmt.Errorf("ec2 Permission denied (publickey)")
-				return
-			}
-			if len(input.Instances) > 1 {
-				line = *instance.InstanceId + ": " + line
-			}
-			if kind == "stdout" && input.AccumulateResult {
-				resultLock.Lock()
-				result.Stdout = append(result.Stdout, line)
-				resultLock.Unlock()
-			}
-			input.PrintLock.Lock()
-			switch kind {
-			case "stderr":
-				_, _ = fmt.Fprint(os.Stderr, line)
-			case "stdout":
-				_, _ = fmt.Fprint(os.Stdout, line)
-			default:
-				panic("unknown kind: " + kind)
-			}
-			input.PrintLock.Unlock()
 		}
 	}
 	go tail("stdout", bufio.NewReader(stdout))
@@ -1255,6 +1259,32 @@ func ec2Scp(ctx context.Context, instance ec2types.Instance, input *EC2ScpInput)
 		// defer func() {}()
 		for {
 			line, err := buf.ReadString('\n')
+			if line != "" && !strings.HasSuffix(line, "\n") {
+				line += "\n"
+			}
+			if strings.Contains(line, "Permission denied (publickey)") {
+				done <- fmt.Errorf("ec2 Permission denied (publickey)")
+				return
+			} else if !strings.Contains(line, " to the list of known hosts.") {
+				if len(input.Instances) > 1 {
+					line = *instance.InstanceId + ": " + line
+				}
+				if kind == "stdout" && input.AccumulateResult {
+					resultLock.Lock()
+					result.Stdout = append(result.Stdout, line)
+					resultLock.Unlock()
+				}
+				input.PrintLock.Lock()
+				switch kind {
+				case "stderr":
+					_, _ = fmt.Fprint(os.Stderr, line)
+				case "stdout":
+					_, _ = fmt.Fprint(os.Stdout, line)
+				default:
+					panic("unknown kind: " + kind)
+				}
+				input.PrintLock.Unlock()
+			}
 			if err != nil {
 				if err != io.EOF {
 					done <- err
@@ -1263,28 +1293,6 @@ func ec2Scp(ctx context.Context, instance ec2types.Instance, input *EC2ScpInput)
 				}
 				return
 			}
-			if strings.Contains(line, "Permission denied (publickey)") {
-				done <- fmt.Errorf("ec2 Permission denied (publickey)")
-				return
-			}
-			if len(input.Instances) > 1 {
-				line = *instance.InstanceId + ": " + line
-			}
-			if kind == "stdout" && input.AccumulateResult {
-				resultLock.Lock()
-				result.Stdout = append(result.Stdout, line)
-				resultLock.Unlock()
-			}
-			input.PrintLock.Lock()
-			switch kind {
-			case "stderr":
-				_, _ = fmt.Fprint(os.Stderr, line)
-			case "stdout":
-				_, _ = fmt.Fprint(os.Stdout, line)
-			default:
-				panic("unknown kind: " + kind)
-			}
-			input.PrintLock.Unlock()
 		}
 	}
 	go tail("stdout", bufio.NewReader(stdout))
@@ -1510,6 +1518,36 @@ func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput)
 		// defer func() {}()
 		for {
 			line, err := buf.ReadString('\n')
+			if line != "" && !strings.HasSuffix(line, "\n") {
+				line += "\n"
+			}
+			if strings.Contains(line, "Permission denied (publickey)") {
+				done <- fmt.Errorf("ec2 Permission denied (publickey)")
+				return
+			} else if !strings.Contains(line, " to the list of known hosts.") {
+				if len(input.Instances) > 1 {
+					if input.IPNotID {
+						line = *instance.PublicIpAddress + ": " + line
+					} else {
+						line = *instance.InstanceId + ": " + line
+					}
+				}
+				if !input.NoPrint && kind == "stdout" && input.AccumulateResult {
+					resultLock.Lock()
+					result.Stdout = append(result.Stdout, line)
+					resultLock.Unlock()
+				}
+				input.PrintLock.Lock()
+				switch kind {
+				case "stderr":
+					_, _ = fmt.Fprint(os.Stderr, line)
+				case "stdout":
+					_, _ = fmt.Fprint(os.Stdout, line)
+				default:
+					panic("unknown kind: " + kind)
+				}
+				input.PrintLock.Unlock()
+			}
 			if err != nil {
 				if err != io.EOF {
 					done <- err
@@ -1518,32 +1556,6 @@ func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput)
 				}
 				return
 			}
-			if strings.Contains(line, "Permission denied (publickey)") {
-				done <- fmt.Errorf("ec2 Permission denied (publickey)")
-				return
-			}
-			if len(input.Instances) > 1 {
-				if input.IPNotID {
-					line = *instance.PublicIpAddress + ": " + line
-				} else {
-					line = *instance.InstanceId + ": " + line
-				}
-			}
-			if !input.NoPrint && kind == "stdout" && input.AccumulateResult {
-				resultLock.Lock()
-				result.Stdout = append(result.Stdout, line)
-				resultLock.Unlock()
-			}
-			input.PrintLock.Lock()
-			switch kind {
-			case "stderr":
-				_, _ = fmt.Fprint(os.Stderr, line)
-			case "stdout":
-				_, _ = fmt.Fprint(os.Stdout, line)
-			default:
-				panic("unknown kind: " + kind)
-			}
-			input.PrintLock.Unlock()
 		}
 	}
 	go tail("stdout", bufio.NewReader(stdout))
