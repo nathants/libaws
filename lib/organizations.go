@@ -65,7 +65,6 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 		Logger.Println("error:", err)
 		return "", nil
 	}
-	Logger.Println(PreviewString(preview)+"organizations created account:", name, email)
 	if !preview {
 		createOut, err := OrganizationsClient().CreateAccount(ctx, &organizations.CreateAccountInput{
 			AccountName: aws.String(name),
@@ -100,5 +99,6 @@ func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) 
 			}
 		}
 	}
+	Logger.Println(PreviewString(preview)+"organizations created account:", name, email)
 	return "", nil
 }

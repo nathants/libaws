@@ -31,5 +31,6 @@ func organizationsEnsure() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Println(accountID)
+	fmt.Println("account-id:", accountID)
+	fmt.Println("setup root user login for account via password reset at https://console.aws.amazon.com/ with email:", args.Email)
 }
