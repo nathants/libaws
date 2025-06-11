@@ -247,9 +247,7 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 			return "", err
 		}
 		if len(out.Rules[0].Actions) != 2 {
-			err := fmt.Errorf("ses rule did not have exactly 2 actions: %s", *rule.Name)
-			Logger.Println("error:", err)
-			return "", err
+			continue
 		}
 		if *out.Rules[0].Actions[1].LambdaAction.FunctionArn != infraLambda.Arn {
 			continue
