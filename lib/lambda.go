@@ -167,6 +167,7 @@ func LambdaArn(ctx context.Context, name string) (string, error) {
 		return "", err
 	}
 	if expectedErr != nil {
+		Logger.Println("error:", err)
 		return "", expectedErr
 	}
 	return arn, nil

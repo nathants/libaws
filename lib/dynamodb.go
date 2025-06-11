@@ -1078,6 +1078,10 @@ func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 			}
 			return err
 		}
+		if out.Table.LatestStreamArn == nil {
+			expectedErr = fmt.Errorf("you forgot to set stream=new_and_old_images in infra.yaml for table: %s", tableName)
+			return nil
+		}
 		streamArn = *out.Table.LatestStreamArn
 		return nil
 	})
@@ -1086,6 +1090,7 @@ func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 		return "", err
 	}
 	if expectedErr != nil {
+		Logger.Println("error:", err)
 		return "", expectedErr
 	}
 	return streamArn, nil
