@@ -2601,17 +2601,28 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 	if getFunctionOut.Configuration != nil {
 		infraLambda.Arn = *getFunctionOut.Configuration.FunctionArn
 	}
+	var permissionSids []string
+	sids, err := LambdaEnsureTriggerApi(ctx, infraLambda, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	permissionSids = append(permissionSids, sids...)
+	err = IamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview) // ensure role allows after api trigger because it defines $API_ID and WEBSOCKET_ID
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
 	err = LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	sids, err := LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
+	sids, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	var permissionSids []string
 	permissionSids = append(permissionSids, sids...)
 	sid, err := LambdaEnsureTriggerSes(ctx, infraLambda, preview)
 	if err != nil {
@@ -2620,18 +2631,6 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 	}
 	permissionSids = append(permissionSids, sid)
 	sids, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
-	permissionSids = append(permissionSids, sids...)
-	sids, err = LambdaEnsureTriggerApi(ctx, infraLambda, preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
-	// ensure role allows after api trigger because it defines $API_ID and WEBSOCKET_ID
-	err = IamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
