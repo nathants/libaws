@@ -15,6 +15,7 @@ func init() {
 type dynamodbRmArgs struct {
 	Name    string `arg:"positional,required"`
 	Preview bool   `arg:"-p,--preview"`
+	NoWait  bool   `arg:"-n,--no-wait"`
 }
 
 func (dynamodbRmArgs) Description() string {
@@ -25,7 +26,7 @@ func dynamodbRm() {
 	var args dynamodbRmArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	err := lib.DynamoDBDeleteTable(ctx, args.Name, args.Preview)
+	err := lib.DynamoDBDeleteTable(ctx, args.Name, args.Preview, args.NoWait)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

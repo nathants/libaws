@@ -2,111 +2,116 @@
 
 ## Why
 
-aws is amazing, but it's hard to ship fast unless you're an expert.
+AWS is amazing, but it's hard to ship fast unless you're an expert.
 
-i want to write down best practices as code, then forget about them so i can just ship.
+I want to write down best practices as code, then forget about them so I can just ship.
 
-i want to serve [http](#api), react to database [writes](#dynamodb-1), and use [cron](#schedule) to schedule actions.
+I want to serve [http](#api), react to database [writes](#dynamodb-1), and use [cron](#schedule) to schedule actions.
 
-i want to [push data](https://github.com/nathants/libaws/tree/master/examples/complex/s3-ec2) s3 -> ec2 -> s3 with ephemeral spot instances that live for seconds.
+I want to [push data](https://github.com/nathants/libaws/tree/master/examples/complex/s3-ec2) S3 => EC2 => S3 with ephemeral Spot instances that live for seconds.
 
-did you know that ec2 is billed by the second, that spot is 1/5 the price, and that spot in local zones is 1/2 that price?
+Did you know that EC2 is billed by the second, that Spot is 1/5 the price, and that Spot in Local Zones is 1/2 that price?
 
-it's basically free. oh and no egress fees between ec2 and s3 in the same region. lambda's not the only thing that scales to zero. aws is pretty awesome.
+It's basically free. Oh and no egress fees between EC2 and S3 in the same region. Lambda's not the only thing that scales to zero. AWS is pretty awesome.
 
-aws should:
-- have fewer knobs
-- have sane defaults
-- be easy to use
-- be hard to screw up
-- be fast
-- be fun
-- have a [tldr](#tldr)
+AWS should:
 
-it should be easy for a [lambda](#lambda) to react to:
-- docker push to [ecr](#ecr)
-- [s3](#s3-1) put object
-- [dynamodb](#dynamodb-1) put item
-- [sqs](#sqs-1) send message
-- [time](#schedule) passing
-- [http](#api) requests
-- [websocket](#websocket) messages
+* Have fewer knobs
+* Have sane defaults
+* Be easy to use
+* Be hard to screw up
+* Be fast
+* Be fun
+* Have a [tldr](#tldr)
 
-it should be easy to create:
-- [vpcs](#vpc)
-- [security groups](#security-group)
-- [instance profiles](#instance-profile)
-- [keypairs](#keypair)
-- [instances](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/cmd/ec2/new.go#L22)
+It should be easy for a [lambda](#lambda) to react to:
+
+* Docker push to [ecr](#ecr)
+* [S3](#s3-1) put object
+* [DynamoDB](#dynamodb-1) put item
+* [SQS](#sqs-1) send message
+* [Time](#schedule) passing
+* [http](#api) requests
+* [url](#url) streaming HTTP requests
+* [websocket](#websocket) messages
+
+It should be easy to create:
+
+* [VPCs](#vpc)
+* [Security groups](#security-group)
+* [Instance profiles](#instance-profile)
+* [Keypairs](#keypair)
+* [Instances](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/cmd/ec2/new.go#L22)
 
 ## How
 
-[declare](#define-an-infrastructure-set) and [deploy](#ensure-the-infrastructure-set) groups of related aws infrastructure as [infrastructure sets](#infrastructure-set):
+[Declare](#define-an-infrastructure-set) and [deploy](#ensure-the-infrastructure-set) groups of related AWS infrastructure as [infrastructure sets](#infrastructure-set):
 
-- that contain:
-  - [lambdas](#lambda)
-  - [s3](#s3) buckets
-  - [dynamodb](#dynamodb) tables
-  - [sqs](#sqs) queues
-  - [vpcs](#vpc)
-  - [security groups](#security-group)
-  - [instance profiles](#instance-profile)
-  - [keypairs](#keypair)
+* That contain:
 
-- that react to lambda [triggers](#trigger):
-  - [ses](#ses) emails
-  - http [apis](#api)
-  - [websocket](#websocket) messages
-  - [s3](#s3-1) bucket writes
-  - [dynamodb](#dynamodb-1) table writes
-  - [sqs](#sqs-1) queue puts
-  - cron [schedules](#schedule)
-  - [ecr](#ecr) docker pushes
+  * [Lambdas](#lambda)
+  * [S3](#s3) buckets
+  * [DynamoDB](#dynamodb) tables
+  * [SQS](#sqs) queues
+  * [VPCs](#vpc)
+  * [Security groups](#security-group)
+  * [Instance profiles](#instance-profile)
+  * [Keypairs](#keypair)
+
+* That react to Lambda [triggers](#trigger):
+
+  * [SES](#ses) emails
+  * HTTP [apis](#api)
+  * [Websocket](#websocket) messages
+  * [S3](#s3-1) bucket writes
+  * [DynamoDB](#dynamodb-1) table writes
+  * [SQS](#sqs-1) queue puts
+  * Cron [schedules](#schedule)
+  * [ECR](#ecr) Docker pushes
 
 ## What
 
-a simpler way to [declare](#infrayaml) aws infrastructure that is easy to [use](#typical-usage) and [extend](#extending).
+A simpler way to [declare](#infrayaml) AWS infrastructure that is easy to [use](#typical-usage) and [extend](#extending).
 
-there are two ways to use it:
+There are two ways to use it:
 
-- [yaml](#infrayaml) and the [cli](#explore-the-cli)
+* [YAML](#infrayaml) and the [CLI](#explore-the-cli)
 
-- [go structs](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/lib/infra.go#L60) and the [go api](#explore-the-go-api)
+* [Go structs](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/lib/infra.go#L60) and the [Go API](#explore-the-go-api)
 
-the primary entrypoints are:
+The primary entrypoints are:
 
-- [infra-ensure](#ensure-the-infrastructure-set): deploy an infrastructure set.
+* [infra-ensure](#ensure-the-infrastructure-set): deploy an infrastructure set.
 
   ```bash
   libaws infra-ensure ./infra.yaml --preview
   libaws infra-ensure ./infra.yaml
   ```
 
-- [infra-ls](#view-the-infrastructure-set): view infrastructure sets.
+* [infra-ls](#view-the-infrastructure-set): view infrastructure sets.
 
   ```bash
   libaws infra-ls
   ```
 
-- [infra-ensure --quick](#quickly-update-lambda-code): quickly update lambda code.
+* [infra-ensure --quick](#quickly-update-lambda-code): quickly update Lambda code.
 
   ```bash
   libaws infra-ensure ./infra.yaml --quick LAMBDA_NAME
   ```
 
-- [infra-rm](#delete-the-infrastructure-set): remove an infrastructure set.
+* [infra-rm](#delete-the-infrastructure-set): remove an infrastructure set.
 
   ```bash
   libaws infra-rm ./infra.yaml --preview
   libaws infra-rm ./infra.yaml
   ```
 
+`infra-ensure` is a [positive assertion](#tradeoffs). It asserts that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
 
-`infra-ensure` is a [positive assertion](#tradeoffs). it asserts that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
+Many other entrypoints exist, and can be explored by type. They fall into two categories:
 
-many other entrypoints exist, and can be explored by type. they fall into two categories:
-
-- mutate aws state:
+* Mutate AWS state:
 
   ```bash
   >> libaws -h | grep ensure | wc -l
@@ -117,10 +122,9 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
 
   >> libaws -h | grep rm | wc -l
   26
-
   ```
 
-- view aws state:
+* View AWS state:
 
   ```bash
   >> libaws -h | grep ls | wc -l
@@ -138,79 +142,87 @@ many other entrypoints exist, and can be explored by type. they fall into two ca
 
 ## AWS SDK, Pulumi, Terraform, CloudFormation, and Serverless
 
-compared to the full aws api, systems declared as [infrastructure sets](#infrastructure-set):
+Compared to the full AWS API, systems declared as [infrastructure sets](#infrastructure-set):
 
-- [have](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
+* [Have](https://github.com/nathants/libaws/tree/master/examples/simple/python) [simpler](https://github.com/nathants/libaws/tree/master/examples/simple/go) [examples](https://github.com/nathants/libaws/tree/master/examples/simple/docker).
 
-- have [fewer](#typical-usage) [knobs](#infrayaml).
+* Have [fewer](#typical-usage) [knobs](#infrayaml).
 
-- are easier to use.
+* Are easier to use.
 
-- are harder to screw up.
+* Are harder to screw up.
 
-- are almost always enough, and easy to [extend](#extending).
+* Are almost always enough, and easy to [extend](#extending).
 
-- are more fun.
+* Are more fun.
 
-if you want to use the full aws api, there are many great tools:
-- [aws sdk for go](https://aws.amazon.com/sdk-for-go/)
-- [pulumi](https://www.pulumi.com/)
-- [terraform](https://www.terraform.io/)
-- [cloudformation](https://aws.amazon.com/cloudformation/)
-- [serverless](https://www.serverless.com/)
+If you want to use the full AWS API, there are many great tools:
+
+* [AWS SDK for Go](https://aws.amazon.com/sdk-for-go/)
+* [Pulumi](https://www.pulumi.com/)
+* [Terraform](https://www.terraform.io/)
+* [CloudFormation](https://aws.amazon.com/cloudformation/)
+* [Serverless](https://www.serverless.com/)
 
 ## Readme Index
 
-- [install](#install)
-  - [cli](#cli)
-  - [go api](#go-api)
-- [tldr](#tldr)
-  - [define an infrastructure set](#define-an-infrastructure-set)
-  - [ensure the infrastructure set](#ensure-the-infrastructure-set)
-  - [view the infrastructure set](#view-the-infrastructure-set)
-  - [trigger the infrastructure set](#trigger-the-infrastructure-set)
-  - [quickly update lambda code](#quickly-update-lambda-code)
-  - [delete the infrastructure set](#delete-the-infrastructure-set)
-- [usage](#usage)
-  - [explore the cli](#explore-the-cli)
-  - [explore a cli entrypoint](#explore-a-cli-entrypoint)
-  - [explore the go api](#explore-the-go-api)
-  - [explore simple examples](#explore-simple-examples)
-  - [explore complex examples](#explore-complex-examples)
-  - [explore external examples](#explore-external-examples)
-- [infrastructure set](#infrastructure-set)
-- [typical usage](#typical-usage)
-- [design](#design)
-- [tradeoffs](#tradeoffs)
-- [infra.yaml](#infrayaml)
-  - [environment variable substitution](#environment-variable-substitution)
-  - [name](#name)
-  - [s3](#s3)
-  - [dynamodb](#dynamodb)
-  - [sqs](#sqs)
-  - [keypair](#keypair)
-  - [vpc](#vpc)
-    - [security group](#security-group)
-  - [instance profile](#instance-profile)
-  - [lambda](#lambda)
-    - [entrypoint](#entrypoint)
-    - [attr](#attr)
-    - [policy](#policy)
-    - [allow](#allow)
-    - [env](#env)
-    - [include](#include)
-    - [require](#require)
-    - [trigger](#trigger)
-      - [api](#api)
-      - [websocket](#websocket)
-      - [s3](#s3-1)
-      - [dynamodb](#dynamodb-1)
-      - [sqs](#sqs-1)
-      - [schedule](#schedule)
-      - [ecr](#ecr)
-- [bash completion](#bash-completion)
-- [extending](#extending)
-- [testing](#testing)
+* [Install](#install)
+
+  * [CLI](#cli)
+  * [Go API](#go-api)
+* [TLDR](#tldr)
+
+  * [Define an infrastructure set](#define-an-infrastructure-set)
+  * [Ensure the infrastructure set](#ensure-the-infrastructure-set)
+  * [View the infrastructure set](#view-the-infrastructure-set)
+  * [Trigger the infrastructure set](#trigger-the-infrastructure-set)
+  * [Quickly update Lambda code](#quickly-update-lambda-code)
+  * [Delete the infrastructure set](#delete-the-infrastructure-set)
+* [Usage](#usage)
+
+  * [Explore the CLI](#explore-the-cli)
+  * [Explore a CLI entrypoint](#explore-a-cli-entrypoint)
+  * [Explore the Go API](#explore-the-go-api)
+  * [Explore simple examples](#explore-simple-examples)
+  * [Explore complex examples](#explore-complex-examples)
+  * [Explore external examples](#explore-external-examples)
+* [Infrastructure set](#infrastructure-set)
+* [Typical usage](#typical-usage)
+* [Design](#design)
+* [Tradeoffs](#tradeoffs)
+* [infra.yaml](#infrayaml)
+
+  * [Environment variable substitution](#environment-variable-substitution)
+  * [Name](#name)
+  * [S3](#s3)
+  * [DynamoDB](#dynamodb)
+  * [SQS](#sqs)
+  * [Keypair](#keypair)
+  * [VPC](#vpc)
+
+    * [Security group](#security-group)
+  * [Instance profile](#instance-profile)
+  * [Lambda](#lambda)
+
+    * [Entrypoint](#entrypoint)
+    * [Attr](#attr)
+    * [Policy](#policy)
+    * [Allow](#allow)
+    * [Env](#env)
+    * [Include](#include)
+    * [Require](#require)
+    * [Trigger](#trigger)
+
+      * [API](#api)
+      * [Websocket](#websocket)
+      * [S3](#s3-1)
+      * [DynamoDB](#dynamodb-1)
+      * [SQS](#sqs-1)
+      * [Schedule](#schedule)
+      * [ECR](#ecr)
+* [Bash completion](#bash-completion)
+* [Extending](#extending)
+* [Testing](#testing)
 
 ## Install
 
@@ -290,7 +302,7 @@ func main() {
 
 ### View the Infrastructure Set
 
-depth based colors by [yaml](https://gist.github.com/nathants/1955b2c3130b7d1a00c8420ad6231639)
+Depth-based colors by [YAML](https://gist.github.com/nathants/1955b2c3130b7d1a00c8420ad6231639)
 
 ![](https://github.com/nathants/libaws/raw/master/gif/ls.gif)
 
@@ -314,15 +326,15 @@ depth based colors by [yaml](https://gist.github.com/nathants/1955b2c3130b7d1a00
 >> libaws -h | grep ensure | head
 
 codecommit-ensure             - ensure a codecommit repository
-dynamodb-ensure               - ensure a dynamodb table
+dynamodb-ensure               - ensure a DynamoDB table
 ec2-ensure-keypair            - ensure a keypair
 ec2-ensure-sg                 - ensure a sg
-ecr-ensure                    - ensure ecr image
-iam-ensure-ec2-spot-roles     - ensure iam ec2 spot roles that are needed to use ec2 spot
-iam-ensure-instance-profile   - ensure an iam instance-profile
-iam-ensure-role               - ensure an iam role
-iam-ensure-user-api           - ensure an iam user with api key
-iam-ensure-user-login         - ensure an iam user with login
+ecr-ensure                    - ensure ECR image
+iam-ensure-ec2-spot-roles     - ensure IAM EC2 spot roles that are needed to use EC2 spot
+iam-ensure-instance-profile   - ensure an IAM instance-profile
+iam-ensure-role               - ensure an IAM role
+iam-ensure-user-api           - ensure an IAM user with API key
+iam-ensure-user-login         - ensure an IAM user with login
 ```
 
 ### Explore a CLI Entrypoint
@@ -330,23 +342,23 @@ iam-ensure-user-login         - ensure an iam user with login
 ```bash
 >> libaws s3-ensure -h
 
-ensure a s3 bucket
+Ensure a S3 bucket
 
-example:
+Example:
  - libaws s3-ensure test-bucket acl=public versioning=true
 
-optional attrs:
+Optional attrs:
  - acl=VALUE        (values = public | private, default = private)
  - versioning=VALUE (values = true | false,     default = false)
  - metrics=VALUE    (values = true | false,     default = false)
  - cors=VALUE       (values = true | false,     default = false)
  - ttldays=VALUE    (values = 0 | n,            default = 0)
 
-setting 'cors=true' uses '*' for allowed origins. to specify one or more explicit origins, do this instead:
+Setting 'cors=true' uses '*' for allowed origins. To specify one or more explicit origins, do this instead:
  - corsorigin=http://localhost:8080
  - corsorigin=https://example.com
 
-note: bucket acl can only be set at bucket creation time
+Note: bucket ACL can only be set at bucket creation time
 
 Usage: s3-ensure [--preview] NAME [ATTR [ATTR ...]]
 
@@ -388,76 +400,82 @@ func main() {
 
 ### Explore Simple Examples
 
-- api: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api)
-- dynamodb: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/dynamodb), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/dynamodb), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/dynamodb)
-- ecr: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
-- includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)
-- s3: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/s3), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/s3), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/s3)
-- schedule: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/schedule), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/schedule), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/schedule)
-- sqs: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/sqs), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/sqs), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/sqs)
-- websocket: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/websocket), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/websocket), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/websocket)
+* API: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api)
+* DynamoDB: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/dynamodb), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/dynamodb), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/dynamodb)
+* ECR: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
+* Includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)
+* S3: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/s3), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/s3), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/s3)
+* Schedule: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/schedule), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/schedule), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/schedule)
+* SQS: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/sqs), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/sqs), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/sqs)
+* Websocket: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/websocket), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/websocket), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/websocket)
 
 ### Explore Complex Examples
 
-- [s3-ec2](https://github.com/nathants/libaws/tree/master/examples/complex/s3-ec2):
-  - write to s3 in-bucket
-  - which triggers lambda
-  - which launches ec2 spot
-  - which reads from in-bucket, writes to out-bucket, and terminates
+* [S3-EC2](https://github.com/nathants/libaws/tree/master/examples/complex/s3-ec2):
+
+  * Write to S3 in-bucket
+  * Which triggers Lambda
+  * Which launches EC2 Spot
+  * Which reads from in-bucket, writes to out-bucket, and terminates
 
 ### Explore External Examples
 
-- [aws-gocljs](https://github.com/nathants/aws-gocljs)
+* [aws-gocljs](https://github.com/nathants/aws-gocljs)
 
-- [aws-exec](https://github.com/nathants/aws-exec)
+* [aws-exec](https://github.com/nathants/aws-exec)
 
-- [aws-ensure-route53](https://github.com/nathants/aws-ensure-route53)
+* [aws-ensure-route53](https://github.com/nathants/aws-ensure-route53)
 
 ## Infrastructure Set
 
-an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/lib/infra.go#L60) and contains:
+An infrastructure set is defined by [YAML](#infrayaml) or [Go struct](https://github.com/nathants/libaws/blob/9b4ba3cb597519b860e833a0147ea7963d9f7598/lib/infra.go#L60) and contains:
 
-- stateful infrastructure:
-  - [s3](#s3)
-  - [dynamodb](#dynamodb)
-  - [sqs](#sqs)
-- ec2 infrastructure:
-  - [keypairs](#keypair)
-  - [instance profiles](#instance-profile)
-  - [vpcs](#vpc)
-    - [security groups](#security-group)
-- [lambdas](#lambda):
-  - [triggers](#trigger):
-    - [api](#api)
-    - [websocket](#websocket)
-    - [s3](#s3-1)
-    - [dynamodb](#dynamodb-1)
-    - [sqs](#sqs-1)
-    - [schedule](#schedule)
-    - [ecr](#ecr)
+* Stateful infrastructure:
+
+  * [S3](#s3)
+  * [DynamoDB](#dynamodb)
+  * [SQS](#sqs)
+* EC2 infrastructure:
+
+  * [Keypairs](#keypair)
+  * [Instance profiles](#instance-profile)
+  * [VPCs](#vpc)
+
+    * [Security groups](#security-group)
+* [Lambdas](#lambda):
+
+  * [Triggers](#trigger):
+
+    * [API](#api)
+    * [Websocket](#websocket)
+    * [S3](#s3-1)
+    * [DynamoDB](#dynamodb-1)
+    * [SQS](#sqs-1)
+    * [Schedule](#schedule)
+    * [ECR](#ecr)
 
 ## Typical Usage
 
-- use [infra-ensure](#ensure-the-infrastructure-set) to deploy an infrastructure set.
+* Use [infra-ensure](#ensure-the-infrastructure-set) to deploy an infrastructure set.
 
   ```bash
   libaws infra-ensure ./infra.yaml --preview
   libaws infra-ensure ./infra.yaml
   ```
 
-- use [infra-ls](#view-the-infrastructure-set) to view infrastructure sets.
+* Use [infra-ls](#view-the-infrastructure-set) to view infrastructure sets.
 
   ```bash
   libaws infra-ls
   ```
 
-- use [infra-ensure --quick LAMBDA_NAME](#quickly-update-lambda-code) to quickly update lambda code.
+* Use [infra-ensure --quick LAMBDA\_NAME](#quickly-update-lambda-code) to quickly update Lambda code.
 
   ```bash
   libaws infra-ensure ./infra.yaml --quick LAMBDA_NAME
   ```
 
-- use [infra-rm](#delete-the-infrastructure-set) to remove an infrastructure set.
+* Use [infra-rm](#delete-the-infrastructure-set) to remove an infrastructure set.
 
   ```bash
   libaws infra-rm ./infra.yaml --preview
@@ -466,69 +484,72 @@ an infrastructure set is defined by [yaml](#infrayaml) or [go struct](https://gi
 
 ## Design
 
-- there is no implicit coordination.
+* There is no implicit coordination.
 
-  - if you aren't already serializing your infrastructure mutations, lock around [dynamodb](https://github.com/nathants/go-dynamolock).
+  * If you aren't already serializing your infrastructure mutations, lock around [DynamoDB](https://github.com/nathants/go-dynamolock).
 
-- no databases for infrastructure state. there are only two state locations:
-  - aws.
-  - your code.
+* No databases for infrastructure state. There are only two state locations:
 
-- aws infrastructure is uniquely identified by name.
-  - all aws infrastructure share a private namespace scoped to account/region. use good names.
-  - except s3, which shares a public namespace scoped to earth. use better names.
+  * AWS.
+  * Your code.
 
-- mutative operations manipulate aws state.
-  - mutative operations are idempotent. if they fail due to a transient error, run them again.
-  - mutative operations can `--preview`. no output means no changes.
+* AWS infrastructure is uniquely identified by name.
 
-- `ensure` are mutative operations that create or update infrastructure.
+  * All AWS infrastructure share a private namespace scoped to account/region. Use good names.
+  * Except S3, which shares a public namespace scoped to Earth. Use better names.
 
-- `rm` are mutative operations that delete infrastructure.
+* Mutative operations manipulate AWS state.
 
-- `ls`, `get`, `scan`, and `describe` operations are non-mutative.
+  * Mutative operations are idempotent. If they fail due to a transient error, run them again.
+  * Mutative operations can `--preview`. No output means no changes.
 
-- multiple infrastructure sets can be deployed into the same account/region.
+* `ensure` are mutative operations that create or update infrastructure.
+
+* `rm` are mutative operations that delete infrastructure.
+
+* `ls`, `get`, `scan`, and `describe` operations are non-mutative.
+
+* Multiple infrastructure sets can be deployed into the same account/region.
 
 ## Tradeoffs
 
-- `ensure` operations are positive assertions. they assert that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
+* `ensure` operations are positive assertions. They assert that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
 
-  - positive assertions **CANNOT** remove top level infrastructure, but **CAN** remove configuration from them.
+  * Positive assertions **CANNOT** remove top-level infrastructure, but **CAN** remove configuration from them.
 
-  - removing a `trigger`, `policy`, or `allow` **WILL** remove that from the `lambda`.
+  * Removing a `trigger`, `policy`, or `allow` **WILL** remove that from the `lambda`.
 
-  - removing `policy`, or `allow` **WILL** remove that from the `instance-profile`.
+  * Removing `policy`, or `allow` **WILL** remove that from the `instance-profile`.
 
-  - removing a `security-group` **WILL** remove that from the `vpc`.
+  * Removing a `security-group` **WILL** remove that from the `vpc`.
 
-  - removing a `rule` **WILL** remove that from the `security-group`.
+  * Removing a `rule` **WILL** remove that from the `security-group`.
 
-  - removing an `attr` **WILL** remove that from a `sqs`, `s3`, `dynamodb`, or `lambda`.
+  * Removing an `attr` **WILL** remove that from a `sqs`, `s3`, `dynamodb`, or `lambda`.
 
-  - removing a `keypair`, `vpc`, `instance-profile`, `sqs`, `s3`, `dynamodb`, or `lambda` **WON'T** remove that from the account/region.
+  * Removing a `keypair`, `vpc`, `instance-profile`, `sqs`, `s3`, `dynamodb`, or `lambda` **WON'T** remove that from the account/region.
 
-    - the operator decides **IF** and **WHEN** top level infrastructure should be deleted, then uses an `rm` operation to do so.
+    * The operator decides **IF** and **WHEN** top-level infrastructure should be deleted, then uses an `rm` operation to do so.
 
-    - as a convenience, `infra-rm` will remove **ALL** infrastructure **CURRENTLY** declared in an `infra.yaml`.
+    * As a convenience, `infra-rm` will remove **ALL** infrastructure **CURRENTLY** declared in an `infra.yaml`.
 
-- when using `ensure` operations, no output means no changes.
+* When using `ensure` operations, no output means no changes.
 
-  - for large infrastructure sets, this can mean a minute or two without output if no changes are needed.
+  * For large infrastructure sets, this can mean a minute or two without output if no changes are needed.
 
-  - to see a lot of output instead of none, set this environment variable:
+  * To see a lot of output instead of none, set this environment variable:
 
     ```bash
     export DEBUG=yes
     ```
 
-- since `ensure` operations are idempotent, if you encounter errors like rate limits, just try again.
+* Since `ensure` operations are idempotent, if you encounter errors like rate limits, just try again.
 
-- `infra-ls` is designed to list aws accounts managed with `infra-ensure`. it will not work well in other scenarios.
+* `infra-ls` is designed to list AWS accounts managed with `infra-ensure`. It will not work well in other scenarios.
 
 ## infra.yaml
 
-use an `infra.yaml` file to declare an infrastructure set. the schema is as follows:
+Use an `infra.yaml` file to declare an infrastructure set. The schema is as follows:
 
 ```yaml
 name: VALUE
@@ -570,9 +591,10 @@ instance-profile:
 
 ### Environment Variable Substitution
 
-anywhere in `infra.yaml` you can substitute environment variables from the caller's environment:
+Anywhere in `infra.yaml` you can substitute environment variables from the caller's environment:
 
-- example:
+* Example:
+
   ```yaml
   s3:
     test-bucket-${uid}:
@@ -580,45 +602,50 @@ anywhere in `infra.yaml` you can substitute environment variables from the calle
         - versioning=${versioning}
   ```
 
-the following variables are defined during deployment, and are useful in `allow` declarations:
+The following variables are defined during deployment, and are useful in `allow` declarations:
 
-- `${API_ID}` the id of the apigateway v2 api created by an `api` trigger.
+* `${API_ID}` the ID of the API Gateway v2 API created by an `api` trigger.
 
-- `${WEBSOCKET_ID}` the id of the apigateway v2 websocket created by a `websocket` trigger.
+* `${WEBSOCKET_ID}` the ID of the API Gateway v2 websocket created by a `websocket` trigger.
 
 ### Name
 
-defines the name of the infrastructure set.
+Defines the name of the infrastructure set.
 
-- schema:
+* Schema:
+
   ```yaml
   name: VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   name: test-infraset
   ```
 
 ### S3
 
-defines a [s3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket.html) bucket:
+Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket.html) bucket:
 
-- the following [attributes](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) can be defined:
-  - `acl=VALUE`, values: `public | private`, default: `private`
-  - `versioning=VALUE`, values: `true | false`, default: `false`
-  - `metrics=VALUE`, values: `true | false`, default: `false`
-  - `cors=VALUE`, values: `true | false`, default: `false`
-  - `ttldays=VALUE`, values: `0 | n`, default: `0`
-  - `allow_put=VALUE`, values: `$principal.amazonaws.com`
+* The following [attributes](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) can be defined:
 
-- setting `cors=true` uses `*` for allowed origins. to specify one or more explicit origins, do this instead:
-  - `corsorigin=http://localhost:8080`
-  - `corsorigin=https://example.com`
+  * `acl=VALUE`, values: `public | private`, default: `private`
+  * `versioning=VALUE`, values: `true | false`, default: `false`
+  * `metrics=VALUE`, values: `true | false`, default: `false`
+  * `cors=VALUE`, values: `true | false`, default: `false`
+  * `ttldays=VALUE`, values: `0 | n`, default: `0`
+  * `allow_put=VALUE`, values: `$principal.amazonaws.com`
 
-- note: bucket acl can only be set at bucket creation time
+* Setting `cors=true` uses `*` for allowed origins. To specify one or more explicit origins, do this instead:
 
-- schema:
+  * `corsorigin=http://localhost:8080`
+  * `corsorigin=https://example.com`
+
+* Note: bucket ACL can only be set at bucket creation time
+
+* Schema:
+
   ```yaml
   s3:
     VALUE:
@@ -626,7 +653,8 @@ defines a [s3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
         - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   s3:
     test-bucket:
@@ -637,25 +665,30 @@ defines a [s3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
 
 ### DynamoDB
 
-defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html) table:
+Defines a [DynamoDB](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html) table:
 
-- specify key as:
-  - `NAME:ATTR_TYPE:KEY_TYPE`
+* Specify key as:
 
-- the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html) can be defined:
-  - `read=VALUE`, provisioned read capacity, default: `0`
-  - `write=VALUE`, provisioned write capacity, default: `0`
-  - `ttl=ATTR_NAME`, optional, which attribute to read ttl from.
+  * `NAME:ATTR_TYPE:KEY_TYPE`
 
-- on global indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-gsi.html) can be defined:
-  - `projection=VALUE`, provisioned read capacity, default: `ALL`
-  - `read=VALUE`, provisioned read capacity, default: `0`
-  - `write=VALUE`, provisioined write capacity, default: `0`
+* The following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dynamodb-table.html) can be defined:
 
-- on local indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-lsi.html) can be defined:
-  - `projection=VALUE`, provisioned read capacity, default: `ALL`
+  * `read=VALUE`, provisioned read capacity, default: `0`
+  * `write=VALUE`, provisioned write capacity, default: `0`
+  * `ttl=ATTR_NAME`, optional, which attribute to read TTL from.
 
-- schema:
+* On global indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-gsi.html) can be defined:
+
+  * `projection=VALUE`, projection type, default: `ALL`
+  * `read=VALUE`, provisioned read capacity, default: `0`
+  * `write=VALUE`, provisioned write capacity, default: `0`
+
+* On local indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-lsi.html) can be defined:
+
+  * `projection=VALUE`, projection type, default: `ALL`
+
+* Schema:
+
   ```yaml
   dynamodb:
     VALUE:
@@ -681,7 +714,8 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
             - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   dynamodb:
     stream-table:
@@ -698,7 +732,8 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
         - read=150
   ```
 
-- example global secondary index:
+* Example global secondary index:
+
   ```yaml
   dynamodb:
     test-table:
@@ -710,7 +745,8 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
             - hometown:s:hash
   ```
 
-- example local secondary index:
+* Example local secondary index:
+
   ```yaml
   dynamodb:
     test-table:
@@ -724,17 +760,18 @@ defines a [dynamodb](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
 
 ### SQS
 
-defines a [sqs](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html) queue:
+Defines a [SQS](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html) queue:
 
-- the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html#aws-resource-sqs-queue-syntax) can be defined:
+* The following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html#aws-resource-sqs-queue-syntax) can be defined:
 
-  - `delay=VALUE`, delay seconds, default: `0`
-  - `size=VALUE`, maximum message size bytes, default: `262144`
-  - `retention=VALUE`, message rentention period seconds, default: `345600`
-  - `wait=VALUE`, receive wait time seconds, default: `0`
-  - `timeout=VALUE`, visibility timeout seconds, default: `30`
+  * `delay=VALUE`, delay seconds, default: `0`
+  * `size=VALUE`, maximum message size bytes, default: `262144`
+  * `retention=VALUE`, message retention period seconds, default: `345600`
+  * `wait=VALUE`, receive wait time seconds, default: `0`
+  * `timeout=VALUE`, visibility timeout seconds, default: `30`
 
-- schema:
+* Schema:
+
   ```yaml
   sqs:
     VALUE:
@@ -742,7 +779,8 @@ defines a [sqs](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/a
         - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   sqs:
     test-queue:
@@ -753,16 +791,18 @@ defines a [sqs](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/a
 
 ### Keypair
 
-defines an ec2 [keypair](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-keypair.html).
+Defines an EC2 [keypair](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-keypair.html).
 
-- example:
+* Schema:
+
   ```yaml
   keypair:
     VALUE:
       pubkey-content: VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   keypair:
     test-keypair:
@@ -771,15 +811,17 @@ defines an ec2 [keypair](https://docs.aws.amazon.com/AWSCloudFormation/latest/Us
 
 ### VPC
 
-defines a default-like [vpc](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc.html) with an [internet gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-internetgateway.html) and [public access](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support).
+Defines a default-like [VPC](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc.html) with an [Internet Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-internetgateway.html) and [public access](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support).
 
-- schema:
+* Schema:
+
   ```yaml
   vpc:
     VALUE: {}
   ```
 
-- example:
+* Example:
+
   ```yaml
   vpc:
     test-vpc: {}
@@ -787,9 +829,10 @@ defines a default-like [vpc](https://docs.aws.amazon.com/AWSCloudFormation/lates
 
 #### Security Group
 
-defines a [security group](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html) on a vpc
+Defines a [security group](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-security-group.html) on a VPC.
 
-- schema:
+* Schema:
+
   ```yaml
   vpc:
     VALUE:
@@ -799,7 +842,8 @@ defines a [security group](https://docs.aws.amazon.com/AWSCloudFormation/latest/
             - PROTO:PORT:SOURCE
   ```
 
-- example:
+* Example:
+
   ```yaml
   vpc:
     test-vpc:
@@ -811,9 +855,10 @@ defines a [security group](https://docs.aws.amazon.com/AWSCloudFormation/latest/
 
 ### Instance Profile
 
-defines an ec2 [instance profile](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-instanceprofile.html).
+Defines an EC2 [instance profile](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-instanceprofile.html).
 
-- schema:
+* Schema:
+
   ```yaml
   instance-profile:
     VALUE:
@@ -823,7 +868,8 @@ defines an ec2 [instance profile](https://docs.aws.amazon.com/AWSCloudFormation/
         - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   instance-profile:
     test-profile:
@@ -835,15 +881,17 @@ defines an ec2 [instance profile](https://docs.aws.amazon.com/AWSCloudFormation/
 
 ### Lambda
 
-defines a [lambda](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html).
+Defines a [Lambda](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html).
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE: {}
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda: {}
@@ -851,22 +899,24 @@ defines a [lambda](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuid
 
 #### Entrypoint
 
-defines the code of the lambda. it is one of:
+Defines the code of the Lambda. It is one of:
 
-- a python file.
+* A Python file.
 
-- a go file.
+* A Go file.
 
-- an ecr container uri.
+* An ECR container URI.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
       entrypoint: VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -875,17 +925,18 @@ defines the code of the lambda. it is one of:
 
 #### Attr
 
-defines lambda attributes. the following can be defined:
+Defines Lambda attributes. The following can be defined:
 
-- `concurrency` defines the reserved concurrent executions, default: `0`
+* `concurrency` defines the reserved concurrent executions, default: `0`
 
-- `memory` defines lambda ram in megabytes, default: `128`
+* `memory` defines Lambda RAM in megabytes, default: `128`
 
-- `timeout` defines the lambda timeout in seconds, default: `300`
+* `timeout` defines the Lambda timeout in seconds, default: `300`
 
-- `logs-ttl-days` defines the ttl days for cloudwatch logs, default: `7`
+* `logs-ttl-days` defines the TTL days for CloudWatch logs, default: `7`
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -893,7 +944,8 @@ defines lambda attributes. the following can be defined:
         - KEY=VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -906,9 +958,10 @@ defines lambda attributes. the following can be defined:
 
 #### Policy
 
-defines policies on the lambda's iam role.
+Defines policies on the Lambda's IAM role.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -916,7 +969,8 @@ defines policies on the lambda's iam role.
         - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -926,9 +980,10 @@ defines policies on the lambda's iam role.
 
 #### Allow
 
-defines allows on the lambda's iam role.
+Defines allows on the Lambda's IAM role.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -936,7 +991,8 @@ defines allows on the lambda's iam role.
         - SERVICE:ACTION ARN
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -947,9 +1003,10 @@ defines allows on the lambda's iam role.
 
 #### Env
 
-defines environment variables on the lambda:
+Defines environment variables on the Lambda:
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -957,7 +1014,8 @@ defines environment variables on the lambda:
         - KEY=VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -967,11 +1025,12 @@ defines environment variables on the lambda:
 
 #### Include
 
-defines extra content to include in the lambda zip:
+Defines extra content to include in the Lambda zip:
 
-- this is ignored when `entrypoint` is an ecr container uri.
+* This is ignored when `entrypoint` is an ECR container URI.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -979,7 +1038,8 @@ defines extra content to include in the lambda zip:
         - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -990,11 +1050,12 @@ defines extra content to include in the lambda zip:
 
 #### Require
 
-defines dependencies to install with pip in the virtualenv zip.
+Defines dependencies to install with pip in the virtualenv zip.
 
-- this is ignored unless the `entrypoint` is a python file.
+* This is ignored unless the `entrypoint` is a Python file.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1002,7 +1063,8 @@ defines dependencies to install with pip in the virtualenv zip.
         - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1012,9 +1074,10 @@ defines dependencies to install with pip in the virtualenv zip.
 
 #### Trigger
 
-defines triggers for the lambda:
+Defines triggers for the Lambda:
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1024,7 +1087,8 @@ defines triggers for the lambda:
             - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1038,15 +1102,16 @@ defines triggers for the lambda:
 
 ##### SES
 
-defines an [ses](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html) email receiving trigger.
+Defines an [SES](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html) email receiving trigger.
 
-- route53 and ses must already be setup for the domain.
+* Route53 and SES must already be setup for the domain.
 
-- dns and bucket attrs are required, prefix is optional.
+* DNS and bucket attrs are required, prefix is optional.
 
-- s3 bucket must allow put from ses.
+* S3 bucket must allow put from SES.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1056,9 +1121,9 @@ defines an [ses](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html)
             - VALUE
   ```
 
-- example:
-  ```yaml
+* Example:
 
+  ```yaml
   s3:
     my-bucket:
       attr:
@@ -1076,17 +1141,18 @@ defines an [ses](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html)
 
 ##### API
 
-defines an [apigateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) http api:
+Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) HTTP API:
 
-- add a custom domain with attr: `domain=api.example.com`
+* Add a custom domain with attr: `domain=api.example.com`
 
-- add a custom domain and update route53 with attr: `dns=api.example.com`
+* Add a custom domain and update Route53 with attr: `dns=api.example.com`
 
-  - this domain, or its parent domain, must already exist as a hosted zone in [route53](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
+  * This domain, or its parent domain, must already exist as a hosted zone in [Route53](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
 
-  - this domain, or its parent domain, must already have an [acm](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
+  * This domain, or its parent domain, must already have an [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1096,7 +1162,8 @@ defines an [apigateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/
             - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1106,19 +1173,44 @@ defines an [apigateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/
             - dns=api.example.com
   ```
 
+##### URL
+
+Defines a Lambda [function URL](https://docs.aws.amazon.com/lambda/latest/dg/urls-configuration.html) trigger with streaming HTTP responses.
+
+* No attributes are required.
+
+Schema:
+
+```yaml
+lambda:
+  VALUE:
+    trigger:
+      - type: url
+```
+
+Example:
+
+```yaml
+lambda:
+  test-lambda:
+    trigger:
+      - type: url
+```
+
 ##### Websocket
 
-defines an [apigateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) websocket api:
+Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) websocket API:
 
-- add a custom domain with attr: `domain=ws.example.com`
+* Add a custom domain with attr: `domain=ws.example.com`
 
-- add a custom domain and update route53 with attr: `dns=ws.example.com`
+* Add a custom domain and update Route53 with attr: `dns=ws.example.com`
 
-  - this domain, or its parent domain, must already exist as a hosted zone in [route53-ls](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
+  * This domain, or its parent domain, must already exist as a hosted zone in [route53-ls](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
 
-  - this domain, or its parent domain, must already have an [acm](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
+  * This domain, or its parent domain, must already have an [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1128,7 +1220,8 @@ defines an [apigateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/
             - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1140,13 +1233,14 @@ defines an [apigateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/
 
 ##### S3
 
-defines an [s3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-notificationconfig.html):
+Defines an [S3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-notificationconfig.html):
 
-- the only attribute must be the bucket name.
+* The only attribute must be the bucket name.
 
-- object creation and deletion invoke the trigger.
+* Object creation and deletion invoke the trigger.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1156,7 +1250,8 @@ defines an [s3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Use
             - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1168,18 +1263,20 @@ defines an [s3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Use
 
 ##### DynamoDB
 
-defines a [dynamodb trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html):
+Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html):
 
-- the first attribute must be the table name.
+* The first attribute must be the table name.
 
-- the following trigger [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html) can be defined:
-  - `batch=VALUE`, maximum batch size, default: `100`
-  - `parallel=VALUE`, parallelization factor, default: `1`
-  - `retry=VALUE`, maximum retry attempts, default: `-1`
-  - `window=VALUE`, maximum batching window in seconds, default: `0`
-  - `start=VALUE`, starting position
+* The following trigger [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html) can be defined:
 
-- schema:
+  * `batch=VALUE`, maximum batch size, default: `100`
+  * `parallel=VALUE`, parallelization factor, default: `1`
+  * `retry=VALUE`, maximum retry attempts, default: `-1`
+  * `window=VALUE`, maximum batching window in seconds, default: `0`
+  * `start=VALUE`, starting position
+
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1189,7 +1286,8 @@ defines a [dynamodb trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
             - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1202,15 +1300,17 @@ defines a [dynamodb trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
 
 ##### SQS
 
-defines a [sqs trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html):
+Defines a [SQS trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html):
 
-- the first attribute must be the queue name.
+* The first attribute must be the queue name.
 
-- the following trigger [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html) can be defined:
-  - `batch=VALUE`, maximum batch size, default: `10`
-  - `window=VALUE`, maximum batching window in seconds, default: `0`
+* The following trigger [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html) can be defined:
 
-- schema:
+  * `batch=VALUE`, maximum batch size, default: `10`
+  * `window=VALUE`, maximum batching window in seconds, default: `0`
+
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1220,7 +1320,8 @@ defines a [sqs trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Use
             - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1232,11 +1333,12 @@ defines a [sqs trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Use
 
 ##### Schedule
 
-defines a [schedule trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html):
+Defines a [schedule trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html):
 
-- the only attribute must be the [schedule expression](https://docs.aws.amazon.com/lambda/latest/dg/services-cloudwatchevents-expressions.html).
+* The only attribute must be the [schedule expression](https://docs.aws.amazon.com/lambda/latest/dg/services-cloudwatchevents-expressions.html).
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1246,7 +1348,8 @@ defines a [schedule trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
             - VALUE
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1258,11 +1361,12 @@ defines a [schedule trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
 
 ##### ECR
 
-defines an [ecr trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html):
+Defines an [ECR trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html):
 
-- successful [image actions](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/lambda.go#L153) to any ecr repository will invoke the trigger.
+* Successful [image actions](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/lambda.go#L153) to any ECR repository will invoke the trigger.
 
-- schema:
+* Schema:
+
   ```yaml
   lambda:
     VALUE:
@@ -1270,7 +1374,8 @@ defines an [ecr trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Us
         - type: ecr
   ```
 
-- example:
+* Example:
+
   ```yaml
   lambda:
     test-lambda:
@@ -1286,27 +1391,27 @@ source completions.d/libaws.sh
 
 ## Extending
 
-drop down to the [aws go sdk](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service) and implement what you need.
+Drop down to the [AWS Go SDK](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service) and implement what you need.
 
-extend an [existing](https://github.com/nathants/libaws/tree/master/cmd/sqs/ensure.go) [mutative](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) [operation](https://github.com/nathants/libaws/tree/master/cmd/dynamodb/ensure.go) or add a new one.
+Extend an [existing](https://github.com/nathants/libaws/tree/master/cmd/sqs/ensure.go) [mutative](https://github.com/nathants/libaws/tree/master/cmd/s3/ensure.go) [operation](https://github.com/nathants/libaws/tree/master/cmd/dynamodb/ensure.go) or add a new one.
 
-- make sure that mutative operations are **IDEMPOTENT** and can be **PREVIEWED**.
+* Make sure that mutative operations are **IDEMPOTENT** and can be **PREVIEWED**.
 
-you will find examples in [cmd/](https://github.com/nathants/libaws/tree/master/cmd) and [lib/](https://github.com/nathants/libaws/tree/master/lib) that can provide a good place to start.
+You will find examples in [cmd/](https://github.com/nathants/libaws/tree/master/cmd) and [lib/](https://github.com/nathants/libaws/tree/master/lib) that can provide a good place to start.
 
-you can reuse many existing operations like:
+You can reuse many existing operations like:
 
-- [lib/iam.go](https://github.com/nathants/libaws/tree/master/lib/iam.go)
+* [lib/iam.go](https://github.com/nathants/libaws/tree/master/lib/iam.go)
 
-- [lib/lambda.go](https://github.com/nathants/libaws/tree/master/lib/lambda.go)
+* [lib/lambda.go](https://github.com/nathants/libaws/tree/master/lib/lambda.go)
 
-- [lib/ec2.go](https://github.com/nathants/libaws/tree/master/lib/ec2.go)
+* [lib/ec2.go](https://github.com/nathants/libaws/tree/master/lib/ec2.go)
 
-alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructure](https://www.terraform.io/) [automation](https://aws.amazon.com/cloudformation/) [tooling](https://www.serverless.com/). `ls` and `describe` operations will give you all the information you need.
+Alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructure](https://www.terraform.io/) [automation](https://aws.amazon.com/cloudformation/) [tooling](https://www.serverless.com/). `ls` and `describe` operations will give you all the information you need.
 
 ## Testing
 
-run all integration tests aws with [tox](https://tox.wiki/en/latest/):
+Run all integration tests AWS with [tox](https://tox.wiki/en/latest/):
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
@@ -1314,7 +1419,7 @@ pip install tox
 tox
 ```
 
-run one integration test aws with [tox](https://tox.wiki/en/latest/):
+Run one integration test AWS with [tox](https://tox.wiki/en/latest/):
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM

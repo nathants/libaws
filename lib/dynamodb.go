@@ -971,7 +971,7 @@ func DynamoDBListTables(ctx context.Context) ([]string, error) {
 	return tables, nil
 }
 
-func DynamoDBDeleteTable(ctx context.Context, tableName string, preview bool) error {
+func DynamoDBDeleteTable(ctx context.Context, tableName string, preview bool, noWait bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBDeleteTable"}
 		defer d.Log()
@@ -992,10 +992,12 @@ func DynamoDBDeleteTable(ctx context.Context, tableName string, preview bool) er
 			Logger.Println("error:", err)
 			return err
 		}
-		err = DynamoDBWaitForGone(ctx, tableName)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
+		if !noWait {
+			err = DynamoDBWaitForGone(ctx, tableName)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
 		}
 	}
 	Logger.Println(PreviewString(preview)+"deleted table:", tableName)

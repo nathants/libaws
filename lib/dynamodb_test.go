@@ -385,7 +385,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := DynamoDBDeleteTable(ctx, name, false)
+		err := DynamoDBDeleteTable(ctx, name, false, true)
 		if err != nil {
 			panic(err)
 		}
@@ -513,7 +513,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := DynamoDBDeleteTable(ctx, name, false)
+		err := DynamoDBDeleteTable(ctx, name, false, true)
 		if err != nil {
 			panic(err)
 		}
@@ -693,7 +693,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := DynamoDBDeleteTable(ctx, name, false)
+		err := DynamoDBDeleteTable(ctx, name, false, true)
 		if err != nil {
 			panic(err)
 		}
@@ -883,7 +883,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := DynamoDBDeleteTable(ctx, name, false)
+		err := DynamoDBDeleteTable(ctx, name, false, true)
 		if err != nil {
 			panic(err)
 		}
@@ -976,7 +976,7 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := DynamoDBDeleteTable(ctx, name, false)
+		err := DynamoDBDeleteTable(ctx, name, false, true)
 		if err != nil {
 			panic(err)
 		}
@@ -1056,7 +1056,7 @@ func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
 		return
 	}
 	defer func() {
-		err := DynamoDBDeleteTable(ctx, name, false)
+		err := DynamoDBDeleteTable(ctx, name, false, true)
 		if err != nil {
 			panic(err)
 		}

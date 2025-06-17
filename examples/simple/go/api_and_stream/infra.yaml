@@ -1,0 +1,14 @@
+name: test-infraset-${uid}
+
+lambda:
+  test-lambda-${uid}:
+    entrypoint: main.go
+    attr:
+      - concurrency=0
+      - memory=128
+      - timeout=60
+    policy:
+      - AWSLambdaBasicExecutionRole
+    trigger:
+      - type: api
+      - type: url

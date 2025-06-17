@@ -883,6 +883,23 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 			if out.ReservedConcurrentExecutions != nil {
 				infraLambda.Attr = append(infraLambda.Attr, fmt.Sprintf("concurrency=%d", *out.ReservedConcurrentExecutions))
 			}
+			outUrl, err := LambdaClient().GetFunctionUrlConfig(ctx, &lambda.GetFunctionUrlConfigInput{
+				FunctionName: aws.String(*fn.FunctionName),
+			})
+			if err == nil && outUrl.FunctionUrl != nil {
+				triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], &InfraTrigger{
+					lambdaName: *fn.FunctionName,
+					Type:       lambdaTriggerUrl,
+					Attr:       []string{"url=" + strings.Trim(*outUrl.FunctionUrl, "/")},
+				})
+			} else {
+				var notFound *lambdatypes.ResourceNotFoundException
+				if !errors.As(err, &notFound) {
+					Logger.Println("error:", err)
+					errChan <- err
+					return
+				}
+			}
 			logGroupName := "/aws/lambda/" + *fn.FunctionName
 			outGroups, err := LogsClient().DescribeLogGroups(ctx, &cloudwatchlogs.DescribeLogGroupsInput{
 				LogGroupNamePrefix: aws.String(logGroupName),
@@ -1233,7 +1250,7 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 				}
 			}
 			if infraApi.ReadOnlyUrl != "" {
-				attrs = append(attrs, fmt.Sprintf("url=%s", infraApi.ReadOnlyUrl))
+				attrs = append(attrs, fmt.Sprintf("url=https://%s", infraApi.ReadOnlyUrl))
 			}
 			triggersChan <- &InfraTrigger{
 				lambdaName: lambdaName,
@@ -2784,7 +2801,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 			}
 		}
 		for _, trigger := range infraLambda.Trigger {
-			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket, lambdaTriggerSes}
+			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket, lambdaTriggerSes, lambdaTriggerUrl}
 			if !slices.Contains(validTriggers, trigger.Type) {
 				err := fmt.Errorf("unknown trigger: %#v", trigger)
 				Logger.Println("error:", err)
@@ -2891,7 +2908,7 @@ func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 		}
 	}
 	for tableName := range infraSet.DynamoDB {
-		err := DynamoDBDeleteTable(ctx, tableName, preview)
+		err := DynamoDBDeleteTable(ctx, tableName, preview, false)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err

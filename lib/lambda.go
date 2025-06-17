@@ -57,6 +57,7 @@ const (
 	lambdaTriggerEcr       = "ecr"
 	lambdaTriggerApi       = "api"
 	lambdaTriggerWebsocket = "websocket"
+	lambdaTriggerUrl       = "url"
 
 	lambdaTriggerApiAttrDns    = "dns"
 	lambdaTriggerApiAttrDomain = "domain"
@@ -78,6 +79,8 @@ const (
 	lambdaRuntimePython    = "python3.13"
 	lambdaRuntimeGo        = "provided.al2023"
 	lambdaRuntimeContainer = "container"
+
+	lambdaUrlFuncSid = "FunctionUrlInvoke"
 )
 
 var lambdaClient *lambda.Client
@@ -140,6 +143,167 @@ func LambdaSetConcurrency(ctx context.Context, lambdaName string, concurrency in
 	return nil
 }
 
+func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerURL"}
+		defer d.Log()
+	}
+	var sids []string
+	hasURL := false
+	for _, trigger := range infraLambda.Trigger {
+		if trigger.Type == lambdaTriggerUrl {
+			hasURL = true
+			break
+		}
+	}
+	if hasURL {
+		outCfg, err := LambdaClient().GetFunctionUrlConfig(ctx, &lambda.GetFunctionUrlConfigInput{
+			FunctionName: aws.String(infraLambda.Name),
+		})
+		if err != nil {
+			var notFound *lambdatypes.ResourceNotFoundException
+			if !errors.As(err, &notFound) {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			if !preview {
+				_, err := LambdaClient().CreateFunctionUrlConfig(ctx, &lambda.CreateFunctionUrlConfigInput{
+					FunctionName: aws.String(infraLambda.Name),
+					AuthType:     lambdatypes.FunctionUrlAuthTypeNone,
+					InvokeMode:   lambdatypes.InvokeModeResponseStream,
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"created function url:", infraLambda.Name)
+		} else {
+			if outCfg.AuthType != lambdatypes.FunctionUrlAuthTypeNone ||
+				outCfg.InvokeMode != lambdatypes.InvokeModeResponseStream {
+				if !preview {
+					_, err = LambdaClient().UpdateFunctionUrlConfig(ctx, &lambda.UpdateFunctionUrlConfigInput{
+						FunctionName: aws.String(infraLambda.Name),
+						AuthType:     lambdatypes.FunctionUrlAuthTypeNone,
+						InvokeMode:   lambdatypes.InvokeModeResponseStream,
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+				}
+				Logger.Println(PreviewString(preview)+"updated function url config:", infraLambda.Name)
+			}
+		}
+		out, err := LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{
+			FunctionName: aws.String(infraLambda.Name),
+		})
+		if err != nil {
+			var nfe *lambdatypes.ResourceNotFoundException
+			if !errors.As(err, &nfe) {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			out = nil
+		}
+		needAdd := true
+		if out != nil && out.Policy != nil {
+			var pol IamPolicyDocument
+			if err := json.Unmarshal([]byte(*out.Policy), &pol); err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			for _, st := range pol.Statement {
+				if st.Sid == lambdaUrlFuncSid {
+					fnArn, err := LambdaArn(ctx, infraLambda.Name)
+					if err != nil {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+					expectedPolicy := IamPolicyDocument{
+						Version: "2012-10-17",
+						Statement: []IamStatementEntry{{
+							Sid:       lambdaUrlFuncSid,
+							Effect:    "Allow",
+							Action:    "lambda:InvokeFunctionUrl",
+							Resource:  fnArn,
+							Principal: "*",
+						}},
+					}
+					actualPolicy := IamPolicyDocument{
+						Version:   "2012-10-17",
+						Statement: []IamStatementEntry{st},
+					}
+					equal, err := iamPolicyEqual(Pformat(actualPolicy), Pformat(expectedPolicy))
+					if err != nil {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+					if equal {
+						needAdd = false
+					} else {
+						if !preview {
+							_, err := LambdaClient().RemovePermission(ctx, &lambda.RemovePermissionInput{
+								FunctionName: aws.String(infraLambda.Name),
+								StatementId:  aws.String(lambdaUrlFuncSid),
+							})
+							if err != nil {
+								Logger.Println("error:", err)
+								return nil, err
+							}
+						}
+						Logger.Println(PreviewString(preview)+"removed misconfigured function url permission:", infraLambda.Name)
+					}
+					break
+				}
+			}
+		}
+		if needAdd {
+			if !preview {
+				_, err := LambdaClient().AddPermission(ctx, &lambda.AddPermissionInput{
+					FunctionName:        aws.String(infraLambda.Name),
+					StatementId:         aws.String(lambdaUrlFuncSid),
+					Action:              aws.String("lambda:InvokeFunctionUrl"),
+					Principal:           aws.String("*"),
+					FunctionUrlAuthType: lambdatypes.FunctionUrlAuthTypeNone,
+				})
+				if err != nil {
+					var conflict *lambdatypes.ResourceConflictException
+					if !errors.As(err, &conflict) {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+				}
+			}
+			Logger.Println(PreviewString(preview)+"added function url permission:", infraLambda.Name)
+		}
+		sids = append(sids, lambdaUrlFuncSid)
+	} else {
+		_, err := LambdaClient().GetFunctionUrlConfig(ctx, &lambda.GetFunctionUrlConfigInput{
+			FunctionName: aws.String(infraLambda.Name),
+		})
+		if err == nil {
+			if !preview {
+				_, err := LambdaClient().DeleteFunctionUrlConfig(ctx, &lambda.DeleteFunctionUrlConfigInput{
+					FunctionName: aws.String(infraLambda.Name),
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"deleted function url:", infraLambda.Name)
+		} else {
+			var notFound *lambdatypes.ResourceNotFoundException
+			if !errors.As(err, &notFound) {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+		}
+	}
+	return sids, nil
+}
+
 func LambdaArn(ctx context.Context, name string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaArn"}
@@ -167,7 +331,6 @@ func LambdaArn(ctx context.Context, name string) (string, error) {
 		return "", err
 	}
 	if expectedErr != nil {
-		Logger.Println("error:", err)
 		return "", expectedErr
 	}
 	return arn, nil
@@ -2636,6 +2799,12 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		return err
 	}
 	permissionSids = append(permissionSids, sids...)
+	sids, err = LambdaEnsureTriggerURL(ctx, infraLambda, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	permissionSids = append(permissionSids, sids...)
 	sids, err = LambdaEnsureTriggerS3(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2816,4 +2985,18 @@ func LambdaDelete(ctx context.Context, name string, preview bool) error {
 		}
 	}
 	return nil
+}
+
+func FuncUrl(ctx context.Context, lambdaName string) (string, error) {
+	out, err := LambdaClient().GetFunctionUrlConfig(ctx, &lambda.GetFunctionUrlConfigInput{
+		FunctionName: aws.String(lambdaName),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	if out.FunctionUrl == nil {
+		return "", fmt.Errorf("no function url configured for: %s", lambdaName)
+	}
+	return strings.Trim(*out.FunctionUrl, "/"), nil
 }
