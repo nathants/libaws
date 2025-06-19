@@ -34,7 +34,8 @@ func StsAccount(ctx context.Context) (string, error) {
 	if stsAccount == nil {
 		if doDebug {
 			d := &Debug{start: time.Now(), name: "StsAccount"}
-			defer d.Log()
+			d.Start()
+			defer d.End()
 		}
 		out, err := STSClient().GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
@@ -54,7 +55,8 @@ func StsArn(ctx context.Context) (string, error) {
 	if stsArn == nil {
 		if doDebug {
 			d := &Debug{start: time.Now(), name: "StsArn"}
-			defer d.Log()
+			d.Start()
+			defer d.End()
 		}
 		out, err := STSClient().GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {
@@ -74,7 +76,8 @@ func StsUser(ctx context.Context) (string, error) {
 	if stsUser == nil {
 		if doDebug {
 			d := &Debug{start: time.Now(), name: "StsUser"}
-			defer d.Log()
+			d.Start()
+			defer d.End()
 		}
 		out, err := STSClient().GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 		if err != nil {

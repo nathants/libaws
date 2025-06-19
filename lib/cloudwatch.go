@@ -90,7 +90,8 @@ func (a *CloudwatchAlarm) FromAlarm(alarm *cwtypes.MetricAlarm) {
 func CloudwatchListAlarms(ctx context.Context) ([]*CloudwatchAlarm, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CloudwatchListAlarms"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var result []*CloudwatchAlarm
@@ -118,7 +119,8 @@ func CloudwatchListAlarms(ctx context.Context) ([]*CloudwatchAlarm, error) {
 func CloudwatchEnsureAlarm(ctx context.Context, name string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CloudwatchEnsureAlarm"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := CloudwatchClient().DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{
 		AlarmNames: []string{
@@ -137,7 +139,8 @@ func CloudwatchEnsureAlarm(ctx context.Context, name string) error {
 func CloudwatchListMetrics(ctx context.Context, namespace, metric *string) ([]cwtypes.Metric, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CloudwatchListMetrics"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var metrics []cwtypes.Metric
@@ -163,7 +166,8 @@ func CloudwatchListMetrics(ctx context.Context, namespace, metric *string) ([]cw
 func CloudwatchGetMetricData(ctx context.Context, period int, stat string, fromTime, toTime *time.Time, namespace string, metrics []string, dimension string) ([]cwtypes.MetricDataResult, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CloudwatchGetMetricData"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var result []cwtypes.MetricDataResult

@@ -32,7 +32,8 @@ func EcrClient() *ecr.Client {
 func EcrDescribeRepos(ctx context.Context) ([]ecrtypes.Repository, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EcrDescribeRepos"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var repos []ecrtypes.Repository
 	var token *string
@@ -60,7 +61,8 @@ var ecrEncryptionConfig = &ecrtypes.EncryptionConfiguration{
 func EcrEnsure(ctx context.Context, name string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EcrEnsure"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EcrClient().DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
 		RepositoryNames: []string{name},

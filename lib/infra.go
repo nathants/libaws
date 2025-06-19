@@ -244,7 +244,8 @@ type InfraTrigger struct {
 func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*InfraListOutput, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraList"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var err error
 	lock := &sync.Mutex{}
@@ -729,7 +730,8 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[string]*InfraEvent, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListEvent"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	results := map[string]*InfraEvent{}
 	lock := sync.Mutex{}
@@ -817,7 +819,8 @@ func InfraListEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map
 func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, filter string) (map[string]*InfraLambda, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListLambda"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	allFns, err := LambdaListFunctions(ctx)
 	if err != nil {
@@ -1074,7 +1077,8 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListKeypair"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	result := map[string]*InfraKeypair{}
 	out, err := EC2Client().DescribeKeyPairs(ctx, &ec2.DescribeKeyPairsInput{
@@ -1106,7 +1110,8 @@ func InfraListKeypair(ctx context.Context) (map[string]*InfraKeypair, error) {
 func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[string]*InfraApi, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListApi"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	result := map[string]*InfraApi{}
 	lock := &sync.Mutex{}
@@ -1278,7 +1283,8 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListDynamoDB"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	lock := &sync.Mutex{}
 	result := map[string]*InfraDynamoDB{}
@@ -1428,7 +1434,8 @@ func InfraListDynamoDB(ctx context.Context) (map[string]*InfraDynamoDB, error) {
 func InfraListVpc(ctx context.Context) (map[string]*InfraVpc, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListVpc"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	result := map[string]*InfraVpc{}
 	vpcs, err := VpcList(ctx)
@@ -1498,7 +1505,8 @@ func orDash(s *string) string {
 func InfraListEC2(ctx context.Context) (map[string]*InfraEC2, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListEC2"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	result := map[string]*InfraEC2{}
 	instances, err := EC2ListInstances(ctx, nil, "")
@@ -1562,7 +1570,8 @@ func InfraListEC2(ctx context.Context) (map[string]*InfraEC2, error) {
 func InfraListUser(ctx context.Context) (map[string]*InfraUser, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListUser"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := IamListUsers(ctx)
 	if err != nil {
@@ -1582,7 +1591,8 @@ func InfraListUser(ctx context.Context) (map[string]*InfraUser, error) {
 func InfraListRole(ctx context.Context) (map[string]*InfraRole, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListRole"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := IamListRoles(ctx, nil)
 	if err != nil {
@@ -1612,7 +1622,8 @@ func InfraListRole(ctx context.Context) (map[string]*InfraRole, error) {
 func InfraListInstanceProfile(ctx context.Context) (map[string]*InfraInstanceProfile, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListInstanceProfile"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := IamListInstanceProfiles(ctx, nil)
 	if err != nil {
@@ -1640,7 +1651,8 @@ func InfraListInstanceProfile(ctx context.Context) (map[string]*InfraInstancePro
 func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[string]*InfraS3, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListS3"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	lock := &sync.Mutex{}
 	res := map[string]*InfraS3{}
@@ -1798,7 +1810,8 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListSQS"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	urls, err := SQSListQueueUrls(ctx)
 	if err != nil {
@@ -1888,7 +1901,8 @@ func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 func InfraEnsureKeypair(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureKeypair"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for keypairName, infraKeypair := range infraSet.Keypair {
 		err := EC2EnsureKeypair(ctx, infraSet.Name, keypairName, infraKeypair.PubkeyContent, preview)
@@ -1903,7 +1917,8 @@ func InfraEnsureKeypair(ctx context.Context, infraSet *InfraSet, preview bool) e
 func InfraEnsureInstanceProfile(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureInstanceProfile"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for profileName, infraProfile := range infraSet.InstanceProfile {
 		err := IamEnsureInstanceProfile(ctx, infraSet.Name, profileName, infraProfile.Policy, infraProfile.Allow, preview)
@@ -1918,7 +1933,8 @@ func InfraEnsureInstanceProfile(ctx context.Context, infraSet *InfraSet, preview
 func InfraEnsureVpc(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureVpc"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	hasVpc := false
 	for vpcName, infraVpc := range infraSet.Vpc {
@@ -1970,7 +1986,8 @@ func InfraEnsureVpc(ctx context.Context, infraSet *InfraSet, preview bool) error
 func InfraEnsureS3(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureS3"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for bucketName, infraS3 := range infraSet.S3 {
 		input, err := S3EnsureInput(infraSet.Name, bucketName, infraS3.Attr)
@@ -2074,7 +2091,8 @@ func infraEnsureDynamoDBLocalIndexToAttrs(infraDynamoDB *InfraDynamoDB) error {
 func InfraEnsureDynamoDB(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureDynamoDB"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for tableName, infraDynamoDB := range infraSet.DynamoDB {
 		err := infraEnsureDynamoDBGlobalIndexToAttrs(infraDynamoDB)
@@ -2104,7 +2122,8 @@ func InfraEnsureDynamoDB(ctx context.Context, infraSet *InfraSet, preview bool) 
 func InfraEnsureSQS(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureSQS"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for queueName, infraSQS := range infraSet.SQS {
 		input, err := SQSEnsureInput(infraSet.Name, queueName, infraSQS.Attr)
@@ -2124,7 +2143,8 @@ func InfraEnsureSQS(ctx context.Context, infraSet *InfraSet, preview bool) error
 func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureLambda"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if quick != "" {
 		found := false
@@ -2200,7 +2220,8 @@ func lambdaCreateZipFake(_ *InfraLambda) error { return nil }
 func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsure"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if quick == "" {
 		err := InfraEnsureKeypair(ctx, infraSet, preview)
@@ -2815,7 +2836,8 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraDelete"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for vpcName := range infraSet.Vpc {
 		err := VpcRm(ctx, vpcName, preview)

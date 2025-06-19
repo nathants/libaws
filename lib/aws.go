@@ -105,7 +105,8 @@ func Regions() ([]string, error) {
 func Zones(ctx context.Context) ([]ec2types.AvailabilityZone, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Zones"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2Client().DescribeAvailabilityZones(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {

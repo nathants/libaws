@@ -40,7 +40,8 @@ func SNSArn(ctx context.Context, name string) (string, error) {
 func SNSListSubscriptions(ctx context.Context, topicArn string) ([]snstypes.Subscription, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SNSListSubscriptions"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var nextToken *string
 	var subscriptions []snstypes.Subscription
@@ -64,7 +65,8 @@ func SNSListSubscriptions(ctx context.Context, topicArn string) ([]snstypes.Subs
 func SNSEnsure(ctx context.Context, name string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SNSEnsure"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	snsArn, err := SNSArn(ctx, name)
 	if err != nil {

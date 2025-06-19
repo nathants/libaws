@@ -14,7 +14,8 @@ import (
 func VpcList(ctx context.Context) ([]ec2types.Vpc, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcList"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var res []ec2types.Vpc
@@ -37,7 +38,8 @@ func VpcList(ctx context.Context) ([]ec2types.Vpc, error) {
 func VpcListSubnets(ctx context.Context, vpcID string) ([]ec2types.Subnet, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcListSubnets"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	input := &ec2.DescribeSubnetsInput{
 		Filters: []ec2types.Filter{
@@ -58,7 +60,8 @@ func VpcListSubnets(ctx context.Context, vpcID string) ([]ec2types.Subnet, error
 func VpcID(ctx context.Context, name string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcID"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if strings.HasPrefix(name, "vpc-") {
 		return name, nil
@@ -85,7 +88,8 @@ func VpcID(ctx context.Context, name string) (string, error) {
 func VpcSubnets(ctx context.Context, vpcID string) ([]ec2types.Subnet, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcSubnets"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2Client().DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
 		Filters: []ec2types.Filter{
@@ -106,7 +110,8 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 	// TODO make this idempotent and previewable. currently if aborted must rm then ensure.
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcEnsure"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	xx := 0
 	id, err := VpcID(ctx, vpcName)
@@ -309,7 +314,8 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 func VpcRm(ctx context.Context, name string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcRm"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	vpcID, err := VpcID(ctx, name)
 	if err != nil {

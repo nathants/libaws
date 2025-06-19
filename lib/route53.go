@@ -35,7 +35,8 @@ func Route53Client() *route53.Client {
 func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53DeleteRecord"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	id, err := Route53ZoneID(ctx, input.zoneName)
 	if err != nil {
@@ -111,7 +112,8 @@ func Route53DeleteRecord(ctx context.Context, input *route53EnsureRecordInput, p
 func Route53DeleteZone(ctx context.Context, name string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53DeleteZone"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	id, err := Route53ZoneID(ctx, name)
 	if err != nil {
@@ -215,7 +217,8 @@ func Route53EnsureRecordInput(zoneName, recordName string, attrs []string) (*rou
 func Route53ZoneID(ctx context.Context, name string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53ZoneID"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var id string
 	zones, err := Route53ListZones(ctx)
@@ -247,7 +250,8 @@ func Route53ZoneID(ctx context.Context, name string) (string, error) {
 func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53EnsureRecord"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	id, err := Route53ZoneID(ctx, input.zoneName)
 	if err != nil {
@@ -359,7 +363,8 @@ func Route53EnsureRecord(ctx context.Context, input *route53EnsureRecordInput, p
 func Route53EnsureZone(ctx context.Context, name string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53EnsureZone"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	name = strings.Trim(name, ".")
 	zones, err := Route53ListZones(ctx)
@@ -414,7 +419,8 @@ func Route53EnsureZone(ctx context.Context, name string, preview bool) error {
 func Route53ListRecords(ctx context.Context, zoneId string) ([]r53types.ResourceRecordSet, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53ListRecords"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var nextId *string
 	var nextName *string
@@ -445,7 +451,8 @@ func Route53ListRecords(ctx context.Context, zoneId string) ([]r53types.Resource
 func Route53ListZones(ctx context.Context) ([]r53types.HostedZone, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "Route53ListZones"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var nextDns *string
 	var nextId *string

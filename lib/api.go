@@ -31,7 +31,8 @@ func ApiClient() *apigatewayv2.Client {
 func ApiList(ctx context.Context) ([]apitypes.Api, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ApiList"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var items []apitypes.Api
@@ -58,8 +59,9 @@ const (
 
 func Api(ctx context.Context, name string) (*apitypes.Api, error) {
 	if doDebug {
-		d := &Debug{start: time.Now(), name: "ApiList"}
-		defer d.Log()
+		d := &Debug{start: time.Now(), name: "Api"}
+		d.Start()
+		defer d.End()
 	}
 	var count int
 	var result *apitypes.Api
@@ -89,7 +91,8 @@ func Api(ctx context.Context, name string) (*apitypes.Api, error) {
 func ApiListDomains(ctx context.Context) ([]apitypes.DomainName, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ApiListDomains"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var result []apitypes.DomainName
@@ -113,7 +116,8 @@ func ApiListDomains(ctx context.Context) ([]apitypes.DomainName, error) {
 func ApiUrl(ctx context.Context, name string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ApiUrl"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	api, err := Api(ctx, name)
 	if err != nil {

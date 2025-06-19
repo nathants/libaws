@@ -33,7 +33,8 @@ func SQSClient() *sqs.Client {
 func SQSListQueues(ctx context.Context) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SQSListQueues"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var nextToken *string
 	var queues []string
@@ -63,7 +64,8 @@ func SQSUrlToName(url string) string {
 func SQSListQueueUrls(ctx context.Context) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SQSListQueueUrls"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var nextToken *string
 	var queues []string
@@ -115,7 +117,8 @@ type SQSNumMessageOutput struct {
 func SQSNumMessages(ctx context.Context, queueUrl string) (*SQSNumMessageOutput, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SQSNumMessages"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := SQSClient().GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
 		QueueUrl: aws.String(queueUrl),
@@ -246,7 +249,8 @@ func SQSEnsureInput(infraSetName, queueName string, attrs []string) (*sqsEnsureI
 func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SQSEnsure"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	sqsUrl, err := SQSQueueUrl(ctx, input.name)
 	if err != nil {
@@ -347,7 +351,8 @@ func SQSEnsure(ctx context.Context, input *sqsEnsureInput, preview bool) error {
 func SQSDeleteQueue(ctx context.Context, name string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SQSDeleteQueue"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	url, err := SQSQueueUrl(ctx, name)
 	if err != nil {

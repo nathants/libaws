@@ -30,7 +30,8 @@ func OrganizationsClient() *organizations.Client {
 func OrganizationsEnsure(ctx context.Context, name, email string, preview bool) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "OrganizationsEnsure"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var accounts []orgtypes.Account

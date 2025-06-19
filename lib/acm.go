@@ -28,7 +28,8 @@ func AcmClient() *acm.Client {
 func AcmListCertificates(ctx context.Context) ([]acmtypes.CertificateSummary, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "AcmListCertificates"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var result []acmtypes.CertificateSummary

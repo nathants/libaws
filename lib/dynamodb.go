@@ -49,7 +49,8 @@ func dynamoDBTableAttrShortcut(s string) string {
 func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []string) (*dynamodb.CreateTableInput, *ddbtypes.TimeToLiveSpecification, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBEnsureInput"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var ttl *ddbtypes.TimeToLiveSpecification
 	input := &dynamodb.CreateTableInput{
@@ -465,7 +466,8 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *ddbtypes.TimeToLiveSpecification, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBEnsure"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	table, err := DynamoDBClient().DescribeTable(ctx, &dynamodb.DescribeTableInput{
 		TableName: input.TableName,
@@ -922,7 +924,8 @@ func DynamoDBArn(ctx context.Context, tableName string) (string, error) {
 func DynamoDBListTags(ctx context.Context, tableName string) ([]ddbtypes.Tag, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBListTags"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	arn, err := DynamoDBArn(ctx, tableName)
 	if err != nil {
@@ -952,7 +955,8 @@ func DynamoDBListTags(ctx context.Context, tableName string) ([]ddbtypes.Tag, er
 func DynamoDBListTables(ctx context.Context) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBListTables"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var start *string
 	var tables []string
@@ -974,7 +978,8 @@ func DynamoDBListTables(ctx context.Context) ([]string, error) {
 func DynamoDBDeleteTable(ctx context.Context, tableName string, preview bool, noWait bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBDeleteTable"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	err := DynamoDBWaitForReady(ctx, tableName)
 	if err != nil {
@@ -1007,7 +1012,8 @@ func DynamoDBDeleteTable(ctx context.Context, tableName string, preview bool, no
 func DynamoDBWaitForGone(ctx context.Context, tableName string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBWaitForGone"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for {
 		_, err := DynamoDBClient().DescribeTable(ctx, &dynamodb.DescribeTableInput{
@@ -1028,7 +1034,8 @@ func DynamoDBWaitForGone(ctx context.Context, tableName string) error {
 func DynamoDBWaitForReady(ctx context.Context, tableName string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBWaitForReady"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for {
 		description, err := DynamoDBClient().DescribeTable(ctx, &dynamodb.DescribeTableInput{
@@ -1064,7 +1071,8 @@ func DynamoDBStreamArnToTableName(arn string) string {
 func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBStreamArn"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var expectedErr error
 	var streamArn string
@@ -1101,7 +1109,8 @@ func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 func DynamoDBItemDeleteAll(ctx context.Context, tableName string, keyNames []string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBItemDeleteAll"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var start map[string]ddbtypes.AttributeValue
 	for {

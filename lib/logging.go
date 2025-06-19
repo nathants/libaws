@@ -90,6 +90,10 @@ func (d *Debug) Println(v ...any) {
 	Logger.Print(r...)
 }
 
-func (d *Debug) Log() {
-	d.Println("DEBUG", d.name, fmt.Sprint(int(time.Since(d.start).Milliseconds()))+"ms")
+func (d *Debug) Start() {
+	d.Println("DEBUG-START", d.name)
+}
+
+func (d *Debug) End() {
+	d.Println("DEBUG-END", d.name, fmt.Sprint(int(time.Since(d.start).Milliseconds()))+"ms")
 }

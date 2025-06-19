@@ -92,7 +92,8 @@ type EC2Config struct {
 func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2types.SpotFleetRequestConfig, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2DescribeSpotFleet"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	Logger.Println("describe spot fleet", *spotFleetRequestId)
 	var output *ec2.DescribeSpotFleetRequestsOutput
@@ -121,7 +122,8 @@ func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2
 func EC2DescribeSpotFleetActiveInstances(ctx context.Context, spotFleetRequestId *string) ([]ec2types.ActiveInstance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2DescribeSpotFleetActiveInstances"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	Logger.Println("describe spot fleet instances", *spotFleetRequestId)
 	var instances []ec2types.ActiveInstance
@@ -181,7 +183,8 @@ func isIPAddress(s string) bool {
 func EC2ListInstances(ctx context.Context, selectors []string, state ec2types.InstanceStateName) ([]ec2types.Instance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2ListInstances"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var filterss [][]ec2types.Filter
 	if len(selectors) == 0 {
@@ -301,7 +304,8 @@ func EC2GetTag(tags []ec2types.Tag, key string, defaultValue string) string {
 func EC2DescribeInstances(ctx context.Context, instanceIDs []string) ([]ec2types.Instance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2DescribeInstances"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	Logger.Println("describe instances for", len(instanceIDs), "instanceIDs")
 	if len(instanceIDs) >= 1000 {
@@ -341,7 +345,8 @@ var ec2FailedStates = []ec2types.BatchState{
 func EC2WaitState(ctx context.Context, instanceIDs []string, state ec2types.InstanceStateName) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2WaitState"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	Logger.Println("wait for state", state, "for", len(instanceIDs), "instanceIDs")
 	for range 300 {
@@ -374,7 +379,8 @@ func EC2WaitState(ctx context.Context, instanceIDs []string, state ec2types.Inst
 func ec2FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2FinalizeSpotFleet"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	Logger.Println("teardown spot fleet", *spotFleetRequestId)
 	_, err := EC2Client().CancelSpotFleetRequests(ctx, &ec2.CancelSpotFleetRequestsInput{
@@ -391,7 +397,8 @@ func ec2FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2TeardownSpotFleet"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	Logger.Println("teardown spot fleet", *spotFleetRequestId)
 	_, err := EC2Client().CancelSpotFleetRequests(ctx, &ec2.CancelSpotFleetRequestsInput{
@@ -428,12 +435,13 @@ func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error
 	}
 	return nil
 }
-
 func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2SpotFleetHistoryErrors"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
+
 	t := time.Now().UTC().Add(-24 * time.Hour)
 	timestamp := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 	output, err := EC2Client().DescribeSpotFleetRequestHistory(ctx, &ec2.DescribeSpotFleetRequestHistoryInput{
@@ -461,7 +469,8 @@ func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) 
 func ec2WaitSpotFleet(ctx context.Context, spotFleetRequestId *string, num int) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2WaitSpotFleet"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	Logger.Println("wait for spot fleet", *spotFleetRequestId, "with", num, "instances")
 	for range 300 {
@@ -674,7 +683,8 @@ func makeBlockDeviceMapping(config *EC2Config) []ec2types.BlockDeviceMapping {
 func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationStrategy, config *EC2Config) ([]ec2types.Instance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2RequestSpotFleet"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if strings.Contains(config.Name, "::") {
 		err := fmt.Errorf("name cannot contain '::', got: %s", config.Name)
@@ -857,7 +867,8 @@ func ec2ConfigDefaults(config *EC2Config) *EC2Config {
 func EC2NewInstances(ctx context.Context, config *EC2Config) ([]ec2types.Instance, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2NewInstances"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if strings.Contains(config.Name, "::") {
 		err := fmt.Errorf("name cannot contain '::', got: %s", config.Name)
@@ -925,7 +936,8 @@ type EC2RsyncInput struct {
 func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2Rsync"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if len(input.Instances) == 0 {
 		err := fmt.Errorf("no instances")
@@ -992,7 +1004,8 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 func ec2Rsync(ctx context.Context, instance ec2types.Instance, input *EC2RsyncInput) *ec2SshResult {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2Rsync"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	result := &ec2SshResult{
 		InstanceID: *instance.InstanceId,
@@ -1138,7 +1151,8 @@ type EC2ScpInput struct {
 func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2Scp"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if len(input.Instances) == 0 {
 		err := fmt.Errorf("no instances")
@@ -1206,7 +1220,8 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 func ec2Scp(ctx context.Context, instance ec2types.Instance, input *EC2ScpInput) *ec2SshResult {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2Scp"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	result := &ec2SshResult{
 		InstanceID: *instance.InstanceId,
@@ -1383,7 +1398,8 @@ func ec2SshRemoteCmd(cmd, stdin string) string {
 func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2Ssh"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if len(input.Instances) == 0 {
 		err := fmt.Errorf("no instances")
@@ -1472,7 +1488,8 @@ func ec2EphemeralKey(tags []ec2types.Tag) string {
 func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput) *ec2SshResult {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2Ssh"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	result := &ec2SshResult{
 		InstanceID: *instance.InstanceId,
@@ -1583,7 +1600,8 @@ func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput)
 func EC2SshLogin(instance ec2types.Instance, user, key string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2SshLogin"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if user == "" {
 		user = EC2GetTag(instance.Tags, "user", "")
@@ -1620,7 +1638,8 @@ func EC2SshLogin(instance ec2types.Instance, user, key string) error {
 func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2AmiUser"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
 		Filters: []ec2types.Filter{
@@ -1642,8 +1661,9 @@ func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
 
 func ec2AmiAmzn2023(ctx context.Context, arch string) (string, error) {
 	if doDebug {
-		d := &Debug{start: time.Now(), name: "ec2AmiLambda"}
-		defer d.Log()
+		d := &Debug{start: time.Now(), name: "ec2AmiAmzn2023"}
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
 		Owners: []string{"137112412989"},
@@ -1692,7 +1712,8 @@ func keys(m map[string]string) []string {
 func ec2AmiUbuntu(ctx context.Context, name, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiUbuntu"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	fragment, ok := ubuntus[name]
 	if !ok {
@@ -1720,7 +1741,8 @@ func ec2AmiUbuntu(ctx context.Context, name, arch string) (string, error) {
 func ec2AmiDebian(ctx context.Context, name, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiDebian"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	fragment, ok := debians[name]
 	if !ok {
@@ -1749,7 +1771,8 @@ func ec2AmiDebian(ctx context.Context, name, arch string) (string, error) {
 func ec2AmiAmzn2(ctx context.Context, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiAmzn"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
 		Owners: []string{"137112412989"},
@@ -1771,7 +1794,8 @@ func ec2AmiAmzn2(ctx context.Context, arch string) (string, error) {
 func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2AmiAlpine"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
 		Owners: []string{"538276064493"},
@@ -1809,7 +1833,8 @@ func ec2AmiAlpine(ctx context.Context, name, arch string) (string, error) {
 func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser string, err error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2AmiBase"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	switch arch {
 	case EC2ArchAmd64:
@@ -1852,7 +1877,8 @@ func EC2AmiBase(ctx context.Context, name, arch string) (amiID string, sshUser s
 func EC2ZonesWithInstance(ctx context.Context, instanceType ec2types.InstanceType) (zones []string, err error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2ZonesWithInstance"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2Client().DescribeInstanceTypeOfferings(ctx, &ec2.DescribeInstanceTypeOfferingsInput{
 		LocationType: ec2types.LocationTypeAvailabilityZone,
@@ -1878,7 +1904,8 @@ func EC2ZonesWithInstance(ctx context.Context, instanceType ec2types.InstanceTyp
 func EC2SgID(ctx context.Context, vpcName, sgName string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2SgID"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if strings.HasPrefix(sgName, "sg-") {
 		return sgName, nil
@@ -1986,7 +2013,8 @@ type EC2WaitSshInput struct {
 func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2WaitSsh"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	start := time.Now()
 	for {
@@ -2092,7 +2120,8 @@ type EC2WaitGoSshInput struct {
 func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2WaitGoSsh"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	start := time.Now()
 	if input.Stderr == nil {
@@ -2202,7 +2231,8 @@ type EC2NewAmiInput struct {
 func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2NewAmi"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2ListInstances(ctx, input.Selectors, "stopped")
 	if err != nil {
@@ -2256,7 +2286,8 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 func EC2ListSgs(ctx context.Context) ([]ec2types.SecurityGroup, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2ListSgs"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var res []ec2types.SecurityGroup
 	var token *string
@@ -2359,7 +2390,8 @@ func EC2EnsureSgInput(infraSetName, vpcName, sgName string, rules []string) (*ec
 func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2EnsureSg"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	for _, rule := range input.Rules {
 		if rule.Port == 0 && rule.Proto != "" {
@@ -2634,7 +2666,8 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 func EC2DeleteSg(ctx context.Context, vpcName, sgName string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2DeleteSg"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	sgID, err := EC2SgID(ctx, vpcName, sgName)
 	if err != nil {
@@ -2684,7 +2717,8 @@ func pubKey(privKey string) (ssh.AuthMethod, error) {
 func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2GoSsh"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	if input.Stderr == nil {
 		input.Stderr = os.Stderr
@@ -2768,7 +2802,8 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 func sshDialContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "sshDialContext"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var d net.Dialer
 	dialContext, dialCancel := context.WithTimeout(ctx, config.Timeout)
@@ -2787,7 +2822,8 @@ func sshDialContext(ctx context.Context, network, addr string, config *ssh.Clien
 func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, input *EC2GoSshInput) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "ec2GoSsh"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	sshConn, err := sshDialContext(ctx, "tcp", fmt.Sprintf("%s:22", targetAddr), config)
 	if err != nil {
@@ -2826,7 +2862,8 @@ func ec2GoSsh(ctx context.Context, config *ssh.ClientConfig, targetAddr string, 
 func EC2DeleteKeypair(ctx context.Context, keypairName string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2DeleteKeypair"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	out, err := EC2Client().DescribeKeyPairs(ctx, &ec2.DescribeKeyPairsInput{
 		KeyNames: []string{keypairName},
@@ -2855,7 +2892,8 @@ func EC2DeleteKeypair(ctx context.Context, keypairName string, preview bool) err
 func EC2EnsureKeypair(ctx context.Context, infraSetName, keyName, pubkeyContent string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2EnsureKeypair"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	pubkey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubkeyContent))
 	if err != nil {

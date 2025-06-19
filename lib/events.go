@@ -29,7 +29,8 @@ func EventsClientExplicit(accessKeyID, accessKeySecret, region string) *eventbri
 func EventsListBuses(ctx context.Context) ([]eventbridgetypes.EventBus, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EventsListBuses"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var buses []eventbridgetypes.EventBus
@@ -53,7 +54,8 @@ func EventsListBuses(ctx context.Context) ([]eventbridgetypes.EventBus, error) {
 func EventsListRules(ctx context.Context, busName *string) ([]eventbridgetypes.Rule, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EventsListRules"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var rules []eventbridgetypes.Rule
@@ -78,7 +80,8 @@ func EventsListRules(ctx context.Context, busName *string) ([]eventbridgetypes.R
 func EventsListRuleTargets(ctx context.Context, ruleName string, busName *string) ([]eventbridgetypes.Target, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EventsListRuleTargets"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var targets []eventbridgetypes.Target
 	var token *string

@@ -28,7 +28,8 @@ func CodeCommitClient() *codecommit.Client {
 func CodeCommitListRepos(ctx context.Context) ([]codecommittypes.RepositoryNameIdPair, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CodeCommitListRepos"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var repos []codecommittypes.RepositoryNameIdPair

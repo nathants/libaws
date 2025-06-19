@@ -32,7 +32,8 @@ func SesClient() *sesv2.Client {
 func SesListReceiptRulesets(ctx context.Context) ([]sestypes.ReceiptRuleSetMetadata, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SesListReceiptRulesets"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var token *string
 	var result []sestypes.ReceiptRuleSetMetadata
@@ -56,7 +57,8 @@ func SesListReceiptRulesets(ctx context.Context) ([]sestypes.ReceiptRuleSetMetad
 func SesRmReceiptRuleset(ctx context.Context, domain string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SesRmReceiptRuleset"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	rules, err := SesListReceiptRulesets(ctx)
 	if err != nil {
@@ -98,7 +100,8 @@ func SesRmReceiptRuleset(ctx context.Context, domain string, preview bool) error
 func SesEnsureReceiptRuleset(ctx context.Context, domain string, bucket string, prefix string, lambdaArn string, preview bool) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "SesEnsureReceiptRuleset"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	lambdaName := Last(strings.Split(lambdaArn, ":"))
 	account, err := StsAccount(ctx)

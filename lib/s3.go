@@ -86,7 +86,8 @@ func S3BucketRegion(bucket string) (string, error) {
 		} else {
 			if doDebug {
 				d := &Debug{start: time.Now(), name: "S3BucketRegion"}
-				defer d.Log()
+				d.Start()
+				defer d.End()
 			}
 			resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
 			if err != nil {
@@ -320,7 +321,8 @@ var s3EncryptionConfig = &s3types.ServerSideEncryptionConfiguration{
 func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "S3Ensure"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	account, err := StsAccount(ctx)
 	if err != nil {
@@ -829,7 +831,8 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "S3DeleteBucket"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
 	if err == nil {
@@ -990,7 +993,8 @@ type S3BucketDescription struct {
 func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescription, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "S3GetBucketDescription"}
-		defer d.Log()
+		d.Start()
+		defer d.End()
 	}
 	var descr S3BucketDescription
 	s3Client, err := S3ClientBucketRegion(bucket)
