@@ -2883,8 +2883,7 @@ func LambdaUpdateFunctionCode(ctx context.Context, infraLambda *InfraLambda, pre
 			_, err := LambdaClient().UpdateFunctionCode(ctx, updateInput)
 			if err != nil {
 				var notFound *lambdatypes.ResourceNotFoundException
-				var tooLarge *lambdatypes.InvalidParameterValueException
-				if errors.As(err, &notFound) || errors.As(err, &tooLarge) {
+				if errors.As(err, &notFound) || strings.Contains(err.Error(), "RequestEntityTooLargeException: Request must be smaller than ") {
 					expectedErr = err
 					return nil
 				}
