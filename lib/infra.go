@@ -2223,7 +2223,13 @@ func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview,
 		d.Start()
 		defer d.End()
 	}
-	if quick == "" {
+	if quick != "" {
+		err := os.Setenv("ZIP_COMPRESSION", "1")
+		if err != nil {
+			Logger.Println("error:", err)
+		    return err
+		}
+	} else {
 		err := InfraEnsureKeypair(ctx, infraSet, preview)
 		if err != nil {
 			Logger.Println("error:", err)
