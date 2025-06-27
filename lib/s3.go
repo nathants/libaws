@@ -1150,3 +1150,83 @@ func S3PresignGet(bucket, key, byterange string, expire time.Duration) string {
 	}
 	return req.URL
 }
+
+type S3DeleteInput struct {
+	Bucket    string
+	Prefix    string
+	Recursive bool
+	Preview   bool
+}
+
+func S3Delete(ctx context.Context, input *S3DeleteInput) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "S3Delete"}
+		d.Start()
+		defer d.End()
+	}
+	
+	s3Client, err := S3ClientBucketRegion(input.Bucket)
+	if err != nil {
+		return err
+	}
+
+	var delimiter *string
+	if !input.Recursive {
+		delimiter = aws.String("/")
+	}
+
+	var token *string
+	for {
+		out, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(input.Bucket),
+			Prefix:            aws.String(input.Prefix),
+			Delimiter:         delimiter,
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return err
+		}
+
+		var objects []s3types.ObjectIdentifier
+
+		for _, obj := range out.Contents {
+			objects = append(objects, s3types.ObjectIdentifier{
+				Key: obj.Key,
+			})
+		}
+
+		if len(objects) != 0 {
+
+			if !input.Preview {
+
+				deleteOut, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+					Bucket: aws.String(input.Bucket),
+					Delete: &s3types.Delete{Objects: objects},
+				})
+				if err != nil {
+					return err
+				}
+
+				for _, err := range deleteOut.Errors {
+					Logger.Println("error:", *err.Key, *err.Code, *err.Message)
+				}
+				if len(deleteOut.Errors) != 0 {
+					return fmt.Errorf("errors deleting objects")
+				}
+
+			}
+
+			for _, object := range objects {
+				Logger.Println(PreviewString(input.Preview)+"s3 deleted:", *object.Key)
+			}
+
+		}
+		if !*out.IsTruncated {
+			break
+		}
+
+		token = out.NextContinuationToken
+	}
+
+	return nil
+}
