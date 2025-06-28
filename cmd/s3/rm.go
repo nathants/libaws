@@ -15,7 +15,6 @@ func init() {
 
 type s3RmArgs struct {
 	Path      string `arg:"positional,required"`
-	Version   string `arg:"-v,--version"`
 	Recursive bool   `arg:"-r,--recursive"`
 	Preview   bool   `arg:"-p,--preview"`
 }
