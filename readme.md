@@ -1147,6 +1147,8 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
 * Add a custom domain and update Route53 with attr: `dns=api.example.com`
 
+  * Use `dns=*.example.com` to accept any subdomain
+
   * This domain, or its parent domain, must already exist as a hosted zone in [Route53](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
 
   * This domain, or its parent domain, must already have an [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
