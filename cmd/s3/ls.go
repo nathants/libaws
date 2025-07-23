@@ -112,8 +112,7 @@ func s3Ls() {
 				}
 			}
 
-			zone, _ := time.Now().Zone()
-			loc, err := time.LoadLocation(zone)
+			loc, err := time.LoadLocation("Local")
 			if err != nil {
 				lib.Logger.Fatal("error: ", err)
 			}
