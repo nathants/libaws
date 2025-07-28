@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -243,4 +244,50 @@ func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(
 			time.Sleep(1 * time.Second)
 		}
 	}
+}
+
+func LogsRecent(ctx context.Context, name string, numLines int) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LogsRecent"}
+		d.Start()
+		defer d.End()
+	}
+	var allEvents []cwlogstypes.OutputLogEvent
+	streams, err := LogsMostRecentStreams(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	for _, stream := range streams {
+		streamName := *stream.LogStreamName
+		out, err := LogsClient().GetLogEvents(ctx, &cloudwatchlogs.GetLogEventsInput{
+			LogGroupName:  aws.String(name),
+			LogStreamName: aws.String(streamName),
+			StartFromHead: aws.Bool(false),
+			Limit:         aws.Int32(int32(numLines)),
+		})
+		if err != nil {
+			return nil, err
+		}
+		allEvents = append(allEvents, out.Events...)
+	}
+	// Sort events by timestamp descending
+	sort.Slice(allEvents, func(i, j int) bool {
+		return *allEvents[i].Timestamp > *allEvents[j].Timestamp
+	})
+	// Take the most recent numLines events
+	if len(allEvents) > numLines {
+		allEvents = allEvents[:numLines]
+	}
+	// Sort back to chronological order
+	sort.Slice(allEvents, func(i, j int) bool {
+		return *allEvents[i].Timestamp < *allEvents[j].Timestamp
+	})
+	// Format output
+	var lines []string
+	for _, event := range allEvents {
+		timestamp := FromUnixMilli(*event.Timestamp)
+		message := strings.TrimRight(strings.ReplaceAll(*event.Message, "\t", " "), "\n")
+		lines = append(lines, fmt.Sprintf("%s %s", timestamp.Format(time.RFC3339), message))
+	}
+	return lines, nil
 }
