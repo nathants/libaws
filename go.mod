@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.38.0
 	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.4
-	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.3
+	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.4
 	github.com/aws/aws-sdk-go-v2/service/acm v1.36.0
 	github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.27.0
 	github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.31.0
@@ -19,8 +19,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.56.0
 	github.com/aws/aws-sdk-go-v2/service/codecommit v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.54.0
-	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.47.0
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.243.0
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.48.0
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.245.0
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.49.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.63.0
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.44.0
