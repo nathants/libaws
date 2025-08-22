@@ -78,6 +78,7 @@ _libaws () {
 
         elif [ ${COMP_WORDS[1]} = ecr-ls-tags ]; then COMPREPLY=($(libaws ecr-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = ecr-rm      ]; then COMPREPLY=($(libaws ecr-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
+        elif [ ${COMP_WORDS[1]} = ecr-rm-repo ]; then COMPREPLY=($(libaws ecr-ls 2>/dev/null | grep "^${COMP_WORDS[2]}"))
 
         elif [ ${COMP_WORDS[1]} = cloudwatch-ls-metrics ];    then COMPREPLY=($(libaws cloudwatch-ls-namespaces 2>/dev/null | grep "^${COMP_WORDS[2]}"))
         elif [ ${COMP_WORDS[1]} = cloudwatch-ls-dimensions ]; then COMPREPLY=($(libaws cloudwatch-ls-namespaces 2>/dev/null | grep "^${COMP_WORDS[2]}"))
