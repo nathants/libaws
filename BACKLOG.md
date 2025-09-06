@@ -1,1 +1,1 @@
-- ec2-ensure-sg should not deauthorize and then reauthorize which would cause a few second outage, instead do not deauthorize if the same would be reauthorized
+

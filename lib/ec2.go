@@ -2488,7 +2488,7 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 		Logger.Println("error:", err)
 		return err
 	}
-	delete := map[EC2SgRule]bool{}
+	existingRules := make(map[EC2SgRule]bool)
 	if len(sgs.SecurityGroups) == 1 {
 		sg := sgs.SecurityGroups[0]
 		for _, r := range sg.IpPermissions {
@@ -2498,96 +2498,104 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 				return err
 			}
 			for _, rule := range rules {
-				delete[rule] = true
+				existingRules[rule] = true
 			}
 		}
 	}
+	desiredRules := make(map[EC2SgRule]bool)
 	for _, r := range input.Rules {
-		_, ok := delete[r]
-		if ok {
-			delete[r] = false
-		} else {
-			if !preview {
-				sg := sgs.SecurityGroups[0]
-				var port *int32
-				if r.Port != 0 {
-					port = aws.Int32(int32(r.Port))
+		desiredRules[r] = true
+	}
+	rulesToAdd := []EC2SgRule{}
+	for rule := range desiredRules {
+		if !existingRules[rule] {
+			rulesToAdd = append(rulesToAdd, rule)
+		}
+	}
+	rulesToDelete := []EC2SgRule{}
+	for rule := range existingRules {
+		if !desiredRules[rule] {
+			rulesToDelete = append(rulesToDelete, rule)
+		}
+	}
+	for _, r := range rulesToAdd {
+		if !preview {
+			sg := sgs.SecurityGroups[0]
+			var port *int32
+			if r.Port != 0 {
+				port = aws.Int32(int32(r.Port))
+			}
+			proto := "-1" // all ports
+			if r.Proto != "" {
+				proto = r.Proto
+			}
+			var ipPermission ec2types.IpPermission
+			if strings.HasPrefix(r.Source, "sg-") {
+				ipPermission = ec2types.IpPermission{
+					UserIdGroupPairs: []ec2types.UserIdGroupPair{{GroupId: aws.String(r.Source)}},
+					FromPort:         port,
+					ToPort:           port,
+					IpProtocol:       aws.String(proto),
 				}
-				proto := "-1" // all ports
-				if r.Proto != "" {
-					proto = r.Proto
+			} else {
+				ipPermission = ec2types.IpPermission{
+					IpRanges:   []ec2types.IpRange{{CidrIp: aws.String(r.Source)}},
+					FromPort:   port,
+					ToPort:     port,
+					IpProtocol: aws.String(proto),
 				}
-				var ipPermission ec2types.IpPermission
-				if strings.HasPrefix(r.Source, "sg-") {
-					ipPermission = ec2types.IpPermission{
-						UserIdGroupPairs: []ec2types.UserIdGroupPair{{GroupId: aws.String(r.Source)}},
-						FromPort:         port,
-						ToPort:           port,
-						IpProtocol:       aws.String(proto),
-					}
-				} else {
-					ipPermission = ec2types.IpPermission{
-						IpRanges:   []ec2types.IpRange{{CidrIp: aws.String(r.Source)}},
-						FromPort:   port,
-						ToPort:     port,
-						IpProtocol: aws.String(proto),
-					}
-				}
-				_, err := EC2Client().AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
-					GroupId:       sg.GroupId,
-					IpPermissions: []ec2types.IpPermission{ipPermission},
-				})
-				if err != nil {
-					if !strings.Contains(err.Error(), "InvalidPermission.Duplicate") {
-						Logger.Println("error:", err)
-						return err
-					}
-				}
-				// wait for rule instantiation
-				err = RetryAttempts(ctx, 11, func() error {
-					sgs, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
-						Filters: []ec2types.Filter{
-							{Name: aws.String("group-id"), Values: []string{sgID}},
-							{Name: aws.String("vpc-id"), Values: []string{vpcID}},
-						},
-					})
-					if err != nil {
-						return err
-					}
-					switch len(sgs.SecurityGroups) {
-					case 0:
-						return fmt.Errorf("didn't find 1 security groups for: %#v", input)
-					case 1:
-						sg := sgs.SecurityGroups[0]
-						for _, perms := range sg.IpPermissions {
-							rules, err := EC2SgRules(perms)
-							if err != nil {
-								Logger.Println("error:", err)
-								return err
-							}
-							for _, ruleFound := range rules {
-								if ruleFound == r {
-									return nil
-								}
-							}
-						}
-						return fmt.Errorf("didn't find rule: %#v", r)
-					default:
-						return fmt.Errorf("didn't find 0 or 1 security groups for: %#v", input)
-					}
-				})
-				if err != nil {
+			}
+			_, err := EC2Client().AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+				GroupId:       sg.GroupId,
+				IpPermissions: []ec2types.IpPermission{ipPermission},
+			})
+			if err != nil {
+				if !strings.Contains(err.Error(), "InvalidPermission.Duplicate") {
 					Logger.Println("error:", err)
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"authorize ingress:", r)
+			// wait for rule instantiation
+			err = RetryAttempts(ctx, 11, func() error {
+				sgs, err := EC2Client().DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+					Filters: []ec2types.Filter{
+						{Name: aws.String("group-id"), Values: []string{sgID}},
+						{Name: aws.String("vpc-id"), Values: []string{vpcID}},
+					},
+				})
+				if err != nil {
+					return err
+				}
+				switch len(sgs.SecurityGroups) {
+				case 0:
+					return fmt.Errorf("didn't find 1 security groups for: %#v", input)
+				case 1:
+					sg := sgs.SecurityGroups[0]
+					for _, perms := range sg.IpPermissions {
+						rules, err := EC2SgRules(perms)
+						if err != nil {
+							Logger.Println("error:", err)
+							return err
+						}
+						for _, ruleFound := range rules {
+							if ruleFound == r {
+								return nil
+							}
+						}
+					}
+					return fmt.Errorf("didn't find rule: %#v", r)
+				default:
+					return fmt.Errorf("didn't find 0 or 1 security groups for: %#v", input)
+				}
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
 		}
+		Logger.Println(PreviewString(preview)+"authorize ingress:", r)
 	}
-	for k, v := range delete {
-		if !v {
-			continue
-		}
+	for _, k := range rulesToDelete {
 		if !preview {
 			var port *int32
 			if k.Port != 0 {
