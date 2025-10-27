@@ -50,7 +50,7 @@ func ec2Start() {
 	for _, instance := range instances {
 		if instance.State.Name == ec2types.InstanceStateNameStopped {
 			ids = append(ids, *instance.InstanceId)
-			lib.Logger.Println(lib.PreviewString(args.Preview)+"startping:", lib.EC2Name(instance.Tags), *instance.InstanceId)
+			lib.Logger.Println(lib.PreviewString(args.Preview)+"starting:", lib.EC2Name(instance.Tags), *instance.InstanceId)
 		}
 	}
 	if args.Preview {
