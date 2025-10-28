@@ -38,7 +38,7 @@ func organizationsEnsureWithDns() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	if creds.AccessKeyID != os.Getenv("AWS_ACCESS_KEY_ID") {
-		lib.Logger.Fatal("the key in use does not match the environment variable key. is aws configured in an additional way beyond environment variables?\n%s != %s", creds.AccessKeyID, os.Getenv("AWS_ACCESS_KEY_ID"))
+		lib.Logger.Fatalf("the key in use does not match the environment variable key. is aws configured in an additional way beyond environment variables?\n%s != %s", creds.AccessKeyID, os.Getenv("AWS_ACCESS_KEY_ID"))
 	}
 
 	account, err := lib.StsAccount(ctx)

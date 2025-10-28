@@ -64,11 +64,15 @@ func ec2Start() {
 	}
 	if args.Wait {
 		for {
-			pass := true
 			instances, err := lib.EC2ListInstances(ctx, ids, "")
 			if err != nil {
 				lib.Logger.Fatal("error: ", err)
 			}
+			if len(instances) != len(ids) {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			pass := true
 			for _, instance := range instances {
 				if ec2types.InstanceStateNameRunning != instance.State.Name {
 					pass = false

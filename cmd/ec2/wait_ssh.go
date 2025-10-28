@@ -54,14 +54,12 @@ func ec2WaitSsh() {
 			lib.Logger.Fatal("error: ", err)
 		}
 		if time.Since(start) > 15*time.Second {
-			err = fmt.Errorf("no instances found for those selectors")
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
+			lib.Logger.Fatal("error: no instances found for those selectors")
 		}
 		if len(instances) > 0 {
 			break
 		}
+		time.Sleep(1 * time.Second)
 	}
 	for _, instance := range instances {
 		states := []ec2types.InstanceStateName{

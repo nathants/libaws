@@ -39,23 +39,34 @@ func ec2WaitState() {
 		lib.Logger.Fatal("error: provide some selectors")
 	}
 	start := time.Now()
+	var instances []ec2types.Instance
+	var err error
 	for {
-		var instances []ec2types.Instance
-		var err error
-		for {
-			instances, err = lib.EC2ListInstances(ctx, args.Selectors, "")
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-			if time.Since(start) > 300*time.Second {
-				err = fmt.Errorf("no instances found for those selectors")
-				if err != nil {
-					lib.Logger.Fatal("error: ", err)
-				}
-			}
-			if len(instances) > 0 {
-				break
-			}
+		instances, err = lib.EC2ListInstances(ctx, args.Selectors, "")
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
+		if len(instances) > 0 {
+			break
+		}
+		if time.Since(start) > 300*time.Second {
+			lib.Logger.Fatal("error: no instances found for those selectors")
+		}
+		time.Sleep(1 * time.Second)
+	}
+	instanceIDs := make([]string, len(instances))
+	for i, instance := range instances {
+		instanceIDs[i] = *instance.InstanceId
+	}
+	for {
+		instances, err = lib.EC2ListInstances(ctx, instanceIDs, "")
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
+		if len(instances) != len(instanceIDs) {
+			lib.Logger.Printf("waiting for all instances %d/%d", len(instances), len(instanceIDs))
+			time.Sleep(1 * time.Second)
+			continue
 		}
 		pass := true
 		for _, instance := range instances {

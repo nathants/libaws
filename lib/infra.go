@@ -2227,7 +2227,7 @@ func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview,
 		err := os.Setenv("ZIP_COMPRESSION", "1")
 		if err != nil {
 			Logger.Println("error:", err)
-		    return err
+			return err
 		}
 	} else {
 		err := InfraEnsureKeypair(ctx, infraSet, preview)

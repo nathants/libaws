@@ -1164,7 +1164,7 @@ func S3Delete(ctx context.Context, input *S3DeleteInput) error {
 		d.Start()
 		defer d.End()
 	}
-	
+
 	s3Client, err := S3ClientBucketRegion(input.Bucket)
 	if err != nil {
 		return err
