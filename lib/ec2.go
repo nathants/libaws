@@ -717,6 +717,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 		return nil, err
 	}
 	launchSpecs := []ec2types.SpotFleetLaunchSpecification{}
+	tags := makeTags(config)
 	for _, subnetId := range config.SubnetIds {
 		launchSpec := ec2types.SpotFleetLaunchSpecification{
 			ImageId:      aws.String(config.AmiID),
@@ -729,10 +730,16 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 				GroupId: aws.String(config.SgID),
 			}},
 			BlockDeviceMappings: makeBlockDeviceMapping(config),
-			TagSpecifications: []ec2types.SpotFleetTagSpecification{{
-				ResourceType: ec2types.ResourceTypeInstance,
-				Tags:         makeTags(config),
-			}},
+			TagSpecifications: []ec2types.SpotFleetTagSpecification{
+				{
+					ResourceType: ec2types.ResourceTypeInstance,
+					Tags:         tags,
+				},
+				{
+					ResourceType: ec2types.ResourceTypeVolume,
+					Tags:         tags,
+				},
+			},
 		}
 		if config.Profile != "" {
 			launchSpec.IamInstanceProfile = &ec2types.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
@@ -755,7 +762,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 	Logger.Println("subnets:", config.SubnetIds)
 	launchSpecs[0].UserData = nil
 	launchSpecs[0].SubnetId = nil
-	Logger.Println("requst spot fleet", Pformat(launchSpecs[0]))
+	Logger.Println("request spot fleet", Pformat(launchSpecs[0]))
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -892,6 +899,7 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]ec2types.Instanc
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	tags := makeTags(config)
 	runInstancesInput := &ec2.RunInstancesInput{
 		ImageId:             aws.String(config.AmiID),
 		KeyName:             aws.String(config.Key),
@@ -903,10 +911,20 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]ec2types.Instanc
 		BlockDeviceMappings: makeBlockDeviceMapping(config),
 		MinCount:            aws.Int32(int32(config.NumInstances)),
 		MaxCount:            aws.Int32(int32(config.NumInstances)),
-		TagSpecifications: []ec2types.TagSpecification{{
-			ResourceType: ec2types.ResourceTypeInstance,
-			Tags:         makeTags(config),
-		}},
+		TagSpecifications: []ec2types.TagSpecification{
+			{
+				ResourceType: ec2types.ResourceTypeInstance,
+				Tags:         tags,
+			},
+			{
+				ResourceType: ec2types.ResourceTypeVolume,
+				Tags:         tags,
+			},
+			{
+				ResourceType: ec2types.ResourceTypeNetworkInterface,
+				Tags:         tags,
+			},
+		},
 	}
 	if config.Profile != "" {
 		runInstancesInput.IamInstanceProfile = &ec2types.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
@@ -2248,18 +2266,36 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 	}
 	i := out[0]
 	name := EC2Name(i.Tags)
+	now := time.Now()
+	imageName := fmt.Sprintf("%s__%d", name, now.Unix())
+	userTag := EC2GetTag(i.Tags, "user", "")
+	createdAt := now.UTC().Format(time.RFC3339)
+
+	baseTags := []ec2types.Tag{
+		{Key: aws.String("Name"), Value: aws.String(imageName)},
+	}
+	if userTag != "" {
+		baseTags = append(baseTags, ec2types.Tag{Key: aws.String("user"), Value: aws.String(userTag)})
+	}
+	baseTags = append(baseTags, ec2types.Tag{Key: aws.String("creation-date"), Value: aws.String(createdAt)})
+
+	snapshotTags := []ec2types.Tag{
+		{Key: aws.String("Name"), Value: aws.String(imageName)},
+	}
+	if userTag != "" {
+		snapshotTags = append(snapshotTags, ec2types.Tag{Key: aws.String("user"), Value: aws.String(userTag)})
+	}
+	snapshotTags = append(snapshotTags, ec2types.Tag{Key: aws.String("creation-date"), Value: aws.String(createdAt)})
+
 	image, err := EC2Client().CreateImage(ctx, &ec2.CreateImageInput{
-		Name:        aws.String(fmt.Sprintf("%s__%d", name, time.Now().Unix())),
+		Name:        aws.String(imageName),
 		Description: aws.String(name),
 		InstanceId:  i.InstanceId,
 		NoReboot:    aws.Bool(false),
-		TagSpecifications: []ec2types.TagSpecification{{
-			ResourceType: ec2types.ResourceTypeImage,
-			Tags: []ec2types.Tag{{
-				Key:   aws.String("user"),
-				Value: aws.String(EC2GetTag(i.Tags, "user", "")),
-			}},
-		}},
+		TagSpecifications: []ec2types.TagSpecification{
+			{ResourceType: ec2types.ResourceTypeImage, Tags: baseTags},
+			{ResourceType: ec2types.ResourceTypeSnapshot, Tags: snapshotTags},
+		},
 	})
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2284,7 +2320,6 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 	}
 	return aws.ToString(image.ImageId), nil
 }
-
 func EC2ListSgs(ctx context.Context) ([]ec2types.SecurityGroup, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2ListSgs"}
