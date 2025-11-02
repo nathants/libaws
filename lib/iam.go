@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -491,6 +492,149 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 	return nil
 }
 
+
+func iamFetchPolicyDocument(ctx context.Context, arn string, versionID string) (string, error) {
+	out, err := IamClient().GetPolicyVersion(ctx, &iam.GetPolicyVersionInput{
+		PolicyArn: aws.String(arn),
+		VersionId: aws.String(versionID),
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	document, err := url.QueryUnescape(*out.PolicyVersion.Document)
+	if err != nil {
+		Logger.Println("error:", err)
+		return "", err
+	}
+	return document, nil
+}
+
+func IamEnsureManagedPolicy(ctx context.Context, policyName, description, policyDocument string, preview bool) (*iamtypes.Policy, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "IamEnsureManagedPolicy"}
+		d.Start()
+		defer d.End()
+	}
+	trimmedDoc := strings.TrimSpace(policyDocument)
+	policies, err := IamListPolicies(ctx)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	var matches []iamtypes.Policy
+	for _, policy := range policies {
+		if policy.PolicyName != nil && *policy.PolicyName == policyName {
+			matches = append(matches, policy)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		if !preview {
+			out, err := IamClient().CreatePolicy(ctx, &iam.CreatePolicyInput{
+				PolicyName:     aws.String(policyName),
+				Description:    aws.String(description),
+				PolicyDocument: aws.String(trimmedDoc),
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			Logger.Println(PreviewString(preview)+"created managed policy:", policyName)
+			return out.Policy, nil
+		}
+		Logger.Println(PreviewString(preview)+"create managed policy:", policyName)
+		return nil, nil
+	case 1:
+		policy := matches[0]
+		changed := false
+		if policy.Description == nil || *policy.Description != description {
+			Logger.Println("warning: managed policy description mismatch:", policyName, "have=",
+				aws.ToString(policy.Description), "want=", description)
+		}
+		document, err := iamFetchPolicyDocument(ctx, *policy.Arn, *policy.DefaultVersionId)
+		if err != nil {
+			return nil, err
+		}
+		equal, err := iamPolicyEqual(strings.TrimSpace(document), trimmedDoc)
+		if err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+		if !equal {
+			if !preview {
+				// Before creating a new version, ensure we are under the 5 version limit
+				versionsOut, err := IamClient().ListPolicyVersions(ctx, &iam.ListPolicyVersionsInput{
+					PolicyArn: policy.Arn,
+				})
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				// Build a list of non-default versions, oldest first
+				var toDelete []iamtypes.PolicyVersion
+				for _, version := range versionsOut.Versions {
+					if !version.IsDefaultVersion {
+						toDelete = append(toDelete, version)
+					}
+				}
+				sort.Slice(toDelete, func(i, j int) bool {
+					return toDelete[i].CreateDate.Before(*toDelete[j].CreateDate)
+				})
+				// Delete oldest non-default versions until we are below the limit
+				for len(versionsOut.Versions) >= 5 && len(toDelete) > 0 {
+					old := toDelete[0]
+					toDelete = toDelete[1:]
+					_, err := IamClient().DeletePolicyVersion(ctx, &iam.DeletePolicyVersionInput{
+						PolicyArn: policy.Arn,
+						VersionId: old.VersionId,
+					})
+					if err != nil {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+					Logger.Println("deleted old policy version:", policyName, aws.ToString(old.VersionId))
+					// Reflect the deletion locally to avoid an extra List call
+					versionsOut.Versions = versionsOut.Versions[:len(versionsOut.Versions)-1]
+				}
+				// Create a new default policy version with the desired document
+				input := iam.CreatePolicyVersionInput{
+					PolicyArn:      policy.Arn,
+					PolicyDocument: aws.String(trimmedDoc),
+					SetAsDefault:   true,
+				}
+				_, err = IamClient().CreatePolicyVersion(ctx, &input)
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				Logger.Println(PreviewString(preview)+"updated policy document:", policyName)
+			}
+			changed = true
+		}
+		if changed {
+			if !preview {
+				// Refresh policy to reflect new DefaultVersionId after update
+				getOut, err := IamClient().GetPolicy(ctx, &iam.GetPolicyInput{PolicyArn: policy.Arn})
+				if err != nil {
+					Logger.Println("error:", err)
+				} else if getOut.Policy != nil {
+					policy = *getOut.Policy
+				}
+			}
+			return &policy, nil
+		}
+		Logger.Println(PreviewString(preview)+"managed policy already up to date:", policyName)
+		return &policy, nil
+	default:
+		err := fmt.Errorf("found multiple policies with name: %s", policyName)
+		for _, p := range matches {
+			Logger.Println("error:", policyName, aws.ToString(p.Arn))
+		}
+		return nil, err
+	}
+}
+
 func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "IamEnsureRoleAllows"}
@@ -607,56 +751,67 @@ func IamEnsureUserPolicies(ctx context.Context, username string, policyNames []s
 		d.Start()
 		defer d.End()
 	}
+	// Fetch all policies once and index by name for O(1) lookups
 	policies, err := IamListPolicies(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-outer:
-	for _, policyName := range policyNames {
-		var matchedPolicies []iamtypes.Policy
-		for _, policy := range policies {
-			if Last(strings.Split(*policy.Arn, "/")) == policyName {
-				matchedPolicies = append(matchedPolicies, policy)
-			}
+	byName := map[string][]iamtypes.Policy{}
+	for _, p := range policies {
+		name := Last(strings.Split(*p.Arn, "/"))
+		byName[name] = append(byName[name], p)
+	}
+	// Fetch currently attached user policies once and build a set
+	attachedPolicies, err := IamListUserPolicies(ctx, username)
+	if err != nil && !preview {
+		Logger.Println("error:", err)
+		return err
+	}
+	attached := map[string]struct{}{}
+	for _, ap := range attachedPolicies {
+		if ap.PolicyName != nil {
+			attached[*ap.PolicyName] = struct{}{}
 		}
-		switch len(matchedPolicies) {
+	}
+	// Ensure desired policies are attached
+	for _, policyName := range policyNames {
+		matches := byName[policyName]
+		switch len(matches) {
 		case 0:
-			err := fmt.Errorf("didn't find policy for name: %s", policyName)
-			Logger.Println("error:", err)
-			return err
-		case 1:
-			userPolicies, err := IamListUserPolicies(ctx, username)
-			if err != nil && !preview {
+			if !preview {
+				err := fmt.Errorf("didn't find policy for name: %s", policyName)
 				Logger.Println("error:", err)
 				return err
 			}
-			for _, policy := range userPolicies {
-				if *policy.PolicyName == policyName {
-					continue outer
-				}
+		case 1:
+			if _, ok := attached[policyName]; ok {
+				continue
 			}
 			if !preview {
 				_, err = IamClient().AttachUserPolicy(ctx, &iam.AttachUserPolicyInput{
-					PolicyArn: matchedPolicies[0].Arn,
+					PolicyArn: matches[0].Arn,
 					UserName:  aws.String(username),
 				})
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
+				// reflect the new attachment locally
+				attached[policyName] = struct{}{}
 			}
 			Logger.Println(PreviewString(preview)+"attached user policy:", username, policyName)
 		default:
 			err := fmt.Errorf("found more than 1 policy for name: %s", policyName)
 			Logger.Println("error:", err)
-			for _, policy := range matchedPolicies {
-				Logger.Println("error:", *policy.Arn)
+			for _, p := range matches {
+				Logger.Println("error:", *p.Arn)
 			}
 			return err
 		}
 	}
-	attachedPolicies, err := IamListUserPolicies(ctx, username)
+	// Detach any extra policies not requested
+	attachedPolicies, err = IamListUserPolicies(ctx, username)
 	if err != nil && !preview {
 		Logger.Println("error:", err)
 		return err
