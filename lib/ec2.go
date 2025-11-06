@@ -88,6 +88,7 @@ type EC2Config struct {
 	Tags           []EC2Tag
 	Profile        string
 	SecondsTimeout int
+	Spot bool
 }
 
 func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2types.SpotFleetRequestConfig, error) {
@@ -928,6 +929,15 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]ec2types.Instanc
 	}
 	if config.Profile != "" {
 		runInstancesInput.IamInstanceProfile = &ec2types.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
+	}
+	if config.Spot {
+		runInstancesInput.InstanceMarketOptions = &ec2types.InstanceMarketOptionsRequest{
+			MarketType: ec2types.MarketTypeSpot,
+			SpotOptions: &ec2types.SpotMarketOptions{
+				SpotInstanceType:             ec2types.SpotInstanceTypeOneTime,
+				InstanceInterruptionBehavior: ec2types.InstanceInterruptionBehaviorTerminate,
+			},
+		}
 	}
 	reservation, err := EC2Client().RunInstances(ctx, runInstancesInput)
 	runInstancesInput.UserData = nil
