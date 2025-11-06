@@ -1578,21 +1578,23 @@ func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput)
 						line = *instance.InstanceId + ": " + line
 					}
 				}
-				if !input.NoPrint && kind == "stdout" && input.AccumulateResult {
+				if kind == "stdout" && input.AccumulateResult {
 					resultLock.Lock()
 					result.Stdout = append(result.Stdout, line)
 					resultLock.Unlock()
 				}
-				input.PrintLock.Lock()
-				switch kind {
-				case "stderr":
-					_, _ = fmt.Fprint(os.Stderr, line)
-				case "stdout":
-					_, _ = fmt.Fprint(os.Stdout, line)
-				default:
-					panic("unknown kind: " + kind)
+				if !input.NoPrint {
+					input.PrintLock.Lock()
+					switch kind {
+					case "stderr":
+						_, _ = fmt.Fprint(os.Stderr, line)
+					case "stdout":
+						_, _ = fmt.Fprint(os.Stdout, line)
+					default:
+						panic("unknown kind: " + kind)
+					}
+					input.PrintLock.Unlock()
 				}
-				input.PrintLock.Unlock()
 			}
 			if err != nil {
 				if err != io.EOF {
