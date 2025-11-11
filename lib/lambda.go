@@ -2866,18 +2866,22 @@ func LambdaUpdateFunctionCode(ctx context.Context, infraLambda *InfraLambda, pre
 	}
 	if !preview {
 		var expectedErr error
-		err := Retry(ctx, func() error {
+		var zipBytes []byte
+		var err error
+		if infraLambda.runtime != lambdaRuntimeContainer {
+			zipBytes, err = LambdaZipBytes(infraLambda)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		err = Retry(ctx, func() error {
 			updateInput := &lambda.UpdateFunctionCodeInput{
 				FunctionName: aws.String(infraLambda.Name),
 			}
 			if infraLambda.runtime == lambdaRuntimeContainer {
 				updateInput.ImageUri = aws.String(infraLambda.Entrypoint)
 			} else {
-				zipBytes, err := LambdaZipBytes(infraLambda)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
 				updateInput.ZipFile = zipBytes
 			}
 			_, err := LambdaClient().UpdateFunctionCode(ctx, updateInput)
@@ -2887,6 +2891,7 @@ func LambdaUpdateFunctionCode(ctx context.Context, infraLambda *InfraLambda, pre
 					expectedErr = err
 					return nil
 				}
+				Logger.Printf("UpdateFunctionCode error, retrying: %v", err)
 				return err
 			}
 			return nil
