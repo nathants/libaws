@@ -88,7 +88,7 @@ type EC2Config struct {
 	Tags           []EC2Tag
 	Profile        string
 	SecondsTimeout int
-	Spot bool
+	Spot           bool
 }
 
 func EC2DescribeSpotFleet(ctx context.Context, spotFleetRequestId *string) (*ec2types.SpotFleetRequestConfig, error) {
@@ -219,14 +219,14 @@ func EC2ListInstances(ctx context.Context, selectors []string, state ec2types.In
 		} else if strings.HasPrefix(selectors[0], "i-") {
 			kind = KindInstanceID
 		}
-	if kind == KindTags {
-		for i, selector := range selectors {
-			if !strings.Contains(selector, "=") {
-				selectors[i] = fmt.Sprintf("Name=%s", selector)
+		if kind == KindTags {
+			for i, selector := range selectors {
+				if !strings.Contains(selector, "=") {
+					selectors[i] = fmt.Sprintf("Name=%s", selector)
+				}
 			}
 		}
-	}
-	for chunk := range slices.Chunk(selectors, 195) { // max aws api params per query is 200
+		for chunk := range slices.Chunk(selectors, 195) { // max aws api params per query is 200
 			var filterKind ec2types.Filter
 			var filters []ec2types.Filter
 			if state != "" {

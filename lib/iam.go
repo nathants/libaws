@@ -492,7 +492,6 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 	return nil
 }
 
-
 func iamFetchPolicyDocument(ctx context.Context, arn string, versionID string) (string, error) {
 	out, err := IamClient().GetPolicyVersion(ctx, &iam.GetPolicyVersionInput{
 		PolicyArn: aws.String(arn),
