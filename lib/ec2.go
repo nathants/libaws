@@ -740,10 +740,6 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 					ResourceType: ec2types.ResourceTypeInstance,
 					Tags:         tags,
 				},
-				{
-					ResourceType: ec2types.ResourceTypeVolume,
-					Tags:         tags,
-				},
 			},
 		}
 		if config.Profile != "" {
