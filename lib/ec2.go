@@ -806,7 +806,7 @@ func makeInit(config *EC2Config) (string, error) {
 		return "", err
 	}
 	init := config.Init
-	for _, instanceType := range []string{"i3", "i3en", "i4i", "c5d", "m5d", "r5d", "z1d", "c6gd", "c6id", "m6gd", "r6gd", "c5ad", "is4gen", "im4gn"} {
+	for _, instanceType := range []string{"i3", "i3en", "i4i", "c5d", "m5d", "r5d", "z1d", "c6gd", "c6id", "m6gd", "r6gd", "c5ad", "is4gen", "im4gn", "g6"} {
 		if instanceType == strings.Split(string(config.InstanceType), ".")[0] {
 			init = nvmeInit + init
 			break
