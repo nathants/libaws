@@ -89,13 +89,23 @@ func S3BucketRegion(bucket string) (string, error) {
 				d.Start()
 				defer d.End()
 			}
-			resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
+			client := &http.Client{
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+			}
+			req, err := http.NewRequest("HEAD", fmt.Sprintf("https://%s.s3.amazonaws.com", bucket), nil)
+			if err != nil {
+				return "", err
+			}
+			resp, err := client.Do(req)
 			if err != nil {
 				return "", err
 			}
 			defer func() { _ = resp.Body.Close() }()
 			switch resp.StatusCode {
 			case 200:
+			case 301, 307:
 			case 400:
 			case 403:
 			case 404:
