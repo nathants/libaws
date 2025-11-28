@@ -56,6 +56,9 @@ func ec2Start() {
 	if args.Preview {
 		os.Exit(0)
 	}
+	if len(ids) == 0 {
+		lib.Logger.Fatal("error: no stopped instances found matching selectors")
+	}
 	_, err = lib.EC2Client().StartInstances(ctx, &ec2.StartInstancesInput{
 		InstanceIds: ids,
 	})

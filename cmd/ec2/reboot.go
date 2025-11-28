@@ -54,6 +54,9 @@ func ec2Reboot() {
 	if args.Preview {
 		os.Exit(0)
 	}
+	if len(ids) == 0 {
+		lib.Logger.Fatal("error: no instances found matching selectors")
+	}
 	_, err = lib.EC2Client().RebootInstances(ctx, &ec2.RebootInstancesInput{
 		InstanceIds: ids,
 	})
