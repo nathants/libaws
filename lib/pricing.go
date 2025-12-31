@@ -95,6 +95,11 @@ func EC2OnDemandPrices(ctx context.Context, region string, instanceType string) 
 			Field: aws.String("regionCode"),
 			Value: aws.String(region),
 		},
+		{
+			Type:  pricingtypes.FilterTypeTermMatch,
+			Field: aws.String("capacitystatus"),
+			Value: aws.String("Used"),
+		},
 	}
 	if instanceType != "" {
 		filters = append(filters, pricingtypes.Filter{
