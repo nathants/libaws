@@ -1380,13 +1380,8 @@ type EC2SshInput struct {
 }
 
 const remoteCmdTemplateFailureMessage = `
-fail_msg="%s"
-mkdir -p /dev/shm/.cmds || echo $fail_msg
-path=/dev/shm/.cmds/$(cat /proc/sys/kernel/random/uuid)
-input=$path.input
-echo %s | base64 -d > $path  || echo $fail_msg
-echo %s | base64 -d > $input || echo $fail_msg
-cat $input | bash $path
+fail_msg="%[1]s"
+echo %[3]s | base64 -d | bash -c "$(echo %[2]s | base64 -d)"
 code=$?
 if [ $code != 0 ]; then
     echo $fail_msg
@@ -1395,16 +1390,7 @@ fi
 `
 
 const remoteCmdTemplate = `
-mkdir -p /dev/shm/.cmds || echo $fail_msg
-path=/dev/shm/.cmds/$(cat /proc/sys/kernel/random/uuid)
-input=$path.input
-echo %s | base64 -d > $path  || echo $fail_msg
-echo %s | base64 -d > $input || echo $fail_msg
-cat $input | bash $path
-code=$?
-if [ $code != 0 ]; then
-    exit $code
-fi
+echo %[2]s | base64 -d | bash -c "$(echo %[1]s | base64 -d)"
 `
 
 func ec2SshRemoteCmdFailureMessage(cmd, stdin, failureMessage string) string {
