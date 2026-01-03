@@ -3,7 +3,6 @@ package libaws
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -94,24 +93,13 @@ func costExplorer() {
 		}
 		token = out.NextPageToken
 	}
-	dashes := regexp.MustCompile(`\-+`)
 	for _, result := range results {
 		var vals []string
 		for _, group := range result.Groups {
 			if len(group.Keys) != 1 {
 				panic(lib.PformatAlways(group))
 			}
-			key := group.Keys[0]
-			key = strings.ReplaceAll(key, "AWS ", "")
-			key = strings.ReplaceAll(key, "Amazon Simple Storage Service", "S3")
-			key = strings.ReplaceAll(key, "Amazon EC2 Container Registry (ECR)", "ECR")
-			key = strings.ReplaceAll(key, "Amazon ", "")
-			key = strings.ReplaceAll(key, "Simple Queue Service ", "SQS")
-			key = strings.ReplaceAll(key, "API Gateway", "ApiGateway")
-			key = strings.ReplaceAll(key, "AmazonCloudWatch", "Cloudwatch")
-			key = strings.ReplaceAll(key, " ", "-")
-			key = dashes.ReplaceAllString(key, "-")
-			key = strings.ReplaceAll(key, "Elastic-Compute-Cloud-Compute", "EC2")
+			key := lib.NormalizeServiceName(group.Keys[0])
 			vals = append(vals, fmt.Sprintf("%s=%s", key, *group.Metrics["UnblendedCost"].Amount))
 		}
 		fmt.Println("timestamp="+*result.TimePeriod.Start, strings.Join(vals, " "))
