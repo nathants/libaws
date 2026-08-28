@@ -3,11 +3,14 @@ package libaws
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -48,37 +51,110 @@ func cloudwatchGetMetric() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	timesMap := map[string]any{}
-	var times []string
-	vals := map[string][]float64{}
-	for i, o := range out {
-		if metrics[i] != *o.Label {
-			panic(fmt.Sprint(metrics[i], *o.Label))
+	if err := writeCloudwatchMetricData(os.Stdout, metrics, args.Dimension, out); err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
+}
+
+type cloudwatchMetricValue struct {
+	value   float64
+	present bool
+}
+
+type cloudwatchMetricTime struct {
+	key   int64
+	label string
+}
+
+func writeCloudwatchMetricData(w io.Writer, metrics []string, dimension string, out []cwtypes.MetricDataResult) error {
+	if len(metrics) == 0 {
+		return fmt.Errorf("no metrics requested")
+	}
+	metricIndexes := make(map[string]int, len(metrics))
+	for i, metric := range metrics {
+		if metric == "" {
+			return fmt.Errorf("metric %d is empty", i)
 		}
-		if len(o.Timestamps) != len(o.Values) {
-			panic(fmt.Sprint(len(o.Timestamps), "!=", len(o.Values)))
+		if _, exists := metricIndexes[metric]; exists {
+			return fmt.Errorf("metric %q was requested more than once", metric)
 		}
-		for j, t := range o.Timestamps {
-			v := o.Values[j]
-			t := t.Format(time.RFC3339)
-			_, ok := timesMap[t]
-			if !ok {
-				times = append(times, t)
-				timesMap[t] = nil
+		metricIndexes[metric] = i
+	}
+
+	seenResults := make([]bool, len(metrics))
+	values := map[int64][]cloudwatchMetricValue{}
+	var times []cloudwatchMetricTime
+	for _, result := range out {
+		if result.Label == nil {
+			return fmt.Errorf("CloudWatch returned a metric result without a label")
+		}
+		metricIndex, ok := metricIndexes[*result.Label]
+		if !ok {
+			return fmt.Errorf("CloudWatch returned unexpected metric %q", *result.Label)
+		}
+		seenResults[metricIndex] = true
+		if len(result.Timestamps) != len(result.Values) {
+			return fmt.Errorf(
+				"CloudWatch metric %q returned %d timestamps and %d values",
+				*result.Label,
+				len(result.Timestamps),
+				len(result.Values),
+			)
+		}
+		for i, timestamp := range result.Timestamps {
+			key := timestamp.UnixNano()
+			row, exists := values[key]
+			if !exists {
+				row = make([]cloudwatchMetricValue, len(metrics))
+				values[key] = row
 			}
-			vals[t] = append(vals[t], v)
+			if row[metricIndex].present {
+				return fmt.Errorf(
+					"CloudWatch metric %q returned duplicate timestamp %s",
+					*result.Label,
+					timestamp.Format(time.RFC3339),
+				)
+			}
+			row[metricIndex] = cloudwatchMetricValue{value: result.Values[i], present: true}
+			if metricIndex == 0 {
+				times = append(times, cloudwatchMetricTime{
+					key:   key,
+					label: timestamp.Format(time.RFC3339),
+				})
+			}
 		}
 	}
-	for _, t := range times {
-		fmt.Print("timestamp="+t, " ")
-		for i, m := range metrics {
+	for i, seen := range seenResults {
+		if !seen {
+			return fmt.Errorf("CloudWatch omitted result for metric %q", metrics[i])
+		}
+	}
+
+	var output strings.Builder
+	dimensionLabel := strings.ReplaceAll(dimension, "=", "-")
+	for _, timestamp := range times {
+		row := values[timestamp.key]
+		complete := true
+		for _, value := range row {
+			if !value.present {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			continue
+		}
+		fmt.Fprint(&output, "timestamp="+timestamp.label, " ")
+		for i, metric := range metrics {
 			if len(metrics) == 1 {
-				m = ""
+				metric = ""
 			} else {
-				m = "::" + m
+				metric = "::" + metric
 			}
-			fmt.Print(strings.ReplaceAll(args.Dimension, "=", "-")+m+"="+fmt.Sprint(vals[t][i]), " ")
+			fmt.Fprint(&output, dimensionLabel+metric+"="+fmt.Sprint(row[i].value), " ")
 		}
-		fmt.Print("\n")
+		fmt.Fprint(&output, "\n")
 	}
+	_, err := io.WriteString(w, output.String())
+	return err
 }
