@@ -223,6 +223,9 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 				SSEAlgorithm:   s3types.ServerSideEncryptionAes256,
 				KMSMasterKeyID: nil,
 			},
+			BlockedEncryptionTypes: &s3types.BlockedEncryptionTypes{
+				EncryptionType: []s3types.EncryptionType{s3types.EncryptionTypeSseC},
+			},
 		}},
 	}
 	if !reflect.DeepEqual(out.ServerSideEncryptionConfiguration, encryptedConfig) {

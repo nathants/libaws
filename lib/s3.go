@@ -327,6 +327,9 @@ var s3EncryptionConfig = &s3types.ServerSideEncryptionConfiguration{
 		ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
 			SSEAlgorithm: s3types.ServerSideEncryptionAes256,
 		},
+		BlockedEncryptionTypes: &s3types.BlockedEncryptionTypes{
+			EncryptionType: []s3types.EncryptionType{s3types.EncryptionTypeSseC},
+		},
 		BucketKeyEnabled: aws.Bool(false),
 	}},
 }
