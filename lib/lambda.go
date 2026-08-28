@@ -1878,6 +1878,10 @@ func lambdaDynamoDBTriggerAttrShortcut(s string) string {
 	return s
 }
 
+func lambdaDynamoDBMappingConfigured(mappingARN string, configuredStreamARNs []string) bool {
+	return slices.Contains(configuredStreamARNs, mappingARN)
+}
+
 func LambdaEnsureTriggerDynamoDB(ctx context.Context, infraLambda *InfraLambda, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerDynamoDB"}
@@ -1885,11 +1889,10 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, infraLambda *InfraLambda, 
 		defer d.End()
 	}
 	var triggers [][]string
-	var triggerTables []string
+	var triggerStreamARNs []string
 	for _, trigger := range infraLambda.Trigger {
 		if trigger.Type == lambdaTriggerDynamoDB {
 			triggers = append(triggers, trigger.Attr)
-			triggerTables = append(triggerTables, trigger.Attr[0])
 		}
 	}
 	if len(triggers) > 0 {
@@ -1958,6 +1961,7 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, infraLambda *InfraLambda, 
 				}
 			} else {
 				createMappingInput.EventSourceArn = aws.String(streamArn)
+				triggerStreamARNs = append(triggerStreamARNs, streamArn)
 				eventSourceMappings, err := lambdaListEventSourceMappings(ctx, infraLambda.Name)
 				if err != nil {
 					Logger.Println("error:", err)
@@ -2048,7 +2052,7 @@ func LambdaEnsureTriggerDynamoDB(ctx context.Context, infraLambda *InfraLambda, 
 				continue
 			}
 			tableName := DynamoDBStreamArnToTableName(*mapping.EventSourceArn)
-			if !slices.Contains(triggerTables, tableName) {
+			if !lambdaDynamoDBMappingConfigured(*mapping.EventSourceArn, triggerStreamARNs) {
 				if !preview {
 					_, err := LambdaClient().DeleteEventSourceMapping(ctx, &lambda.DeleteEventSourceMappingInput{
 						UUID: mapping.UUID,
