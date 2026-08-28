@@ -128,7 +128,17 @@ func LambdaClient() *lambda.Client {
 	return lambdaClient
 }
 
+func lambdaConcurrencyNeedsUpdate(current *int32, desired int) bool {
+	if desired == 0 {
+		return current != nil
+	}
+	return current == nil || int(*current) != desired
+}
+
 func LambdaSetConcurrency(ctx context.Context, lambdaName string, concurrency int, preview bool) error {
+	if concurrency < 0 {
+		return fmt.Errorf("lambda concurrency must be nonnegative")
+	}
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaSetConcurrency"}
 		d.Start()
@@ -144,10 +154,11 @@ func LambdaSetConcurrency(ctx context.Context, lambdaName string, concurrency in
 		}
 		out = &lambda.GetFunctionConcurrencyOutput{}
 	}
-	if out.ReservedConcurrentExecutions == nil {
-		out.ReservedConcurrentExecutions = aws.Int32(0)
+	current := 0
+	if out.ReservedConcurrentExecutions != nil {
+		current = int(*out.ReservedConcurrentExecutions)
 	}
-	if int(*out.ReservedConcurrentExecutions) != concurrency {
+	if lambdaConcurrencyNeedsUpdate(out.ReservedConcurrentExecutions, concurrency) {
 		if !preview {
 			if concurrency > 0 {
 				_, err := LambdaClient().PutFunctionConcurrency(ctx, &lambda.PutFunctionConcurrencyInput{
@@ -168,7 +179,15 @@ func LambdaSetConcurrency(ctx context.Context, lambdaName string, concurrency in
 				}
 			}
 		}
-		Logger.Printf(PreviewString(preview)+"updated concurrency: %d => %d\n", *out.ReservedConcurrentExecutions, concurrency)
+		currentDescription := "unreserved"
+		if out.ReservedConcurrentExecutions != nil {
+			currentDescription = fmt.Sprintf("reserved %d", current)
+		}
+		desiredDescription := "unreserved"
+		if concurrency > 0 {
+			desiredDescription = fmt.Sprintf("reserved %d", concurrency)
+		}
+		Logger.Printf(PreviewString(preview)+"updated concurrency: %s => %s\n", currentDescription, desiredDescription)
 	}
 	return nil
 }
