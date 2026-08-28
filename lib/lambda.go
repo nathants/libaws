@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -2800,13 +2798,24 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 				return err
 			}
 		} else {
-			httpOut, err := http.Get(*getFunctionOut.Code.Location)
+			initialLocation, err := lambdaPackageLocationFromOutput(getFunctionOut)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			defer func() { _ = httpOut.Body.Close() }()
-			data, err := io.ReadAll(httpOut.Body)
+			data, err := downloadLambdaPackage(
+				ctx,
+				initialLocation,
+				func(ctx context.Context) (lambdaPackageLocation, error) {
+					out, err := LambdaClient().GetFunction(ctx, &lambda.GetFunctionInput{
+						FunctionName: aws.String(infraLambda.Name),
+					})
+					if err != nil {
+						return lambdaPackageLocation{}, err
+					}
+					return lambdaPackageLocationFromOutput(out)
+				},
+			)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
