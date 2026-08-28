@@ -89,11 +89,7 @@ func s3LsVersions() {
 				fmt.Println(" PRE", prefix)
 			}
 
-			zone, _ := time.Now().Zone()
-			loc, err := time.LoadLocation(zone)
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
+			loc := time.Local
 
 			var objects []*S3ObjectVersion
 
@@ -108,7 +104,7 @@ func s3LsVersions() {
 					kind = "LATEST"
 				}
 				objects = append(objects, &S3ObjectVersion{
-					Date:         fmt.Sprint(obj.LastModified.In(loc))[:19],
+					Date:         formatS3VersionDate(*obj.LastModified, loc),
 					Size:         fmt.Sprintf("%10v", *obj.Size),
 					Key:          objKey,
 					StorageClass: string(obj.StorageClass),
@@ -128,7 +124,7 @@ func s3LsVersions() {
 					kind = "LATEST-DELETE"
 				}
 				objects = append(objects, &S3ObjectVersion{
-					Date:         fmt.Sprint(obj.LastModified.In(loc))[:19],
+					Date:         formatS3VersionDate(*obj.LastModified, loc),
 					Size:         "-",
 					Key:          objKey,
 					StorageClass: "-",
@@ -158,6 +154,10 @@ func s3LsVersions() {
 			versionMarker = out.NextVersionIdMarker
 		}
 	}
+}
+
+func formatS3VersionDate(value time.Time, location *time.Location) string {
+	return value.In(location).Format(time.DateTime)
 }
 
 type S3ObjectVersion struct {
