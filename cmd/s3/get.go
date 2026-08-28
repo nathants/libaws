@@ -19,6 +19,7 @@ func init() {
 
 type s3GetArgs struct {
 	Path string `arg:"positional"`
+	R2   bool   `arg:"--r2" help:"use Cloudflare R2 credentials and endpoint"`
 }
 
 func (s3GetArgs) Description() string {
@@ -28,6 +29,7 @@ func (s3GetArgs) Description() string {
 func s3Get() {
 	var args s3GetArgs
 	arg.MustParse(&args)
+	configureS3Provider(args.R2)
 	ctx := context.Background()
 
 	args.Path = strings.ReplaceAll(args.Path, "s3://", "")

@@ -27,9 +27,23 @@ func (dynamodbItemScanArgs) Description() string {
 	return "\nscan dynamodb table\n"
 }
 
+func validateDynamoDBItemScanLimit(limit int) error {
+	if limit < 0 {
+		return fmt.Errorf("scan limit must not be negative: %d", limit)
+	}
+	return nil
+}
+
+func dynamoDBItemScanLimitReached(limit, count int) bool {
+	return limit > 0 && count >= limit
+}
+
 func dynamodbItemScan() {
 	var args dynamodbItemScanArgs
 	arg.MustParse(&args)
+	if err := validateDynamoDBItemScanLimit(args.Limit); err != nil {
+		lib.Logger.Fatal("error: ", err)
+	}
 	ctx := context.Background()
 	var start map[string]ddbtypes.AttributeValue
 	count := 0
@@ -43,8 +57,8 @@ func dynamodbItemScan() {
 			panic(err)
 		}
 		for _, item := range out.Items {
-			if args.Limit != 0 && args.Limit < count {
-				break
+			if dynamoDBItemScanLimitReached(args.Limit, count) {
+				return
 			}
 			count++
 			val := map[string]any{}

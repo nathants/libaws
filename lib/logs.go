@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	cwlogstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
+	"golang.org/x/sync/errgroup"
 )
 
 var logsClient *cloudwatchlogs.Client
@@ -246,48 +248,104 @@ func LogsTail(ctx context.Context, name string, minAge time.Time, callback func(
 	}
 }
 
-func LogsRecent(ctx context.Context, name string, numLines int) ([]string, error) {
-	if doDebug {
-		d := &Debug{start: time.Now(), name: "LogsRecent"}
-		d.Start()
-		defer d.End()
+const logsRecentMaxConcurrentRequests = 16
+
+type logsRecentClient interface {
+	DescribeLogStreams(
+		context.Context,
+		*cloudwatchlogs.DescribeLogStreamsInput,
+		...func(*cloudwatchlogs.Options),
+	) (*cloudwatchlogs.DescribeLogStreamsOutput, error)
+	GetLogEvents(
+		context.Context,
+		*cloudwatchlogs.GetLogEventsInput,
+		...func(*cloudwatchlogs.Options),
+	) (*cloudwatchlogs.GetLogEventsOutput, error)
+}
+
+func logsRecentWithClient(
+	ctx context.Context,
+	client logsRecentClient,
+	name string,
+	numLines int,
+	maxConcurrentRequests int,
+) ([]string, error) {
+	if numLines <= 0 || numLines > math.MaxInt32 {
+		return nil, fmt.Errorf("number of recent log lines must be between 1 and %d", math.MaxInt32)
 	}
-	var allEvents []cwlogstypes.OutputLogEvent
-	streams, err := LogsMostRecentStreams(ctx, name)
+	if maxConcurrentRequests <= 0 {
+		return nil, errors.New("maximum concurrent log requests must be positive")
+	}
+
+	streamsOut, err := client.DescribeLogStreams(ctx, &cloudwatchlogs.DescribeLogStreamsInput{
+		LogGroupName: aws.String(name),
+		Descending:   aws.Bool(true),
+		OrderBy:      cwlogstypes.OrderByLastEventTime,
+	})
 	if err != nil {
 		return nil, err
 	}
-	for _, stream := range streams {
-		streamName := *stream.LogStreamName
-		out, err := LogsClient().GetLogEvents(ctx, &cloudwatchlogs.GetLogEventsInput{
-			LogGroupName:  aws.String(name),
-			LogStreamName: aws.String(streamName),
-			StartFromHead: aws.Bool(false),
-			Limit:         aws.Int32(int32(numLines)),
-		})
-		if err != nil {
-			return nil, err
+
+	streamEvents := make([][]cwlogstypes.OutputLogEvent, len(streamsOut.LogStreams))
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(maxConcurrentRequests)
+	for index, stream := range streamsOut.LogStreams {
+		index := index
+		streamName := aws.ToString(stream.LogStreamName)
+		if streamName == "" {
+			return nil, errors.New("CloudWatch returned an empty log stream name")
 		}
-		allEvents = append(allEvents, out.Events...)
+		group.Go(func() error {
+			out, err := client.GetLogEvents(groupCtx, &cloudwatchlogs.GetLogEventsInput{
+				LogGroupName:  aws.String(name),
+				LogStreamName: aws.String(streamName),
+				StartFromHead: aws.Bool(false),
+				Limit:         aws.Int32(int32(numLines)),
+			})
+			if err != nil {
+				return fmt.Errorf("get CloudWatch events for stream %q: %w", streamName, err)
+			}
+			streamEvents[index] = out.Events
+			return nil
+		})
 	}
-	// Sort events by timestamp descending
-	sort.Slice(allEvents, func(i, j int) bool {
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+
+	var allEvents []cwlogstypes.OutputLogEvent
+	for _, events := range streamEvents {
+		for _, event := range events {
+			if event.Timestamp == nil || event.Message == nil {
+				return nil, errors.New("CloudWatch returned a log event without timestamp or message")
+			}
+			allEvents = append(allEvents, event)
+		}
+	}
+	sort.SliceStable(allEvents, func(i, j int) bool {
 		return *allEvents[i].Timestamp > *allEvents[j].Timestamp
 	})
-	// Take the most recent numLines events
 	if len(allEvents) > numLines {
 		allEvents = allEvents[:numLines]
 	}
-	// Sort back to chronological order
-	sort.Slice(allEvents, func(i, j int) bool {
+	sort.SliceStable(allEvents, func(i, j int) bool {
 		return *allEvents[i].Timestamp < *allEvents[j].Timestamp
 	})
-	// Format output
-	var lines []string
+
+	lines := make([]string, 0, len(allEvents))
 	for _, event := range allEvents {
 		timestamp := FromUnixMilli(*event.Timestamp)
 		message := strings.TrimRight(strings.ReplaceAll(*event.Message, "\t", " "), "\n")
 		lines = append(lines, fmt.Sprintf("%s %s", timestamp.Format(time.RFC3339), message))
 	}
 	return lines, nil
+}
+
+func LogsRecent(ctx context.Context, name string, numLines int) ([]string, error) {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "LogsRecent"}
+		d.Start()
+		defer d.End()
+	}
+	return logsRecentWithClient(ctx, LogsClient(), name, numLines, logsRecentMaxConcurrentRequests)
 }

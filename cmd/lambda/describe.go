@@ -16,7 +16,8 @@ func init() {
 }
 
 type lambdaDescribeArgs struct {
-	Name string `arg:"positional,required"`
+	Name             string `arg:"positional,required"`
+	ShowEnvVarValues bool   `arg:"-v,--env-values" help:"show environment variable values instead of their hash"`
 }
 
 func (lambdaDescribeArgs) Description() string {
@@ -33,12 +34,13 @@ func lambdaDescribe() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	fmt.Println(lib.PformatAlways(out))
 	confOut, err := lib.LambdaClient().GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{
 		FunctionName: aws.String(args.Name),
 	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
+	sanitizeLambdaDescription(out, confOut, args.ShowEnvVarValues)
+	fmt.Println(lib.PformatAlways(out))
 	fmt.Println(lib.PformatAlways(confOut))
 }

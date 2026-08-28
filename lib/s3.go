@@ -131,6 +131,9 @@ func S3BucketRegion(bucket string) (string, error) {
 }
 
 func S3ClientBucketRegion(bucket string) (*s3.Client, error) {
+	if client := configuredS3BucketClientOverride(); client != nil {
+		return client, nil
+	}
 	var s3Client *s3.Client
 	var expectedErr error
 	err := Retry(context.Background(), func() error {

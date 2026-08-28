@@ -17,6 +17,7 @@ type s3RmArgs struct {
 	Path      string `arg:"positional,required"`
 	Recursive bool   `arg:"-r,--recursive"`
 	Preview   bool   `arg:"-p,--preview"`
+	R2        bool   `arg:"--r2" help:"use Cloudflare R2 credentials and endpoint"`
 }
 
 func (s3RmArgs) Description() string {
@@ -26,6 +27,7 @@ func (s3RmArgs) Description() string {
 func s3Rm() {
 	var args s3RmArgs
 	arg.MustParse(&args)
+	configureS3Provider(args.R2)
 	ctx := context.Background()
 
 	args.Path = strings.ReplaceAll(args.Path, "s3://", "")

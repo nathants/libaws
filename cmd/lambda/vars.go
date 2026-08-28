@@ -16,7 +16,8 @@ func init() {
 }
 
 type lambdaVarsArgs struct {
-	Name string `arg:"positional"`
+	Name             string `arg:"positional,required"`
+	ShowEnvVarValues bool   `arg:"-v,--env-values" help:"show environment variable values instead of their hash"`
 }
 
 func (lambdaVarsArgs) Description() string {
@@ -33,7 +34,11 @@ func lambdaVars() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	for k, v := range out.Configuration.Environment.Variables {
-		fmt.Printf("%s=%s\n", k, v)
+	variables := map[string]string{}
+	if out.Configuration != nil && out.Configuration.Environment != nil {
+		variables = out.Configuration.Environment.Variables
+	}
+	for _, line := range formatLambdaVariables(variables, args.ShowEnvVarValues) {
+		fmt.Println(line)
 	}
 }

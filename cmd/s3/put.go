@@ -24,6 +24,7 @@ func init() {
 type s3PutArgs struct {
 	Path   string `arg:"positional"`
 	Sha256 bool   `arg:"-s,--sha256" help:"add sha256 checksum"`
+	R2     bool   `arg:"--r2" help:"use Cloudflare R2 credentials and endpoint"`
 }
 
 func (s3PutArgs) Description() string {
@@ -33,6 +34,7 @@ func (s3PutArgs) Description() string {
 func s3Put() {
 	var args s3PutArgs
 	arg.MustParse(&args)
+	configureS3Provider(args.R2)
 	ctx := context.Background()
 
 	args.Path = strings.ReplaceAll(args.Path, "s3://", "")

@@ -23,6 +23,7 @@ type s3LsArgs struct {
 	Quiet      bool   `arg:"-q,--quiet" help:"print key only"`
 	Recursive  bool   `arg:"-r,--recursive" help:"list all keys with prefix path"`
 	StartAfter bool   `arg:"-s,--start-after" help:"list all keys that lexically appear after path"`
+	R2         bool   `arg:"--r2" help:"use Cloudflare R2 credentials and endpoint"`
 }
 
 func (s3LsArgs) Description() string {
@@ -32,6 +33,7 @@ func (s3LsArgs) Description() string {
 func s3Ls() {
 	var args s3LsArgs
 	arg.MustParse(&args)
+	configureS3Provider(args.R2)
 	ctx := context.Background()
 
 	if args.Path == "" || !strings.Contains(args.Path, "/") {

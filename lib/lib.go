@@ -259,6 +259,11 @@ func sha256Short(data []byte) string {
 	return "sha256:" + sha256Hex(data)[:16]
 }
 
+// SensitiveValueHash returns the stable short hash used for redacted CLI values.
+func SensitiveValueHash(value string) string {
+	return sha256Short([]byte(value))
+}
+
 func diffMapStringString(a, b map[string]string, logPrefix string, logValues bool) (bool, error) {
 	for k, v := range a {
 		if v == "" {

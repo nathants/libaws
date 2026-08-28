@@ -2,6 +2,7 @@ package lib
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -81,10 +82,40 @@ const (
 	lambdaRuntimeContainer = "container"
 
 	lambdaUrlFuncSid = "FunctionUrlInvoke"
+
+	lambdaEnvironmentMaxBytes = 4 * 1024
 )
 
 var lambdaClient *lambda.Client
 var lambdaClientLock sync.Mutex
+var lambdaEnvironmentNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]+$`)
+
+func lambdaEnvironmentVariables(values []string) (map[string]string, error) {
+	variables := make(map[string]string, len(values))
+	totalBytes := 0
+	for _, value := range values {
+		name, content, err := SplitOnce(value, "=")
+		if err != nil {
+			return nil, err
+		}
+		if !lambdaEnvironmentNamePattern.MatchString(name) {
+			return nil, fmt.Errorf("lambda environment variable names must match '[a-zA-Z][a-zA-Z0-9_]+', got: %s", name)
+		}
+		if _, duplicate := variables[name]; duplicate {
+			return nil, fmt.Errorf("duplicate Lambda environment variable: %s", name)
+		}
+		variables[name] = content
+		totalBytes += len(name) + len(content)
+	}
+	if totalBytes > lambdaEnvironmentMaxBytes {
+		return nil, fmt.Errorf(
+			"lambda environment size %d bytes exceeds AWS Lambda limit %d bytes",
+			totalBytes,
+			lambdaEnvironmentMaxBytes,
+		)
+	}
+	return variables, nil
+}
 
 func LambdaClientExplicit(accessKeyID, accessKeySecret, region string) *lambda.Client {
 	return lambda.NewFromConfig(*SessionExplicit(accessKeyID, accessKeySecret, region))
@@ -2261,11 +2292,10 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 	if ldflags != " " {
 		prefix = " " // ldflags might contain secrets, shellAt() logs cmdString on error unless it starts with whitespace
 	}
-	err = shellAt(path.Dir(infraLambda.Entrypoint), "%sCGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s %s",
+	err = shellAt(path.Dir(infraLambda.Entrypoint), "%sCGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s .",
 		prefix,
 		ldflags,
 		path.Join(dir, "bootstrap"),
-		path.Base(infraLambda.Entrypoint),
 	)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2484,6 +2514,86 @@ type LambdaUpdateZipFn func(infraLambda *InfraLambda) error
 
 type LambdaCreateZipFn func(infraLambda *InfraLambda) error
 
+func applyLambdaUpdateStages(updateConfiguration func() error, updateCode func() error) error {
+	if err := updateConfiguration(); err != nil {
+		return err
+	}
+	return updateCode()
+}
+
+func lambdaEnsureFunctionConfiguration(
+	ctx context.Context,
+	infraLambda *InfraLambda,
+	environmentVariables map[string]string,
+	timeout int,
+	memory int,
+	preview bool,
+	showEnvVarValues bool,
+) error {
+	outConf, err := LambdaClient().GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{
+		FunctionName: aws.String(infraLambda.Name),
+	})
+	if err != nil {
+		if !preview {
+			Logger.Println("error:", err)
+			return err
+		}
+		outConf = &lambda.GetFunctionConfigurationOutput{}
+	}
+	if outConf.Environment == nil {
+		outConf.Environment = &lambdatypes.EnvironmentResponse{Variables: map[string]string{}}
+	}
+	needsUpdate := false
+	logPrefix := PreviewString(preview) + "updated env var for: " + infraLambda.Name + ","
+	different, err := diffMapStringString(
+		environmentVariables,
+		outConf.Environment.Variables,
+		logPrefix,
+		showEnvVarValues,
+	)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if different {
+		needsUpdate = true
+	}
+	if outConf.Timeout == nil {
+		outConf.Timeout = aws.Int32(0)
+	}
+	if *outConf.Timeout != int32(timeout) {
+		needsUpdate = true
+		Logger.Printf(PreviewString(preview)+"update timeout: %d => %d\n", *outConf.Timeout, timeout)
+	}
+	if outConf.MemorySize == nil {
+		outConf.MemorySize = aws.Int32(0)
+	}
+	if *outConf.MemorySize != int32(memory) {
+		needsUpdate = true
+		Logger.Printf(PreviewString(preview)+"update memory: %d => %d\n", *outConf.MemorySize, memory)
+	}
+	if !needsUpdate {
+		return nil
+	}
+	if !preview {
+		err := Retry(ctx, func() error {
+			_, err := LambdaClient().UpdateFunctionConfiguration(ctx, &lambda.UpdateFunctionConfigurationInput{
+				FunctionName: aws.String(infraLambda.Name),
+				Timeout:      aws.Int32(int32(timeout)),
+				MemorySize:   aws.Int32(int32(memory)),
+				Environment:  &lambdatypes.Environment{Variables: environmentVariables},
+			})
+			return err
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"updated function configuration:", infraLambda.Name)
+	return nil
+}
+
 func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview, showEnvVarValues bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaEnsure"}
@@ -2516,6 +2626,11 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 			return err
 		}
 	}
+	environmentVariables, err := lambdaEnvironmentVariables(infraLambda.Env)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	if quick && !(infraLambda.runtime == lambdaRuntimePython && !Exists(zipFile)) { // python requires existing zip for quick, since it only adds source instead of rebuilding the virtualenv, which is way faster
 		err = updateZipFn(infraLambda)
@@ -2528,7 +2643,14 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 			Logger.Println("error:", err)
 			return err
 		}
-		err = LambdaUpdateFunctionCode(ctx, infraLambda, preview)
+		err = applyLambdaUpdateStages(
+			func() error {
+				return lambdaEnsureFunctionConfiguration(
+					ctx, infraLambda, environmentVariables, timeout, memory, preview, showEnvVarValues,
+				)
+			},
+			func() error { return LambdaUpdateFunctionCode(ctx, infraLambda, preview) },
+		)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -2603,21 +2725,8 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		MemorySize:   aws.Int32(int32(memory)),
 		Role:         aws.String(arnRole),
 		Code:         &lambdatypes.FunctionCode{},
-		Environment:  &lambdatypes.Environment{Variables: map[string]string{}},
+		Environment:  &lambdatypes.Environment{Variables: environmentVariables},
 		Tags:         map[string]string{infraSetTagName: infraLambda.infraSetName},
-	}
-	for _, val := range infraLambda.Env {
-		k, v, err := SplitOnce(val, "=")
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		if len(regexp.MustCompile(`[^a-zA-Z0-9_]`).FindAllString(k, -1)) > 0 {
-			err := fmt.Errorf("env vars must be named '[a-zA-Z0-9_]+', got: %s", k)
-			Logger.Println("error:", err)
-			return err
-		}
-		createInput.Environment.Variables[k] = v
 	}
 	if infraLambda.runtime == lambdaRuntimeContainer {
 		createInput.Code.ImageUri = aws.String(infraLambda.Entrypoint)
@@ -2718,76 +2827,22 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 				return err
 			}
 		}
-		if diff {
-			err := LambdaUpdateFunctionCode(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-		}
-		outConf, err := LambdaClient().GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{
-			FunctionName: aws.String(infraLambda.Name),
-		})
-		if err != nil {
-			if !preview {
-				Logger.Println("error:", err)
-				return err
-			}
-			outConf = &lambda.GetFunctionConfigurationOutput{}
-		}
-		if outConf.Environment == nil {
-			outConf.Environment = &lambdatypes.EnvironmentResponse{
-				Variables: map[string]string{},
-			}
-		}
-		needsUpdate := false
-		logPrefix := PreviewString(preview) + "updated env var for: " + infraLambda.Name + ","
-		diff, err = diffMapStringString(
-			createInput.Environment.Variables,
-			outConf.Environment.Variables,
-			logPrefix,
-			showEnvVarValues,
+		err = applyLambdaUpdateStages(
+			func() error {
+				return lambdaEnsureFunctionConfiguration(
+					ctx, infraLambda, createInput.Environment.Variables, timeout, memory, preview, showEnvVarValues,
+				)
+			},
+			func() error {
+				if !diff {
+					return nil
+				}
+				return LambdaUpdateFunctionCode(ctx, infraLambda, preview)
+			},
 		)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
-		}
-		if diff {
-			needsUpdate = true
-		}
-		if outConf.Timeout == nil {
-			outConf.Timeout = aws.Int32(0)
-		}
-		if *outConf.Timeout != int32(timeout) {
-			needsUpdate = true
-			Logger.Printf(PreviewString(preview)+"update timeout: %d => %d\n", *outConf.Timeout, timeout)
-		}
-		if outConf.MemorySize == nil {
-			outConf.MemorySize = aws.Int32(0)
-		}
-		if *outConf.MemorySize != int32(memory) {
-			needsUpdate = true
-			Logger.Printf(PreviewString(preview)+"update memory: %d => %d\n", *outConf.MemorySize, memory)
-		}
-		if needsUpdate {
-			if !preview {
-				err := Retry(ctx, func() error {
-					_, err := LambdaClient().UpdateFunctionConfiguration(ctx, &lambda.UpdateFunctionConfigurationInput{
-						FunctionName: aws.String(infraLambda.Name),
-						Timeout:      aws.Int32(int32(timeout)),
-						MemorySize:   aws.Int32(int32(memory)),
-						Environment: &lambdatypes.Environment{
-							Variables: createInput.Environment.Variables,
-						},
-					})
-					return err
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			Logger.Println(PreviewString(preview)+"updated function configuration:", infraLambda.Name)
 		}
 	}
 	if getFunctionOut.Configuration != nil {
@@ -2858,6 +2913,87 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 	return nil
 }
 
+type lambdaCodeUpdateClient interface {
+	lambda.GetFunctionAPIClient
+	UpdateFunctionCode(
+		context.Context,
+		*lambda.UpdateFunctionCodeInput,
+		...func(*lambda.Options),
+	) (*lambda.UpdateFunctionCodeOutput, error)
+}
+
+func updateLambdaFunctionCode(
+	ctx context.Context,
+	client lambdaCodeUpdateClient,
+	name string,
+	zipBytes []byte,
+	imageURI string,
+	maxWait time.Duration,
+) error {
+	if (len(zipBytes) == 0) == (imageURI == "") {
+		return errors.New("lambda code update requires exactly one nonempty zip or image URI")
+	}
+	if maxWait <= 0 {
+		return errors.New("lambda code update wait must be positive")
+	}
+
+	updateInput := &lambda.UpdateFunctionCodeInput{FunctionName: aws.String(name)}
+	var expectedCodeHash string
+	if imageURI != "" {
+		updateInput.ImageUri = aws.String(imageURI)
+	} else {
+		updateInput.ZipFile = zipBytes
+		hash := sha256.Sum256(zipBytes)
+		expectedCodeHash = base64.StdEncoding.EncodeToString(hash[:])
+	}
+
+	var updateOut *lambda.UpdateFunctionCodeOutput
+	var expectedErr error
+	err := Retry(ctx, func() error {
+		var err error
+		updateOut, err = client.UpdateFunctionCode(ctx, updateInput)
+		if err != nil {
+			var notFound *lambdatypes.ResourceNotFoundException
+			if errors.As(err, &notFound) || strings.Contains(err.Error(), "RequestEntityTooLargeException: Request must be smaller than ") {
+				expectedErr = err
+				return nil
+			}
+			Logger.Printf("UpdateFunctionCode error, retrying: %v", err)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if expectedErr != nil {
+		return expectedErr
+	}
+	if updateOut == nil || updateOut.CodeSha256 == nil {
+		return errors.New("lambda code update returned no code hash")
+	}
+	if expectedCodeHash == "" {
+		expectedCodeHash = aws.ToString(updateOut.CodeSha256)
+	}
+	if aws.ToString(updateOut.CodeSha256) != expectedCodeHash {
+		return fmt.Errorf("lambda code update response code hash mismatch for %s", name)
+	}
+
+	finalOut, err := lambda.NewFunctionUpdatedV2Waiter(client).WaitForOutput(
+		ctx,
+		&lambda.GetFunctionInput{FunctionName: aws.String(name)},
+		maxWait,
+	)
+	if err != nil {
+		return fmt.Errorf("wait for lambda code update %s: %w", name, err)
+	}
+	if finalOut == nil || finalOut.Configuration == nil ||
+		aws.ToString(finalOut.Configuration.CodeSha256) != expectedCodeHash {
+		return fmt.Errorf("lambda published code hash mismatch for %s", name)
+	}
+	return nil
+}
+
 func LambdaUpdateFunctionCode(ctx context.Context, infraLambda *InfraLambda, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaUpdateFunctionCode"}
@@ -2865,44 +3001,24 @@ func LambdaUpdateFunctionCode(ctx context.Context, infraLambda *InfraLambda, pre
 		defer d.End()
 	}
 	if !preview {
-		var expectedErr error
 		var zipBytes []byte
+		var imageURI string
 		var err error
-		if infraLambda.runtime != lambdaRuntimeContainer {
+		if infraLambda.runtime == lambdaRuntimeContainer {
+			imageURI = infraLambda.Entrypoint
+		} else {
 			zipBytes, err = LambdaZipBytes(infraLambda)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
-		err = Retry(ctx, func() error {
-			updateInput := &lambda.UpdateFunctionCodeInput{
-				FunctionName: aws.String(infraLambda.Name),
-			}
-			if infraLambda.runtime == lambdaRuntimeContainer {
-				updateInput.ImageUri = aws.String(infraLambda.Entrypoint)
-			} else {
-				updateInput.ZipFile = zipBytes
-			}
-			_, err := LambdaClient().UpdateFunctionCode(ctx, updateInput)
-			if err != nil {
-				var notFound *lambdatypes.ResourceNotFoundException
-				if errors.As(err, &notFound) || strings.Contains(err.Error(), "RequestEntityTooLargeException: Request must be smaller than ") {
-					expectedErr = err
-					return nil
-				}
-				Logger.Printf("UpdateFunctionCode error, retrying: %v", err)
-				return err
-			}
-			return nil
-		})
+		err = updateLambdaFunctionCode(
+			ctx, LambdaClient(), infraLambda.Name, zipBytes, imageURI, 5*time.Minute,
+		)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
-		}
-		if expectedErr != nil {
-			Logger.Println("error:", expectedErr)
-			return expectedErr
 		}
 	}
 	Logger.Println(PreviewString(preview) + "lambda updated code for: " + infraLambda.Name)
