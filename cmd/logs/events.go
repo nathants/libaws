@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -21,8 +23,9 @@ func init() {
 type logsEventsArgs struct {
 	Name        string `arg:"positional,required" help:"log group name"`
 	Filter      string `arg:"positional,required" help:"CloudWatch filter pattern"`
-	StartMillis int64  `arg:"--start-millis" default:"-1" help:"optional inclusive event-time lower bound in UTC milliseconds"`
-	EndMillis   int64  `arg:"--end-millis" default:"-1" help:"optional exclusive event-time upper bound in UTC milliseconds"`
+	StartMillis int64  `arg:"--start-millis,required" help:"inclusive event-time lower bound in UTC milliseconds"`
+	EndMillis   *int64 `arg:"--end-millis" help:"optional exclusive event-time upper bound in UTC milliseconds"`
+	MaxEvents   *int64 `arg:"--max-events" help:"optional maximum events; fail if the result exceeds it"`
 }
 
 func (logsEventsArgs) Description() string {
@@ -45,70 +48,101 @@ type logsEventsClient interface {
 	) (*cloudwatchlogs.FilterLogEventsOutput, error)
 }
 
-func readLogsEvents(
+func writeLogsEvents(
 	ctx context.Context,
 	client logsEventsClient,
+	destination io.Writer,
 	name string,
 	filter string,
-	startMillis *int64,
+	startMillis int64,
 	endMillis *int64,
-) ([]logsEventRecord, error) {
+	maxEvents *int64,
+) error {
 	if name == "" {
-		return nil, errors.New("log group name must not be empty")
+		return errors.New("log group name must not be empty")
 	}
 	if filter == "" {
-		return nil, errors.New("CloudWatch filter pattern must not be empty")
+		return errors.New("CloudWatch filter pattern must not be empty")
 	}
-	if startMillis != nil && *startMillis < 0 {
-		return nil, errors.New("start milliseconds must not be negative")
+	if startMillis < 0 {
+		return errors.New("start milliseconds must not be negative")
 	}
 	if endMillis != nil && *endMillis < 0 {
-		return nil, errors.New("end milliseconds must not be negative")
+		return errors.New("end milliseconds must not be negative")
 	}
-	if startMillis != nil && endMillis != nil && *endMillis <= *startMillis {
-		return nil, errors.New("end milliseconds must be greater than start milliseconds")
+	if endMillis != nil && *endMillis <= startMillis {
+		return errors.New("end milliseconds must be greater than start milliseconds")
+	}
+	if maxEvents != nil && *maxEvents <= 0 {
+		return errors.New("maximum events must be positive")
+	}
+	if destination == nil {
+		return errors.New("output writer must not be nil")
 	}
 
-	var records []logsEventRecord
+	var inclusiveEndMillis *int64
+	if endMillis != nil {
+		inclusiveEndMillis = aws.Int64(*endMillis - 1)
+	}
+	encoder := json.NewEncoder(destination)
+	var emitted int64
 	var token *string
 	seenTokens := map[string]struct{}{}
 	for {
+		var requestLimit *int32
+		if maxEvents != nil {
+			const cloudWatchMaxPageEvents int64 = 10_000
+			remaining := *maxEvents - emitted
+			limit := cloudWatchMaxPageEvents
+			if remaining < cloudWatchMaxPageEvents {
+				limit = remaining + 1
+			}
+			requestLimit = aws.Int32(int32(limit))
+		}
 		out, err := client.FilterLogEvents(ctx, &cloudwatchlogs.FilterLogEventsInput{
-			EndTime:       endMillis,
+			EndTime:       inclusiveEndMillis,
 			FilterPattern: aws.String(filter),
+			Limit:         requestLimit,
 			LogGroupName:  aws.String(name),
 			NextToken:     token,
-			StartTime:     startMillis,
+			StartTime:     aws.Int64(startMillis),
 		})
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("filter CloudWatch log events: %w", err)
 		}
 		if out == nil {
-			return nil, errors.New("CloudWatch returned a nil FilterLogEvents response")
+			return errors.New("CloudWatch returned a nil FilterLogEvents response")
 		}
 		for _, event := range out.Events {
+			if maxEvents != nil && emitted >= *maxEvents {
+				return fmt.Errorf("result exceeds --max-events %d", *maxEvents)
+			}
 			if event.EventId == nil || *event.EventId == "" ||
 				event.IngestionTime == nil || event.LogStreamName == nil || *event.LogStreamName == "" ||
 				event.Message == nil || event.Timestamp == nil {
-				return nil, errors.New("CloudWatch returned a filtered event without complete identity")
+				return errors.New("CloudWatch returned a filtered event without complete identity")
 			}
-			records = append(records, logsEventRecord{
+			record := logsEventRecord{
 				EventID:       *event.EventId,
 				IngestionTime: *event.IngestionTime,
 				LogStreamName: *event.LogStreamName,
 				Message:       *event.Message,
 				Timestamp:     *event.Timestamp,
-			})
+			}
+			if err := encoder.Encode(record); err != nil {
+				return fmt.Errorf("write CloudWatch log event: %w", err)
+			}
+			emitted++
 		}
 		if out.NextToken == nil {
-			return records, nil
+			return nil
 		}
 		nextToken := *out.NextToken
 		if nextToken == "" {
-			return nil, errors.New("CloudWatch returned an empty pagination token")
+			return errors.New("CloudWatch returned an empty pagination token")
 		}
 		if _, exists := seenTokens[nextToken]; exists {
-			return nil, fmt.Errorf("CloudWatch repeated pagination token %q", nextToken)
+			return fmt.Errorf("CloudWatch repeated pagination token %q", nextToken)
 		}
 		seenTokens[nextToken] = struct{}{}
 		token = out.NextToken
@@ -118,30 +152,17 @@ func readLogsEvents(
 func logsEvents() {
 	var args logsEventsArgs
 	arg.MustParse(&args)
-	var startMillis *int64
-	if args.StartMillis != -1 {
-		startMillis = &args.StartMillis
-	}
-	var endMillis *int64
-	if args.EndMillis != -1 {
-		endMillis = &args.EndMillis
-	}
-	records, err := readLogsEvents(
+	err := writeLogsEvents(
 		context.Background(),
 		lib.LogsClient(),
+		os.Stdout,
 		args.Name,
 		args.Filter,
-		startMillis,
-		endMillis,
+		args.StartMillis,
+		args.EndMillis,
+		args.MaxEvents,
 	)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
-	}
-	for _, record := range records {
-		data, err := json.Marshal(record)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		fmt.Println(string(data))
 	}
 }
