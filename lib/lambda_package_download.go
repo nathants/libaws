@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/avast/retry-go"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -32,9 +33,16 @@ func lambdaPackageLocationFromOutput(out *lambda.GetFunctionOutput) (lambdaPacka
 	}, nil
 }
 
-const lambdaPackageDownloadMaxBytes = 64 * 1024 * 1024
+const (
+	lambdaPackageDownloadMaxBytes       = 64 * 1024 * 1024
+	lambdaPackageDownloadAttemptTimeout = 2 * time.Minute
+	lambdaPackageDownloadTotalTimeout   = 10 * time.Minute
+)
 
-var lambdaPackageContentRangePattern = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)/([0-9]+)$`)
+var (
+	lambdaPackageContentRangePattern = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)/([0-9]+)$`)
+	lambdaPackageDownloadHTTPClient  = &http.Client{Timeout: lambdaPackageDownloadAttemptTimeout}
+)
 
 func lambdaPackageContentRange(value string) (int64, int64, int64, error) {
 	matches := lambdaPackageContentRangePattern.FindStringSubmatch(value)
@@ -65,8 +73,19 @@ func downloadLambdaPackage(
 	initial lambdaPackageLocation,
 	refresh func(context.Context) (lambdaPackageLocation, error),
 ) ([]byte, error) {
-	if initial.url == "" || initial.codeSHA256 == "" || refresh == nil {
-		return nil, errors.New("lambda package download requires a location, code hash, and refresh function")
+	downloadCtx, cancel := context.WithTimeout(ctx, lambdaPackageDownloadTotalTimeout)
+	defer cancel()
+	return downloadLambdaPackageWithClient(downloadCtx, lambdaPackageDownloadHTTPClient, initial, refresh)
+}
+
+func downloadLambdaPackageWithClient(
+	ctx context.Context,
+	client *http.Client,
+	initial lambdaPackageLocation,
+	refresh func(context.Context) (lambdaPackageLocation, error),
+) ([]byte, error) {
+	if client == nil || initial.url == "" || initial.codeSHA256 == "" || refresh == nil {
+		return nil, errors.New("lambda package download requires an HTTP client, location, code hash, and refresh function")
 	}
 	expectedCodeHash := initial.codeSHA256
 	location := initial
@@ -95,7 +114,7 @@ func downloadLambdaPackage(
 		if len(data) > 0 {
 			request.Header.Set("Range", fmt.Sprintf("bytes=%d-", len(data)))
 		}
-		response, err := http.DefaultClient.Do(request)
+		response, err := client.Do(request)
 		if err != nil {
 			return lambdaPackageDownloadError(err)
 		}

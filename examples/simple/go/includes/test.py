@@ -17,6 +17,7 @@ def test():
     assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
+    run("libaws infra-ensure infra.yaml --preview")
     infra = yaml.safe_load(run("libaws infra-ls --env-values"))
     infra.pop("region")
     infra.pop("account")
