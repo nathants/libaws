@@ -341,6 +341,7 @@ func logsRecentWithClient(
 	return lines, nil
 }
 
+// LogsRecent returns up to numLines recent log lines.
 func LogsRecent(ctx context.Context, name string, numLines int) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LogsRecent"}

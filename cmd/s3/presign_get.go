@@ -21,7 +21,7 @@ type s3PresignGetArgs struct {
 }
 
 func (s3PresignGetArgs) Description() string {
-	return "\npresign a  s3 get url\n"
+	return s3CommandDescription("presign an S3 GET URL", false)
 }
 
 func s3PresignGet() {

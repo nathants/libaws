@@ -24,7 +24,7 @@ type s3HeadArgs struct {
 }
 
 func (s3HeadArgs) Description() string {
-	return "\nhead an object\n"
+	return s3CommandDescription("head an object", true)
 }
 
 func s3Head() {

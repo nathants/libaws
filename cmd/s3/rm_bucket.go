@@ -18,7 +18,7 @@ type s3RmBucketArgs struct {
 }
 
 func (s3RmBucketArgs) Description() string {
-	return "\nrm s3 bucket\n"
+	return s3CommandDescription("remove an S3 bucket", false)
 }
 
 func s3RmBucket() {

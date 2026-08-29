@@ -19,9 +19,7 @@ type s3EnsureArgs struct {
 }
 
 func (s3EnsureArgs) Description() string {
-	return `
-ensure a s3 bucket
-
+	return s3CommandDescription("ensure an S3 bucket", false) + `
 example:
  - libaws s3-ensure test-bucket acl=public versioning=true
 

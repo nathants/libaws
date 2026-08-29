@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
+	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,8 +22,9 @@ func init() {
 }
 
 type dynamodbItemScanArgs struct {
-	Table string `arg:"positional"`
-	Limit int    `arg:"-l,--limit" default:"0"`
+	Table    string `arg:"positional,required"`
+	Limit    int    `arg:"-l,--limit" default:"0" help:"maximum items to print; zero is unlimited"`
+	PageSize int    `arg:"--page-size" default:"1000" help:"maximum items evaluated per request"`
 }
 
 func (dynamodbItemScanArgs) Description() string {
@@ -34,47 +38,96 @@ func validateDynamoDBItemScanLimit(limit int) error {
 	return nil
 }
 
+func validateDynamoDBItemScanPageSize(pageSize int) error {
+	if pageSize <= 0 || pageSize > math.MaxInt32 {
+		return fmt.Errorf("scan page size must be between 1 and %d: %d", math.MaxInt32, pageSize)
+	}
+	return nil
+}
+
+func dynamoDBItemScanRequestLimit(limit, count, pageSize int) int32 {
+	requestLimit := pageSize
+	if limit > 0 && limit-count < requestLimit {
+		requestLimit = limit - count
+	}
+	return int32(requestLimit)
+}
+
 func dynamoDBItemScanLimitReached(limit, count int) bool {
 	return limit > 0 && count >= limit
+}
+
+type dynamoDBItemScanClient interface {
+	Scan(
+		context.Context,
+		*dynamodb.ScanInput,
+		...func(*dynamodb.Options),
+	) (*dynamodb.ScanOutput, error)
+}
+
+func dynamoDBItemScanWithClient(
+	ctx context.Context,
+	client dynamoDBItemScanClient,
+	table string,
+	limit int,
+	pageSize int,
+	output io.Writer,
+) error {
+	if err := validateDynamoDBItemScanLimit(limit); err != nil {
+		return err
+	}
+	if err := validateDynamoDBItemScanPageSize(pageSize); err != nil {
+		return err
+	}
+	var start map[string]ddbtypes.AttributeValue
+	count := 0
+	for {
+		if dynamoDBItemScanLimitReached(limit, count) {
+			return nil
+		}
+		out, err := client.Scan(ctx, &dynamodb.ScanInput{
+			TableName:         aws.String(table),
+			ExclusiveStartKey: start,
+			Limit:             aws.Int32(dynamoDBItemScanRequestLimit(limit, count, pageSize)),
+		})
+		if err != nil {
+			return err
+		}
+		for _, item := range out.Items {
+			if dynamoDBItemScanLimitReached(limit, count) {
+				return nil
+			}
+			value := map[string]any{}
+			if err := attributevalue.UnmarshalMap(item, &value); err != nil {
+				return err
+			}
+			data, err := json.Marshal(value)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(output, string(data)); err != nil {
+				return err
+			}
+			count++
+		}
+		if len(out.LastEvaluatedKey) == 0 {
+			return nil
+		}
+		start = out.LastEvaluatedKey
+	}
 }
 
 func dynamodbItemScan() {
 	var args dynamodbItemScanArgs
 	arg.MustParse(&args)
-	if err := validateDynamoDBItemScanLimit(args.Limit); err != nil {
+	if err := dynamoDBItemScanWithClient(
+		context.Background(),
+		lib.DynamoDBClient(),
+		args.Table,
+		args.Limit,
+		args.PageSize,
+		os.Stdout,
+	); err != nil {
 		lib.Logger.Fatal("error: ", err)
-	}
-	ctx := context.Background()
-	var start map[string]ddbtypes.AttributeValue
-	count := 0
-	for {
-		out, err := lib.DynamoDBClient().Scan(ctx, &dynamodb.ScanInput{
-			TableName:         aws.String(args.Table),
-			ExclusiveStartKey: start,
-			Limit:             aws.Int32(1000),
-		})
-		if err != nil {
-			panic(err)
-		}
-		for _, item := range out.Items {
-			if dynamoDBItemScanLimitReached(args.Limit, count) {
-				return
-			}
-			count++
-			val := map[string]any{}
-			err = attributevalue.UnmarshalMap(item, &val)
-			if err != nil {
-				panic(err)
-			}
-			bytes, err := json.Marshal(val)
-			if err != nil {
-				panic(err)
-			}
-			fmt.Println(string(bytes))
-		}
-		if out.LastEvaluatedKey == nil {
-			break
-		}
-		start = out.LastEvaluatedKey
 	}
 }

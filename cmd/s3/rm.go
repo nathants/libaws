@@ -21,7 +21,7 @@ type s3RmArgs struct {
 }
 
 func (s3RmArgs) Description() string {
-	return "\nrm s3 content \n"
+	return s3CommandDescription("remove S3 content", true)
 }
 
 func s3Rm() {

@@ -23,7 +23,7 @@ type s3GetVersionArgs struct {
 }
 
 func (s3GetVersionArgs) Description() string {
-	return "\nget an object version and write it to stdout\n"
+	return s3CommandDescription("get an object version and write it to stdout", false)
 }
 
 func s3Getversion() {

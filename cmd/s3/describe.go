@@ -18,7 +18,7 @@ type s3DescribeArgs struct {
 }
 
 func (s3DescribeArgs) Description() string {
-	return "\ndescribe a s3 bucket\n"
+	return s3CommandDescription("describe an S3 bucket", false)
 }
 
 func s3Describe() {

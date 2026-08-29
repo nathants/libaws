@@ -23,7 +23,7 @@ type s3GetArgs struct {
 }
 
 func (s3GetArgs) Description() string {
-	return "\nget an object and write it to stdout\n"
+	return s3CommandDescription("get an object and write it to stdout", true)
 }
 
 func s3Get() {

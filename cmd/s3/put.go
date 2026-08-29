@@ -28,7 +28,7 @@ type s3PutArgs struct {
 }
 
 func (s3PutArgs) Description() string {
-	return "\nput an object from stdin\n"
+	return s3CommandDescription("put an object from stdin", true)
 }
 
 func s3Put() {

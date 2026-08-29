@@ -36,3 +36,26 @@ func TestLambdaCreateZipGoBuildsCompleteEntrypointPackage(t *testing.T) {
 		t.Fatalf("built Lambda output = %q", output)
 	}
 }
+
+func TestLambdaCreateZipGoRequiresDeclaredEntrypoint(t *testing.T) {
+	source := t.TempDir()
+	for name, content := range map[string]string{
+		"go.mod":  "module lambda-entrypoint-test\n\ngo 1.26\n",
+		"main.go": "package main\n\nfunc main() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(source, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	name := "libaws-test-" + filepath.Base(source)
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(LambdaZipFile(name))) })
+	t.Setenv("LDFLAGS", " ")
+
+	err := lambdaCreateZipGo(&InfraLambda{
+		Name:       name,
+		Entrypoint: filepath.Join(source, "missing.go"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "entrypoint") {
+		t.Fatalf("missing declared Lambda entrypoint error=%v", err)
+	}
+}

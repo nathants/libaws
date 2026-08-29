@@ -14,9 +14,10 @@ import (
 )
 
 type fakeLambdaCodeUpdateClient struct {
-	updateHash string
-	finalHash  string
-	calls      []string
+	updateHash       string
+	finalHash        string
+	resolvedImageURI string
+	calls            []string
 }
 
 func (client *fakeLambdaCodeUpdateClient) UpdateFunctionCode(
@@ -35,6 +36,9 @@ func (client *fakeLambdaCodeUpdateClient) GetFunction(
 ) (*lambda.GetFunctionOutput, error) {
 	client.calls = append(client.calls, "get")
 	return &lambda.GetFunctionOutput{
+		Code: &lambdatypes.FunctionCodeLocation{
+			ResolvedImageUri: aws.String(client.resolvedImageURI),
+		},
 		Configuration: &lambdatypes.FunctionConfiguration{
 			CodeSha256:       aws.String(client.finalHash),
 			LastUpdateStatus: lambdatypes.LastUpdateStatusSuccessful,
@@ -72,5 +76,36 @@ func TestUpdateLambdaFunctionCodeRejectsUnexpectedPublishedZip(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "code hash") {
 		t.Fatalf("expected a code-hash mismatch, got %v", err)
+	}
+}
+
+func TestUpdateLambdaFunctionCodeWaitsForExactPublishedImageDigest(t *testing.T) {
+	expectedImageURI := "012345678901.dkr.ecr.us-east-1.amazonaws.com/function@sha256:" + strings.Repeat("a", 64)
+	client := &fakeLambdaCodeUpdateClient{resolvedImageURI: expectedImageURI}
+
+	if err := updateLambdaFunctionCode(
+		context.Background(), client, "better-beta", nil, expectedImageURI, time.Second,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(client.calls, ",") != "update,get" {
+		t.Fatalf("expected image update followed by waiter read, got %#v", client.calls)
+	}
+}
+
+func TestUpdateLambdaFunctionCodeRejectsUnexpectedPublishedImageDigest(t *testing.T) {
+	expectedImageURI := "012345678901.dkr.ecr.us-east-1.amazonaws.com/function@sha256:" + strings.Repeat("a", 64)
+	unexpectedImageURI := "012345678901.dkr.ecr.us-east-1.amazonaws.com/function@sha256:" + strings.Repeat("b", 64)
+	client := &fakeLambdaCodeUpdateClient{
+		updateHash:       "image-code-hash",
+		finalHash:        "image-code-hash",
+		resolvedImageURI: unexpectedImageURI,
+	}
+
+	err := updateLambdaFunctionCode(
+		context.Background(), client, "better-beta", nil, expectedImageURI, time.Second,
+	)
+	if err == nil || !strings.Contains(err.Error(), "image digest") {
+		t.Fatalf("expected an image-digest mismatch, got %v", err)
 	}
 }

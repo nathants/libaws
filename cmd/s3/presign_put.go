@@ -20,7 +20,7 @@ type s3PresignPutArgs struct {
 }
 
 func (s3PresignPutArgs) Description() string {
-	return "\npresign a  s3 put url\n"
+	return s3CommandDescription("presign an S3 PUT URL", false)
 }
 
 func s3PresignPut() {

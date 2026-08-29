@@ -26,7 +26,7 @@ type s3RmVersionsArgs struct {
 }
 
 func (s3RmVersionsArgs) Description() string {
-	return "\nrm s3 content versions\n"
+	return s3CommandDescription("remove S3 content versions", false)
 }
 
 func s3RmVersions() {

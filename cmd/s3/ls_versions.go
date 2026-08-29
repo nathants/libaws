@@ -25,7 +25,7 @@ type s3LsVersionsArgs struct {
 }
 
 func (s3LsVersionsArgs) Description() string {
-	return "\nlist s3 content versions\n"
+	return s3CommandDescription("list S3 content versions", false)
 }
 
 func s3LsVersions() {

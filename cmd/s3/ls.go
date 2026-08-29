@@ -27,7 +27,7 @@ type s3LsArgs struct {
 }
 
 func (s3LsArgs) Description() string {
-	return "\nlist s3 content\n"
+	return s3CommandDescription("list S3 content", true)
 }
 
 func s3Ls() {

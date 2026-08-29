@@ -15,7 +15,7 @@ func init() {
 type infraEnsureArgs struct {
 	YamlPath         string `arg:"positional,required"`
 	Preview          bool   `arg:"-p,--preview"`
-	Quick            string `arg:"-q,--quick" help:"patch this lambda's code without updating infrastructure"`
+	Quick            string `arg:"-q,--quick" help:"patch this Lambda's code and reconcile its runtime configuration only"`
 	ShowEnvVarValues bool   `arg:"-v,--env-values" help:"show environment variable values instead of their hash"`
 }
 

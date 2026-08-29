@@ -1,4 +1,4 @@
-.PHONY: test libaws check check-static check-ineff check-err check-vet test-lib check-bodyclose check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck
+.PHONY: test libaws check check-deps check-static check-ineff check-err check-vet test-lib check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck
 
 all: libaws
 
@@ -26,7 +26,8 @@ check-hasdefer: check-deps
 	@go-hasdefer $(shell find -type f -name "*.go") || true
 
 check-fmt: check-deps
-	@go fmt ./... >/dev/null
+	@files="$$(find . -type f -name '*.go' -print0 | xargs -0 -r gofmt -l)"; \
+		if [ -n "$$files" ]; then printf 'unformatted Go files:\n%s\n' "$$files" >&2; exit 1; fi
 
 check-nargs: check-deps
 	@nargs ./...

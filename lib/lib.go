@@ -265,14 +265,24 @@ func SensitiveValueHash(value string) string {
 }
 
 func diffMapStringString(a, b map[string]string, logPrefix string, logValues bool) (bool, error) {
-	for k, v := range a {
-		if v == "" {
-			delete(a, k)
+	return diffMapStringStringWithEmptyValues(a, b, logPrefix, logValues, false)
+}
+
+func diffMapStringStringExact(a, b map[string]string, logPrefix string, logValues bool) (bool, error) {
+	return diffMapStringStringWithEmptyValues(a, b, logPrefix, logValues, true)
+}
+
+func diffMapStringStringWithEmptyValues(a, b map[string]string, logPrefix string, logValues, preserveEmptyValues bool) (bool, error) {
+	if !preserveEmptyValues {
+		for k, v := range a {
+			if v == "" {
+				delete(a, k)
+			}
 		}
-	}
-	for k, v := range b {
-		if v == "" {
-			delete(b, k)
+		for k, v := range b {
+			if v == "" {
+				delete(b, k)
+			}
 		}
 	}
 	d, err := diff.NewDiffer()

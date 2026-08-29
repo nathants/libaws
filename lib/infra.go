@@ -2181,6 +2181,10 @@ func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 				return err
 			}
 		} else if strings.Contains(infraLambda.Entrypoint, ".dkr.ecr.") {
+			if err := validateLambdaContainerImageURI(infraLambda.Entrypoint); err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
 			infraLambda.runtime = lambdaRuntimeContainer
 			infraLambda.handler = "main"
 			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipFake, lambdaCreateZipFake)
@@ -2672,6 +2676,10 @@ func infraParseValidateLambda(val any) error {
 				case strings.HasSuffix(x, ".go"):
 				case strings.HasSuffix(x, ".py"):
 				case strings.Contains(x, ".dkr.ecr."):
+					if err := validateLambdaContainerImageURI(x); err != nil {
+						Logger.Println("error:", err)
+						return err
+					}
 				default:
 					err := fmt.Errorf("infraLambda key %s should be *.py, *.go, or ecr container uri, got: %#v", k, v)
 					Logger.Println("error:", err)
