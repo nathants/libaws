@@ -636,6 +636,11 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 	return permissionSids, nil
 }
 
+func isS3NoSuchBucket(err error) bool {
+	var apiError interface{ ErrorCode() string }
+	return errors.As(err, &apiError) && apiError.ErrorCode() == s3ErrCodeNoSuchBucket
+}
+
 func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerS3"}
@@ -663,8 +668,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, previe
 			permissionSids = append(permissionSids, sid)
 			s3Client, err := S3ClientBucketRegion(bucket)
 			if err != nil {
-				var noBucket *s3types.NoSuchBucket
-				if !errors.As(err, &noBucket) && !preview {
+				if !isS3NoSuchBucket(err) && !preview {
 					Logger.Println("error:", err)
 					return nil, err
 				}
@@ -676,8 +680,7 @@ func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, previe
 					Bucket: aws.String(bucket),
 				})
 				if err != nil {
-					var noBucket *s3types.NoSuchBucket
-					if !errors.As(err, &noBucket) {
+					if !isS3NoSuchBucket(err) {
 						Logger.Println("error:", err)
 						return nil, err
 					}
@@ -740,9 +743,8 @@ func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, previe
 			Bucket: bucket.Name,
 		})
 		if err != nil {
-			var noBucket *s3types.NoSuchBucket
-			if errors.As(err, &noBucket) {
-				continue // recently delete buckets can still show up in listbuckets but fail with 404
+			if isS3NoSuchBucket(err) {
+				continue // recently deleted buckets can still show up in ListBuckets but fail with 404
 			}
 			Logger.Println("error:", err)
 			return nil, err
