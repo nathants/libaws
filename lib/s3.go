@@ -178,7 +178,6 @@ type s3EnsureInput struct {
 	name         string
 	acl          string
 	versioning   bool
-	encryption   bool
 	metrics      bool
 	cors         *bool
 	corsOrigins  []string
@@ -194,7 +193,6 @@ func s3EnsureInputDefault() *s3EnsureInput {
 	return &s3EnsureInput{
 		acl:        "private",
 		versioning: false,
-		encryption: true,
 		metrics:    false,
 		cors:       nil,
 		ttlDays:    0,
@@ -332,6 +330,29 @@ var s3EncryptionConfig = &s3types.ServerSideEncryptionConfiguration{
 		},
 		BucketKeyEnabled: aws.Bool(false),
 	}},
+}
+
+func s3EncryptionMatchesPolicy(config *s3types.ServerSideEncryptionConfiguration) bool {
+	if config == nil || len(config.Rules) != 1 {
+		return false
+	}
+	rule := config.Rules[0]
+	if rule.ApplyServerSideEncryptionByDefault == nil ||
+		rule.ApplyServerSideEncryptionByDefault.SSEAlgorithm != s3types.ServerSideEncryptionAes256 ||
+		rule.ApplyServerSideEncryptionByDefault.KMSMasterKeyID != nil ||
+		aws.ToBool(rule.BucketKeyEnabled) {
+		return false
+	}
+	return rule.BlockedEncryptionTypes != nil &&
+		len(rule.BlockedEncryptionTypes.EncryptionType) == 1 &&
+		rule.BlockedEncryptionTypes.EncryptionType[0] == s3types.EncryptionTypeSseC
+}
+
+func validateS3EncryptionPolicy(bucket string, config *s3types.ServerSideEncryptionConfiguration) error {
+	if !s3EncryptionMatchesPolicy(config) {
+		return fmt.Errorf("unsupported encryption configuration for S3 bucket %q: %s", bucket, Pformat(config))
+	}
+	return nil
 }
 
 func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
@@ -670,45 +691,32 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		Bucket:              aws.String(input.name),
 		ExpectedBucketOwner: aws.String(account),
 	})
-	exists = true
-	if err != nil {
-		if !strings.Contains(err.Error(), s3ErrCodeServerSideEncryptionConfigurationError) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
-			Logger.Println("error:", err)
-			return err
-		}
-		exists = false
+	encryptionExists := err == nil
+	if err != nil &&
+		!strings.Contains(err.Error(), s3ErrCodeServerSideEncryptionConfigurationError) &&
+		!strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
+		Logger.Println("error:", err)
+		return err
 	}
-	if (input.encryption && (!exists || !reflect.DeepEqual(encOut.ServerSideEncryptionConfiguration, s3EncryptionConfig))) ||
-		(!input.encryption && exists && len(encOut.ServerSideEncryptionConfiguration.Rules) != 0) {
+	if !encryptionExists || !s3EncryptionMatchesPolicy(encOut.ServerSideEncryptionConfiguration) {
 		needsUpdate = true
 	}
 	if needsUpdate {
 		if !preview {
-			if input.encryption {
-				_, err := S3Client().PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
-					ExpectedBucketOwner:               aws.String(account),
-					Bucket:                            aws.String(input.name),
-					ServerSideEncryptionConfiguration: s3EncryptionConfig,
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			} else {
-				_, err := S3Client().DeleteBucketEncryption(ctx, &s3.DeleteBucketEncryptionInput{
-					ExpectedBucketOwner: aws.String(account),
-					Bucket:              aws.String(input.name),
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
+			_, err := S3Client().PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
+				ExpectedBucketOwner:               aws.String(account),
+				Bucket:                            aws.String(input.name),
+				ServerSideEncryptionConfiguration: s3EncryptionConfig,
+			})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
 			}
 		}
-		if !exists {
-			Logger.Printf(PreviewString(preview)+"created encryption for %s: %v\n", input.name, input.encryption)
+		if !encryptionExists {
+			Logger.Printf(PreviewString(preview)+"created encryption for %s\n", input.name)
 		} else {
-			Logger.Printf(PreviewString(preview)+"updated encryption for %s: %v\n", input.name, input.encryption)
+			Logger.Printf(PreviewString(preview)+"updated encryption for %s\n", input.name)
 		}
 	}
 	metrics, err := S3Client().GetBucketMetricsConfiguration(ctx, &s3.GetBucketMetricsConfigurationInput{

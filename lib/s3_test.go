@@ -194,43 +194,131 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{})
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
 	ctx := context.Background()
-	err = S3Ensure(ctx, input, false)
-	if err != nil {
-		t.Error(err)
-		return
+	if err := S3Ensure(ctx, input, false); err != nil {
+		t.Fatal(err)
 	}
 	defer func() {
-		err := S3DeleteBucket(ctx, bucket, false)
-		if err != nil {
+		if err := S3DeleteBucket(ctx, bucket, false); err != nil {
 			panic(err)
 		}
 	}()
-	out, err := S3Client().GetBucketEncryption(ctx, &s3.GetBucketEncryptionInput{
+	client := S3Client()
+	getEncryption := func() *s3types.ServerSideEncryptionConfiguration {
+		t.Helper()
+		out, err := client.GetBucketEncryption(ctx, &s3.GetBucketEncryptionInput{
+			Bucket: aws.String(bucket),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.ServerSideEncryptionConfiguration
+	}
+	capturePreview := func() (string, error) {
+		var logs strings.Builder
+		originalPrint := Logger.Print
+		Logger.Print = func(args ...any) {
+			_, _ = fmt.Fprint(&logs, args...)
+		}
+		defer func() {
+			Logger.Print = originalPrint
+		}()
+		err := S3Ensure(ctx, input, true)
+		return logs.String(), err
+	}
+	listS3 := func() (map[string]*InfraS3, error) {
+		triggers := make(chan *InfraTrigger)
+		drained := make(chan struct{})
+		go func() {
+			defer close(drained)
+			for range triggers {
+			}
+		}()
+		buckets, err := InfraListS3(ctx, triggers)
+		close(triggers)
+		<-drained
+		return buckets, err
+	}
+
+	config := getEncryption()
+	if err := validateS3EncryptionPolicy(bucket, config); err != nil {
+		t.Fatalf("new bucket encryption does not match policy: %v", err)
+	}
+
+	_, err = client.PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
+		Bucket: aws.String(bucket),
+		ServerSideEncryptionConfiguration: &s3types.ServerSideEncryptionConfiguration{
+			Rules: []s3types.ServerSideEncryptionRule{{
+				ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
+					SSEAlgorithm: s3types.ServerSideEncryptionAes256,
+				},
+				BlockedEncryptionTypes: &s3types.BlockedEncryptionTypes{
+					EncryptionType: []s3types.EncryptionType{s3types.EncryptionTypeNone},
+				},
+				BucketKeyEnabled: aws.Bool(false),
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config = getEncryption()
+	err = validateS3EncryptionPolicy(bucket, config)
+	if err == nil {
+		t.Fatalf("test drift did not allow SSE-C: %s", PformatAlways(config))
+	}
+	if !strings.Contains(err.Error(), bucket) {
+		t.Fatalf("unsupported live state error does not identify bucket: %v", err)
+	}
+	_, err = listS3()
+	if err == nil {
+		t.Fatal("infrastructure inspection accepted an unsupported encryption configuration")
+	}
+	if !strings.Contains(err.Error(), bucket) || !strings.Contains(err.Error(), "unsupported encryption configuration") {
+		t.Fatalf("infrastructure inspection returned the wrong encryption error: %v", err)
+	}
+	logs, err := capturePreview()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs, "preview: updated encryption for "+bucket) {
+		t.Fatalf("preview did not report encryption drift: %s", logs)
+	}
+
+	if err := S3Ensure(ctx, input, false); err != nil {
+		t.Fatal(err)
+	}
+	config = getEncryption()
+	if err := validateS3EncryptionPolicy(bucket, config); err != nil {
+		t.Fatalf("S3Ensure did not restore encryption policy: %v", err)
+	}
+	logs, err = capturePreview()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(logs, "encryption for "+bucket) {
+		t.Fatalf("converged bucket still reports encryption drift: %s", logs)
+	}
+	_, err = client.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
-	encryptedConfig := &s3types.ServerSideEncryptionConfiguration{
-		Rules: []s3types.ServerSideEncryptionRule{{
-			BucketKeyEnabled: aws.Bool(false),
-			ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
-				SSEAlgorithm:   s3types.ServerSideEncryptionAes256,
-				KMSMasterKeyID: nil,
-			},
-			BlockedEncryptionTypes: &s3types.BlockedEncryptionTypes{
-				EncryptionType: []s3types.EncryptionType{s3types.EncryptionTypeSseC},
-			},
-		}},
+	infraBuckets, err := listS3()
+	if err != nil {
+		t.Fatalf("inspect converged infrastructure: %v", err)
 	}
-	if !reflect.DeepEqual(out.ServerSideEncryptionConfiguration, encryptedConfig) {
-		t.Error("encryption not enabled")
-		return
+	infraBucket, exists := infraBuckets[bucket]
+	if !exists {
+		t.Fatalf("infrastructure inspection omitted managed bucket %q", bucket)
+	}
+	for _, attr := range infraBucket.Attr {
+		if strings.HasPrefix(attr, "encryption=") {
+			t.Fatalf("infrastructure inspection emitted removed encryption attribute %q", attr)
+		}
 	}
 }
 

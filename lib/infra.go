@@ -1703,12 +1703,12 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				Bucket: bucket.Name,
 			})
 			if err != nil {
-				if strings.Contains(err.Error(), "NoSuchTagSet") {
-				} else {
+				if !strings.Contains(err.Error(), s3ErrCodeNoSuchTagSet) {
 					Logger.Println("error:", err)
-					errChan <- nil
+					errChan <- err
 					return
 				}
+				tagsOut = &s3.GetBucketTaggingOutput{}
 			}
 			for _, tag := range tagsOut.TagSet {
 				if *tag.Key == infraSetTagName {
@@ -1768,9 +1768,10 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 			if descr.Versioning != s3Default.versioning {
 				infraS3.Attr = append(infraS3.Attr, fmt.Sprintf("versioning=%t", descr.Versioning))
 			}
-			encryption := reflect.DeepEqual(descr.Encryption, s3EncryptionConfig)
-			if encryption != s3Default.encryption {
-				infraS3.Attr = append(infraS3.Attr, fmt.Sprintf("encryption=%t", encryption))
+			if err := validateS3EncryptionPolicy(*bucket.Name, descr.Encryption); err != nil {
+				Logger.Println("error:", err)
+				errChan <- err
+				return
 			}
 			metrics := descr.Metrics != nil
 			if s3Default.metrics != metrics {
@@ -1797,12 +1798,15 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 			errChan <- nil
 		}()
 	}
+	var resultErr error
 	for range buckets.Buckets {
-		err := <-errChan
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
+		if err := <-errChan; err != nil && resultErr == nil {
+			resultErr = err
 		}
+	}
+	if resultErr != nil {
+		Logger.Println("error:", resultErr)
+		return nil, resultErr
 	}
 	return res, nil
 }
