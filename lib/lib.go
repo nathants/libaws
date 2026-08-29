@@ -240,10 +240,15 @@ func zipSha256Hex(data []byte) (map[string]string, error) {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		rd, err := io.ReadAll(rc)
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
+		rd, readErr := io.ReadAll(rc)
+		closeErr := rc.Close()
+		if readErr != nil {
+			Logger.Println("error:", readErr)
+			return nil, readErr
+		}
+		if closeErr != nil {
+			Logger.Println("error:", closeErr)
+			return nil, closeErr
 		}
 		results["./"+f.Name] = sha256Short(rd)
 	}

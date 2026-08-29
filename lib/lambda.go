@@ -2334,7 +2334,7 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 	if ldflags != " " {
 		prefix = " " // ldflags might contain secrets, shellAt() logs cmdString on error unless it starts with whitespace
 	}
-	err = shellAt(path.Dir(infraLambda.Entrypoint), "%sCGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s .",
+	err = shellAt(path.Dir(infraLambda.Entrypoint), "%sCGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s .",
 		prefix,
 		ldflags,
 		path.Join(dir, "bootstrap"),
@@ -2486,6 +2486,10 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 			Logger.Println("error:", err)
 			return err
 		}
+	}
+	if err := normalizeLambdaPackage(zipFile); err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
 	return nil
 }
@@ -2883,38 +2887,18 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 				return err
 			}
 		} else {
-			initialLocation, err := lambdaPackageLocationFromOutput(getFunctionOut)
+			if getFunctionOut.Configuration == nil || getFunctionOut.Configuration.CodeSha256 == nil {
+				err := fmt.Errorf("lambda function returned no code hash: %s", infraLambda.Name)
+				Logger.Println("error:", err)
+				return err
+			}
+			newCodeHash, _, err := lambdaExpectedPublishedCode(zipBytes, "")
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
-			data, err := downloadLambdaPackage(
-				ctx,
-				initialLocation,
-				func(ctx context.Context) (lambdaPackageLocation, error) {
-					out, err := LambdaClient().GetFunction(ctx, &lambda.GetFunctionInput{
-						FunctionName: aws.String(infraLambda.Name),
-					})
-					if err != nil {
-						return lambdaPackageLocation{}, err
-					}
-					return lambdaPackageLocationFromOutput(out)
-				},
-			)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			existing, err := zipSha256Hex(data)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			new, err := zipSha256Hex(zipBytes)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
+			existing := map[string]string{"package": aws.ToString(getFunctionOut.Configuration.CodeSha256)}
+			new := map[string]string{"package": newCodeHash}
 			diff, err = diffMapStringString(new, existing, PreviewString(preview)+"zip", true)
 			if err != nil {
 				Logger.Println("error:", err)
