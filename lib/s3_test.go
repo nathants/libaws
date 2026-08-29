@@ -2,7 +2,6 @@ package lib
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -23,6 +22,25 @@ func checkAccountS3() {
 	}
 	if os.Getenv("LIBAWS_TEST_ACCOUNT") != account {
 		panic(fmt.Sprintf("%s != %s", os.Getenv("LIBAWS_TEST_ACCOUNT"), account))
+	}
+}
+
+func checkS3BucketPolicy(t *testing.T, ctx context.Context, input *s3EnsureInput) {
+	t.Helper()
+	out, err := S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{Bucket: aws.String(input.name)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := s3DesiredPolicy(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal, err := iamPolicyEqual(aws.ToString(out.Policy), expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equal {
+		t.Fatalf("bucket policy mismatch:\ngot:  %s\nwant: %s", aws.ToString(out.Policy), expected)
 	}
 }
 
@@ -358,16 +376,7 @@ func TestS3EnsurePrivateByDefault(t *testing.T) {
 	if !reflect.DeepEqual(pabOut.PublicAccessBlockConfiguration, privateConf) {
 		t.Error("not private")
 	}
-	_, err = S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-		Bucket: aws.String(bucket),
-	})
-	if err == nil {
-		t.Error("bucket policy should not exist")
-		return
-	} else if !strings.Contains(err.Error(), "NoSuchBucketPolicy") {
-		t.Error(err)
-		return
-	}
+	checkS3BucketPolicy(t, ctx, input)
 }
 
 func TestS3EnsurePrivateCors(t *testing.T) {
@@ -417,15 +426,7 @@ func TestS3EnsurePrivateCors(t *testing.T) {
 	if !reflect.DeepEqual(pabOut.PublicAccessBlockConfiguration, privateConf) {
 		t.Error("not private")
 	}
-	_, err = S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-		Bucket: aws.String(bucket),
-	})
-	if err != nil {
-		if !strings.Contains(err.Error(), "NoSuchBucketPolicy") {
-			t.Error(err)
-			return
-		}
-	}
+	checkS3BucketPolicy(t, ctx, input)
 }
 
 func TestS3EnsurePublic(t *testing.T) {
@@ -455,23 +456,7 @@ func TestS3EnsurePublic(t *testing.T) {
 		t.Error("cors config misconfigured")
 		return
 	}
-	policyOut, err := S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-		Bucket: aws.String(bucket),
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	policy := IamPolicyDocument{}
-	err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if !reflect.DeepEqual(policy, s3PublicPolicy(bucket)) {
-		t.Error("cors config misconfigured")
-		return
-	}
+	checkS3BucketPolicy(t, ctx, input)
 }
 
 func TestS3EnsurePublicCors(t *testing.T) {
@@ -505,23 +490,7 @@ func TestS3EnsurePublicCors(t *testing.T) {
 		t.Error("cors config misconfigured")
 		return
 	}
-	policyOut, err := S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-		Bucket: aws.String(bucket),
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	policy := IamPolicyDocument{}
-	err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if !reflect.DeepEqual(policy, s3PublicPolicy(bucket)) {
-		t.Error("cors config misconfigured")
-		return
-	}
+	checkS3BucketPolicy(t, ctx, input)
 }
 
 func TestS3EnsurePrivateToPublicNotAllowed(t *testing.T) {

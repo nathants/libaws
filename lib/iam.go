@@ -79,7 +79,12 @@ func iamAllowsFromPolicyDocument(policyDocument string) ([]*IamAllow, error) {
 		return nil, err
 	}
 	if len(policy.Statement) != 1 {
-		err := fmt.Errorf("expected 1 statement, got 0: %s", policyDocument)
+		err := fmt.Errorf("expected 1 statement, got %d: %s", len(policy.Statement), policyDocument)
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	if policy.Statement[0].Condition != nil {
+		err := fmt.Errorf("conditional inline policy cannot be represented as an allow: %s", policyDocument)
 		Logger.Println("error:", err)
 		return nil, err
 	}
@@ -91,11 +96,14 @@ func iamAllowsFromPolicyDocument(policyDocument string) ([]*IamAllow, error) {
 	var allows []*IamAllow
 	resource, ok := policy.Statement[0].Resource.(string)
 	if !ok {
-		resources, ok := policy.Statement[0].Resource.([]any)
-		if len(resources) != 1 || !ok {
-			panic(fmt.Sprintf("%#v", policy.Statement[0]))
+		resources, resourcesOK := policy.Statement[0].Resource.([]any)
+		if !resourcesOK || len(resources) != 1 {
+			return nil, fmt.Errorf("inline policy requires exactly one string resource: %s", policyDocument)
 		}
-		resource = resources[0].(string)
+		resource, ok = resources[0].(string)
+		if !ok {
+			return nil, fmt.Errorf("inline policy resource must be a string: %s", policyDocument)
+		}
 	}
 	action, ok := policy.Statement[0].Action.(string)
 	if ok {
@@ -104,13 +112,17 @@ func iamAllowsFromPolicyDocument(policyDocument string) ([]*IamAllow, error) {
 			Resource: resource,
 		})
 	} else {
-		actions, ok := policy.Statement[0].Action.([]any)
-		if !ok {
-			panic(fmt.Sprintf("%#v", policy.Statement[0]))
+		actions, actionsOK := policy.Statement[0].Action.([]any)
+		if !actionsOK {
+			return nil, fmt.Errorf("inline policy action must be a string or string list: %s", policyDocument)
 		}
-		for _, action := range actions {
+		for _, actionValue := range actions {
+			action, ok := actionValue.(string)
+			if !ok {
+				return nil, fmt.Errorf("inline policy action must be a string: %s", policyDocument)
+			}
 			allows = append(allows, &IamAllow{
-				Action:   action.(string),
+				Action:   action,
 				Resource: resource,
 			})
 		}
@@ -417,7 +429,13 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 		d.Start()
 		defer d.End()
 	}
-	var allowNames []string
+	type desiredAllow struct {
+		allow          *IamAllow
+		policyName     string
+		policyDocument string
+	}
+	var desiredAllows []desiredAllow
+	allowDocuments := map[string]string{}
 	for _, allowStr := range allows {
 		parts := SplitWhiteSpaceN(allowStr, 2)
 		if len(parts) != 2 {
@@ -429,10 +447,27 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 			Action:   parts[0],
 			Resource: parts[1],
 		}
-		allowNames = append(allowNames, allow.policyName())
+		policyName := allow.policyName()
+		policyDocument := allow.policyDocument()
+		if existing, ok := allowDocuments[policyName]; ok {
+			if existing != policyDocument {
+				return fmt.Errorf("user allows generate the same inline policy name %q: %q", policyName, allowStr)
+			}
+			continue
+		}
+		allowDocuments[policyName] = policyDocument
+		desiredAllows = append(desiredAllows, desiredAllow{
+			allow:          allow,
+			policyName:     policyName,
+			policyDocument: policyDocument,
+		})
+	}
+	var allowNames []string
+	for _, desired := range desiredAllows {
+		allowNames = append(allowNames, desired.policyName)
 		out, err := IamClient().GetUserPolicy(ctx, &iam.GetUserPolicyInput{
 			UserName:   aws.String(username),
-			PolicyName: aws.String(allow.policyName()),
+			PolicyName: aws.String(desired.policyName),
 		})
 		if err != nil {
 			var nse *iamtypes.NoSuchEntityException
@@ -447,7 +482,7 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 				Logger.Println("error:", err)
 				return err
 			}
-			equal, err := iamPolicyEqual(document, allow.policyDocument())
+			equal, err := iamPolicyEqual(document, desired.policyDocument)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
@@ -459,35 +494,50 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 		if !preview {
 			_, err := IamClient().PutUserPolicy(ctx, &iam.PutUserPolicyInput{
 				UserName:       aws.String(username),
-				PolicyName:     aws.String(allow.policyName()),
-				PolicyDocument: aws.String(allow.policyDocument()),
+				PolicyName:     aws.String(desired.policyName),
+				PolicyDocument: aws.String(desired.policyDocument),
 			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"attached user allow:", username, allow)
+		Logger.Println(PreviewString(preview)+"attached user allow:", username, desired.allow)
 	}
-	attachedAllows, err := IamListUserAllows(ctx, username)
-	if err != nil && !preview {
-		Logger.Println("error:", err)
-		return err
-	}
-	for _, allow := range attachedAllows {
-		if !slices.Contains(allowNames, allow.policyName()) {
+	var marker *string
+	for {
+		out, err := IamClient().ListUserPolicies(ctx, &iam.ListUserPoliciesInput{
+			UserName: aws.String(username),
+			Marker:   marker,
+		})
+		if err != nil {
+			var nse *iamtypes.NoSuchEntityException
+			if preview && errors.As(err, &nse) {
+				break
+			}
+			Logger.Println("error:", err)
+			return err
+		}
+		for _, policyName := range out.PolicyNames {
+			if slices.Contains(allowNames, policyName) {
+				continue
+			}
 			if !preview {
 				_, err := IamClient().DeleteUserPolicy(ctx, &iam.DeleteUserPolicyInput{
 					UserName:   aws.String(username),
-					PolicyName: aws.String(allow.policyName()),
+					PolicyName: aws.String(policyName),
 				})
 				if err != nil {
 					Logger.Println("error:", err)
 					return err
 				}
 			}
-			Logger.Println(PreviewString(preview)+"detach user allow:", username, allow)
+			Logger.Println(PreviewString(preview)+"detached user inline policy:", username, policyName)
 		}
+		if out.Marker == nil {
+			break
+		}
+		marker = out.Marker
 	}
 	return nil
 }
@@ -1322,32 +1372,21 @@ func (r *IamRole) FromRole(ctx context.Context, role *iamtypes.Role) error {
 }
 
 type IamStatementEntry struct {
-	Sid       string `json:",omitempty" yaml:",omitempty"`
-	Effect    string `json:",omitempty" yaml:",omitempty"`
-	Resource  any    `json:",omitempty" yaml:",omitempty"`
-	Principal any    `json:",omitempty" yaml:",omitempty"`
-	Action    any    `json:",omitempty" yaml:",omitempty"`
+	Sid          string `json:",omitempty" yaml:",omitempty"`
+	Effect       string `json:",omitempty" yaml:",omitempty"`
+	Resource     any    `json:",omitempty" yaml:",omitempty"`
+	NotResource  any    `json:",omitempty" yaml:",omitempty"`
+	Principal    any    `json:",omitempty" yaml:",omitempty"`
+	NotPrincipal any    `json:",omitempty" yaml:",omitempty"`
+	Action       any    `json:",omitempty" yaml:",omitempty"`
+	NotAction    any    `json:",omitempty" yaml:",omitempty"`
+	Condition    any    `json:",omitempty" yaml:",omitempty"`
 }
 
 type IamPolicyDocument struct {
 	Version   string              `json:",omitempty" yaml:",omitempty"`
 	Id        string              `json:",omitempty" yaml:",omitempty"`
 	Statement []IamStatementEntry `json:",omitempty" yaml:",omitempty"`
-}
-
-type IamStatementEntryCondition struct {
-	Sid       string
-	Effect    string `json:",omitempty" yaml:",omitempty"`
-	Resource  any    `json:",omitempty" yaml:",omitempty"`
-	Principal any    `json:",omitempty" yaml:",omitempty"`
-	Action    any    `json:",omitempty" yaml:",omitempty"`
-	Condition any    `json:",omitempty" yaml:",omitempty"`
-}
-
-type IamPolicyDocumentCondition struct {
-	Version   string
-	Id        string
-	Statement []IamStatementEntryCondition
 }
 
 func IamPolicyArn(ctx context.Context, policyName string) (string, error) {
@@ -1440,65 +1479,140 @@ func IamResetUserLoginTempPassword(ctx context.Context, username, password strin
 	return nil
 }
 
+func iamListUserTags(ctx context.Context, username string) ([]iamtypes.Tag, error) {
+	var tags []iamtypes.Tag
+	var marker *string
+	for {
+		out, err := IamClient().ListUserTags(ctx, &iam.ListUserTagsInput{
+			UserName: aws.String(username),
+			Marker:   marker,
+		})
+		if err != nil {
+			return nil, err
+		}
+		tags = append(tags, out.Tags...)
+		if out.Marker == nil {
+			return tags, nil
+		}
+		marker = out.Marker
+	}
+}
+
+func IamEnsureUser(ctx context.Context, infraSetName, username string, policies, allows []string, preview bool) error {
+	if infraSetName == "" {
+		return errors.New("IAM user requires an infrastructure set name")
+	}
+	out, err := IamClient().GetUser(ctx, &iam.GetUserInput{UserName: aws.String(username)})
+	missing := false
+	if err != nil {
+		var nse *iamtypes.NoSuchEntityException
+		if !errors.As(err, &nse) {
+			return err
+		}
+		missing = true
+		if !preview {
+			_, err = IamClient().CreateUser(ctx, &iam.CreateUserInput{
+				UserName: aws.String(username),
+				Tags: []iamtypes.Tag{{
+					Key:   aws.String(infraSetTagName),
+					Value: aws.String(infraSetName),
+				}},
+			})
+			if err != nil {
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"created IAM user:", username)
+	}
+	if !missing {
+		tags, err := iamListUserTags(ctx, username)
+		if err != nil {
+			return err
+		}
+		tagMatches := false
+		for _, tag := range tags {
+			if aws.ToString(tag.Key) == infraSetTagName && aws.ToString(tag.Value) == infraSetName {
+				tagMatches = true
+				break
+			}
+		}
+		if !tagMatches {
+			if !preview {
+				_, err = IamClient().TagUser(ctx, &iam.TagUserInput{
+					UserName: out.User.UserName,
+					Tags: []iamtypes.Tag{{
+						Key:   aws.String(infraSetTagName),
+						Value: aws.String(infraSetName),
+					}},
+				})
+				if err != nil {
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"updated IAM user infrastructure set tag:", username, infraSetName)
+		}
+	}
+	if err := IamEnsureUserPolicies(ctx, username, policies, preview); err != nil {
+		return err
+	}
+	return IamEnsureUserAllows(ctx, username, allows, preview)
+}
+
 func IamEnsureUserApi(ctx context.Context, username string, preview bool) (*iamtypes.AccessKey, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "IamEnsureUserApi"}
 		d.Start()
 		defer d.End()
 	}
-	_, err := IamClient().GetUser(ctx, &iam.GetUserInput{
-		UserName: aws.String(username),
-	})
+	_, err := IamClient().GetUser(ctx, &iam.GetUserInput{UserName: aws.String(username)})
 	if err != nil {
 		var nse *iamtypes.NoSuchEntityException
-		if errors.As(err, &nse) {
-			if !preview {
-				_, err := IamClient().CreateUser(ctx, &iam.CreateUserInput{
-					UserName: aws.String(username),
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return nil, err
-				}
-			}
-			Logger.Println(PreviewString(preview)+"iam created user:", username)
-		} else {
-			Logger.Println("error:", err)
+		if !errors.As(err, &nse) {
 			return nil, err
 		}
+		if !preview {
+			_, err = IamClient().CreateUser(ctx, &iam.CreateUserInput{UserName: aws.String(username)})
+			if err != nil {
+				return nil, err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"created IAM user:", username)
+		if preview {
+			Logger.Println(PreviewString(preview)+"created access key for username:", username)
+			return &iamtypes.AccessKey{}, nil
+		}
+	}
+	return IamEnsureUserApiKey(ctx, username, preview)
+}
+
+func IamEnsureUserApiKey(ctx context.Context, username string, preview bool) (*iamtypes.AccessKey, error) {
+	if _, err := IamClient().GetUser(ctx, &iam.GetUserInput{UserName: aws.String(username)}); err != nil {
+		return nil, err
 	}
 	out, err := IamClient().ListAccessKeys(ctx, &iam.ListAccessKeysInput{
 		MaxItems: aws.Int32(100),
 		UserName: aws.String(username),
 	})
 	if err != nil {
-		if !preview {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		out = &iam.ListAccessKeysOutput{}
+		return nil, err
 	}
-	if !preview {
-		switch len(out.AccessKeyMetadata) {
-		case 0:
-			out, err := IamClient().CreateAccessKey(ctx, &iam.CreateAccessKeyInput{
-				UserName: aws.String(username),
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
-			}
+	switch len(out.AccessKeyMetadata) {
+	case 0:
+		if preview {
 			Logger.Println(PreviewString(preview)+"created access key for username:", username)
-			return out.AccessKey, nil
-		case 1:
-			return &iamtypes.AccessKey{}, nil // access key is only returned on creation
-		default:
-			err := fmt.Errorf("more than 1 access key exists for username: %s %d", username, len(out.AccessKeyMetadata))
+			return &iamtypes.AccessKey{}, nil
+		}
+		created, err := IamClient().CreateAccessKey(ctx, &iam.CreateAccessKeyInput{UserName: aws.String(username)})
+		if err != nil {
 			return nil, err
 		}
+		Logger.Println("created access key for username:", username)
+		return created.AccessKey, nil
+	case 1:
+		return &iamtypes.AccessKey{}, nil
+	default:
+		return nil, fmt.Errorf("more than 1 access key exists for username: %s %d", username, len(out.AccessKeyMetadata))
 	}
-	Logger.Println(PreviewString(preview)+"created access key for username:", username)
-	return &iamtypes.AccessKey{}, nil
 }
 
 func IamEnsureUserLogin(ctx context.Context, username, password string, preview bool) error {
@@ -1710,6 +1824,8 @@ func (u *IamUser) FromUser(ctx context.Context, user *iamtypes.User) error {
 	for _, policy := range policies {
 		u.Policies = append(u.Policies, *policy.PolicyName)
 	}
+	sort.Strings(u.Allows)
+	sort.Strings(u.Policies)
 	return nil
 }
 
@@ -1730,8 +1846,14 @@ func IamListUsers(ctx context.Context) ([]*IamUser, error) {
 			return nil, err
 		}
 		for _, user := range out.Users {
+			tags, err := iamListUserTags(ctx, aws.ToString(user.UserName))
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			user.Tags = tags
 			iamUser := &IamUser{}
-			err := iamUser.FromUser(ctx, &user)
+			err = iamUser.FromUser(ctx, &user)
 			if err != nil {
 				Logger.Println("error:", err)
 				return nil, err

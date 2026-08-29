@@ -334,6 +334,7 @@ iam-ensure-ec2-spot-roles     - ensure IAM EC2 spot roles that are needed to use
 iam-ensure-instance-profile   - ensure an IAM instance-profile
 iam-ensure-role               - ensure an IAM role
 iam-ensure-user-api           - ensure an IAM user with API key
+iam-ensure-user-api-key       - ensure an existing IAM user has one API access key
 iam-ensure-user-login         - ensure an IAM user with login
 ```
 
@@ -515,6 +516,8 @@ An infrastructure set is defined by [YAML](#infrayaml) or [Go struct](https://gi
 
 * `ensure` operations are positive assertions. They assert that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
 
+  * When possible, an existing same-named resource is automatically adopted and converged to the requested configuration.
+
   * Positive assertions **CANNOT** remove top-level infrastructure, but **CAN** remove configuration from them.
 
   * Removing a `trigger`, `policy`, or `allow` **WILL** remove that from the `lambda`.
@@ -568,6 +571,10 @@ lambda:
 s3:
   VALUE:
     attr: [VALUE ...]
+user:
+  VALUE:
+    allow:  [VALUE ...]
+    policy: [VALUE ...]
 dynamodb:
   VALUE:
     key:  [VALUE ...]
@@ -632,10 +639,15 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
 
   * `acl=VALUE`, values: `public | private`, default: `private`
   * `versioning=VALUE`, values: `true | false`, default: `false`
+  * `appendonly=VALUE`, values: `true | false`, default: `false`
   * `metrics=VALUE`, values: `true | false`, default: `false`
   * `cors=VALUE`, values: `true | false`, default: `false`
   * `ttldays=VALUE`, values: `0 | n`, default: `0`
   * `allow_put=VALUE`, values: `$principal.amazonaws.com`
+
+* Every libaws-managed bucket denies non-TLS requests and uses default SSE-S3 `AES256` encryption; callers do not need to send an encryption header.
+
+* `appendonly=true` requires exact `If-None-Match: *` whenever an object is created, including `PutObject` and `CompleteMultipartUpload`; denies object and object-version deletion; and cannot be combined with expiration. Multipart staging is allowed, but completion requires the same create-only condition. ACL, versioning, and `allow_put` remain independent settings. Use `infra-rm` for deliberate administrator cleanup.
 
 * Setting `cors=true` uses `*` for allowed origins. To specify one or more explicit origins, do this instead:
 
@@ -662,6 +674,23 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
         - versioning=true
         - acl=public
   ```
+
+### IAM user
+
+Declares an IAM user and exactly converges its attached managed-policy names and shorthand inline allows; undeclared attached and inline policies are removed. An allow has the form `SERVICE:ACTION RESOURCE`. `infra-ensure` creates and tags the user but never creates credentials; bootstrap the one-time secret explicitly with `libaws iam-ensure-user-api-key USER`. That command refuses a missing user and prints a secret only when it creates the user's sole key. `infra-rm` deletes declared users and their access keys.
+
+```yaml
+user:
+  backup-writer:
+    allow:
+      - s3:PutObject arn:aws:s3:::backup-bucket/*
+  backup-reader:
+    allow:
+      - s3:GetObject arn:aws:s3:::backup-bucket/*
+      - s3:ListBucket arn:aws:s3:::backup-bucket
+    policy:
+      - ExistingManagedPolicy
+```
 
 ### DynamoDB
 

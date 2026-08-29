@@ -1,0 +1,19 @@
+name: libaws-appendonly-${uid}
+
+s3:
+  libaws-appendonly-${uid}:
+    attr:
+      - acl=private
+      - versioning=true
+      - appendonly=true
+
+user:
+  libaws-appendonly-writer-${uid}:
+    allow:
+      - s3:PutObject arn:aws:s3:::libaws-appendonly-${uid}/*
+
+  libaws-appendonly-reader-${uid}:
+    allow:
+      - s3:GetObject arn:aws:s3:::libaws-appendonly-${uid}/*
+      - s3:GetObjectVersion arn:aws:s3:::libaws-appendonly-${uid}/*
+      - s3:ListBucket arn:aws:s3:::libaws-appendonly-${uid}

@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -178,6 +179,7 @@ type s3EnsureInput struct {
 	name         string
 	acl          string
 	versioning   bool
+	appendOnly   bool
 	metrics      bool
 	cors         *bool
 	corsOrigins  []string
@@ -199,6 +201,120 @@ func s3EnsureInputDefault() *s3EnsureInput {
 	}
 }
 
+func s3DenyInsecureTransportStatement(bucket string) IamStatementEntry {
+	bucketARN := "arn:aws:s3:::" + bucket
+	return IamStatementEntry{
+		Sid:       "DenyInsecureTransport",
+		Effect:    "Deny",
+		Principal: "*",
+		Action:    "s3:*",
+		Resource:  []string{bucketARN, bucketARN + "/*"},
+		Condition: map[string]any{"Bool": map[string]string{"aws:SecureTransport": "false"}},
+	}
+}
+
+func s3AppendOnlyStatements(bucket string) []IamStatementEntry {
+	objectARN := "arn:aws:s3:::" + bucket + "/*"
+	return []IamStatementEntry{
+		{
+			Sid:       "DenyPutWithoutExactCreateCondition",
+			Effect:    "Deny",
+			Principal: "*",
+			Action:    "s3:PutObject",
+			Resource:  objectARN,
+			Condition: map[string]any{
+				"Bool":            map[string]string{"s3:ObjectCreationOperation": "true"},
+				"StringNotEquals": map[string]string{"s3:if-none-match": "*"},
+			},
+		},
+		{
+			Sid:       "DenyObjectDeletion",
+			Effect:    "Deny",
+			Principal: "*",
+			Action:    []string{"s3:DeleteObject", "s3:DeleteObjectVersion"},
+			Resource:  objectARN,
+		},
+	}
+}
+
+func s3PublicReadStatement(bucket string) IamStatementEntry {
+	return IamStatementEntry{
+		Sid:       "S3PublicPolicy",
+		Effect:    "Allow",
+		Principal: "*",
+		Action:    "s3:GetObject",
+		Resource:  "arn:aws:s3:::" + bucket + "/*",
+	}
+}
+
+func s3AllowPutPrincipal(bucket string, statement IamStatementEntry) (string, bool) {
+	var principal string
+	switch value := statement.Principal.(type) {
+	case map[string]any:
+		principal, _ = value["Service"].(string)
+	case map[string]string:
+		principal = value["Service"]
+	default:
+	}
+	if principal == "" {
+		return "", false
+	}
+	expected := IamStatementEntry{
+		Sid:       "allow put from " + principal,
+		Effect:    "Allow",
+		Principal: map[string]string{"Service": principal},
+		Action:    "s3:PutObject",
+		Resource:  "arn:aws:s3:::" + bucket + "/*",
+	}
+	if !s3PolicyStatementEqual(statement, expected) {
+		return "", false
+	}
+	return principal, true
+}
+
+func s3BasePolicy(bucket string) IamPolicyDocument {
+	return IamPolicyDocument{
+		Version:   "2012-10-17",
+		Statement: []IamStatementEntry{s3DenyInsecureTransportStatement(bucket)},
+	}
+}
+
+func s3PolicyStatementEqual(actual, expected IamStatementEntry) bool {
+	actualData, err := json.Marshal(actual)
+	if err != nil {
+		return false
+	}
+	expectedData, err := json.Marshal(expected)
+	if err != nil {
+		return false
+	}
+	equal, err := iamPolicyEqual(string(actualData), string(expectedData))
+	return err == nil && equal
+}
+
+func s3PolicyHasStatement(policy IamPolicyDocument, expected IamStatementEntry) bool {
+	for _, statement := range policy.Statement {
+		if s3PolicyStatementEqual(statement, expected) {
+			return true
+		}
+	}
+	return false
+}
+
+func s3AppendOnlyPolicyMatches(bucket, policyDocument string) bool {
+	policy := IamPolicyDocument{}
+	if err := json.Unmarshal([]byte(policyDocument), &policy); err != nil {
+		return false
+	}
+	required := append([]IamStatementEntry{s3DenyInsecureTransportStatement(bucket)}, s3AppendOnlyStatements(bucket)...)
+	for _, statement := range required {
+		if !s3PolicyHasStatement(policy, statement) {
+			return false
+		}
+	}
+	return true
+}
+
 func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureInput, error) {
 	input := s3EnsureInputDefault()
 	input.infraSetName = infraSetName
@@ -215,6 +331,15 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 			return nil, err
 		}
 		switch attr {
+		case "appendonly":
+			switch value {
+			case "true", "false":
+				input.appendOnly = value == "true"
+			default:
+				err := fmt.Errorf("unknown attr: %s", line)
+				Logger.Println("error:", err)
+				return nil, err
+			}
 		case "allow_put":
 			policy.Statement = append(policy.Statement, IamStatementEntry{
 				Sid:       "allow put from " + value,
@@ -274,6 +399,9 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 			return nil, err
 		}
 	}
+	if input.appendOnly && input.ttlDays != 0 {
+		return nil, errors.New("appendonly=true cannot be combined with object expiration")
+	}
 	if len(policy.Statement) > 0 {
 		data, err := json.Marshal(policy)
 		if err != nil {
@@ -293,18 +421,33 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 	return input, nil
 }
 
-func s3PublicPolicy(bucket string) IamPolicyDocument {
-	return IamPolicyDocument{
-		Version: "2012-10-17",
-		Id:      "S3PublicPolicy",
-		Statement: []IamStatementEntry{{
-			Sid:       "S3PublicPolicy",
-			Effect:    "Allow",
-			Principal: "*",
-			Action:    "s3:GetObject",
-			Resource:  fmt.Sprintf("arn:aws:s3:::%s/*", bucket),
-		}},
+func s3DesiredPolicy(input *s3EnsureInput) (string, error) {
+	policy := s3BasePolicy(input.name)
+	if input.acl == "public" {
+		policy.Id = "S3PublicPolicy"
+		policy.Statement = append(policy.Statement, s3PublicReadStatement(input.name))
 	}
+	if input.CustomPolicy != nil {
+		custom := IamPolicyDocument{}
+		if err := json.Unmarshal([]byte(*input.CustomPolicy), &custom); err != nil {
+			return "", err
+		}
+		if custom.Version != "" {
+			policy.Version = custom.Version
+		}
+		if custom.Id != "" {
+			policy.Id = custom.Id
+		}
+		policy.Statement = append(policy.Statement, custom.Statement...)
+	}
+	if input.appendOnly {
+		policy.Statement = append(policy.Statement, s3AppendOnlyStatements(input.name)...)
+	}
+	data, err := json.Marshal(policy)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func s3Cors(allowedOrigins []string) []s3types.CORSRule {
@@ -473,95 +616,41 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 		Logger.Printf(PreviewString(preview)+"created public access block for %s: %s\n", input.name, input.acl)
 	}
+	desiredPolicy, err := s3DesiredPolicy(input)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
 	policyOut, err := S3Client().GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 		ExpectedBucketOwner: aws.String(account),
 		Bucket:              aws.String(input.name),
 	})
-	if err != nil {
-		if !strings.Contains(err.Error(), s3ErrCodeNoSuchBucketPolicy) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
-			Logger.Println("error:", err)
-			return err
-		}
-		if input.acl == "public" || input.CustomPolicy != nil {
-			var aclName string
-			var policyBytes []byte
-			if input.CustomPolicy != nil {
-				aclName = "custom"
-				policyBytes = []byte(*input.CustomPolicy)
-			} else {
-				aclName = "public"
-				policyBytes, err = json.Marshal(s3PublicPolicy(input.name))
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			if !preview {
-				_, err = S3Client().PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
-					ExpectedBucketOwner: aws.String(account),
-					Bucket:              aws.String(input.name),
-					Policy:              aws.String(string(policyBytes)),
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			Logger.Println(PreviewString(preview)+"put acl:", input.name, aclName, string(policyBytes))
-		}
-	} else if input.acl == "private" {
-		policy := IamPolicyDocument{}
-		err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
+	policyExists := err == nil
+	if err != nil && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucketPolicy) && !strings.Contains(err.Error(), s3ErrCodeNoSuchBucket) {
+		Logger.Println("error:", err)
+		return err
+	}
+	matches := false
+	if policyExists {
+		matches, err = iamPolicyEqual(*policyOut.Policy, desiredPolicy)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		if input.CustomPolicy != nil {
-			expectedPolicy := IamPolicyDocument{}
-			err = json.Unmarshal([]byte(*input.CustomPolicy), &expectedPolicy)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			if !reflect.DeepEqual(expectedPolicy, policy) {
-				err := fmt.Errorf("private bucket policy is misconfigured for bucket: %s\n%s != %s", input.name, Pformat(policy), Pformat(expectedPolicy))
-				Logger.Println("error:", err)
-				return err
-			}
-		} else {
-			if !preview {
-				_, err := S3Client().DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
-					Bucket: aws.String(input.name),
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			Logger.Println(PreviewString(preview)+"remove bucket policy:", input.name, *policyOut.Policy)
-		}
-	} else {
-		policy := IamPolicyDocument{}
-		err = json.Unmarshal([]byte(*policyOut.Policy), &policy)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		expectedPolicy := IamPolicyDocument{}
-		if input.CustomPolicy == nil {
-			expectedPolicy = s3PublicPolicy(input.name)
-		} else {
-			err = json.Unmarshal([]byte(*input.CustomPolicy), &expectedPolicy)
+	}
+	if !matches {
+		if !preview {
+			_, err = S3Client().PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				ExpectedBucketOwner: aws.String(account),
+				Bucket:              aws.String(input.name),
+				Policy:              aws.String(desiredPolicy),
+			})
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
-		if !reflect.DeepEqual(expectedPolicy, policy) {
-			err := fmt.Errorf("public bucket policy is misconfigured for bucket: %s\n%s != %s", input.name, Pformat(policy), Pformat(expectedPolicy))
-			Logger.Println("error:", err)
-			return err
-		}
+		Logger.Println(PreviewString(preview)+"updated bucket policy:", input.name)
 	}
 	corsOut, err := S3Client().GetBucketCors(ctx, &s3.GetBucketCorsInput{
 		ExpectedBucketOwner: aws.String(account),
@@ -869,6 +958,20 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
+	}
+	_, policyErr := s3Client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{Bucket: aws.String(bucket)})
+	if policyErr == nil {
+		if !preview {
+			_, err = s3Client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{Bucket: aws.String(bucket)})
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"removed bucket policy:", bucket)
+	} else if !strings.Contains(policyErr.Error(), s3ErrCodeNoSuchBucketPolicy) {
+		Logger.Println("error:", policyErr)
+		return policyErr
 	}
 	// rm objects
 	var token *string

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -53,6 +52,7 @@ const (
 	infraKeyS3              = "s3"
 	infraKeyDynamoDB        = "dynamodb"
 	infraKeySqs             = "sqs"
+	infraKeyUser            = "user"
 	infraKeyKeypair         = "keypair"
 	infraKeyVpc             = "vpc"
 	infraKeyInstanceProfile = "instance-profile"
@@ -76,8 +76,10 @@ type InfraSet struct {
 	Vpc             map[string]*InfraVpc             `yaml:"vpc,omitempty"`
 	InstanceProfile map[string]*InfraInstanceProfile `yaml:"instance-profile,omitempty"`
 
+	// IAM users can be declared; the "none" infraset also lists unmanaged users.
+	User map[string]*InfraUser `yaml:"user,omitempty"`
+
 	// "none" infraset gets a few extra slots for resources not associated with any infraset
-	User  map[string]*InfraUser  `yaml:"user,omitempty"`
 	Role  map[string]*InfraRole  `yaml:"role,omitempty"`  // any role  not associated with an infraset shows up here
 	Api   map[string]*InfraApi   `yaml:"api,omitempty"`   // any api  not associated with an infraset shows up here
 	Event map[string]*InfraEvent `yaml:"event,omitempty"` // any event  not associated with an infraset shows up here
@@ -91,9 +93,15 @@ type InfraApi struct {
 	ReadOnlyUrl  string `json:"url,omitempty"    yaml:"url,omitempty"`
 }
 
+const (
+	infraKeyUserAllow  = "allow"
+	infraKeyUserPolicy = "policy"
+)
+
 type InfraUser struct {
-	Allow  []string `json:"allow,omitempty"  yaml:"allow,omitempty"`
-	Policy []string `json:"policy,omitempty" yaml:"policy,omitempty"`
+	infraSetName string
+	Allow        []string `json:"allow,omitempty"  yaml:"allow,omitempty"`
+	Policy       []string `json:"policy,omitempty" yaml:"policy,omitempty"`
 }
 
 type InfraRole struct {
@@ -513,15 +521,24 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 			errs <- err
 			return
 		}
-		lock.Lock()
-		if infra.InfraSet[infraSetNameNone] == nil {
-			infra.InfraSet[infraSetNameNone] = &InfraSet{}
+		for name, user := range users {
+			infraSetName := user.infraSetName
+			if infraSetName == "" {
+				infraSetName = infraSetNameNone
+			}
+			if filter != "" && !(strings.Contains(infraSetName, filter) || strings.Contains(name, filter)) {
+				continue
+			}
+			lock.Lock()
+			if infra.InfraSet[infraSetName] == nil {
+				infra.InfraSet[infraSetName] = &InfraSet{}
+			}
+			if infra.InfraSet[infraSetName].User == nil {
+				infra.InfraSet[infraSetName].User = map[string]*InfraUser{}
+			}
+			infra.InfraSet[infraSetName].User[name] = user
+			lock.Unlock()
 		}
-		if infra.InfraSet[infraSetNameNone].User == nil {
-			infra.InfraSet[infraSetNameNone].User = map[string]*InfraUser{}
-		}
-		maps.Copy(infra.InfraSet[infraSetNameNone].User, users)
-		lock.Unlock()
 		errs <- nil
 	}()
 
@@ -1580,10 +1597,17 @@ func InfraListUser(ctx context.Context) (map[string]*InfraUser, error) {
 	}
 	result := map[string]*InfraUser{}
 	for _, user := range out {
-		result[*user.UserName] = &InfraUser{
+		infraUser := &InfraUser{
 			Allow:  user.Allows,
 			Policy: user.Policies,
 		}
+		for _, tag := range user.tags {
+			if tag.Key != nil && *tag.Key == infraSetTagName && tag.Value != nil {
+				infraUser.infraSetName = *tag.Value
+				break
+			}
+		}
+		result[*user.UserName] = infraUser
 	}
 	return result, nil
 }
@@ -1677,28 +1701,6 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				errChan <- err
 				return
 			}
-			policyOut, err := s3Client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-				Bucket: bucket.Name,
-			})
-			if err == nil {
-				policy := IamPolicyDocument{}
-				err := json.Unmarshal([]byte(*policyOut.Policy), &policy)
-				if err != nil {
-					Logger.Println("error:", err)
-					errChan <- err
-					return
-				}
-				for _, statement := range policy.Statement {
-					if statement.Effect == "Allow" &&
-						statement.Action == "s3:PutObject" &&
-						statement.Resource == "arn:aws:s3:::"+*bucket.Name+"/*" &&
-						strings.HasPrefix(statement.Sid, "allow put from ") {
-						principal := statement.Principal.(map[string]any)["Service"].(string)
-						infraS3.Attr = append(infraS3.Attr, "allow_put="+principal)
-					}
-				}
-			}
-
 			tagsOut, err := s3Client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 				Bucket: bucket.Name,
 			})
@@ -1723,24 +1725,44 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				return
 			}
 			s3Default := s3EnsureInputDefault()
-			if descr.Policy == nil {
-				infraS3.Attr = append(infraS3.Attr, "acl=private")
-			} else if descr.Policy != nil && reflect.DeepEqual(s3PublicPolicy(*bucket.Name), *descr.Policy) {
-				infraS3.Attr = append(infraS3.Attr, "acl=public")
-			} else if descr.Policy != nil {
-				privateWithAllowPuts := true
+			appendOnly := false
+			public := false
+			custom := false
+			if descr.Policy != nil {
+				policyData, err := json.Marshal(descr.Policy)
+				if err != nil {
+					Logger.Println("error:", err)
+					errChan <- err
+					return
+				}
+				appendOnly = s3AppendOnlyPolicyMatches(*bucket.Name, string(policyData))
 				for _, statement := range descr.Policy.Statement {
-					if !(statement.Effect == "Allow" &&
-						statement.Action == "s3:PutObject" &&
-						strings.HasPrefix(statement.Sid, "allow put from ")) {
-						privateWithAllowPuts = false
+					managed := s3PolicyStatementEqual(statement, s3DenyInsecureTransportStatement(*bucket.Name))
+					if s3PolicyStatementEqual(statement, s3PublicReadStatement(*bucket.Name)) {
+						public = true
+						managed = true
 					}
+					if appendOnly {
+						for _, expected := range s3AppendOnlyStatements(*bucket.Name) {
+							managed = managed || s3PolicyStatementEqual(statement, expected)
+						}
+					}
+					if principal, ok := s3AllowPutPrincipal(*bucket.Name, statement); ok {
+						infraS3.Attr = append(infraS3.Attr, "allow_put="+principal)
+						managed = true
+					}
+					custom = custom || !managed
 				}
-				if privateWithAllowPuts {
-					infraS3.Attr = append(infraS3.Attr, "acl=private")
-				} else {
-					infraS3.Attr = append(infraS3.Attr, "acl=custom")
-				}
+			}
+			if custom {
+				infraS3.Attr = append(infraS3.Attr, "acl=custom")
+			} else if public {
+				infraS3.Attr = append(infraS3.Attr, "acl=public")
+			} else {
+				infraS3.Attr = append(infraS3.Attr, "acl=private")
+			}
+			if appendOnly {
+				infraS3.Attr = append(infraS3.Attr, "appendonly=true")
 			}
 			if descr.Cors == nil && s3Default.cors != nil && *s3Default.cors {
 				infraS3.Attr = append(infraS3.Attr, "cors=false")
@@ -1900,6 +1922,21 @@ func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 		}
 	}
 	return res, nil
+}
+
+func InfraEnsureUser(ctx context.Context, infraSet *InfraSet, preview bool) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "InfraEnsureUser"}
+		d.Start()
+		defer d.End()
+	}
+	for userName, user := range infraSet.User {
+		if err := IamEnsureUser(ctx, infraSet.Name, userName, user.Policy, user.Allow, preview); err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
+	return nil
 }
 
 func InfraEnsureKeypair(ctx context.Context, infraSet *InfraSet, preview bool) error {
@@ -2274,6 +2311,13 @@ func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview,
 		Logger.Println("error:", err)
 		return err
 	}
+	if quick == "" {
+		// Apply every resource-side control before granting user permissions.
+		if err := InfraEnsureUser(ctx, infraSet, preview); err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
 	return nil
 }
 
@@ -2359,6 +2403,34 @@ func infraParseValidateDynamoDB(val any) error {
 				err := fmt.Errorf("unknown infraDynamoDB key: %s: %v", k, v)
 				Logger.Println("error:", err)
 				return err
+			}
+		}
+	}
+	return nil
+}
+
+func infraParseValidateUser(val any) error {
+	users, ok := val.(map[string]any)
+	if !ok {
+		return fmt.Errorf("infraUser should be type map[string]any, got: %#v", val)
+	}
+	for name, userValue := range users {
+		user, ok := userValue.(map[string]any)
+		if !ok {
+			return fmt.Errorf("infraUser should be type map[string]any, got: %s %#v", name, userValue)
+		}
+		for key, value := range user {
+			if key != infraKeyUserAllow && key != infraKeyUserPolicy {
+				return fmt.Errorf("unknown infraUser key: %s: %v", key, value)
+			}
+			values, ok := value.([]any)
+			if !ok {
+				return fmt.Errorf("infraUser key %s should be type []string, got: %#v", key, value)
+			}
+			for _, item := range values {
+				if _, ok := item.(string); !ok {
+					return fmt.Errorf("infraUser key %s should be type []string, got: %#v", key, value)
+				}
 			}
 		}
 	}
@@ -2752,6 +2824,12 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 				Logger.Println("error:", err)
 				return nil, err
 			}
+		case infraKeyUser:
+			err := infraParseValidateUser(v)
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
 		case infraKeyS3:
 			err := infraParseValidateS3(v)
 			if err != nil {
@@ -2856,6 +2934,13 @@ func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 		d := &Debug{start: time.Now(), name: "InfraDelete"}
 		d.Start()
 		defer d.End()
+	}
+	// Revoke user credentials before removing resource-side controls.
+	for userName := range infraSet.User {
+		if err := IamDeleteUser(ctx, userName, preview); err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 	}
 	for vpcName := range infraSet.Vpc {
 		err := VpcRm(ctx, vpcName, preview)
