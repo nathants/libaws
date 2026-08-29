@@ -70,11 +70,13 @@ func dynamodbItemGet() {
 		os.Exit(1)
 	}
 	val := map[string]any{}
-	err = attributevalue.UnmarshalMap(out.Item, &val)
+	err = attributevalue.UnmarshalMapWithOptions(out.Item, &val, func(options *attributevalue.DecoderOptions) {
+		options.UseNumber = true
+	})
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	bytes, err := json.Marshal(val)
+	bytes, err := json.Marshal(exactDynamoDBJSONValue(val))
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

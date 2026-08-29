@@ -57,6 +57,31 @@ func dynamoDBItemScanLimitReached(limit, count int) bool {
 	return limit > 0 && count >= limit
 }
 
+func exactDynamoDBJSONValue(value any) any {
+	switch value := value.(type) {
+	case attributevalue.Number:
+		return json.Number(value.String())
+	case []attributevalue.Number:
+		exact := make([]any, len(value))
+		for index := range value {
+			exact[index] = json.Number(value[index].String())
+		}
+		return exact
+	case []any:
+		for index := range value {
+			value[index] = exactDynamoDBJSONValue(value[index])
+		}
+		return value
+	case map[string]any:
+		for key := range value {
+			value[key] = exactDynamoDBJSONValue(value[key])
+		}
+		return value
+	default:
+		return value
+	}
+}
+
 type dynamoDBItemScanClient interface {
 	Scan(
 		context.Context,
@@ -98,10 +123,12 @@ func dynamoDBItemScanWithClient(
 				return nil
 			}
 			value := map[string]any{}
-			if err := attributevalue.UnmarshalMap(item, &value); err != nil {
+			if err := attributevalue.UnmarshalMapWithOptions(item, &value, func(options *attributevalue.DecoderOptions) {
+				options.UseNumber = true
+			}); err != nil {
 				return err
 			}
-			data, err := json.Marshal(value)
+			data, err := json.Marshal(exactDynamoDBJSONValue(value))
 			if err != nil {
 				return err
 			}

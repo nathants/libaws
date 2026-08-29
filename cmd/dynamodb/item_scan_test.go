@@ -68,6 +68,24 @@ func dynamoDBScanItem(id string) map[string]ddbtypes.AttributeValue {
 	}
 }
 
+func TestDynamoDBItemScanPreservesExactNumbers(t *testing.T) {
+	client := &fakeDynamoDBItemScanClient{outputs: []*dynamodb.ScanOutput{{
+		Items: []map[string]ddbtypes.AttributeValue{{
+			"integer": &ddbtypes.AttributeValueMemberN{Value: "1788015457991966744"},
+			"decimal": &ddbtypes.AttributeValueMemberN{Value: "0.12345678901234567890123456789"},
+			"numbers": &ddbtypes.AttributeValueMemberNS{Value: []string{"9007199254740993", "-0.0000000000000000001"}},
+		}},
+	}}}
+	var output bytes.Buffer
+	if err := dynamoDBItemScanWithClient(context.Background(), client, "table", 0, 1000, &output); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"decimal":0.12345678901234567890123456789,"integer":1788015457991966744,"numbers":[9007199254740993,-0.0000000000000000001]}` + "\n"
+	if output.String() != want {
+		t.Fatalf("DynamoDB scan changed exact numbers:\n got %s want %s", output.String(), want)
+	}
+}
+
 func TestDynamoDBItemScanBoundsEachRequestAndStopsAtTotalLimit(t *testing.T) {
 	client := &fakeDynamoDBItemScanClient{
 		outputs: []*dynamodb.ScanOutput{
