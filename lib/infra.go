@@ -508,6 +508,26 @@ func InfraList(ctx context.Context, filter string, showEnvVarValues bool) (*Infr
 		errs <- nil
 	}()
 
+	// list CloudWatch alarm triggers
+	count++
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				logRecover(recovered)
+				errs <- fmt.Errorf("list CloudWatch alarm triggers: %v", recovered)
+			}
+		}()
+		triggers, err := lambdaAlarmTriggers(ctx)
+		if err != nil {
+			errs <- err
+			return
+		}
+		for _, trigger := range triggers {
+			triggersChan <- trigger
+		}
+		errs <- nil
+	}()
+
 	// list user
 	count++
 	go func() {
@@ -2894,6 +2914,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	alarmNames := map[string]bool{}
 	for _, infraLambda := range infraSet.Lambda {
 		infraLambda.infraSetName = infraSet.Name
 		infraLambda.dir = path.Dir(yamlPath)
@@ -2924,11 +2945,24 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 			}
 		}
 		for _, trigger := range infraLambda.Trigger {
-			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket, lambdaTriggerSes, lambdaTriggerUrl}
+			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket, lambdaTriggerSes, lambdaTriggerUrl, lambdaTriggerAlarm}
 			if !slices.Contains(validTriggers, trigger.Type) {
 				err := fmt.Errorf("unknown trigger: %#v", trigger)
 				Logger.Println("error:", err)
 				return nil, err
+			}
+			if trigger.Type == lambdaTriggerAlarm {
+				config, err := parseLambdaAlarmTrigger(trigger)
+				if err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				if alarmNames[config.name] {
+					err := fmt.Errorf("duplicate Lambda alarm name %q", config.name)
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				alarmNames[config.name] = true
 			}
 		}
 	}
@@ -3000,6 +3034,11 @@ func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 				return err
 			}
 			_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = LambdaEnsureTriggerAlarm(ctx, infraLambda, preview)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err

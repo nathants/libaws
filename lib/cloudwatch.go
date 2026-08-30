@@ -37,6 +37,7 @@ type CloudwatchAlarm struct {
 	ActionsEnabled                     *bool                      `json:",omitempty"`
 	AlarmActions                       []string                   `json:",omitempty"`
 	AlarmConfigurationUpdatedTimestamp *time.Time                 `json:",omitempty"`
+	AlarmDescription                   *string                    `json:",omitempty"`
 	AlarmName                          *string                    `json:",omitempty"`
 	ComparisonOperator                 cwtypes.ComparisonOperator `json:",omitempty"`
 	DatapointsToAlarm                  *int32                     `json:",omitempty"`
@@ -66,6 +67,7 @@ func (a *CloudwatchAlarm) FromAlarm(alarm *cwtypes.MetricAlarm) {
 	a.ActionsEnabled = alarm.ActionsEnabled
 	a.AlarmActions = alarm.AlarmActions
 	a.AlarmConfigurationUpdatedTimestamp = alarm.AlarmConfigurationUpdatedTimestamp
+	a.AlarmDescription = alarm.AlarmDescription
 	a.AlarmName = alarm.AlarmName
 	a.ComparisonOperator = alarm.ComparisonOperator
 	a.DatapointsToAlarm = alarm.DatapointsToAlarm

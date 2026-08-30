@@ -893,7 +893,17 @@ func lambdaRemoveUnusedPermissions(ctx context.Context, name string, permissionS
 	return nil
 }
 
-func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, callerArn string) error {
+func lambdaPermissionSID(callerPrincipal, callerARN string) string {
+	sid := strings.ReplaceAll(callerPrincipal, ".", "-") + "__" + Last(strings.Split(callerARN, ":"))
+	sid = strings.ReplaceAll(sid, "$", "DOLLAR")
+	sid = strings.ReplaceAll(sid, "*", "ALL")
+	sid = strings.ReplaceAll(sid, ".", "DOT")
+	sid = strings.ReplaceAll(sid, "-", "_")
+	sid = strings.ReplaceAll(sid, "/", "__")
+	return sid
+}
+
+func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, callerARN, sourceAccount string) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaAddPermission"}
 		d.Start()
@@ -905,34 +915,48 @@ func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, caller
 		Logger.Println("error:", err)
 		return err
 	}
-	_, err = LambdaClient().AddPermission(ctx, &lambda.AddPermissionInput{
+	input := &lambda.AddPermissionInput{
 		FunctionName: aws.String(fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", region, account, name)),
 		StatementId:  aws.String(sid),
 		Action:       aws.String("lambda:InvokeFunction"),
 		Principal:    aws.String(callerPrincipal),
-		SourceArn:    aws.String(callerArn),
-	})
+		SourceArn:    aws.String(callerARN),
+	}
+	if sourceAccount != "" {
+		input.SourceAccount = aws.String(sourceAccount)
+	}
+	_, err = LambdaClient().AddPermission(ctx, input)
 	return err
 }
 
-func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerArn string, preview bool) (string, error) {
+func lambdaSourceAccountPermissionMatches(statement IamStatementEntry, sid, functionARN, callerPrincipal, callerARN, sourceAccount string) (bool, error) {
+	expected := IamStatementEntry{
+		Sid:       sid,
+		Effect:    "Allow",
+		Principal: map[string]any{"Service": callerPrincipal},
+		Action:    "lambda:InvokeFunction",
+		Resource:  functionARN,
+		Condition: map[string]any{
+			"ArnLike":      map[string]any{"AWS:SourceArn": callerARN},
+			"StringEquals": map[string]any{"AWS:SourceAccount": sourceAccount},
+		},
+	}
+	actualPolicy := IamPolicyDocument{Version: "2012-10-17", Statement: []IamStatementEntry{statement}}
+	expectedPolicy := IamPolicyDocument{Version: "2012-10-17", Statement: []IamStatementEntry{expected}}
+	return iamPolicyEqual(Pformat(actualPolicy), Pformat(expectedPolicy))
+}
+
+func lambdaEnsurePermissionWithSourceAccount(ctx context.Context, name, callerPrincipal, callerARN, sourceAccount string, preview bool) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaEnsurePermission"}
 		d.Start()
 		defer d.End()
 	}
-	sid := strings.ReplaceAll(callerPrincipal, ".", "-") + "__" + Last(strings.Split(callerArn, ":"))
-	sid = strings.ReplaceAll(sid, "$", "DOLLAR")
-	sid = strings.ReplaceAll(sid, "*", "ALL")
-	sid = strings.ReplaceAll(sid, ".", "DOT")
-	sid = strings.ReplaceAll(sid, "-", "_")
-	sid = strings.ReplaceAll(sid, "/", "__")
+	sid := lambdaPermissionSID(callerPrincipal, callerARN)
 	var expectedErr error
 	var policyString string
 	err := Retry(ctx, func() error {
-		out, err := LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{
-			FunctionName: aws.String(name),
-		})
+		out, err := LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{FunctionName: aws.String(name)})
 		if err != nil {
 			var notFound *lambdatypes.ResourceNotFoundException
 			if errors.As(err, &notFound) {
@@ -941,51 +965,63 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAr
 			}
 			return err
 		}
-		policyString = *out.Policy
+		policyString = aws.ToString(out.Policy)
 		return nil
 	})
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	if expectedErr != nil {
-		if !preview {
-			err := lambdaAddPermission(ctx, sid, name, callerPrincipal, callerArn)
-			if err != nil {
-				Logger.Println("error:", err)
-				return "", err
-			}
-		}
-		Logger.Println(PreviewString(preview)+"created lambda permission:", name, callerPrincipal, callerArn)
-		return sid, nil
-	}
-	needsUpdate := true
+	needsUpdate := expectedErr != nil || policyString == ""
+	removeExisting := false
 	if policyString != "" {
 		policy := IamPolicyDocument{}
-		err := json.Unmarshal([]byte(policyString), &policy)
-		if err != nil {
-			Logger.Println("error:", err)
+		if err := json.Unmarshal([]byte(policyString), &policy); err != nil {
 			return "", err
 		}
 		for _, statement := range policy.Statement {
-			if statement.Sid == sid {
-				needsUpdate = false
-				break
+			if statement.Sid != sid {
+				continue
 			}
+			needsUpdate = false
+			if sourceAccount != "" {
+				account, err := StsAccount(ctx)
+				if err != nil {
+					return "", err
+				}
+				functionARN := fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", Region(), account, name)
+				matches, err := lambdaSourceAccountPermissionMatches(statement, sid, functionARN, callerPrincipal, callerARN, sourceAccount)
+				if err != nil {
+					return "", err
+				}
+				needsUpdate = !matches
+				removeExisting = !matches
+			}
+			break
 		}
 	}
-	if needsUpdate {
-		if !preview {
-			err := lambdaAddPermission(ctx, sid, name, callerPrincipal, callerArn)
-			if err != nil {
-				Logger.Println("error:", err)
+	if !needsUpdate {
+		return sid, nil
+	}
+	if !preview {
+		if removeExisting {
+			if _, err := LambdaClient().RemovePermission(ctx, &lambda.RemovePermissionInput{
+				FunctionName: aws.String(name),
+				StatementId:  aws.String(sid),
+			}); err != nil {
 				return "", err
 			}
 		}
-		Logger.Println(PreviewString(preview)+"updated lambda permission:", name, callerPrincipal, callerArn)
-		return sid, nil
+		if err := lambdaAddPermission(ctx, sid, name, callerPrincipal, callerARN, sourceAccount); err != nil {
+			return "", err
+		}
 	}
+	Logger.Println(PreviewString(preview)+"updated lambda permission:", name, callerPrincipal, callerARN)
 	return sid, nil
+}
+
+func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerARN string, preview bool) (string, error) {
+	return lambdaEnsurePermissionWithSourceAccount(ctx, name, callerPrincipal, callerARN, "", preview)
 }
 
 func LambdaArnToLambdaName(arn string) string {
@@ -3302,6 +3338,12 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		return err
 	}
 	permissionSids = append(permissionSids, sids...)
+	sids, err = LambdaEnsureTriggerAlarm(ctx, infraLambda, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	permissionSids = append(permissionSids, sids...)
 	sid, err := LambdaEnsureTriggerSes(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -3627,6 +3669,11 @@ func LambdaDelete(ctx context.Context, name string, preview bool) error {
 				return err
 			}
 			_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			_, err = LambdaEnsureTriggerAlarm(ctx, infraLambda, preview)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
