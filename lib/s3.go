@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -74,60 +73,50 @@ func S3ClientRegionMust(region string) *s3.Client {
 
 var s3BucketRegionLock sync.Mutex
 var s3BucketRegion = map[string]string{}
+var s3BucketRegionHTTPClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+	Timeout: 30 * time.Second,
+}
 
 func S3BucketRegion(bucket string) (string, error) {
 	s3BucketRegionLock.Lock()
 	defer s3BucketRegionLock.Unlock()
-	region, ok := s3BucketRegion[bucket]
-	if !ok {
-		cacheFile := "/tmp/aws.s3.bucket.region=" + bucket
-		data, err := os.ReadFile(cacheFile)
-		if err == nil {
-			region = string(data)
-		} else {
-			if doDebug {
-				d := &Debug{start: time.Now(), name: "S3BucketRegion"}
-				d.Start()
-				defer d.End()
-			}
-			client := &http.Client{
-				CheckRedirect: func(req *http.Request, via []*http.Request) error {
-					return http.ErrUseLastResponse
-				},
-			}
-			req, err := http.NewRequest("HEAD", fmt.Sprintf("https://%s.s3.amazonaws.com", bucket), nil)
-			if err != nil {
-				return "", err
-			}
-			resp, err := client.Do(req)
-			if err != nil {
-				return "", err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			switch resp.StatusCode {
-			case 200:
-			case 301, 307:
-			case 400:
-			case 403:
-			case 404:
-				return "", fmt.Errorf("no such bucket: %s", bucket)
-			default:
-				err := fmt.Errorf("http %d for %s", resp.StatusCode, bucket)
-				Logger.Println("error:", err)
-				return "", err
-			}
-			region = resp.Header.Get("x-amz-bucket-region")
-			if region == "" {
-				return "", fmt.Errorf("empty x-amz-bucket-region for bucket: %s", bucket)
-			}
-			err = os.WriteFile(cacheFile, []byte(region), os.ModePerm)
-			if err != nil {
-				Logger.Println("error:", err)
-				return "", err
-			}
-		}
-		s3BucketRegion[bucket] = region
+	if region, ok := s3BucketRegion[bucket]; ok {
+		return region, nil
 	}
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "S3BucketRegion"}
+		d.Start()
+		defer d.End()
+	}
+	req, err := http.NewRequest("HEAD", fmt.Sprintf("https://%s.s3.amazonaws.com", bucket), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := s3BucketRegionHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	switch resp.StatusCode {
+	case 200:
+	case 301, 307:
+	case 400:
+	case 403:
+	case 404:
+		return "", fmt.Errorf("no such bucket: %s", bucket)
+	default:
+		err := fmt.Errorf("http %d for %s", resp.StatusCode, bucket)
+		Logger.Println("error:", err)
+		return "", err
+	}
+	region := resp.Header.Get("x-amz-bucket-region")
+	if region == "" {
+		return "", fmt.Errorf("empty x-amz-bucket-region for bucket: %s", bucket)
+	}
+	s3BucketRegion[bucket] = region
 	return region, nil
 }
 
@@ -498,6 +487,15 @@ func validateS3EncryptionPolicy(bucket string, config *s3types.ServerSideEncrypt
 	return nil
 }
 
+func s3CreateBucketConfiguration(region string) *s3types.CreateBucketConfiguration {
+	if region == "us-east-1" {
+		return nil
+	}
+	return &s3types.CreateBucketConfiguration{
+		LocationConstraint: s3types.BucketLocationConstraint(region),
+	}
+}
+
 func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "S3Ensure"}
@@ -520,10 +518,8 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 		if !preview {
 			_, err := S3Client().CreateBucket(ctx, &s3.CreateBucketInput{
-				Bucket: aws.String(input.name),
-				CreateBucketConfiguration: &s3types.CreateBucketConfiguration{
-					LocationConstraint: s3types.BucketLocationConstraint(Region()),
-				},
+				Bucket:                    aws.String(input.name),
+				CreateBucketConfiguration: s3CreateBucketConfiguration(Region()),
 			})
 			if err != nil {
 				if !strings.Contains(err.Error(), s3ErrCodeBucketAlreadyOwnedByYou) {
