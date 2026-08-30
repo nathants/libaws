@@ -2,8 +2,6 @@ package lib
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,18 +10,8 @@ import (
 	"github.com/gofrs/uuid"
 )
 
-func checkAccountSQS() {
-	account, err := StsAccount(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	if os.Getenv("LIBAWS_TEST_ACCOUNT") != account {
-		panic(fmt.Sprintf("%s != %s", os.Getenv("LIBAWS_TEST_ACCOUNT"), account))
-	}
-}
-
 func TestSQSEnsure(t *testing.T) {
-	checkAccountSQS()
+	requireLiveAWSAccount(t)
 	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := SQSEnsureInput("", queue, []string{})
 	if err != nil {
@@ -45,7 +33,7 @@ func TestSQSEnsure(t *testing.T) {
 }
 
 func TestSQSEnsureDelaySeconds(t *testing.T) {
-	checkAccountSQS()
+	requireLiveAWSAccount(t)
 	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput("", queue, []string{"DelaySeconds=7"})
@@ -119,7 +107,7 @@ func TestSQSEnsureDelaySeconds(t *testing.T) {
 }
 
 func TestSQSEnsureMaximumMessageSize(t *testing.T) {
-	checkAccountSQS()
+	requireLiveAWSAccount(t)
 	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput("", queue, []string{"MaximumMessageSize=2048"})
@@ -193,7 +181,7 @@ func TestSQSEnsureMaximumMessageSize(t *testing.T) {
 }
 
 func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
-	checkAccountSQS()
+	requireLiveAWSAccount(t)
 	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput("", queue, []string{"MessageRetentionPeriod=90"})
@@ -267,7 +255,7 @@ func TestSQSEnsureMessageRetentionPeriod(t *testing.T) {
 }
 
 func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
-	checkAccountSQS()
+	requireLiveAWSAccount(t)
 	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput("", queue, []string{"ReceiveMessageWaitTimeSeconds=7"})
@@ -341,7 +329,7 @@ func TestSQSEnsureReceiveMessageWaitTimeSeconds(t *testing.T) {
 }
 
 func TestSQSEnsureVisibilityTimeout(t *testing.T) {
-	checkAccountSQS()
+	requireLiveAWSAccount(t)
 	queue := "libaws-sqs-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := SQSEnsureInput("", queue, []string{"VisibilityTimeout=7"})

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
 	"os"
 	"testing"
 )
@@ -14,13 +13,18 @@ func lambdaZipHashForTest(data []byte) string {
 	return base64.StdEncoding.EncodeToString(hash[:])
 }
 
-func checkAccountS3() {
+func requireLiveAWSAccount(t *testing.T) {
+	t.Helper()
+	expectedAccount := os.Getenv("LIBAWS_TEST_ACCOUNT")
+	if expectedAccount == "" {
+		t.Skip("set LIBAWS_TEST_ACCOUNT to run live AWS tests")
+	}
 	account, err := StsAccount(context.Background())
 	if err != nil {
-		panic(err)
+		t.Fatalf("verify AWS account: %v", err)
 	}
-	if os.Getenv("LIBAWS_TEST_ACCOUNT") != account {
-		panic(fmt.Sprintf("%s != %s", os.Getenv("LIBAWS_TEST_ACCOUNT"), account))
+	if account != expectedAccount {
+		t.Fatalf("AWS account = %s, want guarded account %s", account, expectedAccount)
 	}
 }
 

@@ -34,7 +34,7 @@ func checkS3BucketPolicy(t *testing.T, ctx context.Context, input *s3EnsureInput
 }
 
 func TestS3Ensure(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{})
 	if err != nil {
@@ -56,7 +56,7 @@ func TestS3Ensure(t *testing.T) {
 }
 
 func TestS3EnsureVersioningOffByDefault(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{})
 	if err != nil {
@@ -89,7 +89,7 @@ func TestS3EnsureVersioningOffByDefault(t *testing.T) {
 }
 
 func TestS3EnsureVersioning(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{"versioning=true"})
 	if err != nil {
@@ -122,7 +122,7 @@ func TestS3EnsureVersioning(t *testing.T) {
 }
 
 func TestS3EnsureUpdateVersioning(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := S3EnsureInput("", bucket, []string{})
@@ -197,7 +197,7 @@ func TestS3EnsureUpdateVersioning(t *testing.T) {
 }
 
 func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{})
 	if err != nil {
@@ -330,7 +330,7 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 }
 
 func TestS3EnsurePrivateByDefault(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{})
 	if err != nil {
@@ -369,7 +369,7 @@ func TestS3EnsurePrivateByDefault(t *testing.T) {
 }
 
 func TestS3EnsurePrivateCors(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{"acl=private", "cors=true"})
 	if err != nil {
@@ -419,7 +419,7 @@ func TestS3EnsurePrivateCors(t *testing.T) {
 }
 
 func TestS3EnsurePublic(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{"acl=public"})
 	if err != nil {
@@ -449,7 +449,7 @@ func TestS3EnsurePublic(t *testing.T) {
 }
 
 func TestS3EnsurePublicCors(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	input, err := S3EnsureInput("", bucket, []string{"acl=public", "cors=true"})
 	if err != nil {
@@ -483,7 +483,7 @@ func TestS3EnsurePublicCors(t *testing.T) {
 }
 
 func TestS3EnsurePrivateToPublicNotAllowed(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := S3EnsureInput("", bucket, []string{"acl=private"})
@@ -515,7 +515,7 @@ func TestS3EnsurePrivateToPublicNotAllowed(t *testing.T) {
 }
 
 func TestS3EnsurePublicToPrivateNotAllowed(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	bucket := "libaws-s3-test-" + uuid.Must(uuid.NewV4()).String()
 	ctx := context.Background()
 	input, err := S3EnsureInput("", bucket, []string{"acl=public"})

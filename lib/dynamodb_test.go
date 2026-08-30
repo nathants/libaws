@@ -14,16 +14,6 @@ import (
 	"github.com/gofrs/uuid"
 )
 
-func checkAccountDynamoDB() {
-	account, err := StsAccount(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	if os.Getenv("LIBAWS_TEST_ACCOUNT") != account {
-		panic(fmt.Sprintf("%s != %s", os.Getenv("LIBAWS_TEST_ACCOUNT"), account))
-	}
-}
-
 func TestAttrSplitOnce(t *testing.T) {
 	type test struct {
 		input string
@@ -364,7 +354,7 @@ func TestDynamoDBEnsureInput(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
-	checkAccountDynamoDB()
+	requireLiveAWSAccount(t)
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	input, ttl, err := DynamoDBEnsureInput(
@@ -488,7 +478,7 @@ func TestDynamoDBEnsureTableSeveralTimes(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
-	checkAccountDynamoDB()
+	requireLiveAWSAccount(t)
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	input, ttl, err := DynamoDBEnsureInput(
@@ -667,7 +657,7 @@ func TestDynamoDBEnsureTableAdjustIoThenTurnOffStreaming(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
-	checkAccountDynamoDB()
+	requireLiveAWSAccount(t)
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	input, ttl, err := DynamoDBEnsureInput(
@@ -857,7 +847,7 @@ func TestDynamoDBEnsureTableGlobalIndices(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
-	checkAccountDynamoDB()
+	requireLiveAWSAccount(t)
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	input, ttl, err := DynamoDBEnsureInput(
@@ -948,7 +938,7 @@ func TestDynamoDBEnsureTableGlobalIndicesThenRemoveThem(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
-	checkAccountDynamoDB()
+	requireLiveAWSAccount(t)
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	input, ttl, err := DynamoDBEnsureInput(
@@ -1028,7 +1018,7 @@ func TestDynamoDBEnsureTableLocalIndices(t *testing.T) {
 }
 
 func TestDynamoDBEnsureTableLocalIndicesCannotBeDeleted(t *testing.T) {
-	checkAccountDynamoDB()
+	requireLiveAWSAccount(t)
 	ctx := context.Background()
 	name := "test-table-" + uuid.Must(uuid.NewV4()).String()
 	input, ttl, err := DynamoDBEnsureInput(

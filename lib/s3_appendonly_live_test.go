@@ -15,7 +15,7 @@ import (
 )
 
 func TestS3EnsureAppendOnlyConvergesAndEnforces(t *testing.T) {
-	checkAccountS3()
+	requireLiveAWSAccount(t)
 	ctx := context.Background()
 	requireErrorCode := func(operation string, err error, want string) {
 		t.Helper()
