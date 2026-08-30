@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	apitypes "github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
@@ -1871,6 +1872,25 @@ func lambdaScheduleName(name, schedule string) string {
 	return name + lambdaEventRuleNameSeparator + strings.ReplaceAll(base64.StdEncoding.EncodeToString([]byte(schedule)), "=", "")
 }
 
+func lambdaScheduleTargetMatches(infraLambda *InfraLambda, rule eventbridgetypes.Rule, target eventbridgetypes.Target) bool {
+	if target.Arn == nil {
+		return false
+	}
+	if infraLambda.Arn != "" {
+		return *target.Arn == infraLambda.Arn
+	}
+	if rule.Name == nil || rule.ScheduleExpression == nil ||
+		*rule.Name != lambdaScheduleName(infraLambda.Name, *rule.ScheduleExpression) {
+		return false
+	}
+	parsed, err := arn.Parse(*target.Arn)
+	if err != nil || parsed.Service != "lambda" {
+		return false
+	}
+	resource := strings.Split(parsed.Resource, ":")
+	return len(resource) >= 2 && resource[0] == "function" && resource[1] == infraLambda.Name
+}
+
 func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerSchedule"}
@@ -1985,7 +2005,7 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 			return nil, err
 		}
 		for _, target := range targets {
-			if *target.Arn == infraLambda.Arn && rule.ScheduleExpression != nil && !slices.Contains(triggers, *rule.ScheduleExpression) {
+			if lambdaScheduleTargetMatches(infraLambda, rule, target) && rule.ScheduleExpression != nil && !slices.Contains(triggers, *rule.ScheduleExpression) {
 				if !preview {
 					ids := []string{}
 					for _, target := range targets {
@@ -3646,6 +3666,9 @@ func LambdaDelete(ctx context.Context, name string, preview bool) error {
 		Logger.Println("error:", err)
 		return err
 	}
+	if _, ok := infraLambdas[name]; !ok {
+		infraLambdas[name] = &InfraLambda{Name: name}
+	}
 	for lambdaName, infraLambda := range infraLambdas {
 		if lambdaName != name {
 			continue
@@ -3663,6 +3686,11 @@ func LambdaDelete(ctx context.Context, name string, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
+		_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		if infraLambda.Arn != "" {
 			_, err := LambdaEnsureTriggerS3(ctx, infraLambda, preview)
 			if err != nil {
@@ -3670,11 +3698,6 @@ func LambdaDelete(ctx context.Context, name string, preview bool) error {
 				return err
 			}
 			_, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err

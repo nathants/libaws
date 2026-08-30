@@ -3017,6 +3017,11 @@ func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 			Logger.Println("error:", err)
 			return err
 		}
+		_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		if infraLambda.Arn != "" {
 			_, err := LambdaEnsureTriggerS3(ctx, infraLambda, preview)
 			if err != nil {
@@ -3029,11 +3034,6 @@ func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 				return err
 			}
 			_, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
