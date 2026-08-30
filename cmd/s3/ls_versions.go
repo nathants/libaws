@@ -89,8 +89,6 @@ func s3LsVersions() {
 				fmt.Println(" PRE", prefix)
 			}
 
-			loc := time.Local
-
 			var objects []*S3ObjectVersion
 
 			for _, obj := range out.Versions {
@@ -104,7 +102,7 @@ func s3LsVersions() {
 					kind = "LATEST"
 				}
 				objects = append(objects, &S3ObjectVersion{
-					Date:         formatS3VersionDate(*obj.LastModified, loc),
+					LastModified: *obj.LastModified,
 					Size:         fmt.Sprintf("%10v", *obj.Size),
 					Key:          objKey,
 					StorageClass: string(obj.StorageClass),
@@ -124,7 +122,7 @@ func s3LsVersions() {
 					kind = "LATEST-DELETE"
 				}
 				objects = append(objects, &S3ObjectVersion{
-					Date:         formatS3VersionDate(*obj.LastModified, loc),
+					LastModified: *obj.LastModified,
 					Size:         "-",
 					Key:          objKey,
 					StorageClass: "-",
@@ -133,12 +131,11 @@ func s3LsVersions() {
 				})
 			}
 
-			sort.SliceStable(objects, func(a, b int) bool { return objects[a].Date > objects[b].Date })
-			sort.SliceStable(objects, func(a, b int) bool { return objects[a].Key < objects[b].Key })
+			sortS3ObjectVersions(objects)
 
 			for _, obj := range objects {
 				fmt.Println(
-					obj.Date,
+					formatS3VersionDate(obj.LastModified),
 					obj.Size,
 					obj.Key,
 					obj.StorageClass,
@@ -156,12 +153,21 @@ func s3LsVersions() {
 	}
 }
 
-func formatS3VersionDate(value time.Time, location *time.Location) string {
-	return value.In(location).Format(time.DateTime)
+func formatS3VersionDate(value time.Time) string {
+	return value.In(time.Local).Format(time.RFC3339Nano)
+}
+
+func sortS3ObjectVersions(objects []*S3ObjectVersion) {
+	sort.SliceStable(objects, func(a, b int) bool {
+		if objects[a].Key != objects[b].Key {
+			return objects[a].Key < objects[b].Key
+		}
+		return objects[a].LastModified.After(objects[b].LastModified)
+	})
 }
 
 type S3ObjectVersion struct {
-	Date         string
+	LastModified time.Time
 	Size         string
 	Key          string
 	StorageClass string
