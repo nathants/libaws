@@ -1442,18 +1442,17 @@ Alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructur
 
 ## Testing
 
-Run all integration tests AWS with [tox](https://tox.wiki/en/latest/):
+Run all AWS integration tests with the locked [uv](https://docs.astral.sh/uv/) environment:
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
-pip install tox
-tox
+make test
 ```
 
-Run one integration test AWS with [tox](https://tox.wiki/en/latest/):
+Run one AWS integration test with the same environment:
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
-pip install tox
-tox -- bash -c 'make && cd examples/simple/python/api/ && python test.py'
+bash restore_python_deps.sh
+uv run --locked -- bash -c 'make && cd examples/simple/python/api/ && python test.py'
 ```

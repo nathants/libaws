@@ -51,4 +51,5 @@ check-vet: check-deps
 	@go vet ./...
 
 test:
-	tox
+	bash restore_python_deps.sh
+	uv run --locked bash test.sh
