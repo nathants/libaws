@@ -263,7 +263,6 @@ lambda:
   test-lambda-${uid}:
     entrypoint: main.go
     attr:
-      - concurrency=0
       - memory=128
       - timeout=60
     policy:
@@ -956,7 +955,7 @@ Defines the code of the Lambda. It is one of:
 
 Defines Lambda attributes. The following can be defined:
 
-* `concurrency` defines the reserved concurrent executions, default: `0`
+* `concurrency` defines reserved concurrency. Omit it to use the shared unreserved pool, set it to `0` to disable the function, or set it to a positive value to reserve capacity and cap concurrent executions at that value.
 
 * `memory` defines Lambda RAM in megabytes, default: `128`
 

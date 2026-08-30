@@ -1,6 +1,28 @@
 package lib
 
-import "testing"
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"fmt"
+	"os"
+	"testing"
+)
+
+func lambdaZipHashForTest(data []byte) string {
+	hash := sha256.Sum256(data)
+	return base64.StdEncoding.EncodeToString(hash[:])
+}
+
+func checkAccountS3() {
+	account, err := StsAccount(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	if os.Getenv("LIBAWS_TEST_ACCOUNT") != account {
+		panic(fmt.Sprintf("%s != %s", os.Getenv("LIBAWS_TEST_ACCOUNT"), account))
+	}
+}
 
 func TestDropLinesWithAny(t *testing.T) {
 	type test struct {

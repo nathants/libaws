@@ -40,7 +40,6 @@ const (
 	lambdaAttrTimeout     = "timeout"
 	lambdaAttrLogsTTLDays = "logs-ttl-days"
 
-	lambdaAttrConcurrencyDefault = 0
 	lambdaAttrMemoryDefault      = 128
 	lambdaAttrTimeoutDefault     = 300
 	lambdaAttrLogsTTLDaysDefault = 7
@@ -80,7 +79,8 @@ const (
 	lambdaRuntimeGo        = "provided.al2023"
 	lambdaRuntimeContainer = "container"
 
-	lambdaUrlFuncSid = "FunctionUrlInvoke"
+	lambdaUrlFuncSid   = "FunctionUrlInvoke"
+	lambdaUrlInvokeSid = "FunctionUrlInvokeFunction"
 
 	lambdaEnvironmentMaxBytes = 4 * 1024
 )
@@ -143,68 +143,156 @@ func LambdaClient() *lambda.Client {
 	return lambdaClient
 }
 
-func lambdaConcurrencyNeedsUpdate(current *int32, desired int) bool {
-	if desired == 0 {
-		return current != nil
-	}
-	return current == nil || int(*current) != desired
+type lambdaConcurrencyClient interface {
+	GetFunctionConcurrency(
+		context.Context,
+		*lambda.GetFunctionConcurrencyInput,
+		...func(*lambda.Options),
+	) (*lambda.GetFunctionConcurrencyOutput, error)
+	PutFunctionConcurrency(
+		context.Context,
+		*lambda.PutFunctionConcurrencyInput,
+		...func(*lambda.Options),
+	) (*lambda.PutFunctionConcurrencyOutput, error)
+	DeleteFunctionConcurrency(
+		context.Context,
+		*lambda.DeleteFunctionConcurrencyInput,
+		...func(*lambda.Options),
+	) (*lambda.DeleteFunctionConcurrencyOutput, error)
 }
 
-func LambdaSetConcurrency(ctx context.Context, lambdaName string, concurrency int, preview bool) error {
-	if concurrency < 0 {
-		return fmt.Errorf("lambda concurrency must be nonnegative")
+func parseLambdaConcurrency(value string) (*int32, error) {
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("invalid lambda concurrency %q: %w", value, err)
 	}
+	if parsed < 0 {
+		return nil, fmt.Errorf("lambda concurrency must be nonnegative, got %d", parsed)
+	}
+	concurrency := int32(parsed)
+	return &concurrency, nil
+}
+
+func lambdaConcurrencyDescription(value *int32) string {
+	if value == nil {
+		return "unreserved"
+	}
+	if *value == 0 {
+		return "reserved 0 (disabled)"
+	}
+	return fmt.Sprintf("reserved %d", *value)
+}
+
+func lambdaSetConcurrency(
+	ctx context.Context,
+	client lambdaConcurrencyClient,
+	lambdaName string,
+	desired *int32,
+	preview bool,
+) error {
+	if desired != nil && *desired < 0 {
+		return fmt.Errorf("lambda concurrency must be nonnegative, got %d", *desired)
+	}
+	out, err := client.GetFunctionConcurrency(ctx, &lambda.GetFunctionConcurrencyInput{
+		FunctionName: aws.String(lambdaName),
+	})
+	if err != nil {
+		var notFound *lambdatypes.ResourceNotFoundException
+		if !preview || !errors.As(err, &notFound) {
+			return fmt.Errorf("get Lambda concurrency for %s: %w", lambdaName, err)
+		}
+		out = &lambda.GetFunctionConcurrencyOutput{}
+	}
+	if out == nil {
+		return fmt.Errorf("get Lambda concurrency for %s returned nil output", lambdaName)
+	}
+	current := out.ReservedConcurrentExecutions
+	if (current == nil && desired == nil) ||
+		(current != nil && desired != nil && *current == *desired) {
+		return nil
+	}
+	if !preview {
+		if desired == nil {
+			_, err = client.DeleteFunctionConcurrency(ctx, &lambda.DeleteFunctionConcurrencyInput{
+				FunctionName: aws.String(lambdaName),
+			})
+		} else {
+			_, err = client.PutFunctionConcurrency(ctx, &lambda.PutFunctionConcurrencyInput{
+				FunctionName:                 aws.String(lambdaName),
+				ReservedConcurrentExecutions: desired,
+			})
+		}
+		if err != nil {
+			return fmt.Errorf("update Lambda concurrency for %s: %w", lambdaName, err)
+		}
+	}
+	Logger.Printf(
+		PreviewString(preview)+"updated concurrency: %s => %s\n",
+		lambdaConcurrencyDescription(current),
+		lambdaConcurrencyDescription(desired),
+	)
+	return nil
+}
+
+func LambdaSetConcurrency(ctx context.Context, lambdaName string, concurrency *int32, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaSetConcurrency"}
 		d.Start()
 		defer d.End()
 	}
-	out, err := LambdaClient().GetFunctionConcurrency(ctx, &lambda.GetFunctionConcurrencyInput{
-		FunctionName: aws.String(lambdaName),
-	})
-	if err != nil {
-		if !preview {
-			Logger.Println("error:", err)
-			return err
-		}
-		out = &lambda.GetFunctionConcurrencyOutput{}
+	return lambdaSetConcurrency(ctx, LambdaClient(), lambdaName, concurrency, preview)
+}
+
+type lambdaURLPermission struct {
+	statement IamStatementEntry
+	input     *lambda.AddPermissionInput
+}
+
+func lambdaURLPermissions(functionName, functionARN string) []lambdaURLPermission {
+	return []lambdaURLPermission{
+		{
+			statement: IamStatementEntry{
+				Sid:       lambdaUrlFuncSid,
+				Effect:    "Allow",
+				Action:    "lambda:InvokeFunctionUrl",
+				Resource:  functionARN,
+				Principal: "*",
+				Condition: map[string]any{
+					"StringEquals": map[string]any{
+						"lambda:FunctionUrlAuthType": "NONE",
+					},
+				},
+			},
+			input: &lambda.AddPermissionInput{
+				FunctionName:        aws.String(functionName),
+				StatementId:         aws.String(lambdaUrlFuncSid),
+				Action:              aws.String("lambda:InvokeFunctionUrl"),
+				Principal:           aws.String("*"),
+				FunctionUrlAuthType: lambdatypes.FunctionUrlAuthTypeNone,
+			},
+		},
+		{
+			statement: IamStatementEntry{
+				Sid:       lambdaUrlInvokeSid,
+				Effect:    "Allow",
+				Action:    "lambda:InvokeFunction",
+				Resource:  functionARN,
+				Principal: "*",
+				Condition: map[string]any{
+					"Bool": map[string]any{
+						"lambda:InvokedViaFunctionUrl": "true",
+					},
+				},
+			},
+			input: &lambda.AddPermissionInput{
+				FunctionName:          aws.String(functionName),
+				StatementId:           aws.String(lambdaUrlInvokeSid),
+				Action:                aws.String("lambda:InvokeFunction"),
+				Principal:             aws.String("*"),
+				InvokedViaFunctionUrl: aws.Bool(true),
+			},
+		},
 	}
-	current := 0
-	if out.ReservedConcurrentExecutions != nil {
-		current = int(*out.ReservedConcurrentExecutions)
-	}
-	if lambdaConcurrencyNeedsUpdate(out.ReservedConcurrentExecutions, concurrency) {
-		if !preview {
-			if concurrency > 0 {
-				_, err := LambdaClient().PutFunctionConcurrency(ctx, &lambda.PutFunctionConcurrencyInput{
-					FunctionName:                 aws.String(lambdaName),
-					ReservedConcurrentExecutions: aws.Int32(int32(concurrency)),
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			} else {
-				_, err := LambdaClient().DeleteFunctionConcurrency(ctx, &lambda.DeleteFunctionConcurrencyInput{
-					FunctionName: aws.String(lambdaName),
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-		}
-		currentDescription := "unreserved"
-		if out.ReservedConcurrentExecutions != nil {
-			currentDescription = fmt.Sprintf("reserved %d", current)
-		}
-		desiredDescription := "unreserved"
-		if concurrency > 0 {
-			desiredDescription = fmt.Sprintf("reserved %d", concurrency)
-		}
-		Logger.Printf(PreviewString(preview)+"updated concurrency: %s => %s\n", currentDescription, desiredDescription)
-	}
-	return nil
 }
 
 func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
@@ -271,7 +359,11 @@ func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, previ
 			}
 			out = nil
 		}
-		needAdd := true
+		permissions := lambdaURLPermissions(infraLambda.Name, infraLambda.Arn)
+		needAdd := make(map[string]bool, len(permissions))
+		for _, permission := range permissions {
+			needAdd[permission.statement.Sid] = true
+		}
 		if out != nil && out.Policy != nil {
 			var pol IamPolicyDocument
 			if err := json.Unmarshal([]byte(*out.Policy), &pol); err != nil {
@@ -279,21 +371,13 @@ func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, previ
 				return nil, err
 			}
 			for _, st := range pol.Statement {
-				if st.Sid == lambdaUrlFuncSid {
-					fnArn, err := LambdaArn(ctx, infraLambda.Name)
-					if err != nil {
-						Logger.Println("error:", err)
-						return nil, err
+				for _, permission := range permissions {
+					if st.Sid != permission.statement.Sid {
+						continue
 					}
 					expectedPolicy := IamPolicyDocument{
-						Version: "2012-10-17",
-						Statement: []IamStatementEntry{{
-							Sid:       lambdaUrlFuncSid,
-							Effect:    "Allow",
-							Action:    "lambda:InvokeFunctionUrl",
-							Resource:  fnArn,
-							Principal: "*",
-						}},
+						Version:   "2012-10-17",
+						Statement: []IamStatementEntry{permission.statement},
 					}
 					actualPolicy := IamPolicyDocument{
 						Version:   "2012-10-17",
@@ -305,44 +389,40 @@ func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, previ
 						return nil, err
 					}
 					if equal {
-						needAdd = false
-					} else {
-						if !preview {
-							_, err := LambdaClient().RemovePermission(ctx, &lambda.RemovePermissionInput{
-								FunctionName: aws.String(infraLambda.Name),
-								StatementId:  aws.String(lambdaUrlFuncSid),
-							})
-							if err != nil {
-								Logger.Println("error:", err)
-								return nil, err
-							}
-						}
-						Logger.Println(PreviewString(preview)+"removed misconfigured function url permission:", infraLambda.Name)
+						needAdd[permission.statement.Sid] = false
+						break
 					}
+					if !preview {
+						_, err := LambdaClient().RemovePermission(ctx, &lambda.RemovePermissionInput{
+							FunctionName: aws.String(infraLambda.Name),
+							StatementId:  aws.String(permission.statement.Sid),
+						})
+						if err != nil {
+							Logger.Println("error:", err)
+							return nil, err
+						}
+					}
+					Logger.Println(PreviewString(preview)+"removed misconfigured function url permission:", infraLambda.Name, permission.statement.Sid)
 					break
 				}
 			}
 		}
-		if needAdd {
-			if !preview {
-				_, err := LambdaClient().AddPermission(ctx, &lambda.AddPermissionInput{
-					FunctionName:        aws.String(infraLambda.Name),
-					StatementId:         aws.String(lambdaUrlFuncSid),
-					Action:              aws.String("lambda:InvokeFunctionUrl"),
-					Principal:           aws.String("*"),
-					FunctionUrlAuthType: lambdatypes.FunctionUrlAuthTypeNone,
-				})
-				if err != nil {
-					var conflict *lambdatypes.ResourceConflictException
-					if !errors.As(err, &conflict) {
-						Logger.Println("error:", err)
-						return nil, err
+		for _, permission := range permissions {
+			if needAdd[permission.statement.Sid] {
+				if !preview {
+					_, err := LambdaClient().AddPermission(ctx, permission.input)
+					if err != nil {
+						var conflict *lambdatypes.ResourceConflictException
+						if !errors.As(err, &conflict) {
+							Logger.Println("error:", err)
+							return nil, err
+						}
 					}
 				}
+				Logger.Println(PreviewString(preview)+"added function url permission:", infraLambda.Name, permission.statement.Sid)
 			}
-			Logger.Println(PreviewString(preview)+"added function url permission:", infraLambda.Name)
+			sids = append(sids, permission.statement.Sid)
 		}
-		sids = append(sids, lambdaUrlFuncSid)
 	} else {
 		_, err := LambdaClient().GetFunctionUrlConfig(ctx, &lambda.GetFunctionUrlConfigInput{
 			FunctionName: aws.String(infraLambda.Name),
@@ -635,11 +715,6 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 		}
 	}
 	return permissionSids, nil
-}
-
-func isS3NoSuchBucket(err error) bool {
-	var apiError interface{ ErrorCode() string }
-	return errors.As(err, &apiError) && apiError.ErrorCode() == s3ErrCodeNoSuchBucket
 }
 
 func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
@@ -2982,7 +3057,7 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		defer d.End()
 	}
 	var err error
-	concurrency := lambdaAttrConcurrencyDefault
+	var concurrency *int32
 	memory := lambdaAttrMemoryDefault
 	timeout := lambdaAttrTimeoutDefault
 	logsTTLDays := lambdaAttrLogsTTLDaysDefault
@@ -2994,7 +3069,11 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		}
 		switch k {
 		case lambdaAttrConcurrency:
-			concurrency = Atoi(v)
+			concurrency, err = parseLambdaConcurrency(v)
+			if err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
 		case lambdaAttrMemory:
 			memory = Atoi(v)
 		case lambdaAttrTimeout:

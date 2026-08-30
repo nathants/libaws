@@ -31,6 +31,11 @@ const (
 	s3ErrCodeNoSuchTagSet                           = "NoSuchTagSet"
 )
 
+func isS3NoSuchBucket(err error) bool {
+	var apiError interface{ ErrorCode() string }
+	return errors.As(err, &apiError) && apiError.ErrorCode() == s3ErrCodeNoSuchBucket
+}
+
 var s3Client *s3.Client
 var s3ClientLock sync.Mutex
 var s3ClientsRegional = map[string]*s3.Client{}
@@ -106,7 +111,7 @@ func S3BucketRegion(bucket string) (string, error) {
 	case 400:
 	case 403:
 	case 404:
-		return "", fmt.Errorf("no such bucket: %s", bucket)
+		return "", &s3types.NoSuchBucket{Message: aws.String("no such bucket: " + bucket)}
 	default:
 		err := fmt.Errorf("http %d for %s", resp.StatusCode, bucket)
 		Logger.Println("error:", err)
@@ -131,7 +136,7 @@ func S3ClientBucketRegion(bucket string) (*s3.Client, error) {
 		var err error
 		region, err = S3BucketRegion(bucket)
 		if err != nil {
-			if strings.Contains(err.Error(), "no such bucket") {
+			if isS3NoSuchBucket(err) {
 				expectedErr = err
 				return nil
 			}

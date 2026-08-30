@@ -9,7 +9,6 @@ lambda:
   test-lambda-${uid}:
     entrypoint: main.go
     attr:
-      - concurrency=0
       - memory=128
       - timeout=60
     policy:

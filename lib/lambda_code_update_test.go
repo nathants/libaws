@@ -2,8 +2,6 @@ package lib
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -44,11 +42,6 @@ func (client *fakeLambdaCodeUpdateClient) GetFunction(
 			LastUpdateStatus: lambdatypes.LastUpdateStatusSuccessful,
 		},
 	}, nil
-}
-
-func lambdaZipHashForTest(data []byte) string {
-	hash := sha256.Sum256(data)
-	return base64.StdEncoding.EncodeToString(hash[:])
 }
 
 func TestUpdateLambdaFunctionCodeWaitsForExactPublishedZip(t *testing.T) {

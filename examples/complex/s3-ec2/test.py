@@ -16,12 +16,11 @@ def test():
     run(f"mkdir -p /tmp/{uid}")
     run(f"cd /tmp/{uid} && libaws ssh-keygen-ed25519")
     os.environ["pubkey"] = run(f"cat /tmp/{uid}/id_ed25519.pub")
-    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
-    assert sorted(infra["infraset"].keys()) == ["none"], infra
-    assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    assert infra["infraset"] == {"none": None}, infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
     infra.pop("region")
     infra.pop("account")
     infra["infraset"].pop("none")
@@ -74,10 +73,10 @@ def test():
         }
     }
     assert infra == expected, infra
-    run(f"echo hello | aws s3 cp - s3://in-bucket-{uid}/test-key.txt")
+    run(f"echo hello | libaws s3-put s3://in-bucket-{uid}/test-key.txt")
     for i in range(100):
         try:
-            assert "hello from ec2" == run(f"aws s3 cp s3://out-bucket-{uid}/test-key.txt -")
+            assert "hello from ec2" == run(f"libaws s3-get s3://out-bucket-{uid}/test-key.txt")
         except:
             if i > 12:
                 raise
@@ -85,7 +84,7 @@ def test():
         else:
             break
     for i in range(100):
-        infra = yaml.safe_load(run("libaws infra-ls --env-values"))
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
         infra.pop("region")
         infra.pop("account")
         infra["infraset"].pop("none")
@@ -102,9 +101,8 @@ def test():
     run("libaws infra-rm infra.yaml --preview")
     run(f"rm -rf /tmp/{uid}")
     run("libaws infra-rm infra.yaml")
-    infra = yaml.safe_load(run("libaws infra-ls --env-values"))
-    assert sorted(infra["infraset"].keys()) == ["none"], infra
-    assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    assert infra["infraset"] == {"none": None}, infra
 
 
 if __name__ == "__main__":

@@ -1697,6 +1697,10 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 			infraS3 := &InfraS3{}
 			s3Client, err := S3ClientBucketRegion(*bucket.Name)
 			if err != nil {
+				if isS3NoSuchBucket(err) {
+					errChan <- nil
+					return
+				}
 				Logger.Println("error:", err)
 				errChan <- err
 				return
@@ -1705,6 +1709,10 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				Bucket: bucket.Name,
 			})
 			if err != nil {
+				if isS3NoSuchBucket(err) {
+					errChan <- nil
+					return
+				}
 				if !strings.Contains(err.Error(), s3ErrCodeNoSuchTagSet) {
 					Logger.Println("error:", err)
 					errChan <- err
@@ -1720,6 +1728,10 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 			}
 			descr, err := S3GetBucketDescription(ctx, *bucket.Name)
 			if err != nil {
+				if isS3NoSuchBucket(err) {
+					errChan <- nil
+					return
+				}
 				Logger.Println("error:", err)
 				errChan <- err
 				return
@@ -1893,7 +1905,7 @@ func InfraListSQS(ctx context.Context) (map[string]*InfraSQS, error) {
 			if out.Attributes["DelaySeconds"] != "0" { // default
 				infraSQS.Attr = append(infraSQS.Attr, "DelaySeconds="+out.Attributes["DelaySeconds"])
 			}
-			if out.Attributes["MaximumMessageSize"] != "262144" { // default
+			if out.Attributes["MaximumMessageSize"] != "1048576" { // default
 				infraSQS.Attr = append(infraSQS.Attr, "MaximumMessageSize="+out.Attributes["MaximumMessageSize"])
 			}
 			if out.Attributes["MessageRetentionPeriod"] != "345600" { // default
