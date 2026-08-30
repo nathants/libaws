@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -221,5 +222,36 @@ func TestSourceAccountPermissionRequiresExactAlarmBoundary(t *testing.T) {
 	}
 	if matches {
 		t.Fatal("wrong source account permission matched")
+	}
+}
+
+func TestLambdaPermissionReconciliationCreatesMissingSIDInExistingPolicy(t *testing.T) {
+	const (
+		sid       = "alarm_permission"
+		function  = "arn:aws:lambda:us-west-2:337909772623:function:better-game"
+		principal = "lambda.alarms.cloudwatch.amazonaws.com"
+		alarm     = "arn:aws:cloudwatch:us-west-2:337909772623:alarm:better-beta-invocations-runaway"
+		account   = "337909772623"
+	)
+	policy, err := json.Marshal(IamPolicyDocument{
+		Version: "2012-10-17",
+		Statement: []IamStatementEntry{{
+			Sid:      "unrelated_permission",
+			Effect:   "Allow",
+			Action:   "lambda:InvokeFunction",
+			Resource: function,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sourceAccount := range []string{"", account} {
+		needsUpdate, removeExisting, err := lambdaPermissionReconciliation(string(policy), sid, function, principal, alarm, sourceAccount)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !needsUpdate || removeExisting {
+			t.Fatalf("missing SID reconciliation = needs update %v, remove existing %v; want true, false", needsUpdate, removeExisting)
+		}
 	}
 }

@@ -946,6 +946,30 @@ func lambdaSourceAccountPermissionMatches(statement IamStatementEntry, sid, func
 	return iamPolicyEqual(Pformat(actualPolicy), Pformat(expectedPolicy))
 }
 
+func lambdaPermissionReconciliation(policyString, sid, functionARN, callerPrincipal, callerARN, sourceAccount string) (needsUpdate, removeExisting bool, err error) {
+	if policyString == "" {
+		return true, false, nil
+	}
+	policy := IamPolicyDocument{}
+	if err := json.Unmarshal([]byte(policyString), &policy); err != nil {
+		return false, false, err
+	}
+	for _, statement := range policy.Statement {
+		if statement.Sid != sid {
+			continue
+		}
+		if sourceAccount == "" {
+			return false, false, nil
+		}
+		matches, err := lambdaSourceAccountPermissionMatches(statement, sid, functionARN, callerPrincipal, callerARN, sourceAccount)
+		if err != nil {
+			return false, false, err
+		}
+		return !matches, !matches, nil
+	}
+	return true, false, nil
+}
+
 func lambdaEnsurePermissionWithSourceAccount(ctx context.Context, name, callerPrincipal, callerARN, sourceAccount string, preview bool) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaEnsurePermission"}
@@ -953,14 +977,12 @@ func lambdaEnsurePermissionWithSourceAccount(ctx context.Context, name, callerPr
 		defer d.End()
 	}
 	sid := lambdaPermissionSID(callerPrincipal, callerARN)
-	var expectedErr error
 	var policyString string
 	err := Retry(ctx, func() error {
 		out, err := LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{FunctionName: aws.String(name)})
 		if err != nil {
 			var notFound *lambdatypes.ResourceNotFoundException
 			if errors.As(err, &notFound) {
-				expectedErr = err
 				return nil
 			}
 			return err
@@ -972,33 +994,17 @@ func lambdaEnsurePermissionWithSourceAccount(ctx context.Context, name, callerPr
 		Logger.Println("error:", err)
 		return "", err
 	}
-	needsUpdate := expectedErr != nil || policyString == ""
-	removeExisting := false
-	if policyString != "" {
-		policy := IamPolicyDocument{}
-		if err := json.Unmarshal([]byte(policyString), &policy); err != nil {
+	functionARN := ""
+	if sourceAccount != "" && policyString != "" {
+		account, err := StsAccount(ctx)
+		if err != nil {
 			return "", err
 		}
-		for _, statement := range policy.Statement {
-			if statement.Sid != sid {
-				continue
-			}
-			needsUpdate = false
-			if sourceAccount != "" {
-				account, err := StsAccount(ctx)
-				if err != nil {
-					return "", err
-				}
-				functionARN := fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", Region(), account, name)
-				matches, err := lambdaSourceAccountPermissionMatches(statement, sid, functionARN, callerPrincipal, callerARN, sourceAccount)
-				if err != nil {
-					return "", err
-				}
-				needsUpdate = !matches
-				removeExisting = !matches
-			}
-			break
-		}
+		functionARN = fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", Region(), account, name)
+	}
+	needsUpdate, removeExisting, err := lambdaPermissionReconciliation(policyString, sid, functionARN, callerPrincipal, callerARN, sourceAccount)
+	if err != nil {
+		return "", err
 	}
 	if !needsUpdate {
 		return sid, nil
