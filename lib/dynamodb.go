@@ -1088,11 +1088,11 @@ func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 			}
 			return err
 		}
-		if out.Table.LatestStreamArn == nil {
-			expectedErr = fmt.Errorf("you forgot to set stream=new_and_old_images in infra.yaml for table: %s", tableName)
+		streamArn, err = dynamoDBLatestStreamARN(tableName, out.Table)
+		if err != nil {
+			expectedErr = err
 			return nil
 		}
-		streamArn = *out.Table.LatestStreamArn
 		return nil
 	})
 	if err != nil {
@@ -1100,10 +1100,16 @@ func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 		return "", err
 	}
 	if expectedErr != nil {
-		Logger.Println("error:", err)
 		return "", expectedErr
 	}
 	return streamArn, nil
+}
+
+func dynamoDBLatestStreamARN(tableName string, table *ddbtypes.TableDescription) (string, error) {
+	if table == nil || table.StreamSpecification == nil || table.StreamSpecification.StreamEnabled == nil || !*table.StreamSpecification.StreamEnabled || table.LatestStreamArn == nil || *table.LatestStreamArn == "" {
+		return "", fmt.Errorf("DynamoDB stream is not enabled for table: %s", tableName)
+	}
+	return *table.LatestStreamArn, nil
 }
 
 func DynamoDBItemDeleteAll(ctx context.Context, tableName string, keyNames []string) error {

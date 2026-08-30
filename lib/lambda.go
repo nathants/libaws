@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/acm"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	apitypes "github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
+	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	eventbridgetypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
@@ -1913,202 +1914,473 @@ func lambdaDynamoDBTriggerAttrShortcut(s string) string {
 	return s
 }
 
-func lambdaDynamoDBMappingConfigured(mappingARN string, configuredStreamARNs []string) bool {
-	return slices.Contains(configuredStreamARNs, mappingARN)
+type lambdaEventSourceMappingClient interface {
+	CreateEventSourceMapping(context.Context, *lambda.CreateEventSourceMappingInput, ...func(*lambda.Options)) (*lambda.CreateEventSourceMappingOutput, error)
+	DeleteEventSourceMapping(context.Context, *lambda.DeleteEventSourceMappingInput, ...func(*lambda.Options)) (*lambda.DeleteEventSourceMappingOutput, error)
+	GetEventSourceMapping(context.Context, *lambda.GetEventSourceMappingInput, ...func(*lambda.Options)) (*lambda.GetEventSourceMappingOutput, error)
+	ListEventSourceMappings(context.Context, *lambda.ListEventSourceMappingsInput, ...func(*lambda.Options)) (*lambda.ListEventSourceMappingsOutput, error)
+	UpdateEventSourceMapping(context.Context, *lambda.UpdateEventSourceMappingInput, ...func(*lambda.Options)) (*lambda.UpdateEventSourceMappingOutput, error)
 }
 
+type lambdaDynamoDBStreamARNResolver func(context.Context, string) (string, error)
+
 func LambdaEnsureTriggerDynamoDB(ctx context.Context, infraLambda *InfraLambda, preview bool) error {
+	return lambdaEnsureTriggerDynamoDB(ctx, LambdaClient(), DynamoDBStreamArn, infraLambda, preview)
+}
+
+func lambdaEnsureTriggerDynamoDB(ctx context.Context, client lambdaEventSourceMappingClient, resolveStreamARN lambdaDynamoDBStreamARNResolver, infraLambda *InfraLambda, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerDynamoDB"}
 		d.Start()
 		defer d.End()
 	}
-	var triggers [][]string
-	var triggerStreamARNs []string
-	for _, trigger := range infraLambda.Trigger {
-		if trigger.Type == lambdaTriggerDynamoDB {
-			triggers = append(triggers, trigger.Attr)
+
+	desired, err := lambdaDynamoDBDesiredMappings(ctx, resolveStreamARN, infraLambda, preview)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	unresolved := false
+	for _, desiredMapping := range desired {
+		if desiredMapping.create.EventSourceArn == nil {
+			Logger.Println(PreviewString(true)+"created event source mapping:", infraLambda.Name, infraLambda.Arn, desiredMapping.tableName, strings.Join(desiredMapping.triggerAttrs, " "))
+			unresolved = true
 		}
 	}
-	if len(triggers) > 0 {
-		for _, triggerAttrs := range triggers {
-			tableName := triggerAttrs[0]
-			triggerAttrs := triggerAttrs[1:]
-			createMappingInput := &lambda.CreateEventSourceMappingInput{
-				FunctionName:                   aws.String(infraLambda.Name),
-				Enabled:                        aws.Bool(true),
-				BatchSize:                      aws.Int32(100),
-				MaximumBatchingWindowInSeconds: aws.Int32(0),
-				MaximumRetryAttempts:           aws.Int32(-1),
-				ParallelizationFactor:          aws.Int32(1),
-			}
-			for _, line := range triggerAttrs {
-				attr, value, err := SplitOnce(line, "=")
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				attr = lambdaDynamoDBTriggerAttrShortcut(attr)
-				switch attr {
-				case "BatchSize":
-					size, err := strconv.Atoi(value)
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-					createMappingInput.BatchSize = aws.Int32(int32(size))
-				case "MaximumBatchingWindowInSeconds":
-					size, err := strconv.Atoi(value)
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-					createMappingInput.MaximumBatchingWindowInSeconds = aws.Int32(int32(size))
-				case "MaximumRetryAttempts":
-					attempts, err := strconv.Atoi(value)
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-					createMappingInput.MaximumRetryAttempts = aws.Int32(int32(attempts))
-				case "ParallelizationFactor":
-					factor, err := strconv.Atoi(value)
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-					createMappingInput.ParallelizationFactor = aws.Int32(int32(factor))
-				case "StartingPosition":
-					createMappingInput.StartingPosition = lambdatypes.EventSourcePosition(strings.ToUpper(value))
-				default:
-					err := fmt.Errorf("unknown lambda dynamodb trigger attribute: %s", line)
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			var found *lambdatypes.EventSourceMappingConfiguration
-			count := 0
-			streamArn, err := DynamoDBStreamArn(ctx, tableName)
-			if err != nil {
-				if !strings.Contains(err.Error(), "Requested resource not found") {
-					Logger.Println("error:", err)
-					return err
-				}
-			} else {
-				createMappingInput.EventSourceArn = aws.String(streamArn)
-				triggerStreamARNs = append(triggerStreamARNs, streamArn)
-				eventSourceMappings, err := lambdaListEventSourceMappings(ctx, infraLambda.Name)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				for _, mapping := range eventSourceMappings {
-					if *mapping.EventSourceArn == streamArn && *mapping.FunctionArn == infraLambda.Arn {
-						found = &mapping
-						count++
-					}
-				}
-			}
-			switch count {
-			case 0:
-				if !preview {
-					err := Retry(ctx, func() error {
-						_, err := LambdaClient().CreateEventSourceMapping(ctx, createMappingInput)
-						return err
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-				}
-				Logger.Println(PreviewString(preview)+"created event source mapping:", infraLambda.Name, infraLambda.Arn, streamArn, strings.Join(triggerAttrs, " "))
-			case 1:
-				needsUpdate := false
-				update := &lambda.UpdateEventSourceMappingInput{UUID: found.UUID}
-				update.FunctionName = createMappingInput.FunctionName
-				if *found.BatchSize != *createMappingInput.BatchSize {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d\n", infraLambda.Name, tableName, *found.BatchSize, *createMappingInput.BatchSize)
-					update.BatchSize = createMappingInput.BatchSize
-					needsUpdate = true
-				}
-				if *found.MaximumRetryAttempts != *createMappingInput.MaximumRetryAttempts {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d\n", infraLambda.Name, tableName, *found.MaximumRetryAttempts, *createMappingInput.MaximumRetryAttempts)
-					update.MaximumRetryAttempts = createMappingInput.MaximumRetryAttempts
-					needsUpdate = true
-				}
-				if *found.ParallelizationFactor != *createMappingInput.ParallelizationFactor {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d\n", infraLambda.Name, tableName, *found.ParallelizationFactor, *createMappingInput.ParallelizationFactor)
-					update.ParallelizationFactor = createMappingInput.ParallelizationFactor
-					needsUpdate = true
-				}
-				if *found.MaximumBatchingWindowInSeconds != *createMappingInput.MaximumBatchingWindowInSeconds {
-					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d\n", infraLambda.Name, tableName, *found.MaximumBatchingWindowInSeconds, *createMappingInput.MaximumBatchingWindowInSeconds)
-					update.MaximumBatchingWindowInSeconds = createMappingInput.MaximumBatchingWindowInSeconds
-					needsUpdate = true
-				}
-				if found.StartingPosition != createMappingInput.StartingPosition {
-					err := fmt.Errorf("cannot update StartingPosition for %s %s: %s => %s", infraLambda.Name, tableName, found.StartingPosition, createMappingInput.StartingPosition)
-					Logger.Println("error:", err)
-					return err
-				}
-				if needsUpdate {
-					if !preview {
-						_, err := LambdaClient().UpdateEventSourceMapping(ctx, update)
-						if err != nil {
-							Logger.Println("error:", err)
-							return err
-						}
-					}
-					Logger.Println(PreviewString(preview)+"updated event source mapping for", infraLambda.Name, tableName)
-				}
-			default:
-				err := fmt.Errorf("found more than 1 event source mapping for %s %s", infraLambda.Name, tableName)
-				Logger.Println("error:", err)
-				return err
-			}
-		}
+	if unresolved {
+		return nil
 	}
-	var marker *string
-	for {
-		out, err := LambdaClient().ListEventSourceMappings(ctx, &lambda.ListEventSourceMappingsInput{
-			FunctionName: aws.String(infraLambda.Arn),
-			Marker:       marker,
-		})
+	functionName := infraLambda.Name
+	if infraLambda.Arn != "" {
+		functionName = infraLambda.Arn
+	}
+	listed, err := lambdaListEventSourceMappingsWithClient(ctx, client, functionName)
+	if err != nil && !(preview && lambdaEventSourceMappingNotFound(err)) {
+		Logger.Println("error:", err)
+		return err
+	}
+	mappings := make([]*lambdaDynamoDBCurrentMapping, 0, len(listed))
+	for _, listedMapping := range listed {
+		mapping, err := lambdaDynamoDBCurrentMappingFromConfiguration(listedMapping)
 		if err != nil {
-			if !preview {
-				Logger.Println("error:", err)
+			Logger.Println("error:", err)
+			return err
+		}
+		mappings = append(mappings, mapping)
+	}
+
+	configuredStreamARNs := make([]string, 0, len(desired))
+	for _, desiredMapping := range desired {
+		configuredStreamARNs = append(configuredStreamARNs, aws.ToString(desiredMapping.create.EventSourceArn))
+		var matches []*lambdaDynamoDBCurrentMapping
+		for _, mapping := range mappings {
+			if aws.ToString(mapping.eventSourceARN) == aws.ToString(desiredMapping.create.EventSourceArn) {
+				matches = append(matches, mapping)
+			}
+		}
+		if len(matches) > 1 {
+			return fmt.Errorf("found more than 1 event source mapping for %s %s", infraLambda.Name, desiredMapping.tableName)
+		}
+		if len(matches) == 0 {
+			if err := lambdaCreateDynamoDBMapping(ctx, client, infraLambda, desiredMapping, preview); err != nil {
 				return err
 			}
-			out = &lambda.ListEventSourceMappingsOutput{}
+			continue
 		}
-		for _, mapping := range out.EventSourceMappings {
-			infra := ArnToInfraName(*mapping.EventSourceArn)
-			if infra != lambdaTriggerDynamoDB {
-				continue
-			}
-			tableName := DynamoDBStreamArnToTableName(*mapping.EventSourceArn)
-			if !lambdaDynamoDBMappingConfigured(*mapping.EventSourceArn, triggerStreamARNs) {
-				if !preview {
-					_, err := LambdaClient().DeleteEventSourceMapping(ctx, &lambda.DeleteEventSourceMappingInput{
-						UUID: mapping.UUID,
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return err
-					}
-				}
-				Logger.Println(PreviewString(preview)+"deleted trigger:", infraLambda.Name, tableName)
-			}
+		if err := lambdaConvergeDynamoDBMapping(ctx, client, infraLambda, desiredMapping, matches[0], preview); err != nil {
+			return err
 		}
-		if out.NextMarker == nil {
-			break
+	}
+
+	for _, mapping := range mappings {
+		streamARN := aws.ToString(mapping.eventSourceARN)
+		if !lambdaDynamoDBStreamARN(streamARN) || slices.Contains(configuredStreamARNs, streamARN) {
+			continue
 		}
-		marker = out.NextMarker
+		tableName, err := lambdaDynamoDBStreamTableName(streamARN)
+		if err != nil {
+			return err
+		}
+		if preview {
+			Logger.Println(PreviewString(true)+"deleted trigger:", infraLambda.Name, tableName)
+			continue
+		}
+		settled, err := lambdaWaitEventSourceMappingSettled(ctx, client, aws.ToString(mapping.uuid))
+		if err != nil {
+			return err
+		}
+		if settled == nil {
+			continue
+		}
+		_, err = client.DeleteEventSourceMapping(ctx, &lambda.DeleteEventSourceMappingInput{UUID: settled.uuid})
+		if err != nil && !lambdaEventSourceMappingNotFound(err) {
+			Logger.Println("error:", err)
+			return err
+		}
+		if err := lambdaWaitEventSourceMappingDeleted(ctx, client, aws.ToString(settled.uuid)); err != nil {
+			return err
+		}
+		Logger.Println("deleted trigger:", infraLambda.Name, tableName)
 	}
 	return nil
 }
 
+type lambdaDynamoDBDesiredMapping struct {
+	tableName    string
+	triggerAttrs []string
+	create       *lambda.CreateEventSourceMappingInput
+}
+
+type lambdaDynamoDBCurrentMapping struct {
+	uuid                           *string
+	eventSourceARN                 *string
+	state                          *string
+	stateTransitionReason          *string
+	batchSize                      *int32
+	maximumBatchingWindowInSeconds *int32
+	maximumRetryAttempts           *int32
+	parallelizationFactor          *int32
+	startingPosition               lambdatypes.EventSourcePosition
+}
+
+func lambdaDynamoDBDesiredMappings(ctx context.Context, resolveStreamARN lambdaDynamoDBStreamARNResolver, infraLambda *InfraLambda, preview bool) ([]*lambdaDynamoDBDesiredMapping, error) {
+	var desired []*lambdaDynamoDBDesiredMapping
+	seenTables := map[string]struct{}{}
+	for _, trigger := range infraLambda.Trigger {
+		if trigger.Type != lambdaTriggerDynamoDB {
+			continue
+		}
+		if len(trigger.Attr) == 0 || trigger.Attr[0] == "" {
+			return nil, fmt.Errorf("lambda DynamoDB trigger requires a table name")
+		}
+		tableName := trigger.Attr[0]
+		if _, duplicate := seenTables[tableName]; duplicate {
+			return nil, fmt.Errorf("duplicate lambda DynamoDB trigger for table: %s", tableName)
+		}
+		seenTables[tableName] = struct{}{}
+		triggerAttrs := trigger.Attr[1:]
+		create := &lambda.CreateEventSourceMappingInput{
+			FunctionName:                   aws.String(infraLambda.Name),
+			Enabled:                        aws.Bool(true),
+			BatchSize:                      aws.Int32(100),
+			MaximumBatchingWindowInSeconds: aws.Int32(0),
+			MaximumRetryAttempts:           aws.Int32(-1),
+			ParallelizationFactor:          aws.Int32(1),
+		}
+		for _, line := range triggerAttrs {
+			attr, value, err := SplitOnce(line, "=")
+			if err != nil {
+				return nil, err
+			}
+			attr = lambdaDynamoDBTriggerAttrShortcut(attr)
+			switch attr {
+			case "BatchSize":
+				size, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, err
+				}
+				create.BatchSize = aws.Int32(int32(size))
+			case "MaximumBatchingWindowInSeconds":
+				size, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, err
+				}
+				create.MaximumBatchingWindowInSeconds = aws.Int32(int32(size))
+			case "MaximumRetryAttempts":
+				attempts, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, err
+				}
+				create.MaximumRetryAttempts = aws.Int32(int32(attempts))
+			case "ParallelizationFactor":
+				factor, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, err
+				}
+				create.ParallelizationFactor = aws.Int32(int32(factor))
+			case "StartingPosition":
+				create.StartingPosition = lambdatypes.EventSourcePosition(strings.ToUpper(value))
+			default:
+				return nil, fmt.Errorf("unknown lambda dynamodb trigger attribute: %s", line)
+			}
+		}
+		if create.StartingPosition == "" {
+			return nil, fmt.Errorf("lambda DynamoDB trigger for %s requires start=latest or start=trim_horizon", tableName)
+		}
+		if create.StartingPosition != lambdatypes.EventSourcePositionLatest && create.StartingPosition != lambdatypes.EventSourcePositionTrimHorizon {
+			return nil, fmt.Errorf("lambda DynamoDB trigger for %s has invalid starting position: %s", tableName, create.StartingPosition)
+		}
+		streamARN, err := resolveStreamARN(ctx, tableName)
+		if err != nil {
+			if preview && lambdaDynamoDBResourceNotFound(err) {
+				desired = append(desired, &lambdaDynamoDBDesiredMapping{tableName: tableName, triggerAttrs: triggerAttrs, create: create})
+				continue
+			}
+			return nil, fmt.Errorf("resolve DynamoDB stream for %s: %w", tableName, err)
+		}
+		if streamARN == "" {
+			return nil, fmt.Errorf("resolve DynamoDB stream for %s: empty stream ARN", tableName)
+		}
+		create.EventSourceArn = aws.String(streamARN)
+		desired = append(desired, &lambdaDynamoDBDesiredMapping{tableName: tableName, triggerAttrs: triggerAttrs, create: create})
+	}
+	return desired, nil
+}
+
+func lambdaDynamoDBCurrentMappingFromConfiguration(mapping lambdatypes.EventSourceMappingConfiguration) (*lambdaDynamoDBCurrentMapping, error) {
+	return lambdaDynamoDBCurrentMappingFromValues(
+		mapping.UUID,
+		mapping.EventSourceArn,
+		mapping.State,
+		mapping.StateTransitionReason,
+		mapping.BatchSize,
+		mapping.MaximumBatchingWindowInSeconds,
+		mapping.MaximumRetryAttempts,
+		mapping.ParallelizationFactor,
+		mapping.StartingPosition,
+	)
+}
+
+func lambdaDynamoDBCurrentMappingFromGet(mapping *lambda.GetEventSourceMappingOutput) (*lambdaDynamoDBCurrentMapping, error) {
+	if mapping == nil {
+		return nil, fmt.Errorf("lambda returned an empty event source mapping")
+	}
+	return lambdaDynamoDBCurrentMappingFromValues(
+		mapping.UUID,
+		mapping.EventSourceArn,
+		mapping.State,
+		mapping.StateTransitionReason,
+		mapping.BatchSize,
+		mapping.MaximumBatchingWindowInSeconds,
+		mapping.MaximumRetryAttempts,
+		mapping.ParallelizationFactor,
+		mapping.StartingPosition,
+	)
+}
+
+func lambdaDynamoDBCurrentMappingFromValues(uuid, eventSourceARN, state, stateTransitionReason *string, batchSize, maximumBatchingWindowInSeconds, maximumRetryAttempts, parallelizationFactor *int32, startingPosition lambdatypes.EventSourcePosition) (*lambdaDynamoDBCurrentMapping, error) {
+	if uuid == nil || *uuid == "" {
+		return nil, fmt.Errorf("lambda event source mapping lacks a UUID")
+	}
+	if eventSourceARN == nil || *eventSourceARN == "" {
+		return nil, fmt.Errorf("lambda event source mapping %s lacks an event source ARN", *uuid)
+	}
+	if state == nil || *state == "" {
+		return nil, fmt.Errorf("lambda event source mapping %s lacks a state", *uuid)
+	}
+	return &lambdaDynamoDBCurrentMapping{
+		uuid:                           uuid,
+		eventSourceARN:                 eventSourceARN,
+		state:                          state,
+		stateTransitionReason:          stateTransitionReason,
+		batchSize:                      batchSize,
+		maximumBatchingWindowInSeconds: maximumBatchingWindowInSeconds,
+		maximumRetryAttempts:           maximumRetryAttempts,
+		parallelizationFactor:          parallelizationFactor,
+		startingPosition:               startingPosition,
+	}, nil
+}
+
+func lambdaCreateDynamoDBMapping(ctx context.Context, client lambdaEventSourceMappingClient, infraLambda *InfraLambda, desired *lambdaDynamoDBDesiredMapping, preview bool) error {
+	if preview {
+		Logger.Println(PreviewString(true)+"created event source mapping:", infraLambda.Name, infraLambda.Arn, aws.ToString(desired.create.EventSourceArn), strings.Join(desired.triggerAttrs, " "))
+		return nil
+	}
+	var output *lambda.CreateEventSourceMappingOutput
+	err := Retry(ctx, func() error {
+		var err error
+		output, err = client.CreateEventSourceMapping(ctx, desired.create)
+		return err
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if output == nil || output.UUID == nil || *output.UUID == "" {
+		return fmt.Errorf("created Lambda event source mapping lacks a UUID")
+	}
+	if _, err := lambdaWaitEventSourceMappingEnabled(ctx, client, *output.UUID); err != nil {
+		return err
+	}
+	Logger.Println("created event source mapping:", infraLambda.Name, infraLambda.Arn, aws.ToString(desired.create.EventSourceArn), strings.Join(desired.triggerAttrs, " "))
+	return nil
+}
+
+func lambdaConvergeDynamoDBMapping(ctx context.Context, client lambdaEventSourceMappingClient, infraLambda *InfraLambda, desired *lambdaDynamoDBDesiredMapping, listed *lambdaDynamoDBCurrentMapping, preview bool) error {
+	current := listed
+	if !preview {
+		var err error
+		current, err = lambdaWaitEventSourceMappingSettled(ctx, client, aws.ToString(listed.uuid))
+		if err != nil {
+			return err
+		}
+		if current == nil {
+			return lambdaCreateDynamoDBMapping(ctx, client, infraLambda, desired, false)
+		}
+	}
+	update, needsUpdate, err := lambdaDynamoDBMappingUpdate(infraLambda, desired, current, preview)
+	if err != nil {
+		return err
+	}
+	if !needsUpdate {
+		return nil
+	}
+	if !preview {
+		if _, err := client.UpdateEventSourceMapping(ctx, update); err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if _, err := lambdaWaitEventSourceMappingEnabled(ctx, client, aws.ToString(current.uuid)); err != nil {
+			return err
+		}
+	}
+	Logger.Println(PreviewString(preview)+"updated event source mapping for", infraLambda.Name, desired.tableName)
+	return nil
+}
+
+func lambdaDynamoDBMappingUpdate(infraLambda *InfraLambda, desired *lambdaDynamoDBDesiredMapping, current *lambdaDynamoDBCurrentMapping, preview bool) (*lambda.UpdateEventSourceMappingInput, bool, error) {
+	update := &lambda.UpdateEventSourceMappingInput{UUID: current.uuid, FunctionName: desired.create.FunctionName}
+	needsUpdate := false
+	if !int32PointersEqual(current.batchSize, desired.create.BatchSize) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.batchSize), aws.ToInt32(desired.create.BatchSize))
+		update.BatchSize = desired.create.BatchSize
+		needsUpdate = true
+	}
+	if !int32PointersEqual(current.maximumRetryAttempts, desired.create.MaximumRetryAttempts) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.maximumRetryAttempts), aws.ToInt32(desired.create.MaximumRetryAttempts))
+		update.MaximumRetryAttempts = desired.create.MaximumRetryAttempts
+		needsUpdate = true
+	}
+	if !int32PointersEqual(current.parallelizationFactor, desired.create.ParallelizationFactor) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.parallelizationFactor), aws.ToInt32(desired.create.ParallelizationFactor))
+		update.ParallelizationFactor = desired.create.ParallelizationFactor
+		needsUpdate = true
+	}
+	if !int32PointersEqual(current.maximumBatchingWindowInSeconds, desired.create.MaximumBatchingWindowInSeconds) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.maximumBatchingWindowInSeconds), aws.ToInt32(desired.create.MaximumBatchingWindowInSeconds))
+		update.MaximumBatchingWindowInSeconds = desired.create.MaximumBatchingWindowInSeconds
+		needsUpdate = true
+	}
+	if current.startingPosition != desired.create.StartingPosition {
+		return nil, false, fmt.Errorf("cannot update StartingPosition for %s %s: %s => %s", infraLambda.Name, desired.tableName, current.startingPosition, desired.create.StartingPosition)
+	}
+	if aws.ToString(current.state) != "Enabled" {
+		Logger.Printf(PreviewString(preview)+"will enable lambda event source mapping for %s %s: %s => Enabled\n", infraLambda.Name, desired.tableName, aws.ToString(current.state))
+		update.Enabled = aws.Bool(true)
+		needsUpdate = true
+	}
+	return update, needsUpdate, nil
+}
+
+func int32PointersEqual(a, b *int32) bool {
+	return a != nil && b != nil && *a == *b
+}
+
+func lambdaWaitEventSourceMappingSettled(ctx context.Context, client lambdaEventSourceMappingClient, uuid string) (*lambdaDynamoDBCurrentMapping, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	for {
+		output, err := client.GetEventSourceMapping(waitCtx, &lambda.GetEventSourceMappingInput{UUID: aws.String(uuid)})
+		if lambdaEventSourceMappingNotFound(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		mapping, err := lambdaDynamoDBCurrentMappingFromGet(output)
+		if err != nil {
+			return nil, err
+		}
+		switch aws.ToString(mapping.state) {
+		case "Enabled", "Disabled":
+			return mapping, nil
+		case "Creating", "Enabling", "Disabling", "Updating", "Deleting":
+		default:
+			return nil, fmt.Errorf("lambda event source mapping %s has unknown state %q", uuid, aws.ToString(mapping.state))
+		}
+		if err := lambdaEventSourceMappingPoll(waitCtx); err != nil {
+			return nil, fmt.Errorf("wait for Lambda event source mapping %s to settle in state %s (%s): %w", uuid, aws.ToString(mapping.state), aws.ToString(mapping.stateTransitionReason), err)
+		}
+	}
+}
+
+func lambdaWaitEventSourceMappingEnabled(ctx context.Context, client lambdaEventSourceMappingClient, uuid string) (*lambdaDynamoDBCurrentMapping, error) {
+	mapping, err := lambdaWaitEventSourceMappingSettled(ctx, client, uuid)
+	if err != nil {
+		return nil, err
+	}
+	if mapping == nil {
+		return nil, fmt.Errorf("lambda event source mapping %s disappeared before reaching Enabled", uuid)
+	}
+	if aws.ToString(mapping.state) != "Enabled" {
+		return nil, fmt.Errorf("lambda event source mapping %s reached %s instead of Enabled: %s", uuid, aws.ToString(mapping.state), aws.ToString(mapping.stateTransitionReason))
+	}
+	return mapping, nil
+}
+
+func lambdaWaitEventSourceMappingDeleted(ctx context.Context, client lambdaEventSourceMappingClient, uuid string) error {
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	for {
+		output, err := client.GetEventSourceMapping(waitCtx, &lambda.GetEventSourceMappingInput{UUID: aws.String(uuid)})
+		if lambdaEventSourceMappingNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		mapping, err := lambdaDynamoDBCurrentMappingFromGet(output)
+		if err != nil {
+			return err
+		}
+		if err := lambdaEventSourceMappingPoll(waitCtx); err != nil {
+			return fmt.Errorf("wait for Lambda event source mapping %s deletion in state %s (%s): %w", uuid, aws.ToString(mapping.state), aws.ToString(mapping.stateTransitionReason), err)
+		}
+	}
+}
+
+func lambdaEventSourceMappingPoll(ctx context.Context) error {
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func lambdaEventSourceMappingNotFound(err error) bool {
+	var notFound *lambdatypes.ResourceNotFoundException
+	return errors.As(err, &notFound)
+}
+
+func lambdaDynamoDBResourceNotFound(err error) bool {
+	var notFound *ddbtypes.ResourceNotFoundException
+	return errors.As(err, &notFound)
+}
+
+func lambdaDynamoDBStreamARN(arn string) bool {
+	parts := strings.SplitN(arn, ":", 6)
+	return len(parts) == 6 && parts[0] == "arn" && parts[2] == lambdaTriggerDynamoDB
+}
+
+func lambdaDynamoDBStreamTableName(arn string) (string, error) {
+	if !lambdaDynamoDBStreamARN(arn) {
+		return "", fmt.Errorf("invalid DynamoDB stream ARN: %s", arn)
+	}
+	resource := strings.Split(strings.SplitN(arn, ":", 6)[5], "/")
+	if len(resource) < 4 || resource[0] != "table" || resource[1] == "" || resource[2] != "stream" || resource[3] == "" {
+		return "", fmt.Errorf("invalid DynamoDB stream ARN: %s", arn)
+	}
+	return resource[1], nil
+}
+
 func lambdaListEventSourceMappings(ctx context.Context, name string) ([]lambdatypes.EventSourceMappingConfiguration, error) {
+	return lambdaListEventSourceMappingsWithClient(ctx, LambdaClient(), name)
+}
+
+func lambdaListEventSourceMappingsWithClient(ctx context.Context, client lambdaEventSourceMappingClient, name string) ([]lambdatypes.EventSourceMappingConfiguration, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaListEventSourceMappings"}
 		d.Start()
@@ -2117,7 +2389,7 @@ func lambdaListEventSourceMappings(ctx context.Context, name string) ([]lambdaty
 	var marker *string
 	var eventSourceMappings []lambdatypes.EventSourceMappingConfiguration
 	for {
-		out, err := LambdaClient().ListEventSourceMappings(ctx, &lambda.ListEventSourceMappingsInput{
+		out, err := client.ListEventSourceMappings(ctx, &lambda.ListEventSourceMappingsInput{
 			FunctionName: aws.String(name),
 			Marker:       marker,
 		})

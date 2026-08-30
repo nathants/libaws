@@ -57,7 +57,13 @@ def test():
     run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "put:"')
     assert uid == json.loads(run(f"libaws dynamodb-item-get test-other-table-{uid} userid:s:jane"))["data"]
     run("libaws infra-rm infra.yaml --preview")
-    run("libaws infra-rm infra.yaml")
+    os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_TABLE"] = f"test-table-{uid}"
+    os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_OUTPUT_TABLE"] = f"test-other-table-{uid}"
+    os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_FUNCTION"] = f"test-lambda-{uid}"
+    try:
+        run("go test ../../../../lib -run '^TestLambdaDynamoDBStreamMappingIntegration$' -count=1 -v")
+    finally:
+        run("libaws infra-rm infra.yaml")
     infra = yaml.safe_load(run("libaws infra-ls --env-values"))
     assert sorted(infra["infraset"].keys()) == ["none"], infra
     assert sorted(infra["infraset"]["none"].keys()) == ["user"], infra
