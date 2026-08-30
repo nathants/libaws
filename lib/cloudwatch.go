@@ -116,26 +116,6 @@ func CloudwatchListAlarms(ctx context.Context) ([]*CloudwatchAlarm, error) {
 	return result, nil
 }
 
-func CloudwatchEnsureAlarm(ctx context.Context, name string) error {
-	if doDebug {
-		d := &Debug{start: time.Now(), name: "CloudwatchEnsureAlarm"}
-		d.Start()
-		defer d.End()
-	}
-	out, err := CloudwatchClient().DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{
-		AlarmNames: []string{
-			name,
-		},
-	})
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
-	_ = out
-	_, _ = CloudwatchClient().PutMetricAlarm(ctx, &cloudwatch.PutMetricAlarmInput{})
-	return nil
-}
-
 func CloudwatchListMetrics(ctx context.Context, namespace, metric *string) ([]cwtypes.Metric, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "CloudwatchListMetrics"}
