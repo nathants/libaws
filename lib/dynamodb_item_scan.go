@@ -49,6 +49,7 @@ func exactDynamoDBJSONValue(value any) any {
 			exact[index] = json.Number(value[index].String())
 		}
 		return exact
+
 	case []any:
 		for index := range value {
 			value[index] = exactDynamoDBJSONValue(value[index])
