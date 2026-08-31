@@ -37,7 +37,7 @@ func s3Getversion() {
 		lib.Logger.Fatal("error: ", err)
 	}
 
-	s3Client, err := lib.S3ClientBucketRegion(bucket)
+	s3Client, err := lib.S3ClientBucketRegion(ctx, bucket)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

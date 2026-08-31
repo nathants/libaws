@@ -85,7 +85,7 @@ func TestLambdaRemoveStaleS3TriggersSkipsDesiredBuckets(t *testing.T) {
 	err := lambdaRemoveStaleS3Triggers(
 		context.Background(),
 		&fakeLambdaS3AccountClient{buckets: []string{"desired"}},
-		func(string) (lambdaS3NotificationClient, error) {
+		func(context.Context, string) (lambdaS3NotificationClient, error) {
 			resolverCalls++
 			return &fakeLambdaS3NotificationClient{}, nil
 		},
@@ -106,7 +106,7 @@ func TestLambdaRemoveStaleS3TriggersToleratesDeletionDuringRegionLookup(t *testi
 	err := callLambdaRemoveStaleS3Triggers(
 		t,
 		&fakeLambdaS3AccountClient{buckets: []string{"deleted"}},
-		func(string) (lambdaS3NotificationClient, error) { return nil, missing },
+		func(context.Context, string) (lambdaS3NotificationClient, error) { return nil, missing },
 		&InfraLambda{Name: "function", Arn: "arn:aws:lambda:region:account:function:function"},
 	)
 	if err != nil {
@@ -120,7 +120,7 @@ func TestLambdaRemoveStaleS3TriggersToleratesDeletionBeforeRead(t *testing.T) {
 	err := callLambdaRemoveStaleS3Triggers(
 		t,
 		&fakeLambdaS3AccountClient{buckets: []string{"deleted"}},
-		func(string) (lambdaS3NotificationClient, error) { return client, nil },
+		func(context.Context, string) (lambdaS3NotificationClient, error) { return client, nil },
 		&InfraLambda{Name: "function", Arn: "arn:aws:lambda:region:account:function:function"},
 	)
 	if err != nil {
@@ -146,7 +146,7 @@ func TestLambdaRemoveStaleS3TriggersToleratesDeletionBeforeWrite(t *testing.T) {
 	err := callLambdaRemoveStaleS3Triggers(
 		t,
 		&fakeLambdaS3AccountClient{buckets: []string{"deleted"}},
-		func(string) (lambdaS3NotificationClient, error) {
+		func(context.Context, string) (lambdaS3NotificationClient, error) {
 			resolverCalls++
 			return client, nil
 		},
@@ -183,19 +183,19 @@ func TestLambdaRemoveStaleS3TriggersPropagatesProviderErrors(t *testing.T) {
 	}{
 		{
 			name: "region lookup",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return nil, accessDenied
 			},
 		},
 		{
 			name: "notification read",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return &fakeLambdaS3NotificationClient{getErr: accessDenied}, nil
 			},
 		},
 		{
 			name: "notification write",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return &fakeLambdaS3NotificationClient{
 					getOut: staleConfiguration,
 					putErr: accessDenied,
@@ -226,13 +226,13 @@ func TestLambdaEnsureDesiredS3TriggerRejectsMissingBucketOutsidePreview(t *testi
 	}{
 		{
 			name: "region lookup",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return nil, missing
 			},
 		},
 		{
 			name: "notification read",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return &fakeLambdaS3NotificationClient{getErr: missing}, nil
 			},
 		},
@@ -266,26 +266,26 @@ func TestLambdaEnsureDesiredS3TriggerPreviewModelsOnlyMissingBucket(t *testing.T
 	}{
 		{
 			name: "missing during region lookup",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return nil, missing
 			},
 		},
 		{
 			name: "missing during notification read",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return &fakeLambdaS3NotificationClient{getErr: missing}, nil
 			},
 		},
 		{
 			name: "unrelated error during region lookup",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return nil, accessDenied
 			},
 			wantErr: accessDenied,
 		},
 		{
 			name: "unrelated error during notification read",
-			clientForBucket: func(string) (lambdaS3NotificationClient, error) {
+			clientForBucket: func(context.Context, string) (lambdaS3NotificationClient, error) {
 				return &fakeLambdaS3NotificationClient{getErr: accessDenied}, nil
 			},
 			wantErr: accessDenied,

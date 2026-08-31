@@ -64,12 +64,22 @@ func installInfraListS3TestClient(t *testing.T, transport http.RoundTripper, buc
 		s3BucketClientOverride = nil
 	}
 	s3ClientLock.Unlock()
+
+	s3BucketRegionLock.Lock()
+	originalRegions := s3BucketRegion
+	s3BucketRegion = map[string]string{}
+	s3BucketRegionLock.Unlock()
+
 	t.Cleanup(func() {
 		s3ClientLock.Lock()
-		defer s3ClientLock.Unlock()
 		s3Client = originalClient
 		s3ClientsRegional = originalRegionalClients
 		s3BucketClientOverride = originalBucketOverride
+		s3ClientLock.Unlock()
+
+		s3BucketRegionLock.Lock()
+		s3BucketRegion = originalRegions
+		s3BucketRegionLock.Unlock()
 	})
 }
 
@@ -78,26 +88,15 @@ func TestInfraListS3SkipsBucketDeletedAfterList(t *testing.T) {
 
 	t.Run("region resolution", func(t *testing.T) {
 		installInfraListS3TestClient(t, infraListS3RoundTripFunc(func(request *http.Request) (*http.Response, error) {
-			if request.URL.Path != "/" {
-				return nil, fmt.Errorf("unexpected S3 request: %s", request.URL)
+			switch {
+			case request.Method == http.MethodGet && request.URL.Path == "/":
+				return infraListS3Response(request, http.StatusOK, infraListS3ListBucketsXML(bucket)), nil
+			case request.Method == http.MethodHead && request.URL.Path == "/"+bucket:
+				return infraListS3Response(request, http.StatusNotFound, ""), nil
+			default:
+				return nil, fmt.Errorf("unexpected S3 request: %s %s", request.Method, request.URL)
 			}
-			return infraListS3Response(request, http.StatusOK, infraListS3ListBucketsXML(bucket)), nil
 		}), false)
-
-		s3BucketRegionLock.Lock()
-		originalRegions := s3BucketRegion
-		originalHTTPClient := s3BucketRegionHTTPClient
-		s3BucketRegion = map[string]string{}
-		s3BucketRegionHTTPClient = &http.Client{Transport: infraListS3RoundTripFunc(func(request *http.Request) (*http.Response, error) {
-			return infraListS3Response(request, http.StatusNotFound, ""), nil
-		})}
-		s3BucketRegionLock.Unlock()
-		t.Cleanup(func() {
-			s3BucketRegionLock.Lock()
-			defer s3BucketRegionLock.Unlock()
-			s3BucketRegion = originalRegions
-			s3BucketRegionHTTPClient = originalHTTPClient
-		})
 
 		buckets, err := InfraListS3(context.Background(), make(chan *InfraTrigger, 1))
 		if err != nil {

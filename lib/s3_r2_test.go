@@ -85,7 +85,7 @@ func TestS3UseR2RoutesAccountAndBucketOperationsToOneClient(t *testing.T) {
 		t.Fatalf("select R2: %v", err)
 	}
 	accountClient := S3Client()
-	bucketClient, err := S3ClientBucketRegion("bucket-without-aws-region-lookup")
+	bucketClient, err := S3ClientBucketRegion(context.Background(), "bucket-without-aws-region-lookup")
 	if err != nil {
 		t.Fatalf("select R2 bucket client: %v", err)
 	}

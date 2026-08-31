@@ -1715,7 +1715,7 @@ func InfraListS3(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[st
 				}
 			}()
 			infraS3 := &InfraS3{}
-			s3Client, err := S3ClientBucketRegion(*bucket.Name)
+			s3Client, err := S3ClientBucketRegion(ctx, *bucket.Name)
 			if err != nil {
 				if isS3NoSuchBucket(err) {
 					errChan <- nil

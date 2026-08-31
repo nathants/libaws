@@ -68,7 +68,7 @@ func S3ListVersions(ctx context.Context, value string, recursive bool, output io
 		}
 	}
 
-	client, err := S3ClientBucketRegion(bucket)
+	client, err := S3ClientBucketRegion(ctx, bucket)
 	if err != nil {
 		return err
 	}

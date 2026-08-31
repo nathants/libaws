@@ -31,10 +31,10 @@ type lambdaS3AccountClient interface {
 	) (*s3.ListBucketsOutput, error)
 }
 
-type lambdaS3ClientForBucket func(string) (lambdaS3NotificationClient, error)
+type lambdaS3ClientForBucket func(context.Context, string) (lambdaS3NotificationClient, error)
 
-func lambdaAWSClientForBucket(bucket string) (lambdaS3NotificationClient, error) {
-	return S3ClientBucketRegion(bucket)
+func lambdaAWSClientForBucket(ctx context.Context, bucket string) (lambdaS3NotificationClient, error) {
+	return S3ClientBucketRegion(ctx, bucket)
 }
 
 func lambdaEnsureDesiredS3Trigger(
@@ -45,7 +45,7 @@ func lambdaEnsureDesiredS3Trigger(
 	events []s3types.Event,
 	preview bool,
 ) error {
-	client, err := clientForBucket(bucket)
+	client, err := clientForBucket(ctx, bucket)
 	if err != nil {
 		if !preview || !isS3NoSuchBucket(err) {
 			return err
@@ -130,7 +130,7 @@ func lambdaRemoveStaleS3Triggers(
 		if slices.Contains(desiredBuckets, name) {
 			continue
 		}
-		client, err := clientForBucket(name)
+		client, err := clientForBucket(ctx, name)
 		if err != nil {
 			if isS3NoSuchBucket(err) {
 				continue

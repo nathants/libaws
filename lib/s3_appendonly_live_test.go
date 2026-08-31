@@ -49,7 +49,7 @@ func TestS3EnsureAppendOnlyConvergesAndEnforces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client, err := S3ClientBucketRegion(bucket)
+	client, err := S3ClientBucketRegion(ctx, bucket)
 	if err != nil {
 		t.Fatal(err)
 	}

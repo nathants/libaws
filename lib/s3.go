@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -70,98 +69,6 @@ func S3ClientRegion(region string) (*s3.Client, error) {
 
 func S3ClientRegionMust(region string) *s3.Client {
 	client, err := S3ClientRegion(region)
-	if err != nil {
-		panic(err)
-	}
-	return client
-}
-
-var s3BucketRegionLock sync.Mutex
-var s3BucketRegion = map[string]string{}
-var s3BucketRegionHTTPClient = &http.Client{
-	CheckRedirect: func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	},
-	Timeout: 30 * time.Second,
-}
-
-func S3BucketRegion(bucket string) (string, error) {
-	s3BucketRegionLock.Lock()
-	defer s3BucketRegionLock.Unlock()
-	if region, ok := s3BucketRegion[bucket]; ok {
-		return region, nil
-	}
-	if doDebug {
-		d := &Debug{start: time.Now(), name: "S3BucketRegion"}
-		d.Start()
-		defer d.End()
-	}
-	req, err := http.NewRequest("HEAD", fmt.Sprintf("https://%s.s3.amazonaws.com", bucket), nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := s3BucketRegionHTTPClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	switch resp.StatusCode {
-	case 200:
-	case 301, 307:
-	case 400:
-	case 403:
-	case 404:
-		return "", &s3types.NoSuchBucket{Message: aws.String("no such bucket: " + bucket)}
-	default:
-		err := fmt.Errorf("http %d for %s", resp.StatusCode, bucket)
-		Logger.Println("error:", err)
-		return "", err
-	}
-	region := resp.Header.Get("x-amz-bucket-region")
-	if region == "" {
-		return "", fmt.Errorf("empty x-amz-bucket-region for bucket: %s", bucket)
-	}
-	s3BucketRegion[bucket] = region
-	return region, nil
-}
-
-func S3ClientBucketRegion(bucket string) (*s3.Client, error) {
-	if client := configuredS3BucketClientOverride(); client != nil {
-		return client, nil
-	}
-	var s3Client *s3.Client
-	var expectedErr error
-	err := Retry(context.Background(), func() error {
-		var region string
-		var err error
-		region, err = S3BucketRegion(bucket)
-		if err != nil {
-			if isS3NoSuchBucket(err) {
-				expectedErr = err
-				return nil
-			}
-			Logger.Println("error:", err)
-			return err
-		}
-		s3Client, err = S3ClientRegion(region)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		return nil
-	})
-	if expectedErr != nil {
-		return nil, expectedErr
-	}
-	if err != nil {
-		Logger.Println("error:", err)
-		return nil, err
-	}
-	return s3Client, nil
-}
-
-func S3ClientBucketRegionMust(bucket string) *s3.Client {
-	client, err := S3ClientBucketRegion(bucket)
 	if err != nil {
 		panic(err)
 	}
@@ -948,15 +855,11 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 		d.Start()
 		defer d.End()
 	}
-	resp, err := http.Head(fmt.Sprintf("https://%s.s3.amazonaws.com", bucket))
-	if err == nil {
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode == 404 { // already deleted
+	s3Client, err := S3ClientBucketRegion(ctx, bucket)
+	if err != nil {
+		if isS3NoSuchBucket(err) {
 			return nil
 		}
-	}
-	s3Client, err := S3ClientBucketRegion(bucket)
-	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
@@ -1125,7 +1028,7 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 		defer d.End()
 	}
 	var descr S3BucketDescription
-	s3Client, err := S3ClientBucketRegion(bucket)
+	s3Client, err := S3ClientBucketRegion(ctx, bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -1180,7 +1083,7 @@ func S3GetBucketDescription(ctx context.Context, bucket string) (*S3BucketDescri
 	} else {
 		descr.Lifecycle = lifecycle.Rules
 	}
-	region, err := S3BucketRegion(bucket)
+	region, err := S3BucketRegion(ctx, bucket)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -1293,7 +1196,7 @@ func S3Delete(ctx context.Context, input *S3DeleteInput) error {
 		defer d.End()
 	}
 
-	s3Client, err := S3ClientBucketRegion(input.Bucket)
+	s3Client, err := S3ClientBucketRegion(ctx, input.Bucket)
 	if err != nil {
 		return err
 	}
