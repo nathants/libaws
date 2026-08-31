@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -30,7 +29,6 @@ import (
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 )
@@ -732,131 +730,38 @@ func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, previe
 		d.Start()
 		defer d.End()
 	}
-	var permissionSids []string
 	events := []s3types.Event{
 		"s3:ObjectCreated:*",
 		"s3:ObjectRemoved:*",
 	}
-	var triggers []string
+	var triggerBuckets []string
+	var permissionSids []string
 	for _, trigger := range infraLambda.Trigger {
-		if trigger.Type == lambdaTrigerS3 {
-			triggers = append(triggers, trigger.Attr[0])
+		if trigger.Type != lambdaTrigerS3 {
+			continue
 		}
-	}
-	if len(triggers) > 0 {
-		for _, bucket := range triggers {
-			sid, err := lambdaEnsurePermission(ctx, infraLambda.Name, "s3.amazonaws.com", "arn:aws:s3:::"+bucket, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
-			}
-			permissionSids = append(permissionSids, sid)
-			s3Client, err := S3ClientBucketRegion(bucket)
-			if err != nil {
-				if !isS3NoSuchBucket(err) && !preview {
-					Logger.Println("error:", err)
-					return nil, err
-				}
-				s3Client = nil
-			}
-			var out *s3.GetBucketNotificationConfigurationOutput
-			if s3Client != nil {
-				getOut, err := s3Client.GetBucketNotificationConfiguration(ctx, &s3.GetBucketNotificationConfigurationInput{
-					Bucket: aws.String(bucket),
-				})
-				if err != nil {
-					if !isS3NoSuchBucket(err) {
-						Logger.Println("error:", err)
-						return nil, err
-					}
-				} else {
-					out = getOut
-				}
-			}
-			if out == nil {
-				out = &s3.GetBucketNotificationConfigurationOutput{
-					LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{},
-				}
-			}
-			var existingEvents []s3types.Event
-			for _, conf := range out.LambdaFunctionConfigurations {
-				if *conf.LambdaFunctionArn == infraLambda.Arn {
-					existingEvents = conf.Events
-				}
-			}
-			if !reflect.DeepEqual(existingEvents, events) {
-				var confs []s3types.LambdaFunctionConfiguration
-				for _, conf := range out.LambdaFunctionConfigurations {
-					if *conf.LambdaFunctionArn != infraLambda.Arn {
-						confs = append(confs, conf)
-					}
-				}
-				confs = append(confs, s3types.LambdaFunctionConfiguration{
-					LambdaFunctionArn: aws.String(infraLambda.Arn),
-					Events:            events,
-				})
-				if !preview && s3Client != nil {
-					err := Retry(ctx, func() error {
-						_, err := s3Client.PutBucketNotificationConfiguration(ctx, &s3.PutBucketNotificationConfigurationInput{
-							Bucket: aws.String(bucket),
-							NotificationConfiguration: &s3types.NotificationConfiguration{
-								LambdaFunctionConfigurations: confs,
-								EventBridgeConfiguration:     out.EventBridgeConfiguration,
-								QueueConfigurations:          out.QueueConfigurations,
-								TopicConfigurations:          out.TopicConfigurations,
-							},
-						})
-						return err
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return nil, err
-					}
-				}
-				Logger.Printf(PreviewString(preview)+"updated bucket notifications for %s %s: %s => %s\n",
-					bucket, infraLambda.Name, existingEvents, events)
-			}
-		}
-	}
-	buckets, err := S3Client().ListBuckets(ctx, &s3.ListBucketsInput{})
-	if err != nil {
-		Logger.Println("error:", err)
-		return nil, err
-	}
-	for _, bucket := range buckets.Buckets {
-		out, err := S3ClientBucketRegionMust(*bucket.Name).GetBucketNotificationConfiguration(ctx, &s3.GetBucketNotificationConfigurationInput{
-			Bucket: bucket.Name,
-		})
+		bucket := trigger.Attr[0]
+		triggerBuckets = append(triggerBuckets, bucket)
+		sid, err := lambdaEnsurePermission(
+			ctx, infraLambda.Name, "s3.amazonaws.com", "arn:aws:s3:::"+bucket, preview,
+		)
 		if err != nil {
-			if isS3NoSuchBucket(err) {
-				continue // recently deleted buckets can still show up in ListBuckets but fail with 404
-			}
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		var confs []s3types.LambdaFunctionConfiguration
-		for _, conf := range out.LambdaFunctionConfigurations {
-			if *conf.LambdaFunctionArn != infraLambda.Arn || slices.Contains(triggers, *bucket.Name) {
-				confs = append(confs, conf)
-			} else {
-				Logger.Println(PreviewString(preview)+"deleted bucket notification:", infraLambda.Name, *bucket.Name)
-			}
+		permissionSids = append(permissionSids, sid)
+		if err := lambdaEnsureDesiredS3Trigger(
+			ctx, lambdaAWSClientForBucket, infraLambda, bucket, events, preview,
+		); err != nil {
+			Logger.Println("error:", err)
+			return nil, err
 		}
-		if len(confs) != len(out.LambdaFunctionConfigurations) && !preview {
-			_, err := S3ClientBucketRegionMust(*bucket.Name).PutBucketNotificationConfiguration(ctx, &s3.PutBucketNotificationConfigurationInput{
-				Bucket: bucket.Name,
-				NotificationConfiguration: &s3types.NotificationConfiguration{
-					LambdaFunctionConfigurations: confs,
-					EventBridgeConfiguration:     out.EventBridgeConfiguration,
-					QueueConfigurations:          out.QueueConfigurations,
-					TopicConfigurations:          out.TopicConfigurations,
-				},
-			})
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
-			}
-		}
+	}
+	if err := lambdaRemoveStaleS3Triggers(
+		ctx, S3Client(), lambdaAWSClientForBucket, infraLambda, triggerBuckets, preview,
+	); err != nil {
+		Logger.Println("error:", err)
+		return nil, err
 	}
 	return permissionSids, nil
 }
