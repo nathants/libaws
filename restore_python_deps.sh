@@ -3,8 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-command -v uv >/dev/null
-command -v python3 >/dev/null
+for required_command in uv python3; do
+    if ! command -v "$required_command" >/dev/null 2>&1; then
+        printf 'error: required command not found: %s\n' "$required_command" >&2
+        exit 1
+    fi
+done
 
 python_link=.venv/bin/python
 if [[ -x "$python_link" && ! -L "$python_link" ]]; then

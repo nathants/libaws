@@ -56,10 +56,7 @@ func ec2Rsync() {
 		os.Exit(0)
 	}
 	if len(instances) == 0 {
-		err = fmt.Errorf("no instances found for those selectors")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+		lib.Logger.Fatal("error: no instances found for those selectors")
 	}
 	results, err := lib.EC2Rsync(context.Background(), &lib.EC2RsyncInput{
 		Source:         args.Source,
@@ -71,12 +68,12 @@ func ec2Rsync() {
 		Key:            args.Key,
 		PrintLock:      sync.Mutex{},
 	})
-	var lastErr error
+	lastErr := err
 	for _, result := range results {
 		if result.Err == nil {
 			fmt.Fprintf(os.Stderr, "success: %s\n", lib.Green(result.InstanceID))
 		} else {
-			lastErr = err
+			lastErr = result.Err
 			fmt.Fprintf(os.Stderr, "failure: %s\n", lib.Red(result.InstanceID))
 		}
 	}

@@ -14,7 +14,7 @@ import (
 func TestLambdaCreateZipGoBuildsCompleteEntrypointPackage(t *testing.T) {
 	source := t.TempDir()
 	for name, content := range map[string]string{
-		"go.mod":    "module lambda-package-test\n\ngo 1.26\n",
+		"go.mod":    "module lambda-package-test\n\ngo 1.27\n",
 		"main.go":   "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Print(message()) }\n",
 		"helper.go": "package main\n\nfunc message() string { return \"complete-package\" }\n",
 	} {
@@ -43,7 +43,7 @@ func TestLambdaCreateZipGoBuildsCompleteEntrypointPackage(t *testing.T) {
 func TestLambdaCreateZipGoRequiresDeclaredEntrypoint(t *testing.T) {
 	source := t.TempDir()
 	for name, content := range map[string]string{
-		"go.mod":  "module lambda-entrypoint-test\n\ngo 1.26\n",
+		"go.mod":  "module lambda-entrypoint-test\n\ngo 1.27\n",
 		"main.go": "package main\n\nfunc main() {}\n",
 	} {
 		if err := os.WriteFile(filepath.Join(source, name), []byte(content), 0o600); err != nil {
@@ -73,7 +73,7 @@ func TestLambdaPackageBuildRejectsSymlinkedRoot(t *testing.T) {
 	}
 	source := t.TempDir()
 	for fileName, content := range map[string]string{
-		"go.mod":  "module lambda-package-root-test\n\ngo 1.26\n",
+		"go.mod":  "module lambda-package-root-test\n\ngo 1.27\n",
 		"main.go": "package main\n\nfunc main() {}\n",
 	} {
 		if err := os.WriteFile(filepath.Join(source, fileName), []byte(content), 0o600); err != nil {
@@ -151,7 +151,7 @@ func TestLambdaGoPackageIsByteReproducible(t *testing.T) {
 			t.Fatal(err)
 		}
 		for name, content := range map[string]string{
-			"go.mod":    "module lambda-reproducibility-test\n\ngo 1.26\n",
+			"go.mod":    "module lambda-reproducibility-test\n\ngo 1.27\n",
 			"main.go":   "package main\n\nfunc main() {}\n",
 			"asset.txt": "identical included asset",
 		} {

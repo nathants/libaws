@@ -75,10 +75,7 @@ func ec2Ssh() {
 		stdin = string(bytes)
 	}
 	if len(instances) == 0 {
-		err = fmt.Errorf("no instances found for those selectors")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+		lib.Logger.Fatal("error: no instances found for those selectors")
 	} else if len(instances) == 1 && args.Cmd == "" {
 		err = lib.EC2SshLogin(instances[0], args.User, args.Key)
 		if err != nil {

@@ -2,7 +2,6 @@ package libaws
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 
@@ -68,10 +67,7 @@ func ec2Gossh() {
 		stdin = string(bytes)
 	}
 	if len(instances) == 0 {
-		err = fmt.Errorf("no instances found for those selectors")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
+		lib.Logger.Fatal("error: no instances found for those selectors")
 	} else {
 		rsaBytes, _ := os.ReadFile(args.RsaPrivKeyFile)
 		rsaPrivKey := string(rsaBytes)

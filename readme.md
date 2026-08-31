@@ -1441,7 +1441,9 @@ Alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructur
 
 ## Testing
 
-Run all AWS integration tests with the locked [uv](https://docs.astral.sh/uv/) environment:
+The Python test environment requires Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).
+
+Run all AWS integration tests with the locked uv environment:
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
@@ -1453,5 +1455,5 @@ Run one AWS integration test with the same environment:
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
 bash restore_python_deps.sh
-uv run --locked -- bash -c 'make && cd examples/simple/python/api/ && python test.py'
+uv run --locked -- bash -c 'make && cd examples/simple/python/api/ && python -u test.py'
 ```
