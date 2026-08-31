@@ -2,15 +2,9 @@ package libaws
 
 import (
 	"context"
-	"fmt"
-	"path"
-	"sort"
-	"strings"
-	"time"
+	"os"
 
 	"github.com/alexflint/go-arg"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -31,146 +25,7 @@ func (s3LsVersionsArgs) Description() string {
 func s3LsVersions() {
 	var args s3LsVersionsArgs
 	arg.MustParse(&args)
-	ctx := context.Background()
-
-	if args.Path == "" {
-		out, err := lib.S3Client().ListBuckets(ctx, &s3.ListBucketsInput{})
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		for _, bucket := range out.Buckets {
-			fmt.Println(*bucket.Name)
-		}
-	} else {
-
-		args.Path = strings.ReplaceAll(args.Path, "s3://", "")
-		bucket, key, err := lib.SplitOnce(args.Path, "/")
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-
-		splitKey := key
-		if !strings.HasSuffix(key, "/") {
-			splitKey = path.Dir(key) + "/"
-			if splitKey == "./" {
-				splitKey = ""
-			}
-		}
-
-		s3Client, err := lib.S3ClientBucketRegion(bucket)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-
-		var delimiter *string
-		if !args.Recursive {
-			delimiter = aws.String("/")
-		}
-
-		var keyMarker *string
-		var versionMarker *string
-		for {
-			out, err := s3Client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
-				Bucket:          aws.String(bucket),
-				Prefix:          aws.String(key),
-				Delimiter:       delimiter,
-				KeyMarker:       keyMarker,
-				VersionIdMarker: versionMarker,
-			})
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-
-			for _, pre := range out.CommonPrefixes {
-				prefix := *pre.Prefix
-				if splitKey != "" {
-					prefix = strings.SplitN(prefix, splitKey, 2)[1]
-				}
-				fmt.Println(" PRE", prefix)
-			}
-
-			var objects []*S3ObjectVersion
-
-			for _, obj := range out.Versions {
-				objKey := *obj.Key
-				if splitKey != "" && !args.Recursive {
-					objKey = strings.SplitN(objKey, splitKey, 2)[1]
-				}
-				version := *obj.VersionId
-				kind := "HISTORICAL"
-				if *obj.IsLatest {
-					kind = "LATEST"
-				}
-				objects = append(objects, &S3ObjectVersion{
-					LastModified: *obj.LastModified,
-					Size:         fmt.Sprintf("%10v", *obj.Size),
-					Key:          objKey,
-					StorageClass: string(obj.StorageClass),
-					Version:      version,
-					Kind:         kind,
-				})
-			}
-
-			for _, obj := range out.DeleteMarkers {
-				objKey := *obj.Key
-				if splitKey != "" && !args.Recursive {
-					objKey = strings.SplitN(objKey, splitKey, 2)[1]
-				}
-				version := *obj.VersionId
-				kind := "HISTORICAL-DELETE"
-				if *obj.IsLatest {
-					kind = "LATEST-DELETE"
-				}
-				objects = append(objects, &S3ObjectVersion{
-					LastModified: *obj.LastModified,
-					Size:         "-",
-					Key:          objKey,
-					StorageClass: "-",
-					Version:      version,
-					Kind:         kind,
-				})
-			}
-
-			sortS3ObjectVersions(objects)
-
-			for _, obj := range objects {
-				fmt.Println(
-					formatS3VersionDate(obj.LastModified),
-					obj.Size,
-					obj.Key,
-					obj.StorageClass,
-					obj.Version,
-					obj.Kind,
-				)
-			}
-
-			if out.NextKeyMarker == nil && out.NextVersionIdMarker == nil {
-				break
-			}
-			keyMarker = out.NextKeyMarker
-			versionMarker = out.NextVersionIdMarker
-		}
+	if err := lib.S3ListVersions(context.Background(), args.Path, args.Recursive, os.Stdout); err != nil {
+		lib.Logger.Fatal("error: ", err)
 	}
-}
-
-func formatS3VersionDate(value time.Time) string {
-	return value.In(time.Local).Format(time.RFC3339Nano)
-}
-
-func sortS3ObjectVersions(objects []*S3ObjectVersion) {
-	sort.SliceStable(objects, func(a, b int) bool {
-		if objects[a].Key != objects[b].Key {
-			return objects[a].Key < objects[b].Key
-		}
-		return objects[a].LastModified.After(objects[b].LastModified)
-	})
-}
-
-type S3ObjectVersion struct {
-	LastModified time.Time
-	Size         string
-	Key          string
-	StorageClass string
-	Version      string
-	Kind         string
 }

@@ -38,7 +38,7 @@ func lambdaVars() {
 	if out.Configuration != nil && out.Configuration.Environment != nil {
 		variables = out.Configuration.Environment.Variables
 	}
-	for _, line := range formatLambdaVariables(variables, args.ShowEnvVarValues) {
+	for _, line := range lib.LambdaFormatVariables(variables, args.ShowEnvVarValues) {
 		fmt.Println(line)
 	}
 }

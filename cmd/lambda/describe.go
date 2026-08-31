@@ -40,7 +40,7 @@ func lambdaDescribe() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	sanitizeLambdaDescription(out, confOut, args.ShowEnvVarValues)
+	lib.LambdaSanitizeDescription(out, confOut, args.ShowEnvVarValues)
 	fmt.Println(lib.PformatAlways(out))
 	fmt.Println(lib.PformatAlways(confOut))
 }

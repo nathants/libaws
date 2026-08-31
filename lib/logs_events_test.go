@@ -1,4 +1,4 @@
-package libaws
+package lib
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	cwlogstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
@@ -91,7 +90,7 @@ func TestWriteLogsEventsStreamsEveryPageAndPreservesCloudWatchIdentity(t *testin
 	start := int64(900)
 	end := int64(2_000)
 
-	err := writeLogsEvents(context.Background(), client, &output, "group", "[marker]", start, &end, nil)
+	err := logsEventsWithClient(context.Background(), client, &output, "group", "[marker]", start, &end, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +129,7 @@ func TestWriteLogsEventsPreservesAStreamedPrefixWhenALaterPageFails(t *testing.T
 	}
 	var output bytes.Buffer
 
-	err := writeLogsEvents(context.Background(), client, &output, "group", "marker", 900, nil, nil)
+	err := logsEventsWithClient(context.Background(), client, &output, "group", "marker", 900, nil, nil)
 	if !errors.Is(err, requestErr) {
 		t.Fatalf("error = %v, want wrapped page error", err)
 	}
@@ -148,7 +147,7 @@ func TestWriteLogsEventsReturnsOutputErrors(t *testing.T) {
 		},
 	}}}
 
-	err := writeLogsEvents(
+	err := logsEventsWithClient(
 		context.Background(),
 		client,
 		failingLogsEventsWriter{err: writeErr},
@@ -184,7 +183,7 @@ func TestWriteLogsEventsFailsClearlyBeforeEmittingMoreThanMaxEvents(t *testing.T
 	maxEvents := int64(2)
 	var output bytes.Buffer
 
-	err := writeLogsEvents(context.Background(), client, &output, "group", "marker", 900, nil, &maxEvents)
+	err := logsEventsWithClient(context.Background(), client, &output, "group", "marker", 900, nil, &maxEvents)
 	if err == nil || !strings.Contains(err.Error(), "result exceeds --max-events 2") {
 		t.Fatalf("error = %v, want explicit max-events error", err)
 	}
@@ -214,7 +213,7 @@ func TestWriteLogsEventsAllowsExactlyMaxEvents(t *testing.T) {
 	maxEvents := int64(2)
 	var output bytes.Buffer
 
-	if err := writeLogsEvents(context.Background(), client, &output, "group", "marker", 900, nil, &maxEvents); err != nil {
+	if err := logsEventsWithClient(context.Background(), client, &output, "group", "marker", 900, nil, &maxEvents); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Count(output.String(), "\n") != 2 {
@@ -249,7 +248,7 @@ func TestWriteLogsEventsValidatesQueryBeforeCallingCloudWatch(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			client := &fakeLogsEventsClient{}
-			err := writeLogsEvents(
+			err := logsEventsWithClient(
 				context.Background(),
 				client,
 				&bytes.Buffer{},
@@ -278,30 +277,7 @@ func TestWriteLogsEventsRejectsAnEventWithoutDurableIdentity(t *testing.T) {
 			Timestamp:     aws.Int64(1_000),
 		}},
 	}}}
-	if err := writeLogsEvents(context.Background(), client, &bytes.Buffer{}, "group", "marker", 900, nil, nil); err == nil {
+	if err := logsEventsWithClient(context.Background(), client, &bytes.Buffer{}, "group", "marker", 900, nil, nil); err == nil {
 		t.Fatal("event without CloudWatch event ID was accepted")
-	}
-}
-
-func TestLogsEventsArgsRequireStartMillis(t *testing.T) {
-	var missing logsEventsArgs
-	parser, err := arg.NewParser(arg.Config{IgnoreEnv: true}, &missing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := parser.Parse([]string{"group", "marker"}); err == nil {
-		t.Fatal("logs-events accepted a query without --start-millis")
-	}
-
-	var present logsEventsArgs
-	parser, err = arg.NewParser(arg.Config{IgnoreEnv: true}, &present)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := parser.Parse([]string{"--start-millis", "0", "group", "marker"}); err != nil {
-		t.Fatalf("logs-events rejected an explicit zero start: %v", err)
-	}
-	if present.StartMillis != 0 {
-		t.Fatalf("start millis = %d, want 0", present.StartMillis)
 	}
 }

@@ -1,14 +1,14 @@
-package libaws
+package lib
 
 import (
 	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"github.com/nathants/libaws/lib"
 )
 
-func formatLambdaVariables(variables map[string]string, showValues bool) []string {
+// LambdaFormatVariables formats sorted environment variables, hashing values unless requested.
+func LambdaFormatVariables(variables map[string]string, showValues bool) []string {
 	keys := make([]string, 0, len(variables))
 	for key := range variables {
 		keys = append(keys, key)
@@ -19,7 +19,7 @@ func formatLambdaVariables(variables map[string]string, showValues bool) []strin
 	for _, key := range keys {
 		value := variables[key]
 		if !showValues {
-			value = lib.SensitiveValueHash(value)
+			value = SensitiveValueHash(value)
 		}
 		lines = append(lines, key+"="+value)
 	}
@@ -28,17 +28,18 @@ func formatLambdaVariables(variables map[string]string, showValues bool) []strin
 
 func hashLambdaVariables(variables map[string]string) {
 	for key, value := range variables {
-		variables[key] = lib.SensitiveValueHash(value)
+		variables[key] = SensitiveValueHash(value)
 	}
 }
 
-func sanitizeLambdaDescription(
+// LambdaSanitizeDescription protects signed code URLs and, by default, environment values.
+func LambdaSanitizeDescription(
 	out *lambda.GetFunctionOutput,
 	configuration *lambda.GetFunctionConfigurationOutput,
 	showEnvVarValues bool,
 ) {
 	if out != nil && out.Code != nil && out.Code.Location != nil {
-		out.Code.Location = aws.String(lib.SensitiveValueHash(aws.ToString(out.Code.Location)))
+		out.Code.Location = aws.String(SensitiveValueHash(aws.ToString(out.Code.Location)))
 	}
 	if showEnvVarValues {
 		return

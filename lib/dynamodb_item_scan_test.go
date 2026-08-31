@@ -1,4 +1,4 @@
-package libaws
+package lib
 
 import (
 	"bytes"

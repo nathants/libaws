@@ -1,4 +1,4 @@
-package libaws
+package lib
 
 import (
 	"strings"
@@ -9,13 +9,13 @@ import (
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 )
 
-func TestFormatLambdaVariablesHashesValuesByDefault(t *testing.T) {
+func TestLambdaFormatVariablesHashesValuesByDefault(t *testing.T) {
 	variables := map[string]string{
 		"Z_SECRET": "top-secret-z",
 		"A_SECRET": "top-secret-a",
 	}
 
-	lines := formatLambdaVariables(variables, false)
+	lines := LambdaFormatVariables(variables, false)
 	if len(lines) != 2 {
 		t.Fatalf("expected two variables, got %d", len(lines))
 	}
@@ -28,14 +28,14 @@ func TestFormatLambdaVariablesHashesValuesByDefault(t *testing.T) {
 	}
 }
 
-func TestFormatLambdaVariablesShowsValuesOnlyWhenRequested(t *testing.T) {
-	lines := formatLambdaVariables(map[string]string{"SECRET": "requested-value"}, true)
+func TestLambdaFormatVariablesShowsValuesOnlyWhenRequested(t *testing.T) {
+	lines := LambdaFormatVariables(map[string]string{"SECRET": "requested-value"}, true)
 	if len(lines) != 1 || lines[0] != "SECRET=requested-value" {
 		t.Fatalf("explicit value output mismatch: %#v", lines)
 	}
 }
 
-func TestSanitizeLambdaDescriptionProtectsEnvironmentAndCodeURL(t *testing.T) {
+func TestLambdaSanitizeDescriptionProtectsEnvironmentAndCodeURL(t *testing.T) {
 	out := &lambda.GetFunctionOutput{
 		Code: &lambdatypes.FunctionCodeLocation{
 			Location: aws.String("https://signed-download.example/secret-query"),
@@ -52,7 +52,7 @@ func TestSanitizeLambdaDescriptionProtectsEnvironmentAndCodeURL(t *testing.T) {
 		},
 	}
 
-	sanitizeLambdaDescription(out, configuration, false)
+	LambdaSanitizeDescription(out, configuration, false)
 	if got := aws.ToString(out.Code.Location); !strings.HasPrefix(got, "sha256:") {
 		t.Fatalf("code URL was not hashed: %q", got)
 	}
@@ -64,7 +64,7 @@ func TestSanitizeLambdaDescriptionProtectsEnvironmentAndCodeURL(t *testing.T) {
 	}
 }
 
-func TestSanitizeLambdaDescriptionExplicitValuesStillProtectsCodeURL(t *testing.T) {
+func TestLambdaSanitizeDescriptionExplicitValuesStillProtectsCodeURL(t *testing.T) {
 	out := &lambda.GetFunctionOutput{
 		Code: &lambdatypes.FunctionCodeLocation{
 			Location: aws.String("https://signed-download.example/secret-query"),
@@ -81,7 +81,7 @@ func TestSanitizeLambdaDescriptionExplicitValuesStillProtectsCodeURL(t *testing.
 		},
 	}
 
-	sanitizeLambdaDescription(out, configuration, true)
+	LambdaSanitizeDescription(out, configuration, true)
 	if got := aws.ToString(out.Code.Location); !strings.HasPrefix(got, "sha256:") {
 		t.Fatalf("explicit environment output exposed code URL: %q", got)
 	}

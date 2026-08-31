@@ -2,14 +2,12 @@ package libaws
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/nathants/libaws/lib"
@@ -69,16 +67,9 @@ func dynamodbItemGet() {
 	if out.Item == nil {
 		os.Exit(1)
 	}
-	val := map[string]any{}
-	err = attributevalue.UnmarshalMapWithOptions(out.Item, &val, func(options *attributevalue.DecoderOptions) {
-		options.UseNumber = true
-	})
+	data, err := lib.DynamoDBMarshalItemJSON(out.Item)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	bytes, err := json.Marshal(exactDynamoDBJSONValue(val))
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
-	fmt.Println(string(bytes))
+	fmt.Println(string(data))
 }

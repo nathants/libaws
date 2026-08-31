@@ -1,4 +1,4 @@
-package libaws
+package lib
 
 import (
 	"testing"
@@ -26,7 +26,7 @@ func TestSortS3ObjectVersionsUsesExactInstantAcrossRepeatedLocalHour(t *testing.
 
 	older := time.Date(2024, 11, 3, 5, 50, 0, 0, time.UTC)
 	newer := time.Date(2024, 11, 3, 6, 10, 0, 0, time.UTC)
-	objects := []*S3ObjectVersion{
+	objects := []*s3ObjectVersion{
 		{Key: "key", Version: "older", LastModified: older},
 		{Key: "key", Version: "newer", LastModified: newer},
 	}

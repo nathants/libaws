@@ -52,4 +52,4 @@ check-vet: check-deps
 
 test:
 	bash restore_python_deps.sh
-	uv run --locked bash test.sh
+	bash test.sh

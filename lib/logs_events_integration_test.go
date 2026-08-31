@@ -1,4 +1,4 @@
-package libaws
+package lib
 
 import (
 	"bytes"
@@ -17,8 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	cwlogstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/gofrs/uuid"
-
-	"github.com/nathants/libaws/lib"
 )
 
 func decodeLogsEventsJSONL(data []byte) ([]logsEventRecord, error) {
@@ -67,7 +65,7 @@ func TestLogsEventsAgainstCloudWatch(t *testing.T) {
 	if expectedAccount == "" {
 		t.Fatal("LIBAWS_TEST_ACCOUNT must identify the authorized scratch account")
 	}
-	actualAccount, err := lib.StsAccount(ctx)
+	actualAccount, err := StsAccount(ctx)
 	if err != nil {
 		t.Fatalf("verify AWS account: %v", err)
 	}
@@ -75,7 +73,7 @@ func TestLogsEventsAgainstCloudWatch(t *testing.T) {
 		t.Fatalf("refusing CloudWatch integration test in AWS account %q; expected scratch account %q", actualAccount, expectedAccount)
 	}
 
-	client := lib.LogsClient()
+	client := LogsClient()
 	group := "/libaws/integration/logs-events-" + uuid.Must(uuid.NewV4()).String()
 	stream := "events"
 	_, err = client.CreateLogGroup(ctx, &cloudwatchlogs.CreateLogGroupInput{
@@ -144,7 +142,7 @@ func TestLogsEventsAgainstCloudWatch(t *testing.T) {
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		output.Reset()
-		err = writeLogsEvents(ctx, client, &output, group, "MATCH", startMillis, &endMillis, nil)
+		err = logsEventsWithClient(ctx, client, &output, group, "MATCH", startMillis, &endMillis, nil)
 		if err != nil {
 			t.Fatalf("stream log events: %v", err)
 		}
@@ -175,7 +173,7 @@ func TestLogsEventsAgainstCloudWatch(t *testing.T) {
 
 	maxEvents := int64(1)
 	output.Reset()
-	err = writeLogsEvents(ctx, client, &output, group, "MATCH", startMillis, &endMillis, &maxEvents)
+	err = logsEventsWithClient(ctx, client, &output, group, "MATCH", startMillis, &endMillis, &maxEvents)
 	if err == nil || !strings.Contains(err.Error(), "result exceeds --max-events 1") {
 		t.Fatalf("bounded query error = %v, want explicit max-events error", err)
 	}
