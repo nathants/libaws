@@ -2,15 +2,64 @@ package lib
 
 import (
 	"archive/zip"
+	"compress/flate"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 )
 
 var lambdaPackageModifiedTime = time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+func lambdaPackageRoot() string {
+	return filepath.Join(os.TempDir(), fmt.Sprintf("libaws-lambda-%d", os.Geteuid()))
+}
+
+func LambdaZipFile(name string) string {
+	return filepath.Join(lambdaPackageRoot(), sha256Hex([]byte(name)), "lambda.zip")
+}
+
+func ensureLambdaPackageRoot() error {
+	root := lambdaPackageRoot()
+	if err := os.Mkdir(root, 0o700); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("create lambda package root %s: %w", root, err)
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return fmt.Errorf("inspect lambda package root %s: %w", root, err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("lambda package root is not a directory: %s", root)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return fmt.Errorf("lambda package root is not owned by the current user: %s", root)
+	}
+	if info.Mode().Perm() != 0o700 {
+		return fmt.Errorf("lambda package root permissions must be 0700: %s", root)
+	}
+	return nil
+}
+
+func resetLambdaPackageDir(name string) (string, error) {
+	if err := validateLambdaName(name); err != nil {
+		return "", err
+	}
+	if err := ensureLambdaPackageRoot(); err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(LambdaZipFile(name))
+	if err := os.RemoveAll(dir); err != nil {
+		return "", err
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
 
 func normalizeLambdaPackage(zipFile string) error {
 	reader, err := zip.OpenReader(zipFile)
@@ -49,6 +98,9 @@ func normalizeLambdaPackage(zipFile string) error {
 	}()
 
 	writer := zip.NewWriter(temporary)
+	writer.RegisterCompressor(zip.Deflate, func(destination io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(destination, flate.BestCompression)
+	})
 	writerOpen := true
 	defer func() {
 		if writerOpen {
@@ -61,19 +113,6 @@ func normalizeLambdaPackage(zipFile string) error {
 			return fmt.Errorf("lambda package contains duplicate path: %s", entry.Name)
 		}
 		seen[entry.Name] = struct{}{}
-
-		content, err := entry.Open()
-		if err != nil {
-			return err
-		}
-		_, copyErr := io.Copy(io.Discard, content)
-		closeErr := content.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-		if closeErr != nil {
-			return closeErr
-		}
 
 		mode := entry.Mode()
 		switch {
@@ -90,21 +129,23 @@ func normalizeLambdaPackage(zipFile string) error {
 		default:
 			return fmt.Errorf("lambda package contains unsupported file mode for: %s", entry.Name)
 		}
-		header := entry.FileHeader
+		header := &zip.FileHeader{Name: entry.Name, Method: zip.Deflate, Modified: lambdaPackageModifiedTime}
 		header.SetMode(mode)
-		header.SetModTime(lambdaPackageModifiedTime)
-		header.Extra = nil
-		header.Comment = ""
-		destination, err := writer.CreateRaw(&header)
+		destination, err := writer.CreateHeader(header)
 		if err != nil {
 			return err
 		}
-		source, err := entry.OpenRaw()
+		content, err := entry.Open()
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(destination, source); err != nil {
-			return err
+		_, copyErr := io.Copy(destination, content)
+		closeErr := content.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 	}
 	if err := writer.Close(); err != nil {

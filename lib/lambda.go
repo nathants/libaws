@@ -88,8 +88,16 @@ const (
 
 var lambdaClient *lambda.Client
 var lambdaClientLock sync.Mutex
+var lambdaNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 var lambdaEnvironmentNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]+$`)
 var lambdaContainerImageDigestPattern = regexp.MustCompile(`@sha256:[0-9a-f]{64}$`)
+
+func validateLambdaName(name string) error {
+	if !lambdaNamePattern.MatchString(name) {
+		return fmt.Errorf("lambda name must match '[A-Za-z0-9_-]{1,64}', got: %s", name)
+	}
+	return nil
+}
 
 func lambdaContainerImageDigest(imageURI string) (string, error) {
 	digest := lambdaContainerImageDigestPattern.FindString(imageURI)
@@ -2711,10 +2719,6 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 	return nil
 }
 
-func LambdaZipFile(name string) string {
-	return fmt.Sprintf("/tmp/%s/lambda.zip", name)
-}
-
 func lambdaUpdateZipGo(infraLambda *InfraLambda) error {
 	return lambdaCreateZipGo(infraLambda)
 }
@@ -2732,14 +2736,12 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 	if !entrypointInfo.Mode().IsRegular() {
 		return fmt.Errorf("lambda Go entrypoint is not a regular file: %s", infraLambda.Entrypoint)
 	}
-	zipFile := LambdaZipFile(infraLambda.Name)
-	dir := path.Dir(zipFile)
-	err = os.RemoveAll(dir)
+	dir, err := resetLambdaPackageDir(infraLambda.Name)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	_ = os.MkdirAll(dir, os.ModePerm)
+	zipFile := LambdaZipFile(infraLambda.Name)
 	prefix := ""
 	ldflags := os.Getenv("LDFLAGS")
 	if ldflags != " " {
@@ -2754,16 +2756,31 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	compression := "-9"
-	if os.Getenv("ZIP_COMPRESSION") != "" {
-		compression = "-" + os.Getenv("ZIP_COMPRESSION")
-	}
-	err = shellAt(dir, "zip %s %s ./bootstrap", compression, zipFile)
+	err = shellAt(dir, "zip -0 %s ./bootstrap", zipFile)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
 	return nil
+}
+
+func removeLambdaPythonBuildArtifacts(root string) error {
+	return filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && info.Name() == "__pycache__" {
+			if err := os.RemoveAll(filePath); err != nil {
+				return err
+			}
+			return filepath.SkipDir
+		}
+		if !info.IsDir() && (strings.HasSuffix(info.Name(), ".pyc") || strings.HasSuffix(info.Name(), ".pyo") ||
+			strings.HasSuffix(info.Name(), ".virtualenv")) {
+			return os.Remove(filePath)
+		}
+		return nil
+	})
 }
 
 func lambdaCreateZipPy(infraLambda *InfraLambda) error {
@@ -2772,14 +2789,12 @@ func lambdaCreateZipPy(infraLambda *InfraLambda) error {
 		d.Start()
 		defer d.End()
 	}
-	zipFile := LambdaZipFile(infraLambda.Name)
-	dir := path.Dir(zipFile)
-	err := os.RemoveAll(dir)
+	dir, err := resetLambdaPackageDir(infraLambda.Name)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	_ = os.MkdirAll(dir, os.ModePerm)
+	zipFile := LambdaZipFile(infraLambda.Name)
 	err = shell("virtualenv --python python3 %s/env", dir)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -2791,7 +2806,7 @@ func lambdaCreateZipPy(infraLambda *InfraLambda) error {
 			args = append(args, fmt.Sprintf(`"%s"`, require))
 		}
 		arg := strings.Join(args, " ")
-		err = shell("%s/env/bin/pip install %s", dir, arg)
+		err = shell("%s/env/bin/pip install --no-compile %s", dir, arg)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -2823,11 +2838,11 @@ func lambdaCreateZipPy(infraLambda *InfraLambda) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	compression := "-9"
-	if os.Getenv("ZIP_COMPRESSION") != "" {
-		compression = "-" + os.Getenv("ZIP_COMPRESSION")
+	if err := removeLambdaPythonBuildArtifacts(site_package); err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
-	err = shellAt(site_package, "zip %s -r %s .", compression, zipFile)
+	err = shellAt(site_package, "zip -0 -r %s .", zipFile)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -2840,6 +2855,10 @@ func LambdaZipBytes(infraLambda *InfraLambda) ([]byte, error) {
 		d := &Debug{start: time.Now(), name: "LambdaZipBytes"}
 		d.Start()
 		defer d.End()
+	}
+	if err := ensureLambdaPackageRoot(); err != nil {
+		Logger.Println("error:", err)
+		return nil, err
 	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	data, err := os.ReadFile(zipFile)
@@ -2855,6 +2874,10 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 		d := &Debug{start: time.Now(), name: "LambdaIncludeInZip"}
 		d.Start()
 		defer d.End()
+	}
+	if err := ensureLambdaPackageRoot(); err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	dir := infraLambda.dir
@@ -2888,11 +2911,7 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 		if strings.HasPrefix(include, "/") {
 			args = "--junk-paths"
 		}
-		compression := "-9"
-		if os.Getenv("ZIP_COMPRESSION") != "" {
-			compression = "-" + os.Getenv("ZIP_COMPRESSION")
-		}
-		err := shellAt(dir, "zip %s %s --symlinks -r %s '%s'", compression, args, zipFile, include)
+		err := shellAt(dir, "zip -0 %s --symlinks -r %s '%s'", args, zipFile, include)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -2910,6 +2929,10 @@ func lambdaUpdateZipPy(infraLambda *InfraLambda) error {
 		d := &Debug{start: time.Now(), name: "lambdaUpdateZipPy"}
 		d.Start()
 		defer d.End()
+	}
+	if err := ensureLambdaPackageRoot(); err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	dir := path.Dir(zipFile)
@@ -2929,11 +2952,7 @@ func lambdaUpdateZipPy(infraLambda *InfraLambda) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	compression := "-9"
-	if os.Getenv("ZIP_COMPRESSION") != "" {
-		compression = "-" + os.Getenv("ZIP_COMPRESSION")
-	}
-	err = shellAt(site_package, "zip %s %s %s", compression, zipFile, path.Base(infraLambda.Entrypoint))
+	err = shellAt(site_package, "zip -0 %s %s", zipFile, path.Base(infraLambda.Entrypoint))
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -3099,6 +3118,9 @@ func lambdaEnsureFunctionConfiguration(
 }
 
 func lambdaPrepareQuickPackage(infraLambda *InfraLambda, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
+	if err := ensureLambdaPackageRoot(); err != nil {
+		return err
+	}
 	zipFile := LambdaZipFile(infraLambda.Name)
 	var err error
 	if infraLambda.runtime == lambdaRuntimePython && !Exists(zipFile) {
@@ -3117,6 +3139,10 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		d := &Debug{start: time.Now(), name: "lambdaEnsure"}
 		d.Start()
 		defer d.End()
+	}
+	if err := validateLambdaName(infraLambda.Name); err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
 	var err error
 	var concurrency *int32

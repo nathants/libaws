@@ -2219,6 +2219,12 @@ func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 		d.Start()
 		defer d.End()
 	}
+	for lambdaName := range infraSet.Lambda {
+		if err := validateLambdaName(lambdaName); err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+	}
 	if quick != "" {
 		found := false
 		for lambdaName := range infraSet.Lambda {
@@ -2752,6 +2758,10 @@ func infraParseValidateLambda(val any) error {
 		return err
 	}
 	for name, lambdaVal := range val.(map[string]any) {
+		if err := validateLambdaName(name); err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 		_, ok := lambdaVal.(map[string]any)
 		if !ok {
 			err := fmt.Errorf("infraLambda should be type: map[string]any, got: %s %#v", name, lambdaVal)
