@@ -828,11 +828,9 @@ func IamEnsureUserPolicies(ctx context.Context, username string, policyNames []s
 		matches := byName[policyName]
 		switch len(matches) {
 		case 0:
-			if !preview {
-				err := fmt.Errorf("didn't find policy for name: %s", policyName)
-				Logger.Println("error:", err)
-				return err
-			}
+			err := fmt.Errorf("didn't find policy for name: %s", policyName)
+			Logger.Println("error:", err)
+			return err
 		case 1:
 			if _, ok := attached[policyName]; ok {
 				continue

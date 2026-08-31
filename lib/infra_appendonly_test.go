@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/gofrs/uuid"
 )
 
 func TestS3AppendOnlyPolicy(t *testing.T) {
@@ -154,6 +156,21 @@ func TestIamEnsureUserAllowsRejectsPolicyNameCollisionBeforeAWS(t *testing.T) {
 	}, false)
 	if err == nil || !strings.Contains(err.Error(), "same inline policy name") {
 		t.Fatalf("policy-name collision error = %v", err)
+	}
+}
+
+func TestIamEnsureUserPoliciesPreviewRejectsMissingPolicy(t *testing.T) {
+	requireLiveAWSAccount(t)
+	suffix := uuid.Must(uuid.NewV4()).String()
+	policyName := "libaws-missing-policy-" + suffix
+	err := IamEnsureUserPolicies(
+		context.Background(),
+		"libaws-missing-user-"+suffix,
+		[]string{policyName},
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), policyName) {
+		t.Fatalf("preview missing-policy error = %v, want policy name %q", err, policyName)
 	}
 }
 
