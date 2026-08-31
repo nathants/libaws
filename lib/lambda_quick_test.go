@@ -2,7 +2,6 @@ package lib
 
 import (
 	"archive/zip"
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -79,16 +78,5 @@ func TestLambdaPrepareQuickPackageBuildsMissingPythonPackage(t *testing.T) {
 	}
 	if createCalls != 1 {
 		t.Fatalf("quick Python package builds=%d, want 1", createCalls)
-	}
-}
-
-func TestInfraEnsureQuickPreservesCanonicalLambdaCompression(t *testing.T) {
-	t.Setenv("ZIP_COMPRESSION", "")
-	err := InfraEnsure(context.Background(), &InfraSet{}, "missing-lambda", true, false)
-	if err == nil || err.Error() != "cannot use quick mode for unknown lambda name: missing-lambda" {
-		t.Fatalf("unexpected quick validation result: %v", err)
-	}
-	if got := os.Getenv("ZIP_COMPRESSION"); got != "" {
-		t.Fatalf("quick infrastructure changed ZIP_COMPRESSION to %q", got)
 	}
 }

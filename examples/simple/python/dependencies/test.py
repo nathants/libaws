@@ -16,6 +16,7 @@ def test():
     assert infra["infraset"] == {"none": None}, infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
+    run(f"libaws infra-ensure infra.yaml --quick test-lambda-{uid}")
     converged = run("libaws infra-ensure infra.yaml --preview")
     assert "preview: zip " not in converged, converged
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
