@@ -800,16 +800,18 @@ func IamEnsureUserPolicies(ctx context.Context, username string, policyNames []s
 		d.Start()
 		defer d.End()
 	}
-	// Fetch all policies once and index by name for O(1) lookups
-	policies, err := IamListPolicies(ctx)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
+	// Fetch account policies only when there are desired names to resolve.
 	byName := map[string][]iamtypes.Policy{}
-	for _, p := range policies {
-		name := Last(strings.Split(*p.Arn, "/"))
-		byName[name] = append(byName[name], p)
+	if len(policyNames) != 0 {
+		policies, err := IamListPolicies(ctx)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		for _, p := range policies {
+			name := Last(strings.Split(*p.Arn, "/"))
+			byName[name] = append(byName[name], p)
+		}
 	}
 	// Fetch currently attached user policies once and build a set
 	attachedPolicies, err := IamListUserPolicies(ctx, username)
@@ -887,10 +889,14 @@ func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []s
 		d.Start()
 		defer d.End()
 	}
-	policies, err := IamListPolicies(ctx)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
+	var policies []iamtypes.Policy
+	if len(policyNames) != 0 {
+		var err error
+		policies, err = IamListPolicies(ctx)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
 	}
 outer:
 	for _, policyName := range policyNames {

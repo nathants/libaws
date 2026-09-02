@@ -52,10 +52,18 @@ def test():
     else:
         assert False, "fail"
     assert 'hi' == run(f'curl {url} 2>/dev/null')
+    run(
+        "LIBAWS_INTEGRATION=1 "
+        f"LIBAWS_LAMBDA_DELETE_TEST_FUNCTION=test-lambda-{uid} "
+        "go test ../../../../lib -run '^TestLambdaManualDeleteIntegration$' -count=1 -v"
+    )
+    run(f"libaws lambda-rm test-lambda-{uid} --preview")
+    run(f"libaws lambda-rm test-lambda-{uid}")
     run("libaws infra-rm infra.yaml --preview")
     run("libaws infra-rm infra.yaml")
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
     assert infra["infraset"] == {"none": None}, infra
+    assert f"test-lambda-{uid}" not in run("libaws api-ls").splitlines()
 
 
 if __name__ == "__main__":

@@ -37,6 +37,11 @@ func TestLambdaScheduleDeletionSurvivesMissingFunction(t *testing.T) {
 				"Arn": "arn:aws:lambda:us-west-2:337909772623:function:" + functionName,
 				"Id":  "1",
 			}}}
+		case "AWSEvents.ListTagsForResource":
+			response = map[string]any{"Tags": []map[string]any{{
+				"Key":   infraSetTagName,
+				"Value": "test-infraset",
+			}}}
 		case "AWSEvents.RemoveTargets", "AWSEvents.DeleteRule":
 			response = map[string]any{}
 		default:
@@ -54,23 +59,19 @@ func TestLambdaScheduleDeletionSurvivesMissingFunction(t *testing.T) {
 		Credentials:  aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("test-access", "test-secret", "")),
 		Region:       "us-west-2",
 	})
-	eventsClientLock.Lock()
-	previousClient := eventsClient
-	eventsClient = client
-	eventsClientLock.Unlock()
-	t.Cleanup(func() {
-		eventsClientLock.Lock()
-		eventsClient = previousClient
-		eventsClientLock.Unlock()
-	})
-
-	_, err := LambdaEnsureTriggerSchedule(context.Background(), &InfraLambda{Name: functionName}, false)
-	if err != nil {
+	identity := lambdaIdentity{
+		name:         functionName,
+		arn:          "arn:aws:lambda:us-west-2:337909772623:function:" + functionName,
+		infraSetName: "test-infraset",
+		exists:       false,
+	}
+	if err := lambdaCleanupScheduleTriggers(context.Background(), client, identity, nil, false); err != nil {
 		t.Fatalf("delete stale schedule after function removal: %v", err)
 	}
 	want := []string{
 		"AWSEvents.ListRules",
 		"AWSEvents.ListTargetsByRule",
+		"AWSEvents.ListTagsForResource",
 		"AWSEvents.RemoveTargets",
 		"AWSEvents.DeleteRule",
 	}

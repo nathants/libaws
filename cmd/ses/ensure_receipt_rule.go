@@ -28,7 +28,7 @@ func sesEnsureReceiptRule() {
 	var args sesEnsureReceiptRulesArg
 	arg.MustParse(&args)
 	ctx := context.Background()
-	_, err := lib.SesEnsureReceiptRuleset(ctx, args.Domain, args.LambdaArn, args.Bucket, args.Prefix, args.Preview)
+	_, err := lib.SesEnsureReceiptRuleset(ctx, args.Domain, args.Bucket, args.Prefix, args.LambdaArn, args.Preview)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

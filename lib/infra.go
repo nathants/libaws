@@ -871,20 +871,23 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 		}
 		fns = append(fns, fn)
 	}
-	errChan := make(chan error)
+	errChan := make(chan error, len(fns))
 	triggers := map[string][]*InfraTrigger{}
 	res := map[string]*InfraLambda{}
+	lock := &sync.Mutex{}
 	for _, fn := range fns {
 		fn := fn
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					logRecover(r)
+					errChan <- fmt.Errorf("list Lambda %q: %v", aws.ToString(fn.FunctionName), r)
 				}
 			}()
 			infraLambda := &InfraLambda{
 				Name: *fn.FunctionName,
 			}
+			var localTriggers []*InfraTrigger
 			if fn.Environment != nil {
 				for k, v := range fn.Environment.Variables {
 					infraLambda.Env = append(infraLambda.Env, k+"="+v)
@@ -905,7 +908,6 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					break
 				}
 			}
-			res[infraLambda.Name] = infraLambda
 			if fn.MemorySize != nil && *fn.MemorySize != lambdaAttrMemoryDefault {
 				infraLambda.Attr = append(infraLambda.Attr, fmt.Sprintf("memory=%d", *fn.MemorySize))
 			}
@@ -927,7 +929,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 				FunctionName: aws.String(*fn.FunctionName),
 			})
 			if err == nil && outUrl.FunctionUrl != nil {
-				triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], &InfraTrigger{
+				localTriggers = append(localTriggers, &InfraTrigger{
 					lambdaName: *fn.FunctionName,
 					Type:       lambdaTriggerUrl,
 					Attr:       []string{"url=" + strings.Trim(*outUrl.FunctionUrl, "/")},
@@ -1021,7 +1023,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					if prefix != "" {
 						attrs = append(attrs, "prefix="+prefix)
 					}
-					triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], &InfraTrigger{
+					localTriggers = append(localTriggers, &InfraTrigger{
 						lambdaName: *fn.FunctionName,
 						Type:       lambdaTriggerSes,
 						Attr:       attrs,
@@ -1046,7 +1048,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 					infra := ArnToInfraName(*mapping.EventSourceArn)
 					switch infra {
 					case lambdaTriggerDynamoDB:
-						triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], &InfraTrigger{
+						localTriggers = append(localTriggers, &InfraTrigger{
 							lambdaName: *fn.FunctionName,
 							Type:       infra,
 							Attr: []string{
@@ -1059,7 +1061,7 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 							},
 						})
 					case lambdaTriggerSQS:
-						triggers[*fn.FunctionName] = append(triggers[*fn.FunctionName], &InfraTrigger{
+						localTriggers = append(localTriggers, &InfraTrigger{
 							lambdaName: *fn.FunctionName,
 							Type:       infra,
 							Attr: []string{
@@ -1077,6 +1079,10 @@ func InfraListLambda(ctx context.Context, triggersChan <-chan *InfraTrigger, fil
 				}
 				marker = out.NextMarker
 			}
+			lock.Lock()
+			res[infraLambda.Name] = infraLambda
+			triggers[infraLambda.Name] = append(triggers[infraLambda.Name], localTriggers...)
+			lock.Unlock()
 			errChan <- nil
 		}()
 	}
@@ -2925,6 +2931,7 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 		return nil, err
 	}
 	alarmNames := map[string]bool{}
+	hasSESTrigger := false
 	for _, infraLambda := range infraSet.Lambda {
 		infraLambda.infraSetName = infraSet.Name
 		infraLambda.dir = path.Dir(yamlPath)
@@ -2960,6 +2967,14 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 				err := fmt.Errorf("unknown trigger: %#v", trigger)
 				Logger.Println("error:", err)
 				return nil, err
+			}
+			if trigger.Type == lambdaTriggerSes {
+				if hasSESTrigger {
+					err := errors.New("an infrastructure set can declare only one SES trigger because AWS permits only one active receipt rule set per region")
+					Logger.Println("error:", err)
+					return nil, err
+				}
+				hasSESTrigger = true
 			}
 			if trigger.Type == lambdaTriggerAlarm {
 				config, err := parseLambdaAlarmTrigger(trigger)
@@ -3015,67 +3030,36 @@ func InfraDelete(ctx context.Context, infraSet *InfraSet, preview bool) error {
 	}
 	for lambdaName, infraLambda := range infraSet.Lambda {
 		infraLambda.Name = lambdaName
-		infraLambda.Arn, _ = LambdaArn(ctx, lambdaName)
+		identity, err := lambdaResolveIdentity(ctx, lambdaName, infraLambda.infraSetName)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if err := lambdaCleanupExternalTriggers(ctx, identity, preview); err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		infraLambda.Arn = identity.arn
 		infraLambda.Trigger = nil
-		_, err := LambdaEnsureTriggerApi(ctx, infraLambda, preview)
-		if err != nil {
+		if identity.exists {
+			if err := LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview); err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+			if err := LambdaEnsureTriggerSQS(ctx, infraLambda, preview); err != nil {
+				Logger.Println("error:", err)
+				return err
+			}
+		}
+		if err := IamDeleteRole(ctx, lambdaName, preview); err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		_, err = LambdaEnsureTriggerSes(ctx, infraLambda, preview)
-		if err != nil {
+		if err := LambdaDeleteFunction(ctx, lambdaName, preview); err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
-		_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		if infraLambda.Arn != "" {
-			_, err := LambdaEnsureTriggerS3(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			_, err = LambdaEnsureTriggerSes(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			_, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			_, err = LambdaEnsureTriggerAlarm(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			err = LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			err = LambdaEnsureTriggerSQS(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-		}
-		err = IamDeleteRole(ctx, lambdaName, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		err = LambdaDeleteFunction(ctx, lambdaName, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		err = LogsDeleteGroup(ctx, "/aws/lambda/"+lambdaName, preview)
-		if err != nil {
+		if err := LogsDeleteGroup(ctx, "/aws/lambda/"+lambdaName, preview); err != nil {
 			Logger.Println("error:", err)
 			return err
 		}

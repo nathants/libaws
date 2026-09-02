@@ -13,50 +13,35 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 )
 
 const (
-	lambdaTriggerAlarm               = "alarm"
-	lambdaAlarmInvocationPrincipal   = "lambda.alarms.cloudwatch.amazonaws.com"
-	lambdaAlarmAttrName              = "name"
-	lambdaAlarmAttrDescription       = "description"
-	lambdaAlarmAttrNamespace         = "namespace"
-	lambdaAlarmAttrMetric            = "metric"
-	lambdaAlarmAttrDimension         = "dimension"
-	lambdaAlarmAttrStatistic         = "statistic"
-	lambdaAlarmAttrPeriod            = "period"
-	lambdaAlarmAttrThreshold         = "threshold"
-	lambdaAlarmAttrComparison        = "comparison"
-	lambdaAlarmAttrEvaluationPeriods = "evaluation-periods"
-	lambdaAlarmAttrDatapointsToAlarm = "datapoints-to-alarm"
-	lambdaAlarmAttrTreatMissingData  = "missing"
+	lambdaTriggerAlarm             = "alarm"
+	lambdaAlarmInvocationPrincipal = "lambda.alarms.cloudwatch.amazonaws.com"
+	lambdaAlarmAttrName            = "name"
+	lambdaAlarmAttrInvocations     = "lambda-invocations"
+	lambdaAlarmAttrAtLeast         = "at-least"
+	lambdaAlarmRateUnit            = "/minute"
+
+	lambdaAlarmNamespace         = "AWS/Lambda"
+	lambdaAlarmMetric            = "Invocations"
+	lambdaAlarmDimension         = "FunctionName"
+	lambdaAlarmPeriod            = int32(60)
+	lambdaAlarmEvaluationPeriods = int32(1)
+	lambdaAlarmDatapointsToAlarm = int32(1)
+	lambdaAlarmMissingData       = "notBreaching"
 )
 
 var lambdaAlarmNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,255}$`)
+var lambdaAlarmRatePattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 type lambdaAlarmConfig struct {
-	name              string
-	description       string
-	namespace         string
-	metric            string
-	dimensions        []cwtypes.Dimension
-	statistic         cwtypes.Statistic
-	period            int32
-	threshold         float64
-	comparison        cwtypes.ComparisonOperator
-	evaluationPeriods int32
-	datapointsToAlarm int32
-	treatMissingData  string
-}
-
-func parsePositiveInt32(key, value string) (int32, error) {
-	parsed, err := strconv.ParseInt(value, 10, 32)
-	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("lambda alarm %s must be a positive integer: %q", key, value)
-	}
-	return int32(parsed), nil
+	name                 string
+	invocationLambdaName string
+	invocationsPerMinute int32
 }
 
 func parseLambdaAlarmTrigger(trigger *InfraTrigger) (*lambdaAlarmConfig, error) {
@@ -64,118 +49,47 @@ func parseLambdaAlarmTrigger(trigger *InfraTrigger) (*lambdaAlarmConfig, error) 
 		return nil, errors.New("invalid Lambda alarm trigger")
 	}
 	values := map[string]string{}
-	var dimensions []cwtypes.Dimension
 	for _, attr := range trigger.Attr {
 		key, value, err := SplitOnce(attr, "=")
 		if err != nil || key == "" || value == "" {
 			return nil, fmt.Errorf("invalid Lambda alarm attribute %q", attr)
 		}
-		if key == lambdaAlarmAttrDimension {
-			name, dimensionValue, err := SplitOnce(value, "=")
-			if err != nil || name == "" || dimensionValue == "" {
-				return nil, fmt.Errorf("invalid Lambda alarm dimension %q", value)
-			}
-			for _, dimension := range dimensions {
-				if aws.ToString(dimension.Name) == name {
-					return nil, fmt.Errorf("duplicate Lambda alarm dimension %q", name)
-				}
-			}
-			dimensions = append(dimensions, cwtypes.Dimension{Name: aws.String(name), Value: aws.String(dimensionValue)})
-			continue
-		}
 		if _, found := values[key]; found {
 			return nil, fmt.Errorf("duplicate Lambda alarm attribute %q", key)
 		}
-		values[key] = value
-	}
-	allowed := []string{
-		lambdaAlarmAttrName,
-		lambdaAlarmAttrDescription,
-		lambdaAlarmAttrNamespace,
-		lambdaAlarmAttrMetric,
-		lambdaAlarmAttrStatistic,
-		lambdaAlarmAttrPeriod,
-		lambdaAlarmAttrThreshold,
-		lambdaAlarmAttrComparison,
-		lambdaAlarmAttrEvaluationPeriods,
-		lambdaAlarmAttrDatapointsToAlarm,
-		lambdaAlarmAttrTreatMissingData,
-	}
-	for key := range values {
-		if !slices.Contains(allowed, key) {
+		switch key {
+		case lambdaAlarmAttrName, lambdaAlarmAttrInvocations, lambdaAlarmAttrAtLeast:
+			values[key] = value
+		default:
 			return nil, fmt.Errorf("unknown Lambda alarm attribute %q", key)
 		}
 	}
-	for _, key := range []string{
-		lambdaAlarmAttrName,
-		lambdaAlarmAttrNamespace,
-		lambdaAlarmAttrMetric,
-		lambdaAlarmAttrStatistic,
-		lambdaAlarmAttrPeriod,
-		lambdaAlarmAttrThreshold,
-		lambdaAlarmAttrComparison,
-		lambdaAlarmAttrEvaluationPeriods,
-		lambdaAlarmAttrDatapointsToAlarm,
-		lambdaAlarmAttrTreatMissingData,
-	} {
+	for _, key := range []string{lambdaAlarmAttrName, lambdaAlarmAttrInvocations, lambdaAlarmAttrAtLeast} {
 		if values[key] == "" {
 			return nil, fmt.Errorf("lambda alarm is missing %q", key)
 		}
 	}
-	if !lambdaAlarmNamePattern.MatchString(values[lambdaAlarmAttrName]) {
-		return nil, fmt.Errorf("invalid Lambda alarm name %q", values[lambdaAlarmAttrName])
+	name := values[lambdaAlarmAttrName]
+	if !lambdaAlarmNamePattern.MatchString(name) {
+		return nil, fmt.Errorf("invalid Lambda alarm name %q", name)
 	}
-	if len(dimensions) == 0 {
-		return nil, errors.New("lambda alarm requires at least one dimension")
+	invocationLambdaName := values[lambdaAlarmAttrInvocations]
+	if err := validateLambdaName(invocationLambdaName); err != nil {
+		return nil, fmt.Errorf("invalid Lambda alarm %s %q: %w", lambdaAlarmAttrInvocations, invocationLambdaName, err)
 	}
-	statistic := cwtypes.Statistic(values[lambdaAlarmAttrStatistic])
-	if !slices.Contains(statistic.Values(), statistic) {
-		return nil, fmt.Errorf("invalid Lambda alarm statistic %q", statistic)
+	rate := values[lambdaAlarmAttrAtLeast]
+	count, hasUnit := strings.CutSuffix(rate, lambdaAlarmRateUnit)
+	if !hasUnit || !lambdaAlarmRatePattern.MatchString(count) {
+		return nil, fmt.Errorf("lambda alarm %s must be a positive integer followed by %q: %q", lambdaAlarmAttrAtLeast, lambdaAlarmRateUnit, rate)
 	}
-	comparison := cwtypes.ComparisonOperator(values[lambdaAlarmAttrComparison])
-	if !slices.Contains(comparison.Values(), comparison) {
-		return nil, fmt.Errorf("invalid Lambda alarm comparison %q", comparison)
-	}
-	period, err := parsePositiveInt32(lambdaAlarmAttrPeriod, values[lambdaAlarmAttrPeriod])
+	parsed, err := strconv.ParseInt(count, 10, 32)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lambda alarm %s is too large: %q", lambdaAlarmAttrAtLeast, rate)
 	}
-	if period < 60 || period%60 != 0 {
-		return nil, fmt.Errorf("lambda alarm period must be a whole number of minutes: %d", period)
-	}
-	threshold, err := strconv.ParseFloat(values[lambdaAlarmAttrThreshold], 64)
-	if err != nil || math.IsNaN(threshold) || math.IsInf(threshold, 0) {
-		return nil, fmt.Errorf("invalid Lambda alarm threshold %q", values[lambdaAlarmAttrThreshold])
-	}
-	evaluationPeriods, err := parsePositiveInt32(lambdaAlarmAttrEvaluationPeriods, values[lambdaAlarmAttrEvaluationPeriods])
-	if err != nil {
-		return nil, err
-	}
-	datapointsToAlarm, err := parsePositiveInt32(lambdaAlarmAttrDatapointsToAlarm, values[lambdaAlarmAttrDatapointsToAlarm])
-	if err != nil {
-		return nil, err
-	}
-	if datapointsToAlarm > evaluationPeriods {
-		return nil, errors.New("lambda alarm datapoints-to-alarm exceeds evaluation-periods")
-	}
-	missing := values[lambdaAlarmAttrTreatMissingData]
-	if !slices.Contains([]string{"breaching", "notBreaching", "ignore", "missing"}, missing) {
-		return nil, fmt.Errorf("invalid Lambda alarm missing-data policy %q", missing)
-	}
-	sort.Slice(dimensions, func(i, j int) bool { return aws.ToString(dimensions[i].Name) < aws.ToString(dimensions[j].Name) })
 	return &lambdaAlarmConfig{
-		name:              values[lambdaAlarmAttrName],
-		description:       values[lambdaAlarmAttrDescription],
-		namespace:         values[lambdaAlarmAttrNamespace],
-		metric:            values[lambdaAlarmAttrMetric],
-		dimensions:        dimensions,
-		statistic:         statistic,
-		period:            period,
-		threshold:         threshold,
-		comparison:        comparison,
-		evaluationPeriods: evaluationPeriods,
-		datapointsToAlarm: datapointsToAlarm,
-		treatMissingData:  missing,
+		name:                 name,
+		invocationLambdaName: invocationLambdaName,
+		invocationsPerMinute: int32(parsed),
 	}, nil
 }
 
@@ -183,18 +97,21 @@ func (config *lambdaAlarmConfig) metricAlarm(targetARN string) *cwtypes.MetricAl
 	return &cwtypes.MetricAlarm{
 		ActionsEnabled:     aws.Bool(true),
 		AlarmActions:       []string{targetARN},
-		AlarmDescription:   aws.String(config.description),
+		AlarmDescription:   aws.String(""),
 		AlarmName:          aws.String(config.name),
-		ComparisonOperator: config.comparison,
-		DatapointsToAlarm:  aws.Int32(config.datapointsToAlarm),
-		Dimensions:         slices.Clone(config.dimensions),
-		EvaluationPeriods:  aws.Int32(config.evaluationPeriods),
-		MetricName:         aws.String(config.metric),
-		Namespace:          aws.String(config.namespace),
-		Period:             aws.Int32(config.period),
-		Statistic:          config.statistic,
-		Threshold:          aws.Float64(config.threshold),
-		TreatMissingData:   aws.String(config.treatMissingData),
+		ComparisonOperator: cwtypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
+		DatapointsToAlarm:  aws.Int32(lambdaAlarmDatapointsToAlarm),
+		Dimensions: []cwtypes.Dimension{{
+			Name:  aws.String(lambdaAlarmDimension),
+			Value: aws.String(config.invocationLambdaName),
+		}},
+		EvaluationPeriods: aws.Int32(lambdaAlarmEvaluationPeriods),
+		MetricName:        aws.String(lambdaAlarmMetric),
+		Namespace:         aws.String(lambdaAlarmNamespace),
+		Period:            aws.Int32(lambdaAlarmPeriod),
+		Statistic:         cwtypes.StatisticSum,
+		Threshold:         aws.Float64(float64(config.invocationsPerMinute)),
+		TreatMissingData:  aws.String(lambdaAlarmMissingData),
 	}
 }
 
@@ -230,6 +147,13 @@ func normalizedAlarmDimensions(dimensions []cwtypes.Dimension) []cwtypes.Dimensi
 	return result
 }
 
+func lambdaAlarmHasUnsupportedConfiguration(alarm *cwtypes.MetricAlarm) bool {
+	return alarm == nil || len(alarm.OKActions) != 0 || len(alarm.InsufficientDataActions) != 0 ||
+		alarm.EvaluateLowSampleCountPercentile != nil || alarm.EvaluationCriteria != nil ||
+		alarm.EvaluationInterval != nil || alarm.EvaluationWindow != nil || alarm.ExtendedStatistic != nil ||
+		len(alarm.Metrics) != 0 || alarm.ThresholdMetricId != nil || alarm.Unit != ""
+}
+
 func lambdaAlarmMatches(actual, expected *cwtypes.MetricAlarm) bool {
 	if actual == nil || expected == nil {
 		return false
@@ -248,22 +172,31 @@ func lambdaAlarmMatches(actual, expected *cwtypes.MetricAlarm) bool {
 		actual.Statistic == expected.Statistic &&
 		aws.ToFloat64(actual.Threshold) == aws.ToFloat64(expected.Threshold) &&
 		aws.ToString(actual.TreatMissingData) == aws.ToString(expected.TreatMissingData) &&
-		len(actual.OKActions) == 0 && len(actual.InsufficientDataActions) == 0 &&
-		actual.EvaluateLowSampleCountPercentile == nil && actual.ExtendedStatistic == nil &&
-		len(actual.Metrics) == 0 && actual.ThresholdMetricId == nil && actual.Unit == ""
+		!lambdaAlarmHasUnsupportedConfiguration(actual)
 }
 
-func cloudwatchAlarmARN(region, account, name string) string {
-	return fmt.Sprintf("arn:aws:cloudwatch:%s:%s:alarm:%s", region, account, name)
+func cloudwatchAlarmARN(partition, region, account, name string) string {
+	return fmt.Sprintf("arn:%s:cloudwatch:%s:%s:alarm:%s", partition, region, account, name)
 }
 
-func cloudwatchDescribeMetricAlarms(ctx context.Context, client *cloudwatch.Client, names []string) ([]cwtypes.MetricAlarm, error) {
+type cloudwatchAlarmClient interface {
+	DescribeAlarms(context.Context, *cloudwatch.DescribeAlarmsInput, ...func(*cloudwatch.Options)) (*cloudwatch.DescribeAlarmsOutput, error)
+	ListTagsForResource(context.Context, *cloudwatch.ListTagsForResourceInput, ...func(*cloudwatch.Options)) (*cloudwatch.ListTagsForResourceOutput, error)
+	PutMetricAlarm(context.Context, *cloudwatch.PutMetricAlarmInput, ...func(*cloudwatch.Options)) (*cloudwatch.PutMetricAlarmOutput, error)
+	TagResource(context.Context, *cloudwatch.TagResourceInput, ...func(*cloudwatch.Options)) (*cloudwatch.TagResourceOutput, error)
+	DeleteAlarms(context.Context, *cloudwatch.DeleteAlarmsInput, ...func(*cloudwatch.Options)) (*cloudwatch.DeleteAlarmsOutput, error)
+}
+
+func cloudwatchDescribeMetricAlarms(ctx context.Context, client cloudwatchAlarmClient, names []string) ([]cwtypes.MetricAlarm, error) {
 	var token *string
 	var alarms []cwtypes.MetricAlarm
 	for {
 		out, err := client.DescribeAlarms(ctx, &cloudwatch.DescribeAlarmsInput{AlarmNames: names, NextToken: token})
 		if err != nil {
 			return nil, err
+		}
+		if out == nil {
+			return nil, errors.New("CloudWatch DescribeAlarms returned nil output")
 		}
 		alarms = append(alarms, out.MetricAlarms...)
 		if out.NextToken == nil {
@@ -273,10 +206,13 @@ func cloudwatchDescribeMetricAlarms(ctx context.Context, client *cloudwatch.Clie
 	}
 }
 
-func cloudwatchAlarmInfraSet(ctx context.Context, client *cloudwatch.Client, alarmARN string) (string, error) {
+func cloudwatchAlarmInfraSet(ctx context.Context, client cloudwatchAlarmClient, alarmARN string) (string, error) {
 	out, err := client.ListTagsForResource(ctx, &cloudwatch.ListTagsForResourceInput{ResourceARN: aws.String(alarmARN)})
 	if err != nil {
 		return "", err
+	}
+	if out == nil {
+		return "", errors.New("CloudWatch ListTagsForResource returned nil output")
 	}
 	for _, tag := range out.Tags {
 		if aws.ToString(tag.Key) == infraSetTagName {
@@ -286,7 +222,63 @@ func cloudwatchAlarmInfraSet(ctx context.Context, client *cloudwatch.Client, ala
 	return "", nil
 }
 
+func lambdaCleanupAlarmTriggers(
+	ctx context.Context,
+	client cloudwatchAlarmClient,
+	identity lambdaIdentity,
+	desiredNames map[string]bool,
+	preview bool,
+) error {
+	alarms, err := cloudwatchDescribeMetricAlarms(ctx, client, nil)
+	if err != nil {
+		return err
+	}
+	for _, alarm := range alarms {
+		name := aws.ToString(alarm.AlarmName)
+		if desiredNames[name] || alarm.AlarmArn == nil || len(alarm.AlarmActions) != 1 || alarm.AlarmActions[0] != identity.arn {
+			continue
+		}
+		infraSetName, err := cloudwatchAlarmInfraSet(ctx, client, aws.ToString(alarm.AlarmArn))
+		if err != nil {
+			return err
+		}
+		if infraSetName == "" || (identity.infraSetName != "" && infraSetName != identity.infraSetName) {
+			continue
+		}
+		if !preview {
+			if _, err := client.DeleteAlarms(ctx, &cloudwatch.DeleteAlarmsInput{AlarmNames: []string{name}}); err != nil {
+				return err
+			}
+		}
+		Logger.Println(PreviewString(preview)+"deleted CloudWatch metric alarm:", name)
+	}
+	return nil
+}
+
+type lambdaAlarmAccountResolver func(context.Context) (string, error)
+type lambdaAlarmPermissionEnsurer func(context.Context, string, string, string, string, bool) (string, error)
+
 func LambdaEnsureTriggerAlarm(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
+	return lambdaEnsureTriggerAlarm(
+		ctx,
+		CloudwatchClient(),
+		StsAccount,
+		Region(),
+		lambdaEnsurePermissionWithSourceAccount,
+		infraLambda,
+		preview,
+	)
+}
+
+func lambdaEnsureTriggerAlarm(
+	ctx context.Context,
+	client cloudwatchAlarmClient,
+	resolveAccount lambdaAlarmAccountResolver,
+	region string,
+	ensurePermission lambdaAlarmPermissionEnsurer,
+	infraLambda *InfraLambda,
+	preview bool,
+) ([]string, error) {
 	var configs []*lambdaAlarmConfig
 	for _, trigger := range infraLambda.Trigger {
 		if trigger.Type != lambdaTriggerAlarm {
@@ -303,18 +295,21 @@ func LambdaEnsureTriggerAlarm(ctx context.Context, infraLambda *InfraLambda, pre
 		}
 		configs = append(configs, config)
 	}
-	client := CloudwatchClient()
-	account, err := StsAccount(ctx)
+	account, err := resolveAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
-	region := Region()
+	functionARN, err := awsarn.Parse(infraLambda.Arn)
+	if err != nil || functionARN.AccountID != account ||
+		!lambdaFunctionARNMatches(infraLambda.Arn, region, infraLambda.Name) {
+		return nil, fmt.Errorf("invalid Lambda identity ARN %q", infraLambda.Arn)
+	}
 	permissionSIDs := make([]string, 0, len(configs))
 	configuredNames := make(map[string]bool, len(configs))
 	for _, config := range configs {
 		configuredNames[config.name] = true
-		alarmARN := cloudwatchAlarmARN(region, account, config.name)
-		sid, err := lambdaEnsurePermissionWithSourceAccount(
+		alarmARN := cloudwatchAlarmARN(functionARN.Partition, region, account, config.name)
+		sid, err := ensurePermission(
 			ctx,
 			infraLambda.Name,
 			lambdaAlarmInvocationPrincipal,
@@ -366,40 +361,73 @@ func LambdaEnsureTriggerAlarm(ctx context.Context, infraLambda *InfraLambda, pre
 			}
 		}
 	}
-	alarms, err := cloudwatchDescribeMetricAlarms(ctx, client, nil)
-	if err != nil {
-		return nil, err
+	identity := lambdaIdentity{
+		name:         infraLambda.Name,
+		arn:          infraLambda.Arn,
+		infraSetName: infraLambda.infraSetName,
+		exists:       true,
 	}
-	for _, alarm := range alarms {
-		if configuredNames[aws.ToString(alarm.AlarmName)] || !slices.Contains(alarm.AlarmActions, infraLambda.Arn) || alarm.AlarmArn == nil {
-			continue
-		}
-		infraSetName, err := cloudwatchAlarmInfraSet(ctx, client, aws.ToString(alarm.AlarmArn))
-		if err != nil {
-			return nil, err
-		}
-		if infraSetName != infraLambda.infraSetName {
-			continue
-		}
-		if !preview {
-			if _, err := client.DeleteAlarms(ctx, &cloudwatch.DeleteAlarmsInput{AlarmNames: []string{aws.ToString(alarm.AlarmName)}}); err != nil {
-				return nil, err
-			}
-		}
-		Logger.Println(PreviewString(preview)+"deleted CloudWatch metric alarm:", aws.ToString(alarm.AlarmName))
+	if err := lambdaCleanupAlarmTriggers(ctx, client, identity, configuredNames, preview); err != nil {
+		return nil, err
 	}
 	return permissionSIDs, nil
 }
 
+func lambdaAlarmFunctionName(actionARN string) (string, bool) {
+	parsed, err := awsarn.Parse(actionARN)
+	if err != nil || parsed.Service != "lambda" || parsed.Region == "" || parsed.AccountID == "" {
+		return "", false
+	}
+	resource := strings.Split(parsed.Resource, ":")
+	if len(resource) != 2 || resource[0] != "function" || resource[1] == "" {
+		return "", false
+	}
+	return resource[1], true
+}
+
+func lambdaAlarmActionFunctionName(alarm *cwtypes.MetricAlarm) (string, bool) {
+	if alarm == nil || alarm.AlarmArn == nil || len(alarm.AlarmActions) != 1 {
+		return "", false
+	}
+	name, exactFunctionARN := lambdaAlarmFunctionName(alarm.AlarmActions[0])
+	actionARN, actionErr := awsarn.Parse(alarm.AlarmActions[0])
+	alarmARN, alarmErr := awsarn.Parse(aws.ToString(alarm.AlarmArn))
+	if !exactFunctionARN || actionErr != nil || alarmErr != nil || alarmARN.Service != "cloudwatch" ||
+		actionARN.Partition != alarmARN.Partition || actionARN.Region != alarmARN.Region || actionARN.AccountID != alarmARN.AccountID {
+		return "", false
+	}
+	return name, true
+}
+
+func lambdaAlarmConfigFromMetricAlarm(alarm *cwtypes.MetricAlarm) (*lambdaAlarmConfig, bool) {
+	if alarm == nil || len(alarm.Dimensions) != 1 {
+		return nil, false
+	}
+	_, exactFunctionARN := lambdaAlarmActionFunctionName(alarm)
+	if !exactFunctionARN {
+		return nil, false
+	}
+	dimension := alarm.Dimensions[0]
+	invocationLambdaName := aws.ToString(dimension.Value)
+	threshold := aws.ToFloat64(alarm.Threshold)
+	if aws.ToString(dimension.Name) != lambdaAlarmDimension || validateLambdaName(invocationLambdaName) != nil ||
+		threshold < 1 || threshold > float64(int64(1<<31-1)) || math.Trunc(threshold) != threshold {
+		return nil, false
+	}
+	config := &lambdaAlarmConfig{
+		name:                 aws.ToString(alarm.AlarmName),
+		invocationLambdaName: invocationLambdaName,
+		invocationsPerMinute: int32(threshold),
+	}
+	if !lambdaAlarmNamePattern.MatchString(config.name) || !lambdaAlarmMatches(alarm, config.metricAlarm(alarm.AlarmActions[0])) {
+		return nil, false
+	}
+	return config, true
+}
+
 func lambdaAlarmTriggerRepresentable(alarm *cwtypes.MetricAlarm) bool {
-	return alarm != nil &&
-		len(alarm.AlarmActions) == 1 && strings.HasPrefix(alarm.AlarmActions[0], "arn:aws:lambda:") &&
-		alarm.MetricName != nil && alarm.Namespace != nil && alarm.Period != nil && alarm.Threshold != nil &&
-		alarm.EvaluationPeriods != nil && alarm.DatapointsToAlarm != nil && alarm.TreatMissingData != nil &&
-		alarm.AlarmName != nil && alarm.ActionsEnabled != nil && *alarm.ActionsEnabled && len(alarm.Dimensions) > 0 &&
-		len(alarm.OKActions) == 0 && len(alarm.InsufficientDataActions) == 0 && len(alarm.Metrics) == 0 &&
-		alarm.EvaluateLowSampleCountPercentile == nil && alarm.ExtendedStatistic == nil &&
-		alarm.ThresholdMetricId == nil && alarm.Unit == ""
+	_, representable := lambdaAlarmConfigFromMetricAlarm(alarm)
+	return representable
 }
 
 func lambdaAlarmTriggers(ctx context.Context) ([]*InfraTrigger, error) {
@@ -409,37 +437,20 @@ func lambdaAlarmTriggers(ctx context.Context) ([]*InfraTrigger, error) {
 	}
 	var triggers []*InfraTrigger
 	for _, alarm := range alarms {
-		if !lambdaAlarmTriggerRepresentable(&alarm) {
+		config, representable := lambdaAlarmConfigFromMetricAlarm(&alarm)
+		if !representable {
 			continue
 		}
-		attrs := []string{
-			lambdaAlarmAttrName + "=" + aws.ToString(alarm.AlarmName),
-			lambdaAlarmAttrNamespace + "=" + aws.ToString(alarm.Namespace),
-			lambdaAlarmAttrMetric + "=" + aws.ToString(alarm.MetricName),
-		}
-		if aws.ToString(alarm.AlarmDescription) != "" {
-			attrs = append(attrs, lambdaAlarmAttrDescription+"="+aws.ToString(alarm.AlarmDescription))
-		}
-		for _, dimension := range normalizedAlarmDimensions(alarm.Dimensions) {
-			attrs = append(attrs, lambdaAlarmAttrDimension+"="+aws.ToString(dimension.Name)+"="+aws.ToString(dimension.Value))
-		}
-		attrs = append(attrs,
-			lambdaAlarmAttrStatistic+"="+string(alarm.Statistic),
-			lambdaAlarmAttrPeriod+"="+strconv.FormatInt(int64(aws.ToInt32(alarm.Period)), 10),
-			lambdaAlarmAttrThreshold+"="+strconv.FormatFloat(aws.ToFloat64(alarm.Threshold), 'g', -1, 64),
-			lambdaAlarmAttrComparison+"="+string(alarm.ComparisonOperator),
-			lambdaAlarmAttrEvaluationPeriods+"="+strconv.FormatInt(int64(aws.ToInt32(alarm.EvaluationPeriods)), 10),
-			lambdaAlarmAttrDatapointsToAlarm+"="+strconv.FormatInt(int64(aws.ToInt32(alarm.DatapointsToAlarm)), 10),
-			lambdaAlarmAttrTreatMissingData+"="+aws.ToString(alarm.TreatMissingData),
-		)
-		trigger := &InfraTrigger{
-			lambdaName: LambdaArnToLambdaName(alarm.AlarmActions[0]),
+		lambdaName, _ := lambdaAlarmActionFunctionName(&alarm)
+		triggers = append(triggers, &InfraTrigger{
+			lambdaName: lambdaName,
 			Type:       lambdaTriggerAlarm,
-			Attr:       attrs,
-		}
-		if _, err := parseLambdaAlarmTrigger(trigger); err == nil {
-			triggers = append(triggers, trigger)
-		}
+			Attr: []string{
+				lambdaAlarmAttrName + "=" + config.name,
+				lambdaAlarmAttrInvocations + "=" + config.invocationLambdaName,
+				lambdaAlarmAttrAtLeast + "=" + strconv.FormatInt(int64(config.invocationsPerMinute), 10) + lambdaAlarmRateUnit,
+			},
+		})
 	}
 	return triggers, nil
 }

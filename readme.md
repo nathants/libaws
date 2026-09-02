@@ -213,13 +213,16 @@ If you want to use the full AWS API, there are many great tools:
     * [Require](#require)
     * [Trigger](#trigger)
 
+      * [SES](#ses)
       * [API](#api)
+      * [URL](#url)
       * [Websocket](#websocket)
       * [S3](#s3-1)
       * [DynamoDB](#dynamodb-1)
       * [SQS](#sqs-1)
       * [Schedule](#schedule)
       * [ECR](#ecr)
+      * [Alarm](#alarm)
 * [Bash completion](#bash-completion)
 * [Extending](#extending)
 * [Testing](#testing)
@@ -400,12 +403,14 @@ func main() {
 
 ### Explore Simple Examples
 
+* Alarm: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/alarm)
 * API: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api)
 * DynamoDB: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/dynamodb), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/dynamodb), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/dynamodb)
 * ECR: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
 * Includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)
 * S3: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/s3), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/s3), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/s3)
 * Schedule: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/schedule), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/schedule), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/schedule)
+* SES: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ses)
 * SQS: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/sqs), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/sqs), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/sqs)
 * Websocket: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/websocket), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/websocket), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/websocket)
 
@@ -446,13 +451,16 @@ An infrastructure set is defined by [YAML](#infrayaml) or [Go struct](https://gi
 
   * [Triggers](#trigger):
 
+    * [SES](#ses)
     * [API](#api)
+    * [URL](#url)
     * [Websocket](#websocket)
     * [S3](#s3-1)
     * [DynamoDB](#dynamodb-1)
     * [SQS](#sqs-1)
     * [Schedule](#schedule)
     * [ECR](#ecr)
+    * [Alarm](#alarm)
 
 ## Typical Usage
 
@@ -534,6 +542,8 @@ An infrastructure set is defined by [YAML](#infrayaml) or [Go struct](https://gi
     * The operator decides **IF** and **WHEN** top-level infrastructure should be deleted, then uses an `rm` operation to do so.
 
     * As a convenience, `infra-rm` will remove **ALL** infrastructure **CURRENTLY** declared in an `infra.yaml`.
+
+    * If a declared Lambda was deleted out of band, `infra-rm` still removes its API, WebSocket, SES, S3, schedule, ECR, and CloudWatch alarm resources when both libaws ownership and the exact expected Lambda target can be proven. Ambiguous or independently owned resources are preserved. API custom-domain mappings are detached, but custom-domain and DNS resources are preserved when the Lambda is already absent because their ownership cannot be proven from the Lambda target alone.
 
 * When using `ensure` operations, no output means no changes.
 
@@ -644,7 +654,7 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   * `ttldays=VALUE`, values: `0 | n`, default: `0`
   * `allow_put=VALUE`, values: `$principal.amazonaws.com`
 
-* Every libaws-managed bucket denies non-TLS requests and uses default SSE-S3 `AES256` encryption; callers do not need to send an encryption header.
+* Every libaws-managed bucket denies non-TLS requests, uses default SSE-S3 `AES256` encryption, and rejects SSE-C; callers do not need to send an encryption header.
 
 * `appendonly=true` requires exact `If-None-Match: *` whenever an object is created, including `PutObject` and `CompleteMultipartUpload`; denies object and object-version deletion; and cannot be combined with expiration. Multipart staging is allowed, but completion requires the same create-only condition. ACL, versioning, and `allow_put` remain independent settings. Use `infra-rm` for deliberate administrator cleanup.
 
@@ -793,7 +803,7 @@ Defines a [SQS](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/a
 * The following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-sqs-queue.html#aws-resource-sqs-queue-syntax) can be defined:
 
   * `delay=VALUE`, delay seconds, default: `0`
-  * `size=VALUE`, maximum message size bytes, default: `262144`
+  * `size=VALUE`, maximum message size bytes, default: `1048576`
   * `retention=VALUE`, message retention period seconds, default: `345600`
   * `wait=VALUE`, receive wait time seconds, default: `0`
   * `timeout=VALUE`, visibility timeout seconds, default: `30`
@@ -931,9 +941,9 @@ Defines the code of the Lambda. It is one of:
 
 * A Python file.
 
-* A Go file.
+* A regular Go file. Libaws builds the complete Go package in that file's directory.
 
-* An ECR container URI.
+* An ECR container URI ending in an immutable `@sha256:` digest with 64 lowercase hexadecimal characters. Tags and unqualified repository URIs are rejected.
 
 * Schema:
 
@@ -1032,6 +1042,10 @@ Defines allows on the Lambda's IAM role.
 #### Env
 
 Defines environment variables on the Lambda:
+
+* Names must match `[a-zA-Z][a-zA-Z0-9_]+` and may not be repeated.
+* The combined byte length of all names and values may not exceed 4 KiB.
+* Values may be empty and are preserved exactly.
 
 * Schema:
 
@@ -1132,11 +1146,15 @@ Defines triggers for the Lambda:
 
 Defines an [SES](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html) email receiving trigger.
 
-* Route53 and SES must already be setup for the domain.
+* Route53 and SES must already be set up for the domain before it can receive mail.
 
-* DNS and bucket attrs are required, prefix is optional.
+* DNS and bucket attrs are required, prefix is optional. The DNS value must be a conventional ASCII domain name of at most 64 characters because it is also the SES rule-set and rule name.
 
 * S3 bucket must allow put from SES.
+
+* AWS permits only one active SES receipt rule set per region, so an infrastructure set may declare at most one SES trigger. Ensuring it makes its domain-named rule set active, replacing any previously active rule set.
+
+* A same-named receipt rule set is adopted only when it is empty or contains exactly the same-named rule. Libaws refuses to mutate or activate a rule set containing any other rule.
 
 * Schema:
 
@@ -1166,6 +1184,8 @@ Defines an [SES](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html)
             - bucket=my-bucket
             - prefix=emails/
   ```
+
+See the live [SES example](examples/simple/go/ses).
 
 ##### API
 
@@ -1269,6 +1289,8 @@ Defines an [S3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Use
 
 * Object creation and deletion invoke the trigger.
 
+* Libaws owns the bucket notification by a deterministic ID. A notification with another ID that already targets the same Lambda is preserved, and ensure refuses the conflict rather than creating duplicate invocations.
+
 * Schema:
 
   ```yaml
@@ -1303,7 +1325,7 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
   * `parallel=VALUE`, parallelization factor, default: `1`
   * `retry=VALUE`, maximum retry attempts, default: `-1`
   * `window=VALUE`, maximum batching window in seconds, default: `0`
-  * `start=VALUE`, starting position
+  * `start=VALUE`, required starting position: `latest | trim_horizon`
 
 * Schema:
 
@@ -1412,6 +1434,55 @@ Defines an [ECR trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Us
       trigger:
         - type: ecr
   ```
+
+##### Alarm
+
+Defines an opinionated [CloudWatch metric alarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html) for detecting a runaway Lambda invocation rate. When the watched Lambda has at least the declared number of invocations in one minute, the alarm enters `ALARM` and invokes the declaring Lambda.
+
+* The following attributes are required:
+
+  * `name=VALUE`: account-and-region-unique alarm name containing 1–255 letters, numbers, underscores, periods, or hyphens.
+  * `lambda-invocations=VALUE`: name of the Lambda whose invocation rate is watched.
+  * `at-least=VALUE/minute`: positive integer invocation threshold, up to `2147483647`.
+
+* Libaws fixes the CloudWatch configuration to the useful subset represented by this declaration:
+
+  * `AWS/Lambda` `Invocations` for the watched function's `FunctionName` dimension.
+  * `Sum` over one 60-second period.
+  * `GreaterThanOrEqualToThreshold`, with one required data point out of one evaluation period.
+  * Missing data is not breaching.
+  * The sole `ALARM` action invokes the declaring Lambda's exact, unqualified function ARN. There are no `OK` or insufficient-data actions.
+
+* A same-named alarm is adopted, tagged, and exactly converged to this configuration. Removing the trigger deletes an alarm only when it is tagged to the same infrastructure set and targets that Lambda.
+* `infra-ls` represents only alarms with exactly this shape. Use Terraform for other CloudWatch alarm forms; add another `infra.yaml` form only when a concrete project needs one.
+
+* Schema:
+
+  ```yaml
+  lambda:
+    VALUE:
+      trigger:
+        - type: alarm
+          attr:
+            - name=VALUE
+            - lambda-invocations=VALUE
+            - at-least=VALUE/minute
+  ```
+
+* Example:
+
+  ```yaml
+  lambda:
+    alert-handler:
+      trigger:
+        - type: alarm
+          attr:
+            - name=beta-invocations-runaway
+            - lambda-invocations=beta
+            - at-least=300/minute
+  ```
+
+See the live [alarm example](examples/simple/go/alarm).
 
 ## Bash Completion
 

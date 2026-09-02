@@ -30,7 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go-v2/service/ses"
+	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
 )
 
 const (
@@ -489,6 +489,72 @@ func LambdaArn(ctx context.Context, name string) (string, error) {
 	return arn, nil
 }
 
+type lambdaIdentity struct {
+	name         string
+	arn          string
+	infraSetName string
+	exists       bool
+}
+
+func lambdaFunctionARN(partition, region, account, name string) string {
+	return fmt.Sprintf("arn:%s:lambda:%s:%s:function:%s", partition, region, account, name)
+}
+
+func lambdaFunctionARNMatches(functionARN, region, name string) bool {
+	parsed, err := arn.Parse(functionARN)
+	if err != nil || parsed.Partition == "" || parsed.Service != "lambda" ||
+		parsed.Region != region || parsed.AccountID == "" {
+		return false
+	}
+	return parsed.Resource == "function:"+name
+}
+
+func lambdaIdentityFromCallerARN(name, infraSetName, region, callerARN string) (lambdaIdentity, error) {
+	caller, err := arn.Parse(callerARN)
+	if err != nil || caller.Partition == "" || caller.AccountID == "" ||
+		(caller.Service != "sts" && caller.Service != "iam") || region == "" || !lambdaNamePattern.MatchString(name) {
+		return lambdaIdentity{}, fmt.Errorf("invalid Lambda name %q, region %q, or STS caller ARN %q", name, region, callerARN)
+	}
+	return lambdaIdentity{
+		name:         name,
+		arn:          lambdaFunctionARN(caller.Partition, region, caller.AccountID, name),
+		infraSetName: infraSetName,
+	}, nil
+}
+
+type lambdaARNResolver func(context.Context, string) (string, error)
+type lambdaCallerARNResolver func(context.Context) (string, error)
+
+func lambdaResolveIdentityWith(
+	ctx context.Context,
+	name string,
+	infraSetName string,
+	region string,
+	resolveFunctionARN lambdaARNResolver,
+	resolveCallerARN lambdaCallerARNResolver,
+) (lambdaIdentity, error) {
+	functionARN, err := resolveFunctionARN(ctx, name)
+	if err == nil {
+		if !lambdaFunctionARNMatches(functionARN, region, name) {
+			return lambdaIdentity{}, fmt.Errorf("invalid Lambda function ARN %q", functionARN)
+		}
+		return lambdaIdentity{name: name, arn: functionARN, infraSetName: infraSetName, exists: true}, nil
+	}
+	var notFound *lambdatypes.ResourceNotFoundException
+	if !errors.As(err, &notFound) {
+		return lambdaIdentity{}, err
+	}
+	callerARN, err := resolveCallerARN(ctx)
+	if err != nil {
+		return lambdaIdentity{}, err
+	}
+	return lambdaIdentityFromCallerARN(name, infraSetName, region, callerARN)
+}
+
+func lambdaResolveIdentity(ctx context.Context, name, infraSetName string) (lambdaIdentity, error) {
+	return lambdaResolveIdentityWith(ctx, name, infraSetName, Region(), LambdaArn, StsArn)
+}
+
 const lambdaEcrEventPattern = `{
   "source": ["aws.ecr"],
   "detail-type": ["ECR Image Action"],
@@ -496,6 +562,28 @@ const lambdaEcrEventPattern = `{
     "result": ["SUCCESS"]
   }
 }`
+
+func lambdaSesS3ActionOwned(action *sestypes.ReceiptAction) bool {
+	return action != nil && action.S3Action != nil && aws.ToString(action.S3Action.BucketName) != "" &&
+		action.S3Action.IamRoleArn == nil && action.S3Action.KmsKeyArn == nil && action.S3Action.TopicArn == nil &&
+		action.AddHeaderAction == nil && action.BounceAction == nil && action.ConnectAction == nil &&
+		action.LambdaAction == nil && action.SNSAction == nil && action.StopAction == nil && action.WorkmailAction == nil
+}
+
+func lambdaSesLambdaActionOwned(action *sestypes.ReceiptAction, functionARN string) bool {
+	return action != nil && action.LambdaAction != nil &&
+		aws.ToString(action.LambdaAction.FunctionArn) == functionARN &&
+		action.LambdaAction.InvocationType == sestypes.InvocationTypeEvent && action.LambdaAction.TopicArn == nil &&
+		action.AddHeaderAction == nil && action.BounceAction == nil && action.ConnectAction == nil &&
+		action.S3Action == nil && action.SNSAction == nil && action.StopAction == nil && action.WorkmailAction == nil
+}
+
+func lambdaSesRuleOwned(ruleSetName string, rule *sestypes.ReceiptRule, functionARN string) bool {
+	return rule != nil && aws.ToString(rule.Name) == ruleSetName && rule.Enabled &&
+		rule.TlsPolicy == sestypes.TlsPolicyRequire && !rule.ScanEnabled &&
+		len(rule.Recipients) == 1 && rule.Recipients[0] == ruleSetName && len(rule.Actions) == 2 &&
+		lambdaSesS3ActionOwned(&rule.Actions[0]) && lambdaSesLambdaActionOwned(&rule.Actions[1], functionARN)
+}
 
 func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, preview bool) (string, error) {
 	if doDebug {
@@ -507,8 +595,10 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 	for _, trigger := range infraLambda.Trigger {
 		if trigger.Type == lambdaTriggerSes {
 			triggers = append(triggers, trigger)
-			break
 		}
+	}
+	if len(triggers) > 1 {
+		return "", errors.New("a Lambda can declare only one SES trigger because AWS permits only one active receipt rule set per region")
 	}
 	sid := ""
 	domains := []string{}
@@ -545,37 +635,15 @@ func LambdaEnsureTriggerSes(ctx context.Context, infraLambda *InfraLambda, previ
 			return "", err
 		}
 	}
-	rules, err := SesListReceiptRulesets(ctx)
-	if err != nil {
+	identity := lambdaIdentity{
+		name:         infraLambda.Name,
+		arn:          infraLambda.Arn,
+		infraSetName: infraLambda.infraSetName,
+		exists:       true,
+	}
+	if err := lambdaCleanupSESTriggers(ctx, SesClient(), identity, domains, preview); err != nil {
 		Logger.Println("error:", err)
 		return "", err
-	}
-	for _, rule := range rules {
-		out, err := SesClient().DescribeReceiptRuleSet(ctx, &ses.DescribeReceiptRuleSetInput{
-			RuleSetName: rule.Name,
-		})
-		if err != nil {
-			Logger.Println("error:", err)
-			return "", err
-		}
-		if len(out.Rules) != 1 {
-			err := fmt.Errorf("ses rule did not have exactly 1 rule: %s", *rule.Name)
-			Logger.Println("error:", err)
-			return "", err
-		}
-		if len(out.Rules[0].Actions) != 2 {
-			continue
-		}
-		if *out.Rules[0].Actions[1].LambdaAction.FunctionArn != infraLambda.Arn {
-			continue
-		}
-		if !slices.Contains(domains, *rule.Name) {
-			err := SesRmReceiptRuleset(ctx, *rule.Name, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return "", err
-			}
-		}
 	}
 	return sid, nil
 }
@@ -586,7 +654,7 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 		d.Start()
 		defer d.End()
 	}
-	ruleName := fmt.Sprintf("%s%strigger_ecr", infraLambda.Name, lambdaEventRuleNameSeparator)
+	ruleName := lambdaEventRuleName(infraLambda.Name, "trigger_ecr")
 	var permissionSids []string
 	var triggers []string
 	for _, trigger := range infraLambda.Trigger {
@@ -596,7 +664,11 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 		}
 	}
 	if len(triggers) > 0 {
-		var ruleArn string
+		ruleArn, err := lambdaEventRuleARN(infraLambda.Arn, ruleName)
+		if err != nil {
+			return nil, err
+		}
+		existingRule := false
 		out, err := EventsClient().DescribeRule(ctx, &eventbridge.DescribeRuleInput{
 			Name: aws.String(ruleName),
 		})
@@ -618,23 +690,22 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 					Logger.Println("error:", err)
 					return nil, err
 				}
-				ruleArn = *out.RuleArn
+				if out == nil || aws.ToString(out.RuleArn) != ruleArn {
+					return nil, fmt.Errorf("EventBridge PutRule returned ARN %q for %q, want %q", aws.ToString(out.RuleArn), ruleName, ruleArn)
+				}
 			}
 			Logger.Println(PreviewString(preview)+"created ecr rule:", ruleName)
 		} else {
-			if *out.EventPattern != lambdaEcrEventPattern {
-				err := fmt.Errorf("ecr rule misconfigured: %s %s != %s", ruleName, lambdaEcrEventPattern, *out.EventPattern)
+			existingRule = true
+			if aws.ToString(out.EventPattern) != lambdaEcrEventPattern {
+				err := fmt.Errorf("ecr rule misconfigured: %s %s != %s", ruleName, lambdaEcrEventPattern, aws.ToString(out.EventPattern))
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			ruleArn = *out.Arn
+			if aws.ToString(out.Arn) != ruleArn {
+				return nil, fmt.Errorf("EventBridge DescribeRule returned ARN %q for %q, want %q", aws.ToString(out.Arn), ruleName, ruleArn)
+			}
 		}
-		sid, err := lambdaEnsurePermission(ctx, infraLambda.Name, "events.amazonaws.com", ruleArn, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		permissionSids = append(permissionSids, sid)
 		var targets []eventbridgetypes.Target
 		err = Retry(ctx, func() error {
 			var err error
@@ -652,76 +723,58 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 		switch len(targets) {
 		case 0:
 			if !preview {
-				_, err := EventsClient().PutTargets(ctx, &eventbridge.PutTargetsInput{
-					Rule: aws.String(ruleName),
-					Targets: []eventbridgetypes.Target{{
-						Id:  aws.String("1"),
-						Arn: aws.String(infraLambda.Arn),
-					}},
-				})
-				if err != nil {
+				if err := lambdaPutEventTarget(ctx, EventsClient(), ruleName, infraLambda.Arn); err != nil {
 					Logger.Println("error:", err)
 					return nil, err
 				}
 			}
 			Logger.Println(PreviewString(preview)+"created ecr rule target:", ruleName, infraLambda.Arn)
 		case 1:
-			if *targets[0].Arn != infraLambda.Arn {
-				err := fmt.Errorf("ecr rule is misconfigured with unknown target: %s %s", infraLambda.Arn, *targets[0].Arn)
+			if aws.ToString(targets[0].Id) != "1" || aws.ToString(targets[0].Arn) != infraLambda.Arn {
+				err := fmt.Errorf("ecr rule is misconfigured with unknown target: %s %#v", infraLambda.Arn, targets[0])
 				Logger.Println("error:", err)
 				return nil, err
 			}
 		default:
 			var targetArns []string
 			for _, target := range targets {
-				targetArns = append(targetArns, *target.Arn)
+				targetArns = append(targetArns, aws.ToString(target.Arn))
 			}
 			err := fmt.Errorf("ecr rule is misconfigured with unknown targets: %s %v", infraLambda.Arn, targetArns)
 			Logger.Println("error:", err)
 			return nil, err
 		}
-	} else {
-		rules, err := EventsListRules(ctx, nil)
+		if existingRule {
+			if err := lambdaEnsureEventRuleTag(ctx, EventsClient(), ruleArn, infraLambda.infraSetName, preview); err != nil {
+				return nil, err
+			}
+		}
+		sid, err := lambdaEnsurePermission(ctx, infraLambda.Name, "events.amazonaws.com", ruleArn, preview)
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		for _, rule := range rules {
-			targets, err := EventsListRuleTargets(ctx, *rule.Name, nil)
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
-			}
-			for _, target := range targets {
-				if *target.Arn == infraLambda.Arn && rule.EventPattern != nil && *rule.EventPattern == lambdaEcrEventPattern {
-					if !preview {
-						ids := []string{}
-						for _, target := range targets {
-							ids = append(ids, *target.Id)
-						}
-						_, err := EventsClient().RemoveTargets(ctx, &eventbridge.RemoveTargetsInput{
-							Rule: rule.Name,
-							Ids:  ids,
-						})
-						if err != nil {
-							Logger.Println("error:", err)
-							return nil, err
-						}
-						_, err = EventsClient().DeleteRule(ctx, &eventbridge.DeleteRuleInput{
-							Name: rule.Name,
-						})
-						if err != nil {
-							Logger.Println("error:", err)
-							return nil, err
-						}
-					}
-					Logger.Println(PreviewString(preview)+"deleted ecr trigger:", infraLambda.Name)
-					break
-				}
-			}
-		}
+		permissionSids = append(permissionSids, sid)
+	}
+	identity := lambdaIdentity{
+		name:         infraLambda.Name,
+		arn:          infraLambda.Arn,
+		infraSetName: infraLambda.infraSetName,
+		exists:       true,
+	}
+	if err := lambdaCleanupECRTrigger(ctx, EventsClient(), identity, len(triggers) > 0, preview); err != nil {
+		Logger.Println("error:", err)
+		return nil, err
 	}
 	return permissionSids, nil
+}
+
+func lambdaS3SourceARN(functionARN, bucket string) (string, error) {
+	parsed, err := arn.Parse(functionARN)
+	if err != nil || parsed.Partition == "" || parsed.Service != "lambda" || bucket == "" {
+		return "", fmt.Errorf("invalid Lambda ARN %q or S3 bucket %q", functionARN, bucket)
+	}
+	return fmt.Sprintf("arn:%s:s3:::%s", parsed.Partition, bucket), nil
 }
 
 func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
@@ -742,8 +795,12 @@ func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, previe
 		}
 		bucket := trigger.Attr[0]
 		triggerBuckets = append(triggerBuckets, bucket)
+		sourceARN, err := lambdaS3SourceARN(infraLambda.Arn, bucket)
+		if err != nil {
+			return nil, err
+		}
 		sid, err := lambdaEnsurePermission(
-			ctx, infraLambda.Name, "s3.amazonaws.com", "arn:aws:s3:::"+bucket, preview,
+			ctx, infraLambda.Name, "s3.amazonaws.com", sourceARN, preview,
 		)
 		if err != nil {
 			Logger.Println("error:", err)
@@ -817,20 +874,9 @@ func lambdaPermissionSID(callerPrincipal, callerARN string) string {
 	return sid
 }
 
-func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, callerARN, sourceAccount string) error {
-	if doDebug {
-		d := &Debug{start: time.Now(), name: "lambdaAddPermission"}
-		d.Start()
-		defer d.End()
-	}
-	region := Region()
-	account, err := StsAccount(ctx)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
+func lambdaAddPermissionInput(functionARN, sid, callerPrincipal, callerARN, sourceAccount string) *lambda.AddPermissionInput {
 	input := &lambda.AddPermissionInput{
-		FunctionName: aws.String(fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", region, account, name)),
+		FunctionName: aws.String(functionARN),
 		StatementId:  aws.String(sid),
 		Action:       aws.String("lambda:InvokeFunction"),
 		Principal:    aws.String(callerPrincipal),
@@ -839,21 +885,43 @@ func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, caller
 	if sourceAccount != "" {
 		input.SourceAccount = aws.String(sourceAccount)
 	}
-	_, err = LambdaClient().AddPermission(ctx, input)
+	return input
+}
+
+func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, callerARN, sourceAccount string) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaAddPermission"}
+		d.Start()
+		defer d.End()
+	}
+	functionARN, err := LambdaArn(ctx, name)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	if !lambdaFunctionARNMatches(functionARN, Region(), name) {
+		return fmt.Errorf("invalid Lambda function ARN %q", functionARN)
+	}
+	_, err = LambdaClient().AddPermission(ctx, lambdaAddPermissionInput(
+		functionARN, sid, callerPrincipal, callerARN, sourceAccount,
+	))
 	return err
 }
 
 func lambdaSourceAccountPermissionMatches(statement IamStatementEntry, sid, functionARN, callerPrincipal, callerARN, sourceAccount string) (bool, error) {
+	condition := map[string]any{
+		"ArnLike": map[string]any{"AWS:SourceArn": callerARN},
+	}
+	if sourceAccount != "" {
+		condition["StringEquals"] = map[string]any{"AWS:SourceAccount": sourceAccount}
+	}
 	expected := IamStatementEntry{
 		Sid:       sid,
 		Effect:    "Allow",
 		Principal: map[string]any{"Service": callerPrincipal},
 		Action:    "lambda:InvokeFunction",
 		Resource:  functionARN,
-		Condition: map[string]any{
-			"ArnLike":      map[string]any{"AWS:SourceArn": callerARN},
-			"StringEquals": map[string]any{"AWS:SourceAccount": sourceAccount},
-		},
+		Condition: condition,
 	}
 	actualPolicy := IamPolicyDocument{Version: "2012-10-17", Statement: []IamStatementEntry{statement}}
 	expectedPolicy := IamPolicyDocument{Version: "2012-10-17", Statement: []IamStatementEntry{expected}}
@@ -871,9 +939,6 @@ func lambdaPermissionReconciliation(policyString, sid, functionARN, callerPrinci
 	for _, statement := range policy.Statement {
 		if statement.Sid != sid {
 			continue
-		}
-		if sourceAccount == "" {
-			return false, false, nil
 		}
 		matches, err := lambdaSourceAccountPermissionMatches(statement, sid, functionARN, callerPrincipal, callerARN, sourceAccount)
 		if err != nil {
@@ -909,12 +974,14 @@ func lambdaEnsurePermissionWithSourceAccount(ctx context.Context, name, callerPr
 		return "", err
 	}
 	functionARN := ""
-	if sourceAccount != "" && policyString != "" {
-		account, err := StsAccount(ctx)
+	if policyString != "" {
+		functionARN, err = LambdaArn(ctx, name)
 		if err != nil {
 			return "", err
 		}
-		functionARN = fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", Region(), account, name)
+		if !lambdaFunctionARNMatches(functionARN, Region(), name) {
+			return "", fmt.Errorf("invalid Lambda function ARN %q", functionARN)
+		}
 	}
 	needsUpdate, removeExisting, err := lambdaPermissionReconciliation(policyString, sid, functionARN, callerPrincipal, callerARN, sourceAccount)
 	if err != nil {
@@ -1016,29 +1083,21 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 		Logger.Println(PreviewString(preview)+"created api route:", name)
 		return "", nil
 	}
-	account, err := StsAccount(ctx)
+	lambdaName, sourceARN, err := lambdaAPIPermissionIdentity(arnLambda, aws.ToString(api.ApiId))
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	var integrationId string
-	var getIntegrationsOut *apigatewayv2.GetIntegrationsOutput
+	var integrationID string
+	var integrations []apitypes.Integration
 	if !(preview && api == nil) {
-		getIntegrationsOut, err = ApiClient().GetIntegrations(ctx, &apigatewayv2.GetIntegrationsInput{
-			ApiId:      api.ApiId,
-			MaxResults: aws.String(fmt.Sprint(500)),
-		})
+		integrations, err = lambdaAPIIntegrations(ctx, ApiClient(), api.ApiId)
 		if err != nil {
 			Logger.Println("error:", err)
 			return "", err
 		}
-		if len(getIntegrationsOut.Items) == 500 {
-			err := fmt.Errorf("too many integrations for %s %s", name, *api.ApiId)
-			Logger.Println("error:", err)
-			return "", err
-		}
 	}
-	switch len(getIntegrationsOut.Items) {
+	switch len(integrations) {
 	case 0:
 		if !preview {
 			out, err := ApiClient().CreateIntegration(ctx, &apigatewayv2.CreateIntegrationInput{
@@ -1054,39 +1113,48 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 				Logger.Println("error:", err)
 				return "", err
 			}
-			integrationId = *out.IntegrationId
+			if out == nil || out.IntegrationId == nil {
+				return "", fmt.Errorf("API Gateway CreateIntegration returned no integration ID for %q", name)
+			}
+			integrationID = aws.ToString(out.IntegrationId)
 		}
 		Logger.Println(PreviewString(preview)+"created api integration:", name)
 	case 1:
-		integration := getIntegrationsOut.Items[0]
-		integrationId = *integration.IntegrationId
+		integration := &integrations[0]
+		if !lambdaAPIIntegrationMatches(integration, arnLambda) {
+			return "", fmt.Errorf("api integration target misconfigured for %s %s: %q != %q", name, aws.ToString(api.ApiId), aws.ToString(integration.IntegrationUri), arnLambda)
+		}
+		integrationID = aws.ToString(integration.IntegrationId)
+		if integrationID == "" {
+			return "", fmt.Errorf("api integration for %s %s has no ID", name, aws.ToString(api.ApiId))
+		}
 		if integration.ConnectionType != apitypes.ConnectionTypeInternet {
-			err := fmt.Errorf("api connection type misconfigured for %s %s: %s != %s", name, *api.ApiId, integration.ConnectionType, apitypes.ConnectionTypeInternet)
+			err := fmt.Errorf("api connection type misconfigured for %s %s: %s != %s", name, aws.ToString(api.ApiId), integration.ConnectionType, apitypes.ConnectionTypeInternet)
 			Logger.Println("error:", err)
 			return "", err
 		}
 		if integration.IntegrationType != apitypes.IntegrationTypeAwsProxy {
-			err := fmt.Errorf("api integration type misconfigured for %s %s: %s != %s", name, *api.ApiId, integration.IntegrationType, apitypes.IntegrationTypeAwsProxy)
+			err := fmt.Errorf("api integration type misconfigured for %s %s: %s != %s", name, aws.ToString(api.ApiId), integration.IntegrationType, apitypes.IntegrationTypeAwsProxy)
 			Logger.Println("error:", err)
 			return "", err
 		}
-		if *integration.IntegrationMethod != lambdaIntegrationMethod {
-			err := fmt.Errorf("api integration method misconfigured for %s %s: %s != %s", name, *api.ApiId, *integration.IntegrationMethod, lambdaIntegrationMethod)
+		if aws.ToString(integration.IntegrationMethod) != lambdaIntegrationMethod {
+			err := fmt.Errorf("api integration method misconfigured for %s %s: %s != %s", name, aws.ToString(api.ApiId), aws.ToString(integration.IntegrationMethod), lambdaIntegrationMethod)
 			Logger.Println("error:", err)
 			return "", err
 		}
-		if *integration.TimeoutInMillis != timeoutMillis {
-			err := fmt.Errorf("api timeout misconfigured for %s %s: %d != %d", name, *api.ApiId, *integration.TimeoutInMillis, timeoutMillis)
+		if aws.ToInt32(integration.TimeoutInMillis) != timeoutMillis {
+			err := fmt.Errorf("api timeout misconfigured for %s %s: %d != %d", name, aws.ToString(api.ApiId), aws.ToInt32(integration.TimeoutInMillis), timeoutMillis)
 			Logger.Println("error:", err)
 			return "", err
 		}
-		if *integration.PayloadFormatVersion != lambdaPayloadVersion {
-			err := fmt.Errorf("api payload format version misconfigured for %s %s: %s != %s", name, *api.ApiId, *integration.PayloadFormatVersion, lambdaPayloadVersion)
+		if aws.ToString(integration.PayloadFormatVersion) != lambdaPayloadVersion {
+			err := fmt.Errorf("api payload format version misconfigured for %s %s: %s != %s", name, aws.ToString(api.ApiId), aws.ToString(integration.PayloadFormatVersion), lambdaPayloadVersion)
 			Logger.Println("error:", err)
 			return "", err
 		}
 	default:
-		err := fmt.Errorf("api has more than one integration: %s %v", name, Pformat(getIntegrationsOut.Items))
+		err := fmt.Errorf("api has more than one integration: %s %v", name, Pformat(integrations))
 		Logger.Println("error:", err)
 		return "", err
 	}
@@ -1155,7 +1223,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 			if !preview {
 				_, err := ApiClient().CreateRoute(ctx, &apigatewayv2.CreateRouteInput{
 					ApiId:             api.ApiId,
-					Target:            aws.String(fmt.Sprintf("integrations/%s", integrationId)),
+					Target:            aws.String(fmt.Sprintf("integrations/%s", integrationID)),
 					RouteKey:          aws.String(routeKey),
 					AuthorizationType: apitypes.AuthorizationType(lambdaAuthorizationType),
 					ApiKeyRequired:    aws.Bool(false),
@@ -1168,8 +1236,8 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 			Logger.Println(PreviewString(preview)+"created api route:", name, routeKey)
 		case 1:
 			route := routes[0]
-			if *route.Target != fmt.Sprintf("integrations/%s", integrationId) {
-				err := fmt.Errorf("api route target misconfigured for %s %s: %s != %s", name, *api.ApiId, *route.Target, fmt.Sprintf("integrations/%s", integrationId))
+			if aws.ToString(route.Target) != fmt.Sprintf("integrations/%s", integrationID) {
+				err := fmt.Errorf("api route target misconfigured for %s %s: %s != %s", name, aws.ToString(api.ApiId), aws.ToString(route.Target), fmt.Sprintf("integrations/%s", integrationID))
 				Logger.Println("error:", err)
 				return "", err
 			}
@@ -1194,9 +1262,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 			return "", err
 		}
 	}
-	arn := fmt.Sprintf("arn:aws:execute-api:%s:%s:%s/*/*", Region(), account, *api.ApiId)
-	lambdaName := Last(strings.Split(arnLambda, ":"))
-	sid, err := lambdaEnsurePermission(ctx, lambdaName, "apigateway.amazonaws.com", arn, preview)
+	sid, err := lambdaEnsurePermission(ctx, lambdaName, "apigateway.amazonaws.com", sourceARN, preview)
 	if err != nil {
 		Logger.Println("error:", err)
 		return "", err
@@ -1290,8 +1356,8 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, 
 				return err
 			}
 			if unexpectedErr != nil {
-				Logger.Println("error:", err)
-				return err
+				Logger.Println("error:", unexpectedErr)
+				return unexpectedErr
 			}
 		}
 		Logger.Println(PreviewString(preview)+"created api domain:", name, domain)
@@ -1518,12 +1584,14 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 	hasWebsocket := false
 	domainApi := ""
 	domainWebsocket := ""
-	account, err := StsAccount(ctx)
-	if err != nil {
-		Logger.Println("error:", err)
-		return nil, err
+	arnLambda := infraLambda.Arn
+	if arnLambda == "" {
+		identity, err := lambdaResolveIdentity(ctx, infraLambda.Name, infraLambda.infraSetName)
+		if err != nil {
+			return nil, err
+		}
+		arnLambda = identity.arn
 	}
-	arnLambda := fmt.Sprintf("arn:aws:lambda:%s:%s:function:%s", Region(), account, infraLambda.Name)
 	count := 0
 	for _, trigger := range infraLambda.Trigger {
 		var protocolType apitypes.ProtocolType
@@ -1581,6 +1649,12 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 				Logger.Println("error:", err)
 				return nil, err
 			}
+			if api != nil {
+				if err := lambdaEnsureAPITag(ctx, ApiClient(), api, arnLambda, infraLambda.infraSetName, preview); err != nil {
+					Logger.Println("error:", err)
+					return nil, err
+				}
+			}
 			permissionSids = append(permissionSids, sid)
 			for _, attr := range trigger.Attr {
 				k, v, err := SplitOnce(attr, "=")
@@ -1626,14 +1700,17 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 		var apiEnsured bool
 		var apiName string
 		var apiDomain string
+		var protocolType apitypes.ProtocolType
 		if kind == lambdaTriggerApi {
 			apiName = infraLambda.Name
 			apiDomain = domainApi
 			apiEnsured = hasApi
+			protocolType = apitypes.ProtocolTypeHttp
 		} else {
 			apiName = infraLambda.Name + LambdaWebsocketSuffix
 			apiDomain = domainWebsocket
 			apiEnsured = hasWebsocket
+			protocolType = apitypes.ProtocolTypeWebsocket
 		}
 		api, err := Api(ctx, apiName)
 		if err != nil && err.Error() != ErrApiNotFound {
@@ -1641,6 +1718,15 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 			return nil, err
 		}
 		if api != nil {
+			if !apiEnsured {
+				integrations, err := lambdaAPIIntegrations(ctx, ApiClient(), api.ApiId)
+				if err != nil {
+					return nil, err
+				}
+				if !lambdaApiOwned(api, integrations, protocolType, arnLambda, infraLambda.infraSetName) {
+					continue
+				}
+			}
 			time.Sleep(time.Duration(count) * 5 * time.Second) // very low api limits on apigateway delete domain, sleep here is we are adding more than 1
 			count++
 			domains, err := ApiListDomains(ctx)
@@ -1653,7 +1739,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 				if *domain.DomainName == apiDomain {
 					continue
 				}
-				err := lambdaTriggerApiDeleteDns(ctx, apiName, api, domain, preview)
+				err := lambdaTriggerApiDeleteDns(ctx, apiName, api, domain, true, preview)
 				if err != nil {
 					Logger.Println("error:", err)
 					return nil, err
@@ -1691,7 +1777,7 @@ func lambdaTriggerApiDeleteApi(ctx context.Context, name string, api *apitypes.A
 	return nil
 }
 
-func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apitypes.Api, domain apitypes.DomainName, preview bool) error {
+func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apitypes.Api, domain apitypes.DomainName, deleteDomain bool, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaTriggerApiDeleteDns"}
 		d.Start()
@@ -1705,12 +1791,38 @@ func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apitypes.A
 		Logger.Println("error:", err)
 		return err
 	}
-	if len(mappings.Items) == 500 {
-		err := fmt.Errorf("too many api mappings for domain %s", *domain.DomainName)
+	if mappings.NextToken != nil {
+		err := fmt.Errorf("too many api mappings for domain %s", aws.ToString(domain.DomainName))
 		Logger.Println("error:", err)
 		return err
 	}
+	var matchingMappings []apitypes.ApiMapping
 	for _, mapping := range mappings.Items {
+		if aws.ToString(mapping.ApiId) == aws.ToString(api.ApiId) {
+			matchingMappings = append(matchingMappings, mapping)
+		}
+	}
+	if len(matchingMappings) == 0 {
+		return nil
+	}
+	if !deleteDomain || len(mappings.Items) != 1 {
+		for _, mapping := range matchingMappings {
+			if mapping.ApiMappingId == nil {
+				return fmt.Errorf("API mapping for domain %q has no ID", aws.ToString(domain.DomainName))
+			}
+			if !preview {
+				if _, err := ApiClient().DeleteApiMapping(ctx, &apigatewayv2.DeleteApiMappingInput{
+					ApiMappingId: mapping.ApiMappingId,
+					DomainName:   domain.DomainName,
+				}); err != nil {
+					return err
+				}
+			}
+			Logger.Println(PreviewString(preview)+"deleted api mapping:", name, aws.ToString(domain.DomainName))
+		}
+		return nil
+	}
+	for _, mapping := range matchingMappings {
 		if *mapping.ApiId == *api.ApiId {
 			zones, err := Route53ListZones(ctx)
 			if err != nil {
@@ -1771,8 +1883,8 @@ func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apitypes.A
 					return err
 				}
 				if unexpectedErr != nil {
-					Logger.Println("error:", err)
-					return err
+					Logger.Println("error:", unexpectedErr)
+					return unexpectedErr
 				}
 			}
 			Logger.Println(PreviewString(preview)+"deleted api domain:", name, *domain.DomainName)
@@ -1781,27 +1893,27 @@ func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apitypes.A
 	return nil
 }
 
+func lambdaEventRuleName(name, suffix string) string {
+	candidate := name + lambdaEventRuleNameSeparator + suffix
+	if len(candidate) <= 64 {
+		return candidate
+	}
+	hash := sha256Hex([]byte(candidate))[:16]
+	maxNameLen := 64 - len(lambdaEventRuleNameSeparator) - len(hash)
+	if len(name) > maxNameLen {
+		name = name[:maxNameLen]
+	}
+	return name + lambdaEventRuleNameSeparator + hash
+}
+
 func lambdaScheduleName(name, schedule string) string {
-	return name + lambdaEventRuleNameSeparator + strings.ReplaceAll(base64.StdEncoding.EncodeToString([]byte(schedule)), "=", "")
+	return lambdaEventRuleName(name, base64.RawURLEncoding.EncodeToString([]byte(schedule)))
 }
 
 func lambdaScheduleTargetMatches(infraLambda *InfraLambda, rule eventbridgetypes.Rule, target eventbridgetypes.Target) bool {
-	if target.Arn == nil {
-		return false
-	}
-	if infraLambda.Arn != "" {
-		return *target.Arn == infraLambda.Arn
-	}
-	if rule.Name == nil || rule.ScheduleExpression == nil ||
-		*rule.Name != lambdaScheduleName(infraLambda.Name, *rule.ScheduleExpression) {
-		return false
-	}
-	parsed, err := arn.Parse(*target.Arn)
-	if err != nil || parsed.Service != "lambda" {
-		return false
-	}
-	resource := strings.Split(parsed.Resource, ":")
-	return len(resource) >= 2 && resource[0] == "function" && resource[1] == infraLambda.Name
+	return rule.Name != nil && rule.ScheduleExpression != nil &&
+		*rule.Name == lambdaScheduleName(infraLambda.Name, *rule.ScheduleExpression) &&
+		aws.ToString(target.Id) == "1" && aws.ToString(target.Arn) == infraLambda.Arn
 }
 
 func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
@@ -1819,8 +1931,12 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 	}
 	if len(triggers) > 0 {
 		for _, schedule := range triggers {
-			var scheduleArn string
 			scheduleName := lambdaScheduleName(infraLambda.Name, schedule)
+			scheduleArn, err := lambdaEventRuleARN(infraLambda.Arn, scheduleName)
+			if err != nil {
+				return nil, err
+			}
+			existingRule := false
 			out, err := EventsClient().DescribeRule(ctx, &eventbridge.DescribeRuleInput{
 				Name: aws.String(scheduleName),
 			})
@@ -1842,23 +1958,22 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 						Logger.Println("error:", err)
 						return nil, err
 					}
-					scheduleArn = *out.RuleArn
+					if out == nil || aws.ToString(out.RuleArn) != scheduleArn {
+						return nil, fmt.Errorf("EventBridge PutRule returned ARN %q for %q, want %q", aws.ToString(out.RuleArn), scheduleName, scheduleArn)
+					}
 				}
 				Logger.Println(PreviewString(preview)+"created cloudwatch rule:", scheduleName, schedule)
 			} else {
-				if *out.ScheduleExpression != schedule {
-					err := fmt.Errorf("cloudwatch rule misconfigured: %s %s != %s", scheduleName, schedule, *out.ScheduleExpression)
+				if aws.ToString(out.ScheduleExpression) != schedule {
+					err := fmt.Errorf("cloudwatch rule misconfigured: %s %s != %s", scheduleName, schedule, aws.ToString(out.ScheduleExpression))
 					Logger.Println("error:", err)
 					return nil, err
 				}
-				scheduleArn = *out.Arn
+				existingRule = true
+				if aws.ToString(out.Arn) != scheduleArn {
+					return nil, fmt.Errorf("EventBridge DescribeRule returned ARN %q for %q, want %q", aws.ToString(out.Arn), scheduleName, scheduleArn)
+				}
 			}
-			sid, err := lambdaEnsurePermission(ctx, infraLambda.Name, "events.amazonaws.com", scheduleArn, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
-			}
-			permissionSids = append(permissionSids, sid)
 			var targets []eventbridgetypes.Target
 			err = Retry(ctx, func() error {
 				var err error
@@ -1876,76 +1991,49 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 			switch len(targets) {
 			case 0:
 				if !preview {
-					_, err := EventsClient().PutTargets(ctx, &eventbridge.PutTargetsInput{
-						Rule: aws.String(scheduleName),
-						Targets: []eventbridgetypes.Target{{
-							Id:  aws.String("1"),
-							Arn: aws.String(infraLambda.Arn),
-						}},
-					})
-					if err != nil {
+					if err := lambdaPutEventTarget(ctx, EventsClient(), scheduleName, infraLambda.Arn); err != nil {
 						Logger.Println("error:", err)
 						return nil, err
 					}
 				}
 				Logger.Println(PreviewString(preview)+"created cloudwatch rule target:", scheduleName, infraLambda.Arn)
 			case 1:
-				if *targets[0].Arn != infraLambda.Arn {
-					err := fmt.Errorf("cloudwatch rule is misconfigured with unknown target: %s != %s", infraLambda.Arn, *targets[0].Arn)
+				if aws.ToString(targets[0].Id) != "1" || aws.ToString(targets[0].Arn) != infraLambda.Arn {
+					err := fmt.Errorf("cloudwatch rule is misconfigured with unknown target: %s %#v", infraLambda.Arn, targets[0])
 					Logger.Println("error:", err)
 					return nil, err
 				}
 			default:
 				var targetArns []string
 				for _, target := range targets {
-					targetArns = append(targetArns, *target.Arn)
+					targetArns = append(targetArns, aws.ToString(target.Arn))
 				}
 				err := fmt.Errorf("cloudwatch rule is misconfigured with unknown targets: %s %v", infraLambda.Arn, targetArns)
 				Logger.Println("error:", err)
 				return nil, err
 			}
+			if existingRule {
+				if err := lambdaEnsureEventRuleTag(ctx, EventsClient(), scheduleArn, infraLambda.infraSetName, preview); err != nil {
+					return nil, err
+				}
+			}
+			sid, err := lambdaEnsurePermission(ctx, infraLambda.Name, "events.amazonaws.com", scheduleArn, preview)
+			if err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			permissionSids = append(permissionSids, sid)
 		}
 	}
-	rules, err := EventsListRules(ctx, nil)
-	if err != nil {
+	identity := lambdaIdentity{
+		name:         infraLambda.Name,
+		arn:          infraLambda.Arn,
+		infraSetName: infraLambda.infraSetName,
+		exists:       true,
+	}
+	if err := lambdaCleanupScheduleTriggers(ctx, EventsClient(), identity, triggers, preview); err != nil {
 		Logger.Println("error:", err)
 		return nil, err
-	}
-	for _, rule := range rules {
-		targets, err := EventsListRuleTargets(ctx, *rule.Name, nil)
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		for _, target := range targets {
-			if lambdaScheduleTargetMatches(infraLambda, rule, target) && rule.ScheduleExpression != nil && !slices.Contains(triggers, *rule.ScheduleExpression) {
-				if !preview {
-					ids := []string{}
-					for _, target := range targets {
-						if target.Id != nil {
-							ids = append(ids, *target.Id)
-						}
-					}
-					_, err := EventsClient().RemoveTargets(ctx, &eventbridge.RemoveTargetsInput{
-						Rule: rule.Name,
-						Ids:  ids,
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return nil, err
-					}
-					_, err = EventsClient().DeleteRule(ctx, &eventbridge.DeleteRuleInput{
-						Name: rule.Name,
-					})
-					if err != nil {
-						Logger.Println("error:", err)
-						return nil, err
-					}
-				}
-				Logger.Println(PreviewString(preview)+"deleted schedule trigger:", infraLambda.Name)
-				break
-			}
-		}
 	}
 	return permissionSids, nil
 }
@@ -3270,7 +3358,22 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		}
 	}
 	if getFunctionOut.Configuration != nil {
-		infraLambda.Arn = *getFunctionOut.Configuration.FunctionArn
+		infraLambda.Arn = aws.ToString(getFunctionOut.Configuration.FunctionArn)
+		if !lambdaFunctionARNMatches(infraLambda.Arn, Region(), infraLambda.Name) {
+			return fmt.Errorf("invalid Lambda function ARN %q", infraLambda.Arn)
+		}
+	} else if expectedErr != nil && preview {
+		callerARN, err := StsArn(ctx)
+		if err != nil {
+			return err
+		}
+		identity, err := lambdaIdentityFromCallerARN(infraLambda.Name, infraLambda.infraSetName, Region(), callerARN)
+		if err != nil {
+			return err
+		}
+		infraLambda.Arn = identity.arn
+	} else {
+		return fmt.Errorf("lambda %q returned no function configuration", infraLambda.Name)
 	}
 	var permissionSids []string
 	sids, err := LambdaEnsureTriggerApi(ctx, infraLambda, preview)
@@ -3605,63 +3708,30 @@ func LambdaDelete(ctx context.Context, name string, preview bool) error {
 			continue
 		}
 		infraLambda.Name = lambdaName
-		infraLambda.Arn, _ = LambdaArn(ctx, lambdaName)
+		identity, err := lambdaResolveIdentity(ctx, lambdaName, infraLambda.infraSetName)
+		if err != nil {
+			return err
+		}
+		if err := lambdaCleanupExternalTriggers(ctx, identity, preview); err != nil {
+			return err
+		}
+		infraLambda.Arn = identity.arn
 		infraLambda.Trigger = nil
-		_, err := LambdaEnsureTriggerApi(ctx, infraLambda, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		_, err = LambdaEnsureTriggerSes(ctx, infraLambda, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		_, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		if infraLambda.Arn != "" {
-			_, err := LambdaEnsureTriggerS3(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
+		if identity.exists {
+			if err := LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview); err != nil {
 				return err
 			}
-			_, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			_, err = LambdaEnsureTriggerAlarm(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			err = LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			err = LambdaEnsureTriggerSQS(ctx, infraLambda, preview)
-			if err != nil {
-				Logger.Println("error:", err)
+			if err := LambdaEnsureTriggerSQS(ctx, infraLambda, preview); err != nil {
 				return err
 			}
 		}
-		err = IamDeleteRole(ctx, lambdaName, preview)
-		if err != nil {
-			Logger.Println("error:", err)
+		if err := IamDeleteRole(ctx, lambdaName, preview); err != nil {
 			return err
 		}
-		err = LambdaDeleteFunction(ctx, lambdaName, preview)
-		if err != nil {
-			Logger.Println("error:", err)
+		if err := LambdaDeleteFunction(ctx, lambdaName, preview); err != nil {
 			return err
 		}
-		err = LogsDeleteGroup(ctx, "/aws/lambda/"+lambdaName, preview)
-		if err != nil {
-			Logger.Println("error:", err)
+		if err := LogsDeleteGroup(ctx, "/aws/lambda/"+lambdaName, preview); err != nil {
 			return err
 		}
 	}

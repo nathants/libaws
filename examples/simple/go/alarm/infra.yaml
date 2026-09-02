@@ -9,11 +9,10 @@ lambda:
     policy:
       - AWSLambdaBasicExecutionRole
     trigger:
-      - type: schedule
+      - type: alarm
         attr:
-          - rate(1 minute)
-      - type: schedule
-        attr:
-          - cron(0 12 * * ? *)
+          - name=test-alarm-invocations-${uid}
+          - lambda-invocations=test-lambda-${uid}
+          - at-least=1/minute
     env:
       - uid=${uid}

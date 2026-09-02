@@ -1,5 +1,6 @@
 # type: ignore
 import pytest
+import subprocess
 import sys
 import uuid
 import shell
@@ -7,6 +8,14 @@ import yaml
 import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+
+
+def captured(command):
+    result = subprocess.run(command, shell=True, text=True, capture_output=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    assert result.returncode == 0, result
+    return result.stdout + result.stderr
 
 
 def test():
@@ -52,8 +61,9 @@ def test():
     assert infra == expected, infra
     run(f"libaws sqs-send test-queue-{uid} {uid}")
     assert uid == run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "thanks for:" | tail -n1').split()[-1]
-    run("libaws infra-rm infra.yaml --preview")
+    preview = captured("libaws infra-rm infra.yaml --preview")
     run("libaws infra-rm infra.yaml")
+    assert "deleted trigger:" in preview, preview
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
     assert infra["infraset"] == {"none": None}, infra
 

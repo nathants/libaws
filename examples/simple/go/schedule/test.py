@@ -29,8 +29,8 @@ def test():
                         "attr": ["timeout=60"],
                         "policy": ["AWSLambdaBasicExecutionRole"],
                         "trigger": [
-                            {"attr": ["rate(1 " "minute)"],
-                             "type": "schedule"}
+                            {"attr": ["rate(1 minute)"], "type": "schedule"},
+                            {"attr": ["cron(0 12 * * ? *)"], "type": "schedule"},
                         ],
                         "env": [f"uid={uid}"],
                     }
@@ -40,10 +40,16 @@ def test():
     }
     assert infra == expected, infra
     assert uid == run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1").split()[-1]
+    run(
+        "LIBAWS_INTEGRATION=1 "
+        f"LIBAWS_LAMBDA_DELETE_TEST_FUNCTION=test-lambda-{uid} "
+        "go test ../../../../lib -run '^TestLambdaManualDeleteIntegration$' -count=1 -v"
+    )
     run("libaws infra-rm infra.yaml --preview")
     run("libaws infra-rm infra.yaml")
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
     assert infra["infraset"] == {"none": None}, infra
+    assert f"test-lambda-{uid}" not in run("libaws events-ls-rules")
 
 
 if __name__ == "__main__":

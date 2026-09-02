@@ -1,0 +1,22 @@
+name: test-infraset-${uid}
+
+s3:
+  test-ses-bucket-${uid}:
+    attr:
+      - allow_put=ses.amazonaws.com
+
+lambda:
+  test-lambda-${uid}:
+    entrypoint: main.go
+    attr:
+      - timeout=60
+    policy:
+      - AWSLambdaBasicExecutionRole
+    env:
+      - uid=${uid}
+    trigger:
+      - type: ses
+        attr:
+          - dns=test-ses-${uid}.example.com
+          - bucket=test-ses-bucket-${uid}
+          - prefix=emails/

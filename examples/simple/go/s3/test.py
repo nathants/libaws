@@ -1,5 +1,6 @@
 # type: ignore
 import pytest
+import subprocess
 import sys
 import uuid
 import shell
@@ -7,6 +8,14 @@ import yaml
 import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+
+
+def captured(command):
+    result = subprocess.run(command, shell=True, text=True, capture_output=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    assert result.returncode == 0, result
+    return result.stdout + result.stderr
 
 
 def test():
@@ -39,8 +48,14 @@ def test():
     assert infra == expected, infra
     run(f"echo | libaws s3-put s3://test-bucket-{uid}/{uid}")
     assert uid == run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1").split()[-1]
-    run("libaws infra-rm infra.yaml --preview")
+    run(
+        "LIBAWS_INTEGRATION=1 "
+        f"LIBAWS_LAMBDA_DELETE_TEST_FUNCTION=test-lambda-{uid} "
+        "go test ../../../../lib -run '^TestLambdaManualDeleteIntegration$' -count=1 -v"
+    )
+    preview = captured("libaws infra-rm infra.yaml --preview")
     run("libaws infra-rm infra.yaml")
+    assert "deleted bucket notification:" in preview, preview
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
     assert infra["infraset"] == {"none": None}, infra
 

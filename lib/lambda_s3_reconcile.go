@@ -37,6 +37,10 @@ func lambdaAWSClientForBucket(ctx context.Context, bucket string) (lambdaS3Notif
 	return S3ClientBucketRegion(ctx, bucket)
 }
 
+func lambdaS3NotificationID(functionName string) string {
+	return "libaws-" + functionName
+}
+
 func lambdaEnsureDesiredS3Trigger(
 	ctx context.Context,
 	clientForBucket lambdaS3ClientForBucket,
@@ -69,22 +73,40 @@ func lambdaEnsureDesiredS3Trigger(
 			LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{},
 		}
 	}
+	desiredID := lambdaS3NotificationID(infraLambda.Name)
 	var existingEvents []s3types.Event
+	managedConfigurationCount := 0
+	managedTargetMatches := false
+	managedFilterMatches := false
 	for _, conf := range out.LambdaFunctionConfigurations {
-		if aws.ToString(conf.LambdaFunctionArn) == infraLambda.Arn {
+		if aws.ToString(conf.Id) == desiredID {
 			existingEvents = conf.Events
+			managedTargetMatches = aws.ToString(conf.LambdaFunctionArn) == infraLambda.Arn
+			managedFilterMatches = conf.Filter == nil
+			managedConfigurationCount++
+			continue
+		}
+		if aws.ToString(conf.LambdaFunctionArn) == infraLambda.Arn {
+			return fmt.Errorf("S3 bucket %q already has an unowned notification for Lambda %q", bucket, infraLambda.Name)
 		}
 	}
-	if slices.Equal(existingEvents, events) {
+	if managedConfigurationCount > 1 {
+		return fmt.Errorf("S3 bucket %q has duplicate libaws notifications for Lambda %q", bucket, infraLambda.Name)
+	}
+	if managedConfigurationCount == 1 && !managedTargetMatches {
+		return fmt.Errorf("S3 bucket %q has a libaws notification ID collision for Lambda %q", bucket, infraLambda.Name)
+	}
+	if managedConfigurationCount == 1 && managedFilterMatches && slices.Equal(existingEvents, events) {
 		return nil
 	}
 	var configurations []s3types.LambdaFunctionConfiguration
 	for _, conf := range out.LambdaFunctionConfigurations {
-		if aws.ToString(conf.LambdaFunctionArn) != infraLambda.Arn {
+		if aws.ToString(conf.Id) != desiredID {
 			configurations = append(configurations, conf)
 		}
 	}
 	configurations = append(configurations, s3types.LambdaFunctionConfiguration{
+		Id:                aws.String(desiredID),
 		LambdaFunctionArn: aws.String(infraLambda.Arn),
 		Events:            events,
 	})
@@ -150,8 +172,9 @@ func lambdaRemoveStaleS3Triggers(
 			return fmt.Errorf("get S3 bucket notification configuration for %q returned nil output", name)
 		}
 		var configurations []s3types.LambdaFunctionConfiguration
+		desiredID := lambdaS3NotificationID(infraLambda.Name)
 		for _, conf := range out.LambdaFunctionConfigurations {
-			if aws.ToString(conf.LambdaFunctionArn) != infraLambda.Arn {
+			if aws.ToString(conf.LambdaFunctionArn) != infraLambda.Arn || aws.ToString(conf.Id) != desiredID {
 				configurations = append(configurations, conf)
 			} else {
 				Logger.Println(PreviewString(preview)+"deleted bucket notification:", infraLambda.Name, name)

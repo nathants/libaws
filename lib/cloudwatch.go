@@ -43,7 +43,10 @@ type CloudwatchAlarm struct {
 	DatapointsToAlarm                  *int32                     `json:",omitempty"`
 	Dimensions                         []cwtypes.Dimension        `json:",omitempty"`
 	EvaluateLowSampleCountPercentile   *string                    `json:",omitempty"`
+	EvaluationCriteria                 cwtypes.EvaluationCriteria `json:",omitempty"`
+	EvaluationInterval                 *int32                     `json:",omitempty"`
 	EvaluationPeriods                  *int32                     `json:",omitempty"`
+	EvaluationWindow                   cwtypes.EvaluationWindow   `json:",omitempty"`
 	ExtendedStatistic                  *string                    `json:",omitempty"`
 	InsufficientDataActions            []string                   `json:",omitempty"`
 	MetricName                         *string                    `json:",omitempty"`
@@ -73,7 +76,10 @@ func (a *CloudwatchAlarm) FromAlarm(alarm *cwtypes.MetricAlarm) {
 	a.DatapointsToAlarm = alarm.DatapointsToAlarm
 	a.Dimensions = alarm.Dimensions
 	a.EvaluateLowSampleCountPercentile = alarm.EvaluateLowSampleCountPercentile
+	a.EvaluationCriteria = alarm.EvaluationCriteria
+	a.EvaluationInterval = alarm.EvaluationInterval
 	a.EvaluationPeriods = alarm.EvaluationPeriods
+	a.EvaluationWindow = alarm.EvaluationWindow
 	a.ExtendedStatistic = alarm.ExtendedStatistic
 	a.InsufficientDataActions = alarm.InsufficientDataActions
 	a.MetricName = alarm.MetricName

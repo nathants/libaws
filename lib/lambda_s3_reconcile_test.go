@@ -136,6 +136,7 @@ func TestLambdaRemoveStaleS3TriggersToleratesDeletionBeforeWrite(t *testing.T) {
 	client := &fakeLambdaS3NotificationClient{
 		getOut: &s3.GetBucketNotificationConfigurationOutput{
 			LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{{
+				Id:                aws.String(lambdaS3NotificationID("function")),
 				LambdaFunctionArn: aws.String(functionARN),
 				Events:            []s3types.Event{"s3:ObjectCreated:*"},
 			}},
@@ -174,6 +175,7 @@ func TestLambdaRemoveStaleS3TriggersPropagatesProviderErrors(t *testing.T) {
 	functionARN := "arn:aws:lambda:region:account:function:function"
 	staleConfiguration := &s3.GetBucketNotificationConfigurationOutput{
 		LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{{
+			Id:                aws.String(lambdaS3NotificationID("function")),
 			LambdaFunctionArn: aws.String(functionARN),
 		}},
 	}
@@ -303,5 +305,113 @@ func TestLambdaEnsureDesiredS3TriggerPreviewModelsOnlyMissingBucket(t *testing.T
 				t.Fatalf("preview provider error = %v, want %v", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestLambdaEnsureDesiredS3TriggerRemovesManagedFilterDrift(t *testing.T) {
+	functionARN := "arn:aws:lambda:region:account:function:function"
+	events := []s3types.Event{"s3:ObjectCreated:*"}
+	client := &fakeLambdaS3NotificationClient{getOut: &s3.GetBucketNotificationConfigurationOutput{
+		LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{{
+			Id:                aws.String(lambdaS3NotificationID("function")),
+			LambdaFunctionArn: aws.String(functionARN),
+			Events:            events,
+			Filter: &s3types.NotificationConfigurationFilter{Key: &s3types.S3KeyFilter{
+				FilterRules: []s3types.FilterRule{{
+					Name:  s3types.FilterRuleNamePrefix,
+					Value: aws.String("unexpected/"),
+				}},
+			}},
+		}},
+	}}
+	if err := lambdaEnsureDesiredS3Trigger(
+		context.Background(),
+		func(context.Context, string) (lambdaS3NotificationClient, error) { return client, nil },
+		&InfraLambda{Name: "function", Arn: functionARN},
+		"bucket",
+		events,
+		false,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if client.putCalls != 1 {
+		t.Fatalf("filter drift writes = %d, want 1", client.putCalls)
+	}
+	configurations := client.putInput.NotificationConfiguration.LambdaFunctionConfigurations
+	if len(configurations) != 1 || configurations[0].Filter != nil {
+		t.Fatalf("managed notification filter was preserved: %#v", configurations)
+	}
+}
+
+func TestLambdaEnsureDesiredS3TriggerRejectsUnownedExactARN(t *testing.T) {
+	functionARN := "arn:aws:lambda:region:account:function:function"
+	unowned := s3types.LambdaFunctionConfiguration{
+		Id:                aws.String("someone-else"),
+		LambdaFunctionArn: aws.String(functionARN),
+		Events:            []s3types.Event{"s3:ObjectCreated:*"},
+	}
+	client := &fakeLambdaS3NotificationClient{getOut: &s3.GetBucketNotificationConfigurationOutput{
+		LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{unowned},
+	}}
+	err := lambdaEnsureDesiredS3Trigger(
+		context.Background(),
+		func(context.Context, string) (lambdaS3NotificationClient, error) { return client, nil },
+		&InfraLambda{Name: "function", Arn: functionARN},
+		"bucket",
+		[]s3types.Event{"s3:ObjectCreated:*"},
+		false,
+	)
+	if err == nil {
+		t.Fatal("unowned exact-ARN notification was accepted")
+	}
+	if client.putCalls != 0 {
+		t.Fatalf("unowned notification was changed with %d writes", client.putCalls)
+	}
+}
+
+func TestLambdaEnsureDesiredS3TriggerRejectsManagedIDCollision(t *testing.T) {
+	functionARN := "arn:aws:lambda:region:account:function:function"
+	client := &fakeLambdaS3NotificationClient{getOut: &s3.GetBucketNotificationConfigurationOutput{
+		LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{{
+			Id:                aws.String(lambdaS3NotificationID("function")),
+			LambdaFunctionArn: aws.String("arn:aws:lambda:region:account:function:unrelated"),
+		}},
+	}}
+	err := lambdaEnsureDesiredS3Trigger(
+		context.Background(),
+		func(context.Context, string) (lambdaS3NotificationClient, error) { return client, nil },
+		&InfraLambda{Name: "function", Arn: functionARN},
+		"bucket",
+		[]s3types.Event{"s3:ObjectCreated:*"},
+		false,
+	)
+	if err == nil {
+		t.Fatal("managed notification ID collision was accepted")
+	}
+	if client.putCalls != 0 {
+		t.Fatalf("colliding notification was changed with %d writes", client.putCalls)
+	}
+}
+
+func TestLambdaRemoveStaleS3TriggersPreservesUnownedExactARN(t *testing.T) {
+	functionARN := "arn:aws:lambda:region:account:function:function"
+	client := &fakeLambdaS3NotificationClient{getOut: &s3.GetBucketNotificationConfigurationOutput{
+		LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{{
+			Id:                aws.String("someone-else"),
+			LambdaFunctionArn: aws.String(functionARN),
+			Events:            []s3types.Event{"s3:ObjectCreated:*"},
+		}},
+	}}
+	err := callLambdaRemoveStaleS3Triggers(
+		t,
+		&fakeLambdaS3AccountClient{buckets: []string{"bucket"}},
+		func(context.Context, string) (lambdaS3NotificationClient, error) { return client, nil },
+		&InfraLambda{Name: "function", Arn: functionARN},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.putCalls != 0 {
+		t.Fatalf("unowned exact-ARN notification was changed with %d writes", client.putCalls)
 	}
 }
