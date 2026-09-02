@@ -16,4 +16,3 @@
 - Every `infra.yaml` schema or semantic change must be documented in `readme.md` and exercised by a checked-in `examples/` infrastructure declaration and its live AWS test.
 - Live DNS/domain examples use `LIBAWS_TEST_DOMAIN`, which names a permanent, publicly delegated Route53 zone. Tests automatically ensure and preserve its regional wildcard ACM certificate, DNS validation record, and untagged, unmapped `acm-fixture.${LIBAWS_TEST_DOMAIN}` API Gateway custom domain. Tests may create and remove only unique child resources.
 - `test.sh` must invoke every repository test and directly runs Python examples through `uv run --locked`, so `bash test.sh` is supported. All Go `_test.go` files live under `lib/`, where `test.sh` compiles and runs each file in isolation with `lib/lib_test.go` and all non-test library sources. Shared test helpers needed by more than one test file belong in `lib/lib_test.go`.
-
