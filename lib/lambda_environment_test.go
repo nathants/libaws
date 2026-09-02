@@ -6,7 +6,9 @@ import (
 )
 
 func TestLambdaEnvironmentVariablesEnforcesAWSSizeLimit(t *testing.T) {
-	atLimit, err := lambdaEnvironmentVariables([]string{"AA=" + strings.Repeat("x", lambdaEnvironmentMaxBytes-2)})
+	// AWS measures the compact JSON object that represents the Variables map,
+	// including its quotes, colons, commas, and braces.
+	atLimit, err := lambdaEnvironmentVariables([]string{"AA=" + strings.Repeat("x", lambdaEnvironmentMaxBytes-9)})
 	if err != nil {
 		t.Fatalf("environment at AWS limit was rejected: %v", err)
 	}
@@ -14,7 +16,7 @@ func TestLambdaEnvironmentVariablesEnforcesAWSSizeLimit(t *testing.T) {
 		t.Fatalf("environment entries=%d, want 1", len(atLimit))
 	}
 
-	_, err = lambdaEnvironmentVariables([]string{"AA=" + strings.Repeat("x", lambdaEnvironmentMaxBytes-1)})
+	_, err = lambdaEnvironmentVariables([]string{"AA=" + strings.Repeat("x", lambdaEnvironmentMaxBytes-8)})
 	if err == nil || !strings.Contains(err.Error(), "exceeds AWS Lambda") {
 		t.Fatalf("oversized Lambda environment error=%v", err)
 	}

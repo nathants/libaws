@@ -110,9 +110,20 @@ func validateLambdaContainerImageURI(imageURI string) error {
 	return err
 }
 
+func lambdaEnvironmentJSONSize(variables map[string]string) (int, error) {
+	var encoded strings.Builder
+	encoder := json.NewEncoder(&encoded)
+	// Smithy's AWS REST JSON encoder does not HTML-escape <, >, or &.
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(variables); err != nil {
+		return 0, fmt.Errorf("encode Lambda environment: %w", err)
+	}
+	// Encoder.Encode terminates the compact JSON object with one newline.
+	return encoded.Len() - 1, nil
+}
+
 func lambdaEnvironmentVariables(values []string) (map[string]string, error) {
 	variables := make(map[string]string, len(values))
-	totalBytes := 0
 	for _, value := range values {
 		name, content, err := SplitOnce(value, "=")
 		if err != nil {
@@ -125,7 +136,10 @@ func lambdaEnvironmentVariables(values []string) (map[string]string, error) {
 			return nil, fmt.Errorf("duplicate Lambda environment variable: %s", name)
 		}
 		variables[name] = content
-		totalBytes += len(name) + len(content)
+	}
+	totalBytes, err := lambdaEnvironmentJSONSize(variables)
+	if err != nil {
+		return nil, err
 	}
 	if totalBytes > lambdaEnvironmentMaxBytes {
 		return nil, fmt.Errorf(
