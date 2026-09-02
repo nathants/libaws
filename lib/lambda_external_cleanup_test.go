@@ -355,9 +355,9 @@ func TestLambdaCleanupAPITriggersAfterFunctionDeletionPreservesUnownedAPIs(t *te
 	}
 	client.integrations["wrong-target"] = []apitypes.Integration{{IntegrationUri: aws.String(functionARN + ":alias")}}
 	var cleanedDomains []string
-	cleanDomains := func(_ context.Context, name string, _ *apitypes.Api, deleteDomains, _ bool) error {
-		if deleteDomains {
-			t.Fatal("custom domains were eligible for deletion after the Lambda was already absent")
+	cleanDomains := func(_ context.Context, name string, _ *apitypes.Api, infraSetName string, _ bool) error {
+		if infraSetName != "set" {
+			t.Fatalf("domain cleanup infrastructure set = %q, want set", infraSetName)
 		}
 		cleanedDomains = append(cleanedDomains, name)
 		return nil
@@ -387,7 +387,7 @@ func TestLambdaCleanupAPITriggersWithoutKnownInfraSetAcceptsAnyLibawsTag(t *test
 		},
 	}
 	identity := lambdaIdentity{name: "function", arn: functionARN, exists: false}
-	if err := lambdaCleanupAPITriggers(context.Background(), client, identity, false, func(context.Context, string, *apitypes.Api, bool, bool) error { return nil }); err != nil {
+	if err := lambdaCleanupAPITriggers(context.Background(), client, identity, false, func(context.Context, string, *apitypes.Api, string, bool) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(client.deleted, []string{"owned"}) {

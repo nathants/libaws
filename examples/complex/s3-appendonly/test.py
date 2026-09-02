@@ -50,7 +50,13 @@ def credential_env(access_key, secret_key):
 
 
 def client(binary, env, action, bucket, key, *extra):
-    return captured([binary, action, bucket, key, *extra], env=env)
+    for attempt in range(30):
+        result = captured([binary, action, bucket, key, *extra], env=env)
+        if "api error InvalidAccessKeyId:" not in result.stderr:
+            return result
+        if attempt == 29:
+            raise AssertionError(result.stderr)
+        time.sleep(2)
 
 
 def test():

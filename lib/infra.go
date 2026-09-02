@@ -19,6 +19,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
+	apitypes "github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	logstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -1170,24 +1171,14 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 	}
 	apiToDomain := map[string]string{}
 	for _, domain := range domains {
-		mappings, err := ApiClient().GetApiMappings(ctx, &apigatewayv2.GetApiMappingsInput{
-			DomainName: domain.DomainName,
-			MaxResults: aws.String(fmt.Sprint(500)),
-		})
+		mappings, err := lambdaAPIListMappings(ctx, ApiClient(), aws.ToString(domain.DomainName))
 		if err != nil {
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		if len(mappings.Items) == 500 {
-			err := fmt.Errorf("api overflow without pagination")
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		if mappings.Items != nil {
-			for _, mapping := range mappings.Items {
-				if *mapping.Stage == lambdaDollarDefault {
-					apiToDomain[*mapping.ApiId] = *domain.DomainName
-				}
+		for index := range mappings {
+			if lambdaAPIRootMapping(&mappings[index]) {
+				apiToDomain[aws.ToString(mappings[index].ApiId)] = aws.ToString(domain.DomainName)
 			}
 		}
 	}
@@ -1203,31 +1194,24 @@ func InfraListApi(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[s
 			Logger.Println("error:", err)
 			return nil, err
 		}
-		for _, record := range records {
-			if record.Name != nil {
-				domain := strings.TrimRight(*record.Name, ".")
-				mappings, err := ApiClient().GetApiMappings(ctx, &apigatewayv2.GetApiMappingsInput{
-					DomainName: aws.String(domain),
-					MaxResults: aws.String(fmt.Sprint(500)),
-				})
-				if err != nil {
-					if strings.Contains(err.Error(), "NotFoundException") {
-						continue
-					}
-					Logger.Println("error:", err)
-					return nil, err
+		for index := range records {
+			domain := lambdaAPIDomainForDNSRecord(domains, &records[index])
+			if domain == nil {
+				continue
+			}
+			domainName := aws.ToString(domain.DomainName)
+			mappings, err := lambdaAPIListMappings(ctx, ApiClient(), domainName)
+			if err != nil {
+				var notFound *apitypes.NotFoundException
+				if errors.As(err, &notFound) {
+					continue
 				}
-				if len(mappings.Items) == 500 {
-					err := fmt.Errorf("api overflow without pagination")
-					Logger.Println("error:", err)
-					return nil, err
-				}
-				if mappings.Items != nil {
-					for _, mapping := range mappings.Items {
-						if mapping.Stage != nil && *mapping.Stage == lambdaDollarDefault && mapping.ApiId != nil {
-							apiToDns[*mapping.ApiId] = domain
-						}
-					}
+				Logger.Println("error:", err)
+				return nil, err
+			}
+			for mappingIndex := range mappings {
+				if lambdaAPIRootMapping(&mappings[mappingIndex]) {
+					apiToDns[aws.ToString(mappings[mappingIndex].ApiId)] = domainName
 				}
 			}
 		}

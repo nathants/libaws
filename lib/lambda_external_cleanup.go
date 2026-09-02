@@ -100,7 +100,7 @@ type lambdaAPICleanupClient interface {
 	DeleteApi(context.Context, *apigatewayv2.DeleteApiInput, ...func(*apigatewayv2.Options)) (*apigatewayv2.DeleteApiOutput, error)
 }
 
-type lambdaAPIDomainCleaner func(context.Context, string, *apitypes.Api, bool, bool) error
+type lambdaAPIDomainCleaner func(context.Context, string, *apitypes.Api, string, bool) error
 
 func lambdaAPIList(ctx context.Context, client lambdaAPICleanupClient) ([]apitypes.Api, error) {
 	var result []apitypes.Api
@@ -160,13 +160,13 @@ func lambdaApiOwned(
 		lambdaAPIIntegrationMatches(&integrations[0], functionARN)
 }
 
-func lambdaCleanupAPIDomains(ctx context.Context, name string, api *apitypes.Api, deleteDomains bool, preview bool) error {
+func lambdaCleanupAPIDomains(ctx context.Context, name string, api *apitypes.Api, infraSetName string, preview bool) error {
 	domains, err := ApiListDomains(ctx)
 	if err != nil {
 		return err
 	}
 	for _, domain := range domains {
-		if err := lambdaTriggerApiDeleteDns(ctx, name, api, domain, deleteDomains, preview); err != nil {
+		if err := lambdaTriggerApiDeleteDns(ctx, name, api, domain, infraSetName, preview); err != nil {
 			return err
 		}
 	}
@@ -207,7 +207,7 @@ func lambdaCleanupAPITriggers(
 			if !lambdaApiOwned(api, integrations, expected.protocol, identity.arn, identity.infraSetName) {
 				continue
 			}
-			if err := cleanupDomains(ctx, expected.name, api, identity.exists, preview); err != nil {
+			if err := cleanupDomains(ctx, expected.name, api, identity.infraSetName, preview); err != nil {
 				return err
 			}
 			if !preview {

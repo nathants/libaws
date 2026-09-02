@@ -7,7 +7,7 @@ for dir in examples/simple/python examples/simple/go examples/simple/docker exam
         cd "$dir"
         for name in *; do
             printf '\n=== %s/%s/test.py ===\n' "$dir" "$name"
-            (cd "$name" && timeout 600 uv run --locked python -u test.py)
+            (cd "$name" && timeout 900 uv run --locked python -u test.py)
         done
     )
 done

@@ -28,7 +28,7 @@ def listed(uid):
     return infra, region, account
 
 
-def expected(uid):
+def expected(uid, domain):
     return {
         "infraset": {
             f"test-infraset-{uid}": {
@@ -40,7 +40,7 @@ def expected(uid):
                             {
                                 "type": "ses",
                                 "attr": [
-                                    f"dns=test-ses-{uid}.example.com",
+                                    f"dns={domain}",
                                     f"bucket=test-ses-bucket-{uid}",
                                     "prefix=emails/",
                                 ],
@@ -68,7 +68,7 @@ def test():
     os.environ["uid"] = uid = str(uuid.uuid4())[-12:]
     function_name = f"test-lambda-{uid}"
     bucket = f"test-ses-bucket-{uid}"
-    domain = f"test-ses-{uid}.example.com"
+    domain = f"test-ses-{uid}.{os.environ['LIBAWS_TEST_DOMAIN']}"
 
     try:
         infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
@@ -79,7 +79,7 @@ def test():
 
         infra, region, account = listed(uid)
         assert account == os.environ["LIBAWS_TEST_ACCOUNT"]
-        assert infra == expected(uid), infra
+        assert infra == expected(uid, domain), infra
         assert domain in receipt_rules()
 
         function_arn = f"arn:aws:lambda:{region}:{account}:function:{function_name}"

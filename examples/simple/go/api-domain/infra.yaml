@@ -1,0 +1,24 @@
+name: test-api-domain-set-${uid}
+
+lambda:
+  test-lambda-api-domain-http-${uid}:
+    entrypoint: main.go
+    attr:
+      - timeout=60
+    policy:
+      - AWSLambdaBasicExecutionRole
+    trigger:
+      - type: api
+        attr:
+          - dns=api-${uid}.${LIBAWS_TEST_DOMAIN}
+
+  test-lambda-api-domain-websocket-${uid}:
+    entrypoint: main.go
+    attr:
+      - timeout=60
+    policy:
+      - AWSLambdaBasicExecutionRole
+    trigger:
+      - type: websocket
+        attr:
+          - domain=ws-${uid}.${LIBAWS_TEST_DOMAIN}

@@ -1270,7 +1270,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 	return sid, nil
 }
 
-func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, preview bool) error {
+func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain, infraSetName, apiID, route53ZoneID string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiDomainName"}
 		d.Start()
@@ -1329,16 +1329,21 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, 
 			return err
 		}
 		if !preview {
+			if apiID == "" {
+				return errors.New("cannot create an API domain without an API ID")
+			}
 			var unexpectedErr error
 			err := Retry(ctx, func() error {
 				_, err := ApiClient().CreateDomainName(ctx, &apigatewayv2.CreateDomainNameInput{
-					DomainName: aws.String(domain),
+					DomainName:  aws.String(domain),
+					RoutingMode: apitypes.RoutingModeApiMappingOnly,
 					DomainNameConfigurations: []apitypes.DomainNameConfiguration{{
 						ApiGatewayDomainName: aws.String(domain),
 						CertificateArn:       aws.String(arnCert),
 						EndpointType:         apitypes.EndpointTypeRegional,
 						SecurityPolicy:       apitypes.SecurityPolicyTls12,
 					}},
+					Tags: lambdaAPIDomainTags(infraSetName, apiID, route53ZoneID),
 				})
 				if err != nil {
 					if strings.Contains(err.Error(), "TooManyRequestsException") {
@@ -1361,89 +1366,134 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain string, 
 			}
 		}
 		Logger.Println(PreviewString(preview)+"created api domain:", name, domain)
-	} else {
-		if len(out.DomainNameConfigurations) != 1 || out.DomainNameConfigurations[0].EndpointType != apitypes.EndpointTypeRegional {
-			err := fmt.Errorf("api endpoint type misconfigured: %s", Pformat(out.DomainNameConfigurations))
-			Logger.Println("error:", err)
-			return err
-		}
-		if out.DomainNameConfigurations[0].SecurityPolicy == "" || out.DomainNameConfigurations[0].SecurityPolicy != apitypes.SecurityPolicyTls12 {
-			err := fmt.Errorf("api security policy misconfigured: %s", out.DomainNameConfigurations[0].SecurityPolicy)
-			Logger.Println("error:", err)
-			return err
-		}
+	} else if err := lambdaAPIDomainConfigurationError(lambdaAPIDomainFromGet(out)); err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
 	return nil
 }
 
 func lambdaEnsureTriggerApiDnsRecords(ctx context.Context, name, subDomain string, zone route53types.HostedZone, preview bool) error {
+	return lambdaEnsureTriggerApiDnsRecordsWith(
+		ctx, ApiClient(), Route53Client(), name, subDomain, zone, preview,
+	)
+}
+
+func lambdaEnsureTriggerApiDnsRecordsWith(
+	ctx context.Context,
+	apiClient lambdaAPIDomainReader,
+	dnsClient lambdaAPIDNSClient,
+	name string,
+	subDomain string,
+	zone route53types.HostedZone,
+	preview bool,
+) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiDnsRecords"}
 		d.Start()
 		defer d.End()
 	}
-	out, err := ApiClient().GetDomainName(ctx, &apigatewayv2.GetDomainNameInput{
+	zoneID := aws.ToString(zone.Id)
+	if zoneID == "" {
+		return fmt.Errorf("hosted zone for API domain %q has no ID", subDomain)
+	}
+	out, err := apiClient.GetDomainName(ctx, &apigatewayv2.GetDomainNameInput{
 		DomainName: aws.String(subDomain),
 	})
 	if err != nil {
-		var nfe *apitypes.NotFoundException
-		if !errors.As(err, &nfe) {
-			Logger.Println("error:", err)
+		var notFound *apitypes.NotFoundException
+		if preview && errors.As(err, &notFound) {
+			Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain)
+			return nil
+		}
+		return fmt.Errorf("get API domain %q for DNS convergence: %w", subDomain, err)
+	}
+	domain := lambdaAPIDomainFromGet(out)
+	if domain == nil || aws.ToString(domain.DomainName) != subDomain {
+		return fmt.Errorf("API domain %q has no stable identity", subDomain)
+	}
+	desired, err := lambdaAPIDNSDesiredRecord(domain)
+	if err != nil {
+		return err
+	}
+	records, err := route53ListRecords(ctx, dnsClient, zoneID)
+	if err != nil {
+		return err
+	}
+	var matching []route53types.ResourceRecordSet
+	for index := range records {
+		if !route53DNSNameEqual(aws.ToString(records[index].Name), subDomain) {
+			continue
+		}
+		if records[index].Type == route53types.RRTypeCname {
+			return fmt.Errorf("Route53 CNAME conflicts with API domain %q", subDomain)
+		}
+		if records[index].Type == route53types.RRTypeA {
+			matching = append(matching, records[index])
+		}
+	}
+	if len(matching) > 1 {
+		return fmt.Errorf("multiple Route53 A records conflict with API domain %q", subDomain)
+	}
+	if len(matching) == 1 {
+		if lambdaAPIDNSRecordMatches(domain, &matching[0]) {
+			return nil
+		}
+		if !route53RecordIsSimple(&matching[0]) {
+			return fmt.Errorf("Route53 A record for API domain %q uses unsupported routing", subDomain)
+		}
+	}
+	if !preview {
+		if _, err := dnsClient.ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
+			HostedZoneId: zone.Id,
+			ChangeBatch: &route53types.ChangeBatch{Changes: []route53types.Change{{
+				Action:            route53types.ChangeActionUpsert,
+				ResourceRecordSet: desired,
+			}}},
+		}); err != nil {
 			return err
 		}
-		Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain)
+	}
+	if len(matching) == 1 {
+		Logger.Println(PreviewString(preview)+"updated api dns:", name, subDomain)
 	} else {
-		records, err := Route53ListRecords(ctx, *zone.Id)
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		found := false
-		needsUpdate := false
-		for _, record := range records {
-			if strings.TrimRight(*record.Name, ".") == subDomain && record.Type == route53types.RRTypeA {
-				found = true
-				if strings.TrimRight(*record.AliasTarget.DNSName, ".") != *out.DomainNameConfigurations[0].ApiGatewayDomainName {
-					needsUpdate = true
-					break
-				}
-			}
-		}
-		if !found || needsUpdate {
-			if !preview {
-				_, err := Route53Client().ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
-					HostedZoneId: zone.Id,
-					ChangeBatch: &route53types.ChangeBatch{
-						Changes: []route53types.Change{{
-							Action: route53types.ChangeActionUpsert,
-							ResourceRecordSet: &route53types.ResourceRecordSet{
-								Name: aws.String(subDomain),
-								Type: route53types.RRTypeA,
-								AliasTarget: &route53types.AliasTarget{
-									DNSName:              out.DomainNameConfigurations[0].ApiGatewayDomainName,
-									HostedZoneId:         out.DomainNameConfigurations[0].HostedZoneId,
-									EvaluateTargetHealth: false,
-								},
-							},
-						}},
-					},
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			if needsUpdate {
-				Logger.Println(PreviewString(preview)+"updated api dns:", name, subDomain)
-			} else {
-				Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain)
-			}
-		}
+		Logger.Println(PreviewString(preview)+"created api dns:", name, subDomain)
 	}
 	return nil
 }
 
-func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, api *apitypes.Api, preview bool) error {
+func lambdaEnsureTriggerApiDnsForZone(
+	ctx context.Context,
+	name string,
+	domain string,
+	infraSetName string,
+	api *apitypes.Api,
+	zone route53types.HostedZone,
+	preview bool,
+) error {
+	zoneID := aws.ToString(zone.Id)
+	if zoneID == "" {
+		return fmt.Errorf("hosted zone for API domain %q has no ID", domain)
+	}
+	apiID := ""
+	if api != nil {
+		apiID = aws.ToString(api.ApiId)
+	}
+	if err := lambdaEnsureTriggerApiDomainName(ctx, name, domain, infraSetName, apiID, zoneID, preview); err != nil {
+		return err
+	}
+	if err := lambdaEnsureTriggerApiMapping(ctx, name, domain, api, preview); err != nil {
+		return err
+	}
+	if err := lambdaEnsureAPIDomainOwnership(
+		ctx, ApiClient(), Route53Client(), domain, infraSetName, apiID, zoneID, preview,
+	); err != nil {
+		return err
+	}
+	return lambdaEnsureTriggerApiDnsRecords(ctx, name, domain, zone, preview)
+}
+
+func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain, infraSetName string, api *apitypes.Api, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaEnsureTriggerApiDns"}
 		d.Start()
@@ -1454,59 +1504,14 @@ func lambdaEnsureTriggerApiDns(ctx context.Context, name, domain string, api *ap
 		Logger.Println("error:", err)
 		return err
 	}
-	found := false
-	for _, zone := range zones {
-		if domain == strings.TrimRight(*zone.Name, ".") {
-			found = true
-			err := lambdaEnsureTriggerApiDomainName(ctx, name, domain, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			err = lambdaEnsureTriggerApiDnsRecords(ctx, name, domain, zone, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			err = lambdaEnsureTriggerApiMapping(ctx, name, domain, api, preview)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			break
-		}
+	zone, err := lambdaAPIDNSHostedZone(domain, zones)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
-	if !found {
-		_, parentDomain, err := SplitOnce(domain, ".")
-		if err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-		subDomain := domain
-		for _, zone := range zones {
-			if parentDomain == strings.TrimRight(*zone.Name, ".") {
-				found = true
-				err := lambdaEnsureTriggerApiDomainName(ctx, name, subDomain, preview)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				err = lambdaEnsureTriggerApiDnsRecords(ctx, name, subDomain, zone, preview)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				err = lambdaEnsureTriggerApiMapping(ctx, name, subDomain, api, preview)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				break
-			}
-		}
-	}
-	if !found {
-		err := fmt.Errorf("no zone found matching domain or parent domain: %s", domain)
+	if err := lambdaEnsureTriggerApiDnsForZone(
+		ctx, name, domain, infraSetName, api, *zone, preview,
+	); err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
@@ -1519,54 +1524,54 @@ func lambdaEnsureTriggerApiMapping(ctx context.Context, name, subDomain string, 
 		d.Start()
 		defer d.End()
 	}
-	if api == nil && preview {
-		Logger.Println(PreviewString(preview)+"created api path mapping:", name, subDomain)
-		return nil
+	if api == nil || api.ApiId == nil {
+		if preview {
+			Logger.Println(PreviewString(preview)+"created api path mapping:", name, subDomain)
+			return nil
+		}
+		return fmt.Errorf("cannot create API mapping for %q without an API ID", subDomain)
 	}
-	mappings, err := ApiClient().GetApiMappings(ctx, &apigatewayv2.GetApiMappingsInput{
-		DomainName: aws.String(subDomain),
-		MaxResults: aws.String(fmt.Sprint(500)),
-	})
+	mappings, err := lambdaAPIListMappings(ctx, ApiClient(), subDomain)
 	if err != nil {
-		var nfe *apitypes.NotFoundException
-		if !errors.As(err, &nfe) {
+		var notFound *apitypes.NotFoundException
+		if !errors.As(err, &notFound) {
 			Logger.Println("error:", err)
 			return err
 		}
+		mappings = nil
 	}
-	if mappings != nil && len(mappings.Items) == 500 {
-		err := fmt.Errorf("too many path mappings for domain %s", subDomain)
-		Logger.Println("error:", err)
-		return err
-	}
-	switch {
-	case mappings == nil || len(mappings.Items) == 0:
+	switch len(mappings) {
+	case 0:
 		if !preview {
-			_, err := ApiClient().CreateApiMapping(ctx, &apigatewayv2.CreateApiMappingInput{
+			if _, err := ApiClient().CreateApiMapping(ctx, &apigatewayv2.CreateApiMappingInput{
 				DomainName: aws.String(subDomain),
 				ApiId:      api.ApiId,
 				Stage:      aws.String(lambdaDollarDefault),
-			})
-			if err != nil {
+			}); err != nil {
 				Logger.Println("error:", err)
 				return err
 			}
 		}
 		Logger.Println(PreviewString(preview)+"created api path mapping:", name, subDomain)
-	case len(mappings.Items) == 1:
-		mapping := mappings.Items[0]
-		if *mapping.ApiId != *api.ApiId {
-			err := fmt.Errorf("restapi id misconfigured: %s != %s", *mapping.ApiId, *api.ApiId)
+	case 1:
+		mapping := mappings[0]
+		if aws.ToString(mapping.ApiId) != aws.ToString(api.ApiId) {
+			err := fmt.Errorf("restapi id misconfigured: %s != %s", aws.ToString(mapping.ApiId), aws.ToString(api.ApiId))
 			Logger.Println("error:", err)
 			return err
 		}
-		if *mapping.Stage != lambdaDollarDefault {
-			err := fmt.Errorf("stage misconfigured: %s != %s", *mapping.Stage, lambdaDollarDefault)
+		if aws.ToString(mapping.Stage) != lambdaDollarDefault {
+			err := fmt.Errorf("stage misconfigured: %s != %s", aws.ToString(mapping.Stage), lambdaDollarDefault)
+			Logger.Println("error:", err)
+			return err
+		}
+		if aws.ToString(mapping.ApiMappingKey) != "" {
+			err := fmt.Errorf("api mapping key misconfigured: %q != root", aws.ToString(mapping.ApiMappingKey))
 			Logger.Println("error:", err)
 			return err
 		}
 	default:
-		err := fmt.Errorf("found more than 1 path mapping: %s", Pformat(mappings.Items))
+		err := fmt.Errorf("found more than 1 path mapping: %s", Pformat(mappings))
 		Logger.Println("error:", err)
 		return err
 	}
@@ -1665,19 +1670,34 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 				switch k {
 				case lambdaTriggerApiAttrDns: // apigateway custom domain + route53
 					domainName = v
-					err := lambdaEnsureTriggerApiDns(ctx, apiName, domainName, api, preview)
+					err := lambdaEnsureTriggerApiDns(
+						ctx, apiName, domainName, infraLambda.infraSetName, api, preview,
+					)
 					if err != nil {
 						Logger.Println("error:", err)
 						return nil, err
 					}
 				case lambdaTriggerApiAttrDomain: // apigateway custom domain
 					domainName = v
-					err := lambdaEnsureTriggerApiDomainName(ctx, apiName, domainName, preview)
+					apiID := ""
+					if api != nil {
+						apiID = aws.ToString(api.ApiId)
+					}
+					err := lambdaEnsureTriggerApiDomainName(
+						ctx, apiName, domainName, infraLambda.infraSetName, apiID, "", preview,
+					)
 					if err != nil {
 						Logger.Println("error:", err)
 						return nil, err
 					}
 					err = lambdaEnsureTriggerApiMapping(ctx, apiName, domainName, api, preview)
+					if err != nil {
+						Logger.Println("error:", err)
+						return nil, err
+					}
+					err = lambdaEnsureAPIDomainOwnership(
+						ctx, ApiClient(), Route53Client(), domainName, infraLambda.infraSetName, apiID, "", preview,
+					)
 					if err != nil {
 						Logger.Println("error:", err)
 						return nil, err
@@ -1739,7 +1759,7 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 				if *domain.DomainName == apiDomain {
 					continue
 				}
-				err := lambdaTriggerApiDeleteDns(ctx, apiName, api, domain, true, preview)
+				err := lambdaTriggerApiDeleteDns(ctx, apiName, api, domain, infraLambda.infraSetName, preview)
 				if err != nil {
 					Logger.Println("error:", err)
 					return nil, err
@@ -1777,41 +1797,55 @@ func lambdaTriggerApiDeleteApi(ctx context.Context, name string, api *apitypes.A
 	return nil
 }
 
-func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apitypes.Api, domain apitypes.DomainName, deleteDomain bool, preview bool) error {
+func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apitypes.Api, domain apitypes.DomainName, infraSetName string, preview bool) error {
+	return lambdaTriggerApiDeleteDnsWith(
+		ctx, ApiClient(), Route53Client(), name, api, domain, infraSetName, preview,
+	)
+}
+
+func lambdaTriggerApiDeleteDnsWith(
+	ctx context.Context,
+	client lambdaAPIDomainCleanupClient,
+	dnsClient lambdaAPIDNSClient,
+	name string,
+	api *apitypes.Api,
+	domain apitypes.DomainName,
+	infraSetName string,
+	preview bool,
+) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaTriggerApiDeleteDns"}
 		d.Start()
 		defer d.End()
 	}
-	mappings, err := ApiClient().GetApiMappings(ctx, &apigatewayv2.GetApiMappingsInput{
-		DomainName: domain.DomainName,
-		MaxResults: aws.String(fmt.Sprint(500)),
-	})
+	if api == nil || aws.ToString(api.ApiId) == "" {
+		return fmt.Errorf("cannot clean API domain %q without an API ID", aws.ToString(domain.DomainName))
+	}
+	mappings, err := lambdaAPIListMappings(ctx, client, aws.ToString(domain.DomainName))
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
-	if mappings.NextToken != nil {
-		err := fmt.Errorf("too many api mappings for domain %s", aws.ToString(domain.DomainName))
-		Logger.Println("error:", err)
-		return err
-	}
 	var matchingMappings []apitypes.ApiMapping
-	for _, mapping := range mappings.Items {
+	for _, mapping := range mappings {
 		if aws.ToString(mapping.ApiId) == aws.ToString(api.ApiId) {
 			matchingMappings = append(matchingMappings, mapping)
 		}
 	}
-	if len(matchingMappings) == 0 {
+	ownedDomain := lambdaInfraSetTagOwned(domain.Tags, infraSetName) &&
+		domain.Tags[lambdaAPIDomainAPIIDTagName] == aws.ToString(api.ApiId)
+	managedDomain := ownedDomain && (len(mappings) == 0 ||
+		(len(mappings) == 1 && len(matchingMappings) == 1 && lambdaAPIRootMapping(&matchingMappings[0])))
+	if len(matchingMappings) == 0 && !managedDomain {
 		return nil
 	}
-	if !deleteDomain || len(mappings.Items) != 1 {
+	if !managedDomain {
 		for _, mapping := range matchingMappings {
 			if mapping.ApiMappingId == nil {
 				return fmt.Errorf("API mapping for domain %q has no ID", aws.ToString(domain.DomainName))
 			}
 			if !preview {
-				if _, err := ApiClient().DeleteApiMapping(ctx, &apigatewayv2.DeleteApiMappingInput{
+				if _, err := client.DeleteApiMapping(ctx, &apigatewayv2.DeleteApiMappingInput{
 					ApiMappingId: mapping.ApiMappingId,
 					DomainName:   domain.DomainName,
 				}); err != nil {
@@ -1822,74 +1856,38 @@ func lambdaTriggerApiDeleteDns(ctx context.Context, name string, api *apitypes.A
 		}
 		return nil
 	}
-	for _, mapping := range matchingMappings {
-		if *mapping.ApiId == *api.ApiId {
-			zones, err := Route53ListZones(ctx)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			for _, zone := range zones {
-				records, err := Route53ListRecords(ctx, *zone.Id)
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				for _, record := range records {
-					targetMatch := record.AliasTarget != nil &&
-						record.AliasTarget.DNSName != nil &&
-						domain.DomainNameConfigurations != nil &&
-						len(domain.DomainNameConfigurations) > 0 &&
-						strings.TrimRight(*record.AliasTarget.DNSName, ".") == *domain.DomainNameConfigurations[0].ApiGatewayDomainName
-					nameMatch := record.Name != nil &&
-						strings.TrimRight(*record.Name, ".") == *domain.DomainName
-					if targetMatch && nameMatch {
-						if !preview {
-							_, err := Route53Client().ChangeResourceRecordSets(ctx, &route53.ChangeResourceRecordSetsInput{
-								HostedZoneId: zone.Id,
-								ChangeBatch: &route53types.ChangeBatch{Changes: []route53types.Change{{
-									Action:            route53types.ChangeActionDelete,
-									ResourceRecordSet: &record,
-								}}},
-							})
-							if err != nil {
-								Logger.Println("error:", err)
-								return err
-							}
-						}
-						Logger.Println(PreviewString(preview)+"deleted api dns records:", name, *domain.DomainName)
-					}
-				}
-			}
-			if !preview {
-				var unexpectedErr error
-				err := Retry(ctx, func() error {
-					_, err := ApiClient().DeleteDomainName(ctx, &apigatewayv2.DeleteDomainNameInput{
-						DomainName: domain.DomainName,
-					})
-					if err != nil {
-						if strings.Contains(err.Error(), "TooManyRequestsException") {
-							Logger.Println("delete domain has low rate limits, sleeping then retrying")
-							time.Sleep(15 * time.Second)
-						} else {
-							unexpectedErr = err
-							return nil
-						}
-					}
-					return err
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-				if unexpectedErr != nil {
-					Logger.Println("error:", unexpectedErr)
-					return unexpectedErr
-				}
-			}
-			Logger.Println(PreviewString(preview)+"deleted api domain:", name, *domain.DomainName)
+	if zoneID := domain.Tags[lambdaAPIDomainRoute53ZoneTagName]; zoneID != "" {
+		if _, err := lambdaDeleteAPIDNSRecord(ctx, dnsClient, zoneID, &domain, preview); err != nil {
+			return err
 		}
 	}
+	if !preview {
+		var unexpectedErr error
+		err := Retry(ctx, func() error {
+			_, err := client.DeleteDomainName(ctx, &apigatewayv2.DeleteDomainNameInput{
+				DomainName: domain.DomainName,
+			})
+			if err != nil {
+				if strings.Contains(err.Error(), "TooManyRequestsException") {
+					Logger.Println("delete domain has low rate limits, sleeping then retrying")
+					time.Sleep(15 * time.Second)
+				} else {
+					unexpectedErr = err
+					return nil
+				}
+			}
+			return err
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		if unexpectedErr != nil {
+			Logger.Println("error:", unexpectedErr)
+			return unexpectedErr
+		}
+	}
+	Logger.Println(PreviewString(preview)+"deleted api domain:", name, aws.ToString(domain.DomainName))
 	return nil
 }
 

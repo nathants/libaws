@@ -51,6 +51,7 @@ It should be easy to create:
 
   * [Lambdas](#lambda)
   * [S3](#s3) buckets
+  * [IAM users](#iam-user)
   * [DynamoDB](#dynamodb) tables
   * [SQS](#sqs) queues
   * [VPCs](#vpc)
@@ -62,12 +63,14 @@ It should be easy to create:
 
   * [SES](#ses) emails
   * HTTP [apis](#api)
+  * Streaming HTTP [URLs](#url)
   * [Websocket](#websocket) messages
   * [S3](#s3-1) bucket writes
   * [DynamoDB](#dynamodb-1) table writes
   * [SQS](#sqs-1) queue puts
   * Cron [schedules](#schedule)
   * [ECR](#ecr) Docker pushes
+  * Lambda invocation [alarms](#alarm)
 
 ## What
 
@@ -195,6 +198,7 @@ If you want to use the full AWS API, there are many great tools:
   * [Environment variable substitution](#environment-variable-substitution)
   * [Name](#name)
   * [S3](#s3)
+  * [IAM user](#iam-user)
   * [DynamoDB](#dynamodb)
   * [SQS](#sqs)
   * [Keypair](#keypair)
@@ -404,9 +408,10 @@ func main() {
 ### Explore Simple Examples
 
 * Alarm: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/alarm)
-* API: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api)
+* API: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api), [custom domain](https://github.com/nathants/libaws/tree/master/examples/simple/go/api-domain)
 * DynamoDB: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/dynamodb), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/dynamodb), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/dynamodb)
 * ECR: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
+* Function URL: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api_and_stream)
 * Includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)
 * S3: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/s3), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/s3), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/s3)
 * Schedule: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/schedule), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/schedule), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/schedule)
@@ -415,6 +420,8 @@ func main() {
 * Websocket: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/websocket), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/websocket), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/websocket)
 
 ### Explore Complex Examples
+
+* [S3 append-only](https://github.com/nathants/libaws/tree/master/examples/complex/s3-appendonly): append-only storage with separate writer and reader IAM users.
 
 * [S3-EC2](https://github.com/nathants/libaws/tree/master/examples/complex/s3-ec2):
 
@@ -440,6 +447,7 @@ An infrastructure set is defined by [YAML](#infrayaml) or [Go struct](https://gi
   * [S3](#s3)
   * [DynamoDB](#dynamodb)
   * [SQS](#sqs)
+* [IAM users](#iam-user)
 * EC2 infrastructure:
 
   * [Keypairs](#keypair)
@@ -543,7 +551,7 @@ An infrastructure set is defined by [YAML](#infrayaml) or [Go struct](https://gi
 
     * As a convenience, `infra-rm` will remove **ALL** infrastructure **CURRENTLY** declared in an `infra.yaml`.
 
-    * If a declared Lambda was deleted out of band, `infra-rm` still removes its API, WebSocket, SES, S3, schedule, ECR, and CloudWatch alarm resources when both libaws ownership and the exact expected Lambda target can be proven. Ambiguous or independently owned resources are preserved. API custom-domain mappings are detached, but custom-domain and DNS resources are preserved when the Lambda is already absent because their ownership cannot be proven from the Lambda target alone.
+    * If a declared Lambda is already gone, `infra-rm` removes verifiably owned triggers and preserves ambiguous or independently owned resources.
 
 * When using `ensure` operations, no output means no changes.
 
@@ -654,9 +662,9 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   * `ttldays=VALUE`, values: `0 | n`, default: `0`
   * `allow_put=VALUE`, values: `$principal.amazonaws.com`
 
-* Every libaws-managed bucket denies non-TLS requests, uses default SSE-S3 `AES256` encryption, and rejects SSE-C; callers do not need to send an encryption header.
+* Managed buckets require TLS, use SSE-S3 encryption, and reject SSE-C.
 
-* `appendonly=true` requires exact `If-None-Match: *` whenever an object is created, including `PutObject` and `CompleteMultipartUpload`; denies object and object-version deletion; and cannot be combined with expiration. Multipart staging is allowed, but completion requires the same create-only condition. ACL, versioning, and `allow_put` remain independent settings. Use `infra-rm` for deliberate administrator cleanup.
+* `appendonly=true` requires `If-None-Match: *` for object creation and multipart completion, denies deletion, and cannot be combined with expiration.
 
 * Setting `cors=true` uses `*` for allowed origins. To specify one or more explicit origins, do this instead:
 
@@ -686,20 +694,32 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
 
 ### IAM user
 
-Declares an IAM user and exactly converges its attached managed-policy names and shorthand inline allows; undeclared attached and inline policies are removed. An allow has the form `SERVICE:ACTION RESOURCE`. `infra-ensure` creates and tags the user but never creates credentials; bootstrap the one-time secret explicitly with `libaws iam-ensure-user-api-key USER`. That command refuses a missing user and prints a secret only when it creates the user's sole key. `infra-rm` deletes declared users and their access keys.
+Defines an IAM user without creating credentials.
 
-```yaml
-user:
-  backup-writer:
-    allow:
-      - s3:PutObject arn:aws:s3:::backup-bucket/*
-  backup-reader:
-    allow:
-      - s3:GetObject arn:aws:s3:::backup-bucket/*
-      - s3:ListBucket arn:aws:s3:::backup-bucket
-    policy:
-      - ExistingManagedPolicy
-```
+* `allow` entries use `SERVICE:ACTION RESOURCE`.
+* `policy` entries name existing managed policies.
+* Undeclared inline and attached policies are removed.
+* Create the user's sole access key explicitly with `libaws iam-ensure-user-api-key USER`.
+
+* Schema:
+
+  ```yaml
+  user:
+    VALUE:
+      allow:
+        - SERVICE:ACTION RESOURCE
+      policy:
+        - VALUE
+  ```
+
+* Example:
+
+  ```yaml
+  user:
+    backup-writer:
+      allow:
+        - s3:PutObject arn:aws:s3:::backup-bucket/*
+  ```
 
 ### DynamoDB
 
@@ -941,9 +961,9 @@ Defines the code of the Lambda. It is one of:
 
 * A Python file.
 
-* A regular Go file. Libaws builds the complete Go package in that file's directory.
+* A Go file. Libaws builds its complete package.
 
-* An ECR container URI ending in an immutable `@sha256:` digest with 64 lowercase hexadecimal characters. Tags and unqualified repository URIs are rejected.
+* An ECR container URI ending in `@sha256:` followed by 64 lowercase hexadecimal characters.
 
 * Schema:
 
@@ -965,13 +985,13 @@ Defines the code of the Lambda. It is one of:
 
 Defines Lambda attributes. The following can be defined:
 
-* `concurrency` defines reserved concurrency. Omit it to use the shared unreserved pool, set it to `0` to disable the function, or set it to a positive value to reserve capacity and cap concurrent executions at that value.
+* `concurrency=VALUE`, reserved concurrency; omit for the unreserved pool or use `0` to disable the function.
 
-* `memory` defines Lambda RAM in megabytes, default: `128`
+* `memory=VALUE`, RAM in megabytes, default: `128`
 
-* `timeout` defines the Lambda timeout in seconds, default: `300`
+* `timeout=VALUE`, timeout in seconds, default: `300`
 
-* `logs-ttl-days` defines the TTL days for CloudWatch logs, default: `7`
+* `logs-ttl-days=VALUE`, CloudWatch Logs retention in days, default: `7`
 
 * Schema:
 
@@ -1144,17 +1164,13 @@ Defines triggers for the Lambda:
 
 ##### SES
 
-Defines an [SES](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html) email receiving trigger.
+Defines an [SES](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html) email trigger.
 
-* Route53 and SES must already be set up for the domain before it can receive mail.
-
-* DNS and bucket attrs are required, prefix is optional. The DNS value must be a conventional ASCII domain name of at most 64 characters because it is also the SES rule-set and rule name.
-
-* S3 bucket must allow put from SES.
-
-* AWS permits only one active SES receipt rule set per region, so an infrastructure set may declare at most one SES trigger. Ensuring it makes its domain-named rule set active, replacing any previously active rule set.
-
-* A same-named receipt rule set is adopted only when it is empty or contains exactly the same-named rule. Libaws refuses to mutate or activate a rule set containing any other rule.
+* Required attrs: `dns=DOMAIN` and `bucket=BUCKET`; optional: `prefix=PREFIX`.
+* Route53 and SES must already be configured for the domain, and the bucket must allow puts from SES.
+* The domain must be ASCII and at most 64 characters because it names the SES rule set.
+* Each infrastructure set may declare one SES trigger. Ensuring it replaces the active regional rule set.
+* Ensure rejects a same-named rule set containing other rules.
 
 * Schema:
 
@@ -1185,8 +1201,6 @@ Defines an [SES](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html)
             - prefix=emails/
   ```
 
-See the live [SES example](examples/simple/go/ses).
-
 ##### API
 
 Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) HTTP API:
@@ -1199,7 +1213,9 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
   * This domain, or its parent domain, must already exist as a hosted zone in [Route53](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
 
-  * This domain, or its parent domain, must already have an [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
+  * An exact or matching wildcard [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate must already exist.
+
+* `infra-rm` removes the custom domain and, for `dns=`, its managed alias. It leaves the hosted zone and certificate.
 
 * Schema:
 
@@ -1229,23 +1245,23 @@ Defines a Lambda [function URL](https://docs.aws.amazon.com/lambda/latest/dg/url
 
 * No attributes are required.
 
-Schema:
+* Schema:
 
-```yaml
-lambda:
-  VALUE:
-    trigger:
-      - type: url
-```
+  ```yaml
+  lambda:
+    VALUE:
+      trigger:
+        - type: url
+  ```
 
-Example:
+* Example:
 
-```yaml
-lambda:
-  test-lambda:
-    trigger:
-      - type: url
-```
+  ```yaml
+  lambda:
+    test-lambda:
+      trigger:
+        - type: url
+  ```
 
 ##### Websocket
 
@@ -1257,7 +1273,9 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
   * This domain, or its parent domain, must already exist as a hosted zone in [route53-ls](https://github.com/nathants/libaws/tree/master/cmd/route53/ls.go).
 
-  * This domain, or its parent domain, must already have an [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate with subdomain wildcard.
+  * An exact or matching wildcard [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate must already exist.
+
+* `infra-rm` removes the custom domain and, for `dns=`, its managed alias. It leaves the hosted zone and certificate.
 
 * Schema:
 
@@ -1289,7 +1307,7 @@ Defines an [S3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Use
 
 * Object creation and deletion invoke the trigger.
 
-* Libaws owns the bucket notification by a deterministic ID. A notification with another ID that already targets the same Lambda is preserved, and ensure refuses the conflict rather than creating duplicate invocations.
+* Ensure rejects an existing conflicting notification instead of creating duplicate invocations.
 
 * Schema:
 
@@ -1437,24 +1455,15 @@ Defines an [ECR trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Us
 
 ##### Alarm
 
-Defines an opinionated [CloudWatch metric alarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html) for detecting a runaway Lambda invocation rate. When the watched Lambda has at least the declared number of invocations in one minute, the alarm enters `ALARM` and invokes the declaring Lambda.
+Defines a [CloudWatch alarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html) that invokes the declaring Lambda when the monitored Lambda records at least the specified number of invocations in one minute.
 
 * The following attributes are required:
 
-  * `name=VALUE`: account-and-region-unique alarm name containing 1–255 letters, numbers, underscores, periods, or hyphens.
-  * `lambda-invocations=VALUE`: name of the Lambda whose invocation rate is watched.
-  * `at-least=VALUE/minute`: positive integer invocation threshold, up to `2147483647`.
+  * `name=VALUE`, account-and-region-unique alarm name.
+  * `lambda-invocations=VALUE`, Lambda to monitor.
+  * `at-least=VALUE/minute`, positive integer invocation threshold, maximum: `2147483647`.
 
-* Libaws fixes the CloudWatch configuration to the useful subset represented by this declaration:
-
-  * `AWS/Lambda` `Invocations` for the watched function's `FunctionName` dimension.
-  * `Sum` over one 60-second period.
-  * `GreaterThanOrEqualToThreshold`, with one required data point out of one evaluation period.
-  * Missing data is not breaching.
-  * The sole `ALARM` action invokes the declaring Lambda's exact, unqualified function ARN. There are no `OK` or insufficient-data actions.
-
-* A same-named alarm is adopted, tagged, and exactly converged to this configuration. Removing the trigger deletes an alarm only when it is tagged to the same infrastructure set and targets that Lambda.
-* `infra-ls` represents only alarms with exactly this shape. Use Terraform for other CloudWatch alarm forms; add another `infra.yaml` form only when a concrete project needs one.
+* Missing data does not breach the alarm.
 
 * Schema:
 
@@ -1481,8 +1490,6 @@ Defines an opinionated [CloudWatch metric alarm](https://docs.aws.amazon.com/Ama
             - lambda-invocations=beta
             - at-least=300/minute
   ```
-
-See the live [alarm example](examples/simple/go/alarm).
 
 ## Bash Completion
 
@@ -1512,19 +1519,25 @@ Alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructur
 
 ## Testing
 
-The Python test environment requires Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).
-
-Run all AWS integration tests with the locked uv environment:
+Tests require Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), scratch-account credentials, and a delegated Route53 test domain:
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
-make test
+export LIBAWS_TEST_DOMAIN=scratch.example.com
+bash test.sh
 ```
 
-Run one AWS integration test with the same environment:
+`LIBAWS_TEST_DOMAIN` must name a permanent, publicly delegated Route53 hosted zone in the selected account. Tests automatically ensure and preserve:
+
+* An issued ACM certificate for `*.${LIBAWS_TEST_DOMAIN}` and its DNS validation record.
+* An untagged, unmapped API Gateway custom domain named `acm-fixture.${LIBAWS_TEST_DOMAIN}`, associated with that certificate and without a Route53 alias. This keeps the certificate eligible for managed renewal.
+
+Tests create and remove only unique child resources outside these fixtures.
+
+Run one example with:
 
 ```bash
-export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
-bash restore_python_deps.sh
-uv run --locked -- bash -c 'make && cd examples/simple/python/api/ && python -u test.py'
+make
+cd examples/simple/python/api
+uv run --locked python -u test.py
 ```

@@ -17,6 +17,6 @@ lambda:
     trigger:
       - type: ses
         attr:
-          - dns=test-ses-${uid}.example.com
+          - dns=test-ses-${uid}.${LIBAWS_TEST_DOMAIN}
           - bucket=test-ses-bucket-${uid}
           - prefix=emails/
