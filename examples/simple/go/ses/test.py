@@ -1,4 +1,5 @@
 # type: ignore
+import json
 import os
 import subprocess
 import sys
@@ -9,6 +10,21 @@ import shell
 import yaml
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+
+
+def assert_source_account_permission(function_name, service):
+    policy = json.loads(run(f"libaws lambda-permissions {function_name}"))
+    statements = [
+        statement
+        for statement in policy["Statement"]
+        if statement.get("Principal", {}).get("Service") == service
+    ]
+    assert len(statements) == 1, statements
+    assert (
+        statements[0]["Condition"]["StringEquals"]["AWS:SourceAccount"]
+        == os.environ["LIBAWS_TEST_ACCOUNT"]
+    )
+    assert statements[0]["Condition"]["ArnLike"]["AWS:SourceArn"]
 
 
 def captured(*argv):
@@ -81,6 +97,7 @@ def test():
         assert account == os.environ["LIBAWS_TEST_ACCOUNT"]
         assert infra == expected(uid, domain), infra
         assert domain in receipt_rules()
+        assert_source_account_permission(function_name, "ses.amazonaws.com")
 
         function_arn = f"arn:aws:lambda:{region}:{account}:function:{function_name}"
         captured(

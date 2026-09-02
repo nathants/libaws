@@ -875,20 +875,20 @@ func lambdaPermissionSID(callerPrincipal, callerARN string) string {
 }
 
 func lambdaAddPermissionInput(functionARN, sid, callerPrincipal, callerARN, sourceAccount string) *lambda.AddPermissionInput {
-	input := &lambda.AddPermissionInput{
-		FunctionName: aws.String(functionARN),
-		StatementId:  aws.String(sid),
-		Action:       aws.String("lambda:InvokeFunction"),
-		Principal:    aws.String(callerPrincipal),
-		SourceArn:    aws.String(callerARN),
+	return &lambda.AddPermissionInput{
+		FunctionName:  aws.String(functionARN),
+		StatementId:   aws.String(sid),
+		Action:        aws.String("lambda:InvokeFunction"),
+		Principal:     aws.String(callerPrincipal),
+		SourceArn:     aws.String(callerARN),
+		SourceAccount: aws.String(sourceAccount),
 	}
-	if sourceAccount != "" {
-		input.SourceAccount = aws.String(sourceAccount)
-	}
-	return input
 }
 
 func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, callerARN, sourceAccount string) error {
+	if sourceAccount == "" {
+		return errors.New("cannot add a Lambda permission without a source account")
+	}
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaAddPermission"}
 		d.Start()
@@ -909,11 +909,12 @@ func lambdaAddPermission(ctx context.Context, sid, name, callerPrincipal, caller
 }
 
 func lambdaSourceAccountPermissionMatches(statement IamStatementEntry, sid, functionARN, callerPrincipal, callerARN, sourceAccount string) (bool, error) {
-	condition := map[string]any{
-		"ArnLike": map[string]any{"AWS:SourceArn": callerARN},
+	if sourceAccount == "" {
+		return false, errors.New("cannot match a Lambda permission without a source account")
 	}
-	if sourceAccount != "" {
-		condition["StringEquals"] = map[string]any{"AWS:SourceAccount": sourceAccount}
+	condition := map[string]any{
+		"ArnLike":      map[string]any{"AWS:SourceArn": callerARN},
+		"StringEquals": map[string]any{"AWS:SourceAccount": sourceAccount},
 	}
 	expected := IamStatementEntry{
 		Sid:       sid,
@@ -929,6 +930,9 @@ func lambdaSourceAccountPermissionMatches(statement IamStatementEntry, sid, func
 }
 
 func lambdaPermissionReconciliation(policyString, sid, functionARN, callerPrincipal, callerARN, sourceAccount string) (needsUpdate, removeExisting bool, err error) {
+	if sourceAccount == "" {
+		return false, false, errors.New("cannot reconcile a Lambda permission without a source account")
+	}
 	if policyString == "" {
 		return true, false, nil
 	}
@@ -950,6 +954,9 @@ func lambdaPermissionReconciliation(policyString, sid, functionARN, callerPrinci
 }
 
 func lambdaEnsurePermissionWithSourceAccount(ctx context.Context, name, callerPrincipal, callerARN, sourceAccount string, preview bool) (string, error) {
+	if sourceAccount == "" {
+		return "", errors.New("cannot ensure a Lambda permission without a source account")
+	}
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaEnsurePermission"}
 		d.Start()
@@ -1008,7 +1015,11 @@ func lambdaEnsurePermissionWithSourceAccount(ctx context.Context, name, callerPr
 }
 
 func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerARN string, preview bool) (string, error) {
-	return lambdaEnsurePermissionWithSourceAccount(ctx, name, callerPrincipal, callerARN, "", preview)
+	sourceAccount, err := StsAccount(ctx)
+	if err != nil {
+		return "", err
+	}
+	return lambdaEnsurePermissionWithSourceAccount(ctx, name, callerPrincipal, callerARN, sourceAccount, preview)
 }
 
 func LambdaArnToLambdaName(arn string) string {

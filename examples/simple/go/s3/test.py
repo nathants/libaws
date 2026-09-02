@@ -1,4 +1,5 @@
 # type: ignore
+import json
 import pytest
 import subprocess
 import sys
@@ -8,6 +9,18 @@ import yaml
 import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+
+
+def assert_source_account_permission(function_name, service):
+    policy = json.loads(run(f"libaws lambda-permissions {function_name}"))
+    statements = [
+        statement
+        for statement in policy["Statement"]
+        if statement.get("Principal", {}).get("Service") == service
+    ]
+    assert len(statements) == 1, statements
+    assert statements[0]["Condition"]["StringEquals"]["AWS:SourceAccount"] == os.environ["LIBAWS_TEST_ACCOUNT"]
+    assert statements[0]["Condition"]["ArnLike"]["AWS:SourceArn"]
 
 
 def captured(command):
@@ -46,6 +59,7 @@ def test():
         }
     }
     assert infra == expected, infra
+    assert_source_account_permission(f"test-lambda-{uid}", "s3.amazonaws.com")
     run(f"echo | libaws s3-put s3://test-bucket-{uid}/{uid}")
     assert uid == run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1").split()[-1]
     run(

@@ -1,4 +1,5 @@
 # type: ignore
+import json
 import pytest
 import sys
 import uuid
@@ -7,6 +8,18 @@ import yaml
 import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+
+
+def assert_source_account_permission(function_name, service):
+    policy = json.loads(run(f"libaws lambda-permissions {function_name}"))
+    statements = [
+        statement
+        for statement in policy["Statement"]
+        if statement.get("Principal", {}).get("Service") == service
+    ]
+    assert len(statements) == 1, statements
+    assert statements[0]["Condition"]["StringEquals"]["AWS:SourceAccount"] == os.environ["LIBAWS_TEST_ACCOUNT"]
+    assert statements[0]["Condition"]["ArnLike"]["AWS:SourceArn"]
 
 
 def test():
@@ -36,6 +49,7 @@ def test():
         }
     }
     assert infra == expected, infra
+    assert_source_account_permission(f"test-lambda-{uid}", "events.amazonaws.com")
     run(f"libaws ecr-ensure {repository}")
     run("libaws ecr-login")
     run("docker pull alpine:latest")

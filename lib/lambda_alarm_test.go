@@ -314,12 +314,13 @@ func TestSourceAccountPermissionRequiresExactAlarmBoundary(t *testing.T) {
 	}
 }
 
-func TestLambdaPermissionReconciliationRepairsDriftWithoutSourceAccount(t *testing.T) {
+func TestLambdaPermissionReconciliationRepairsMissingSourceAccount(t *testing.T) {
 	const (
 		sid       = "permission"
 		function  = "arn:aws:lambda:us-west-2:337909772623:function:better-game"
 		principal = "events.amazonaws.com"
 		sourceARN = "arn:aws:events:us-west-2:337909772623:rule/expected"
+		account   = "337909772623"
 	)
 	policy, err := json.Marshal(IamPolicyDocument{
 		Version: "2012-10-17",
@@ -330,7 +331,7 @@ func TestLambdaPermissionReconciliationRepairsDriftWithoutSourceAccount(t *testi
 			Action:    "lambda:InvokeFunction",
 			Resource:  function,
 			Condition: map[string]any{
-				"ArnLike": map[string]any{"AWS:SourceArn": "arn:aws:events:us-west-2:337909772623:rule/wrong"},
+				"ArnLike": map[string]any{"AWS:SourceArn": sourceARN},
 			},
 		}},
 	})
@@ -338,13 +339,21 @@ func TestLambdaPermissionReconciliationRepairsDriftWithoutSourceAccount(t *testi
 		t.Fatal(err)
 	}
 	needsUpdate, removeExisting, err := lambdaPermissionReconciliation(
-		string(policy), sid, function, principal, sourceARN, "",
+		string(policy), sid, function, principal, sourceARN, account,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !needsUpdate || !removeExisting {
-		t.Fatalf("drift reconciliation = needs update %v, remove existing %v; want true, true", needsUpdate, removeExisting)
+		t.Fatalf("missing source-account reconciliation = needs update %v, remove existing %v; want true, true", needsUpdate, removeExisting)
+	}
+}
+
+func TestLambdaPermissionReconciliationRequiresSourceAccount(t *testing.T) {
+	if _, _, err := lambdaPermissionReconciliation(
+		`{"Version":"2012-10-17"}`, "permission", "function", "events.amazonaws.com", "source", "",
+	); err == nil {
+		t.Fatal("permission reconciliation accepted an empty source account")
 	}
 }
 
@@ -368,14 +377,12 @@ func TestLambdaPermissionReconciliationCreatesMissingSIDInExistingPolicy(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sourceAccount := range []string{"", account} {
-		needsUpdate, removeExisting, err := lambdaPermissionReconciliation(string(policy), sid, function, principal, alarm, sourceAccount)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !needsUpdate || removeExisting {
-			t.Fatalf("missing SID reconciliation = needs update %v, remove existing %v; want true, false", needsUpdate, removeExisting)
-		}
+	needsUpdate, removeExisting, err := lambdaPermissionReconciliation(string(policy), sid, function, principal, alarm, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !needsUpdate || removeExisting {
+		t.Fatalf("missing SID reconciliation = needs update %v, remove existing %v; want true, false", needsUpdate, removeExisting)
 	}
 }
 

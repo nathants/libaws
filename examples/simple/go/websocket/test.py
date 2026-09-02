@@ -1,4 +1,5 @@
 # type: ignore
+import json
 import uuid
 import pytest
 import sys
@@ -7,6 +8,21 @@ import yaml
 import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+
+
+def assert_source_account_permission(function_name, service):
+    policy = json.loads(run(f"libaws lambda-permissions {function_name}"))
+    statements = [
+        statement
+        for statement in policy["Statement"]
+        if statement.get("Principal", {}).get("Service") == service
+    ]
+    assert len(statements) == 1, statements
+    assert (
+        statements[0]["Condition"]["StringEquals"]["AWS:SourceAccount"]
+        == os.environ["LIBAWS_TEST_ACCOUNT"]
+    )
+    assert statements[0]["Condition"]["ArnLike"]["AWS:SourceArn"]
 
 
 def test():
@@ -36,6 +52,9 @@ def test():
         }
     }
     assert infra == expected, infra
+    assert_source_account_permission(
+        f"test-lambda-{uid}", "apigateway.amazonaws.com"
+    )
     run(f"libaws infra-url-websocket infra.yaml test-lambda-{uid}")
     run(
         "LIBAWS_INTEGRATION=1 "

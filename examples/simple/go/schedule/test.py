@@ -1,4 +1,5 @@
 # type: ignore
+import json
 import pytest
 import sys
 import uuid
@@ -7,6 +8,26 @@ import yaml
 import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+
+
+def assert_source_account_permissions(function_name, service, count=1):
+    policy = json.loads(run(f"libaws lambda-permissions {function_name}"))
+    statements = [
+        statement
+        for statement in policy["Statement"]
+        if statement.get("Principal", {}).get("Service") == service
+    ]
+    assert len(statements) == count, statements
+    assert {
+        statement["Condition"]["StringEquals"]["AWS:SourceAccount"]
+        for statement in statements
+    } == {os.environ["LIBAWS_TEST_ACCOUNT"]}
+    assert len(
+        {
+            statement["Condition"]["ArnLike"]["AWS:SourceArn"]
+            for statement in statements
+        }
+    ) == count
 
 
 def test():
@@ -39,6 +60,7 @@ def test():
         }
     }
     assert infra == expected, infra
+    assert_source_account_permissions(f"test-lambda-{uid}", "events.amazonaws.com", count=2)
     assert uid == run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1").split()[-1]
     run(
         "LIBAWS_INTEGRATION=1 "

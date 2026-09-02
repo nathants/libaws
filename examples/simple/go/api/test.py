@@ -1,4 +1,5 @@
 # type: ignore
+import json
 import uuid
 import pytest
 import sys
@@ -8,6 +9,26 @@ import time
 import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
+
+
+def assert_source_account_permissions(function_name, service, count=1):
+    policy = json.loads(run(f"libaws lambda-permissions {function_name}"))
+    statements = [
+        statement
+        for statement in policy["Statement"]
+        if statement.get("Principal", {}).get("Service") == service
+    ]
+    assert len(statements) == count, statements
+    assert {
+        statement["Condition"]["StringEquals"]["AWS:SourceAccount"]
+        for statement in statements
+    } == {os.environ["LIBAWS_TEST_ACCOUNT"]}
+    assert len(
+        {
+            statement["Condition"]["ArnLike"]["AWS:SourceArn"]
+            for statement in statements
+        }
+    ) == count
 
 
 def test():
@@ -41,6 +62,7 @@ def test():
         }
     }
     assert infra == expected, infra
+    assert_source_account_permissions(f"test-lambda-{uid}", "apigateway.amazonaws.com")
     url = run(f"libaws infra-url-api infra.yaml test-lambda-{uid}")
     for _ in range(10):
         try:
