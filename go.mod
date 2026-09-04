@@ -40,7 +40,7 @@ require (
 	github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a
 	github.com/r3labs/diff/v2 v2.15.1
 	github.com/sethvargo/go-password v0.3.1
-	golang.org/x/crypto v0.53.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/sync v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -64,6 +64,9 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
+	// Keep the transitive module graph above GO-2026-5320, GO-2026-6179, and GO-2026-6180.
+	github.com/yuin/goldmark v1.7.17 // indirect
+	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

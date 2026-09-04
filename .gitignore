@@ -1,3 +1,6 @@
 libaws
 .venv
+node_modules
 __pycache__
+/examples/simple/python/dependencies/adep/build/
+/examples/simple/python/dependencies/adep/*.egg-info/

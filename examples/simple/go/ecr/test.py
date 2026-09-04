@@ -1,6 +1,7 @@
 # type: ignore
 import json
 import pytest
+import shlex
 import sys
 import uuid
 import shell
@@ -22,10 +23,21 @@ def assert_source_account_permission(function_name, service):
     assert statements[0]["Condition"]["ArnLike"]["AWS:SourceArn"]
 
 
-def test():
+def test(tmp_path):
     assert os.environ["LIBAWS_TEST_ACCOUNT"] == run("libaws aws-account")
     os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
     repository = f"test-ecr-{uid}"
+    source_image = f"libaws-ecr-test:{uid}"
+    docker_config = tmp_path / "docker"
+    docker_config.mkdir()
+    os.environ["DOCKER_CONFIG"] = str(docker_config)
+    image_context = tmp_path / "image"
+    image_context.mkdir()
+    (image_context / "marker").write_text(uid, encoding="utf-8")
+    (image_context / "Dockerfile").write_text(
+        f"FROM scratch\nCOPY marker /marker\nLABEL libaws-test={uid}\n",
+        encoding="utf-8",
+    )
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
     assert infra["infraset"] == {"none": None}, infra
     run("libaws infra-ensure infra.yaml --preview")
@@ -52,12 +64,16 @@ def test():
     assert_source_account_permission(f"test-lambda-{uid}", "events.amazonaws.com")
     run(f"libaws ecr-ensure {repository}")
     run("libaws ecr-login")
-    run("docker pull alpine:latest")
-    run(f"docker tag alpine:latest $(libaws ecr-url)/{repository}:{uid}")
-    run(f"docker push $(libaws ecr-url)/{repository}:{uid}")
+    run(
+        f"docker build --provenance=false -t {source_image} "
+        f"{shlex.quote(str(image_context))}"
+    )
+    image = f"$(libaws ecr-url)/{repository}:{uid}"
+    run(f"docker tag {source_image} {image}")
+    run(f"docker push {image}")
     assert uid in run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1")
     run("docker logout $(libaws ecr-url)")
-    run(f"docker image rm $(libaws ecr-url)/{repository}:{uid}")
+    run(f"docker image rm {image} {source_image}")
     run(
         "LIBAWS_INTEGRATION=1 "
         f"LIBAWS_LAMBDA_DELETE_TEST_FUNCTION=test-lambda-{uid} "

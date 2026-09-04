@@ -17,6 +17,8 @@ lambda:
     attr:
       - memory=128
       - timeout=60
+    require:
+      - -rrequirements.txt
     policy:
       - AWSLambdaBasicExecutionRole
       - AWSLambdaDynamoDBExecutionRole

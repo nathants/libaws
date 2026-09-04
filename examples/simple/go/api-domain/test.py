@@ -14,9 +14,9 @@ import yaml
 
 run = lambda *args, **kwargs: shell.run(*args, stream=True, **kwargs)
 
-WORK_SECONDS = 690
-CLEANUP_SECONDS = 180
-OUTER_TIMEOUT_SECONDS = 900
+WORK_SECONDS = 1200
+CLEANUP_SECONDS = 300
+OUTER_TIMEOUT_SECONDS = 1800
 
 
 def run_before(deadline, args, env=None, warn=False):

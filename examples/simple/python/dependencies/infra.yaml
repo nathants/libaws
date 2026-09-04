@@ -7,7 +7,7 @@ lambda:
       - memory=128
       - timeout=60
     require:
-      - ./adep
+      - -rrequirements.txt
     env:
       - uid=${uid}
     policy:

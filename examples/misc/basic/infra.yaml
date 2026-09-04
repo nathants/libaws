@@ -7,8 +7,7 @@ lambda:
       - memory=128
       - timeout=60
     require:
-      - git+https://github.com/nathants/py-util@6844917fb51e9d24de130fd4728053d62c7946da
-      - requests >2, <3
+      - -rrequirements.txt
     env:
       - uid=${uid}
     policy:

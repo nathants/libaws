@@ -9,8 +9,11 @@ import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
 
-def test():
+def test(tmp_path):
     assert os.environ['LIBAWS_TEST_ACCOUNT'] == run('libaws aws-account')
+    docker_config = tmp_path / "docker"
+    docker_config.mkdir()
+    os.environ["DOCKER_CONFIG"] = str(docker_config)
     os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
     account = os.environ['account'] = run('libaws aws-account')
     region = os.environ['region'] = run('libaws aws-region')

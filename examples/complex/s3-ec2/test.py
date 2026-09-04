@@ -1,6 +1,7 @@
 # type: ignore
 import time
 import pytest
+import shlex
 import sys
 import uuid
 import shell
@@ -73,10 +74,13 @@ def test():
         }
     }
     assert infra == expected, infra
-    run(f"echo hello | libaws s3-put s3://in-bucket-{uid}/test-key.txt")
+    key = "test key;$(false).txt"
+    source = shlex.quote(f"s3://in-bucket-{uid}/{key}")
+    destination = shlex.quote(f"s3://out-bucket-{uid}/{key}")
+    run(f"echo hello | libaws s3-put {source}")
     for i in range(100):
         try:
-            assert "hello from ec2" == run(f"libaws s3-get s3://out-bucket-{uid}/test-key.txt")
+            assert "hello from ec2" == run(f"libaws s3-get {destination}")
         except:
             if i > 12:
                 raise

@@ -8,9 +8,12 @@ import os
 
 run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
 
-def test():
+def test(tmp_path):
     assert os.environ['LIBAWS_TEST_ACCOUNT'] == run('libaws aws-account')
     os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
+    docker_config = tmp_path / "docker"
+    docker_config.mkdir()
+    os.environ["DOCKER_CONFIG"] = str(docker_config)
     account = os.environ['account'] = run('libaws aws-account')
     region = os.environ['region'] = run('libaws aws-region')
     os.environ['digest'] = 'fake'
@@ -48,11 +51,12 @@ def test():
     assert infra == expected, infra
     run('libaws ecr-ensure test')
     run('libaws ecr-login')
-    run('docker pull alpine:latest')
-    run(f'docker tag alpine:latest $(libaws ecr-url)/test:{uid}')
-    run(f'docker push $(libaws ecr-url)/test:{uid}')
+    test_image = f'$(libaws ecr-url)/test:{uid}'
+    run(f'docker tag {container} {test_image}')
+    run(f'docker push {test_image}')
     assert uid in run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1')
     run('libaws infra-rm infra.yaml --preview')
+    run(f'docker image rm {test_image} {container}')
     run('libaws ecr-rm test')
     run(f'libaws ecr-rm {repo_name}')
     run('libaws infra-rm infra.yaml')

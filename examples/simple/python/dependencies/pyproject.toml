@@ -1,14 +1,20 @@
 [project]
-name = "libaws-tests"
+name = "libaws-lambda-local-require-example"
 version = "0.0.0"
-requires-python = ">=3.12"
-dependencies = [
+requires-python = ">=3.13,<3.14"
+dependencies = ["adep==0.0.1"]
+
+[dependency-groups]
+dev = [
     "py-pool @ git+https://github.com/nathants/py-pool@27b31ec18b326366c8c405076963e2934dd7b134",
     "py-shell @ git+https://github.com/nathants/py-shell@dacb4922e13f947998ae31e40aec441c54471b36",
     "py-util @ git+https://github.com/nathants/py-util@115c1302c49c15ed5c46d5421f73022b5406096b",
     "pytest==9.1.1",
     "pyyaml==6.0.2",
 ]
+
+[tool.uv.sources]
+adep = { path = "adep" }
 
 [tool.uv]
 package = false
