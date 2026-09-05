@@ -388,6 +388,10 @@ func IamListPolicies(ctx context.Context) ([]iamtypes.Policy, error) {
 }
 
 func IamListRoles(ctx context.Context, pathPrefix *string) ([]*IamRole, error) {
+	return (infraListScope{}).iamRoles(ctx, pathPrefix)
+}
+
+func (scope infraListScope) iamRoles(ctx context.Context, pathPrefix *string) ([]*IamRole, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "IamListRoles"}
 		d.Start()
@@ -407,6 +411,20 @@ func IamListRoles(ctx context.Context, pathPrefix *string) ([]*IamRole, error) {
 			return nil, err
 		}
 		for _, role := range out.Roles {
+			if scope.setName != "" {
+				tags, err := iamListRoleTags(ctx, aws.ToString(role.RoleName))
+				if err != nil {
+					var absent *iamtypes.NoSuchEntityException
+					if errors.As(err, &absent) {
+						continue
+					}
+					return nil, err
+				}
+				if !scope.iamTagsMatch(tags) {
+					continue
+				}
+				role.Tags = tags
+			}
 			r := &IamRole{}
 			err := r.FromRole(ctx, &role)
 			if err != nil {
@@ -1090,6 +1108,10 @@ func (p *IamInstanceProfile) FromProfile(ctx context.Context, profile *iamtypes.
 }
 
 func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*IamInstanceProfile, error) {
+	return (infraListScope{}).iamProfiles(ctx, pathPrefix)
+}
+
+func (scope infraListScope) iamProfiles(ctx context.Context, pathPrefix *string) ([]*IamInstanceProfile, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "IamListInstanceProfiles"}
 		d.Start()
@@ -1112,6 +1134,10 @@ func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*IamIns
 				MaxItems:            aws.Int32(100),
 			})
 			if err != nil {
+				var absent *iamtypes.NoSuchEntityException
+				if scope.setName != "" && errors.As(err, &absent) {
+					continue
+				}
 				Logger.Println("error:", err)
 				return nil, err
 			}
@@ -1119,6 +1145,9 @@ func IamListInstanceProfiles(ctx context.Context, pathPrefix *string) ([]*IamIns
 				panic("out overflow")
 			}
 			profile.Tags = out.Tags
+			if !scope.iamTagsMatch(out.Tags) {
+				continue
+			}
 			p := &IamInstanceProfile{}
 			err = p.FromProfile(ctx, &profile)
 			if err != nil {
@@ -1834,6 +1863,10 @@ func (u *IamUser) FromUser(ctx context.Context, user *iamtypes.User) error {
 }
 
 func IamListUsers(ctx context.Context) ([]*IamUser, error) {
+	return (infraListScope{}).iamUsers(ctx)
+}
+
+func (scope infraListScope) iamUsers(ctx context.Context) ([]*IamUser, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "IamListUsers"}
 		d.Start()
@@ -1852,10 +1885,17 @@ func IamListUsers(ctx context.Context) ([]*IamUser, error) {
 		for _, user := range out.Users {
 			tags, err := iamListUserTags(ctx, aws.ToString(user.UserName))
 			if err != nil {
+				var absent *iamtypes.NoSuchEntityException
+				if scope.setName != "" && errors.As(err, &absent) {
+					continue
+				}
 				Logger.Println("error:", err)
 				return nil, err
 			}
 			user.Tags = tags
+			if !scope.iamTagsMatch(tags) {
+				continue
+			}
 			iamUser := &IamUser{}
 			err = iamUser.FromUser(ctx, &user)
 			if err != nil {

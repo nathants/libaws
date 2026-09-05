@@ -430,13 +430,27 @@ func lambdaAlarmTriggerRepresentable(alarm *cwtypes.MetricAlarm) bool {
 	return representable
 }
 
-func lambdaAlarmTriggers(ctx context.Context) ([]*InfraTrigger, error) {
+func lambdaAlarmTriggers(ctx context.Context, setName string) ([]*InfraTrigger, error) {
 	alarms, err := cloudwatchDescribeMetricAlarms(ctx, CloudwatchClient(), nil)
 	if err != nil {
 		return nil, err
 	}
 	var triggers []*InfraTrigger
 	for _, alarm := range alarms {
+		if setName != "" {
+			owner, err := cloudwatchAlarmInfraSet(ctx, CloudwatchClient(), aws.ToString(alarm.AlarmArn))
+			if err != nil {
+				var absent *cwtypes.ResourceNotFoundException
+				var missing *cwtypes.ResourceNotFound
+				if errors.As(err, &absent) || errors.As(err, &missing) {
+					continue
+				}
+				return nil, err
+			}
+			if owner != setName {
+				continue
+			}
+		}
 		config, representable := lambdaAlarmConfigFromMetricAlarm(&alarm)
 		if !representable {
 			continue

@@ -10,6 +10,7 @@ run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
 
 def test(tmp_path):
     assert os.environ['LIBAWS_TEST_ACCOUNT'] == run('libaws aws-account')
+    os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
     if not os.environ.get("DOCKER_HOST"):
         os.environ["DOCKER_HOST"] = run(
             "docker context inspect --format '{{.Endpoints.docker.Host}}'"
@@ -20,11 +21,10 @@ def test(tmp_path):
     account = os.environ['account'] = run('libaws aws-account')
     region = os.environ['region'] = run('libaws aws-region')
     os.environ['digest'] = 'fake'
-    container = f'{account}.dkr.ecr.{region}.amazonaws.com/test-container'
+    container = f'{account}.dkr.ecr.{region}.amazonaws.com/test-container-{uid}'
     repo_name = container.split('amazonaws.com/')[-1]
-    os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
     run(f'docker buildx build --provenance=false -t {container} --network host .')
     run(f'libaws ecr-ensure {repo_name}')
     run('libaws ecr-login')
@@ -34,10 +34,9 @@ def test(tmp_path):
     os.environ['digest'] = digest
     run('libaws infra-ensure infra.yaml --preview')
     run('libaws infra-ensure infra.yaml')
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     infra.pop("region")
     infra.pop("account")
-    infra["infraset"].pop("none")
     infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     expected = {
         "infraset": {
@@ -73,8 +72,8 @@ def test(tmp_path):
     run('libaws infra-rm infra.yaml --preview')
     run(f'libaws ecr-rm {repo_name}')
     run('libaws infra-rm infra.yaml')
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
 
 if __name__ == '__main__':
     sys.exit(pytest.main([__file__, "-svvx", "--tb", "native"]))

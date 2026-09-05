@@ -308,6 +308,17 @@ func main() {
 
 ### View the Infrastructure Set
 
+`infra-ls` inventories the account. Its optional positional argument filters by name substring. Use `--infraset NAME` instead to select one exact `libaws.infraset` ownership tag, regardless of resource names:
+
+```bash
+libaws infra-ls --infraset my-project
+libaws infra-ls --infraset my-project --env-values
+```
+
+The selectors are mutually exclusive. Exact-set inventory reads membership metadata where AWS requires it, but describes only that set and its referenced children. Untagged roots and other sets are excluded. Membership and selected-resource errors remain errors; resources deleted before membership can be read are omitted. Empty results omit the `infraset` block. Global inventory behavior is unchanged.
+
+Triggers come from same-set resources and verified AWS relationships. SES uses exact receipt-rule source ARNs from the function's invocation permissions. Arbitrary untagged or cross-set inbound triggers are outside this owned-set view. Shared DNS zones and certificates remain references, not owned resources. Tag-scoped absence alone does not prove deletion if ownership tags were removed. The Go equivalent is `lib.InfraListSet(ctx, name, showEnvVarValues)`.
+
 Depth-based colors by [YAML](https://gist.github.com/nathants/1955b2c3130b7d1a00c8420ad6231639)
 
 ![](https://github.com/nathants/libaws/raw/master/gif/ls.gif)
@@ -420,6 +431,8 @@ func main() {
 * Websocket: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/websocket), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/websocket), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/websocket)
 
 ### Explore Complex Examples
+
+* [Coexisting infrastructure sets](https://github.com/nathants/libaws/tree/master/examples/misc/infrasets): exact-set inventory while an independent set is being removed.
 
 * [S3 append-only](https://github.com/nathants/libaws/tree/master/examples/complex/s3-appendonly): append-only storage with separate writer and reader IAM users.
 
@@ -1532,7 +1545,7 @@ bash test.sh
 * An issued ACM certificate for `*.${LIBAWS_TEST_DOMAIN}` and its DNS validation record.
 * An untagged, unmapped API Gateway custom domain named `acm-fixture.${LIBAWS_TEST_DOMAIN}`, associated with that certificate and without a Route53 alias. This keeps the certificate eligible for managed renewal.
 
-Tests create and remove only unique child resources outside these fixtures.
+Tests create and remove only unique child resources outside these fixtures. `test.sh` runs account-exclusive tests first, then independent tests with four workers. Set `LIBAWS_TEST_JOBS=1` for sequential debugging or another positive worker count to change concurrency. Each test prints its path, status, duration, and retained log path; `timings.tsv` records per-test results. Interrupting the runner stops new tests and waits for started tests to finish cleanup. Do not run another live suite against the same scratch account concurrently.
 
 Run one example with:
 

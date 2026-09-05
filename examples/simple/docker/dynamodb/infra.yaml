@@ -13,7 +13,7 @@ dynamodb:
 
 lambda:
   test-lambda-${uid}:
-    entrypoint: ${account}.dkr.ecr.${region}.amazonaws.com/test-container@${digest}
+    entrypoint: ${account}.dkr.ecr.${region}.amazonaws.com/test-container-${uid}@${digest}
     attr:
       - memory=128
       - timeout=60

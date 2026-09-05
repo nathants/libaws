@@ -1,0 +1,18 @@
+name: test-owned-${uid}
+
+s3:
+  test-object-store-${uid}: {}
+
+lambda:
+  test-worker-${uid}:
+    entrypoint: main.py
+    attr:
+      - memory=128
+      - timeout=30
+    policy:
+      - AWSLambdaBasicExecutionRole
+    trigger:
+      - type: api
+      - type: s3
+        attr:
+          - test-object-store-${uid}

@@ -17,14 +17,13 @@ def test():
     run(f"mkdir -p /tmp/{uid}")
     run(f"cd /tmp/{uid} && libaws ssh-keygen-ed25519")
     os.environ["pubkey"] = run(f"cat /tmp/{uid}/id_ed25519.pub")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     infra.pop("region")
     infra.pop("account")
-    infra["infraset"].pop("none")
     infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     expected = {
         "infraset": {
@@ -88,10 +87,9 @@ def test():
         else:
             break
     for i in range(100):
-        infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
         infra.pop("region")
         infra.pop("account")
-        infra["infraset"].pop("none")
         infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
         try:
             assert infra == expected
@@ -105,8 +103,8 @@ def test():
     run("libaws infra-rm infra.yaml --preview")
     run(f"rm -rf /tmp/{uid}")
     run("libaws infra-rm infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
 
 
 if __name__ == "__main__":

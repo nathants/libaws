@@ -13,14 +13,13 @@ run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
 def test():
     assert os.environ["LIBAWS_TEST_ACCOUNT"] == run("libaws aws-account")
     os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     infra.pop("region")
     infra.pop("account")
-    infra["infraset"].pop("none")
     infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     expected = {
         "infraset": {
@@ -57,8 +56,8 @@ def test():
     assert uid == json.loads(run(f"libaws dynamodb-item-get test-other-table-{uid} userid:s:jane"))["data"]
     run("libaws infra-rm infra.yaml --preview")
     run("libaws infra-rm infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
 
 
 if __name__ == "__main__":

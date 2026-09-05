@@ -463,6 +463,28 @@ func DynamoDBEnsureInput(infraSetName, tableName string, keys []string, attrs []
 	return input, ttl, nil
 }
 
+func dynamoDBWaitForTTL(ctx context.Context, tableName string) (*dynamodb.DescribeTimeToLiveOutput, error) {
+	for {
+		out, err := DynamoDBClient().DescribeTimeToLive(ctx, &dynamodb.DescribeTimeToLiveInput{TableName: aws.String(tableName)})
+		if err != nil {
+			return nil, err
+		}
+		if out == nil || out.TimeToLiveDescription == nil {
+			return nil, fmt.Errorf("missing TTL description for table %s", tableName)
+		}
+		status := out.TimeToLiveDescription.TimeToLiveStatus
+		if status == ddbtypes.TimeToLiveStatusDisabled || status == ddbtypes.TimeToLiveStatusEnabled {
+			return out, nil
+		}
+		Logger.Println("waiting for table ttl status to finish updating:", tableName, status)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
 func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *ddbtypes.TimeToLiveSpecification, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "DynamoDBEnsure"}
@@ -845,26 +867,10 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 		}
 		Logger.Println(PreviewString(preview)+"removed tags for table:", *input.TableName)
 	}
-	ttlOut, err := DynamoDBClient().DescribeTimeToLive(ctx, &dynamodb.DescribeTimeToLiveInput{
-		TableName: input.TableName,
-	})
+	ttlOut, err := dynamoDBWaitForTTL(ctx, aws.ToString(input.TableName))
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
-	}
-	if ttlOut == nil {
-		err := fmt.Errorf("ttlOut was nil without error")
-		Logger.Println("error:", err)
-		return err
-	}
-	for {
-		status := ttlOut.TimeToLiveDescription.TimeToLiveStatus
-		if status == ddbtypes.TimeToLiveStatusDisabled ||
-			status == ddbtypes.TimeToLiveStatusEnabled {
-			break
-		}
-		Logger.Println("waiting for table ttl status to finish updating:", *input.TableName, status)
-		time.Sleep(2 * time.Second)
 	}
 	if ttl == nil {
 		if ttlOut.TimeToLiveDescription.TimeToLiveStatus == ddbtypes.TimeToLiveStatusEnabled {

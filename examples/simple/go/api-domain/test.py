@@ -97,11 +97,10 @@ def assert_https(domain, deadline):
 
 def assert_listing(uid, zone, deadline, http_dns=True):
     listed = yaml.safe_load(
-        run_before(deadline, ["libaws", "infra-ls", "--env-values", uid])
+        run_before(deadline, ["libaws", "infra-ls", "--env-values", "--infraset", f"test-api-domain-set-{uid}"])
     )
     listed.pop("region")
     listed.pop("account")
-    listed["infraset"].pop("none")
     name = f"test-api-domain-set-{uid}"
     listed["infraset"][name].pop("keypair", None)
     for function in [
@@ -163,9 +162,9 @@ def test():
         integration(uid, "ensure-fixture", work_deadline)
         integration(uid, "verify-removed", work_deadline)
         initial = yaml.safe_load(
-            run_before(work_deadline, ["libaws", "infra-ls", "--env-values", uid])
+            run_before(work_deadline, ["libaws", "infra-ls", "--env-values", "--infraset", f"test-api-domain-set-{uid}"])
         )
-        assert initial["infraset"] == {"none": None}, initial
+        assert initial.get("infraset", {}) == {}, initial
 
         run_before(work_deadline, ["libaws", "infra-ensure", "infra.yaml", "--preview"])
         integration(uid, "verify-removed", work_deadline)

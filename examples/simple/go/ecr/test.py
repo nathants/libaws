@@ -42,14 +42,13 @@ def test(tmp_path):
         f"FROM scratch\nCOPY marker /marker\nLABEL libaws-test={uid}\n",
         encoding="utf-8",
     )
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     infra.pop("region")
     infra.pop("account")
-    infra["infraset"].pop("none")
     infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     expected = {
         "infraset": {
@@ -86,8 +85,8 @@ def test(tmp_path):
     run("libaws infra-rm infra.yaml --preview")
     run(f"libaws ecr-rm {repository}")
     run("libaws infra-rm infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
     assert f"test-lambda-{uid}" not in run("libaws events-ls-rules")
 
 

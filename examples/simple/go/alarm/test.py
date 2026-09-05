@@ -21,10 +21,9 @@ def captured(*argv):
 
 
 def listed(uid):
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     region = infra.pop("region")
     account = infra.pop("account")
-    infra["infraset"].pop("none")
     infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     return infra, region, account
 
@@ -82,8 +81,8 @@ def test():
     alarm_names = {invocation_name}
 
     try:
-        infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-        assert infra["infraset"] == {"none": None}, infra
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+        assert infra.get("infraset", {}) == {}, infra
         run("libaws infra-ensure infra.yaml")
 
         infra, region, account = listed(uid)
@@ -150,8 +149,8 @@ def test():
         assert removal.count("deleted CloudWatch metric alarm:") == 1, removal
     finally:
         run("libaws infra-rm infra.yaml")
-        infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-        assert infra["infraset"] == {"none": None}, infra
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+        assert infra.get("infraset", {}) == {}, infra
         remaining_alarms = alarm_names & cloudwatch_alarm_names()
         if remaining_alarms:
             run_alarm_integration("force-cleanup", function_name, invocation_name)

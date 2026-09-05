@@ -36,10 +36,9 @@ def captured(*argv):
 
 
 def listed(uid):
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     region = infra.pop("region")
     account = infra.pop("account")
-    infra["infraset"].pop("none")
     infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     return infra, region, account
 
@@ -87,8 +86,8 @@ def test():
     domain = f"test-ses-{uid}.{os.environ['LIBAWS_TEST_DOMAIN']}"
 
     try:
-        infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-        assert infra["infraset"] == {"none": None}, infra
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+        assert infra.get("infraset", {}) == {}, infra
 
         run("libaws infra-ensure infra.yaml --preview")
         run("libaws infra-ensure infra.yaml")
@@ -124,8 +123,8 @@ def test():
 
         run("libaws infra-rm infra.yaml")
         assert domain not in receipt_rules()
-        infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-        assert infra["infraset"] == {"none": None}, infra
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+        assert infra.get("infraset", {}) == {}, infra
     finally:
         run("libaws infra-rm infra.yaml")
         if domain in receipt_rules():

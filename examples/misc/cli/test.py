@@ -60,5 +60,14 @@ def test_s3_command_provider_support_is_explicit(command: str, provider: str):
     assert provider in result.stdout, result.stdout
 
 
+def test_infra_ls_exact_set_options():
+    help_result = libaws("infra-ls", "--help")
+    assert help_result.returncode == 0 and "--infraset" in help_result.stdout
+    conflict = libaws("infra-ls", "needle", "--infraset", "owned")
+    assert conflict.returncode == 2 and "mutually exclusive" in conflict.stdout
+    empty = libaws("infra-ls", "--infraset", "")
+    assert empty.returncode == 1 and "set name is required" in empty.stderr
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-svvx", "--tb", "native"]))

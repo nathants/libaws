@@ -78,7 +78,7 @@ def test():
         run(["libaws", "infra-ensure", "infra.yaml"])
         run(["libaws", "infra-ensure", "infra.yaml", "--preview"])
 
-        listed = run(["libaws", "infra-ls", infra_name, "--env-values"])
+        listed = run(["libaws", "infra-ls", "--infraset", infra_name, "--env-values"])
         for value in [
             infra_name + ":",
             bucket + ":",
@@ -146,7 +146,7 @@ def test():
         if result is not None:
             assert result.returncode == 0, result.stderr
 
-    listed = run(["libaws", "infra-ls", infra_name, "--env-values"])
+    listed = run(["libaws", "infra-ls", "--infraset", infra_name, "--env-values"])
     assert infra_name not in listed, listed
 
 

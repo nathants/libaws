@@ -1,5 +1,10 @@
 #!/bin/bash
 set -eou pipefail
+cd "$(dirname "$0")"
+exec 9>"$(git rev-parse --git-path libaws-tests.lock)"
+flock -n 9 || { echo "another suite is running in this checkout" >&2; exit 1; }
+started=$SECONDS
+trap 'status=$?; printf "TOTAL suite: %ss status=%s\n" "$((SECONDS - started))" "$status"' EXIT
 
 check_uv_export() {
     local requirements=$1
@@ -24,21 +29,8 @@ done < <(find examples -type d \( -name .venv -o -name node_modules \) -prune -o
 
 make check
 make
-for dir in examples/simple/python examples/simple/go examples/simple/docker examples/complex examples/misc; do
-    (
-        cd "$dir"
-        for name in *; do
-            printf '\n=== %s/%s/test.py ===\n' "$dir" "$name"
-            (cd "$name" && timeout 1800 uv run --locked python -u test.py)
-        done
-    )
-done
-(
-    cd lib
-    nontest=$(ls *.go | grep -v _test.go)
-    for test in $(ls *_test.go | grep -v lib_test.go); do
-        printf '\n=== lib/%s ===\n' "$test"
-        go test lib_test.go $nontest $test -o /tmp/libaws.test -c
-        timeout 600 /tmp/libaws.test -test.v -test.failfast
-    done
-)
+
+: "${LIBAWS_TEST_ACCOUNT:?set LIBAWS_TEST_ACCOUNT to the authorized scratch account}"
+: "${LIBAWS_TEST_DOMAIN:?set LIBAWS_TEST_DOMAIN to the delegated test zone}"
+[[ $(./libaws aws-account) == "$LIBAWS_TEST_ACCOUNT" ]] || { echo "AWS account guard failed" >&2; exit 1; }
+uv run --locked python -u test_runner.py

@@ -16,14 +16,13 @@ def test():
     infile = run("mktemp")
     outfile = run("mktemp")
     run("head -c 64 /dev/urandom >", infile)
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     infra.pop("region")
     infra.pop("account")
-    infra["infraset"].pop("none")
     infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     infra["infraset"][f"test-infraset-{uid}"]["lambda"][f"test-lambda-{uid}"]['trigger'][1].pop("attr")
     expected = {
@@ -59,8 +58,8 @@ def test():
     run("libaws infra-rm infra.yaml --preview")
     run("libaws infra-rm infra.yaml")
     run("rm -f", infile, outfile)
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
 
 
 if __name__ == "__main__":

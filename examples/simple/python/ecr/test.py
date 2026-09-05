@@ -29,14 +29,13 @@ def test(tmp_path):
     docker_config = tmp_path / "docker"
     docker_config.mkdir()
     os.environ["DOCKER_CONFIG"] = str(docker_config)
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
     run("libaws infra-ensure infra.yaml --preview")
     run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     infra.pop("region")
     infra.pop("account")
-    infra["infraset"].pop("none")
     infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
     expected = {
         "infraset": {
@@ -66,8 +65,8 @@ def test(tmp_path):
     run(f"docker image rm {image} {source_image}")
     run(f"libaws ecr-rm {repository}")
     run("libaws infra-rm infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values {uid}"))
-    assert infra["infraset"] == {"none": None}, infra
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
 
 
 if __name__ == "__main__":

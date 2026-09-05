@@ -1,0 +1,16 @@
+name: test-owned-${uid}-other
+
+dynamodb:
+  test-records-${uid}:
+    key:
+      - id:s:hash
+    attr:
+      - ttl=expires
+
+sqs:
+  test-queue-${uid}: {}
+
+user:
+  test-reader-${uid}:
+    allow:
+      - dynamodb:GetItem arn:aws:dynamodb:*:*:table/test-records-${uid}

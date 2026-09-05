@@ -152,6 +152,35 @@ func TestInfraListS3SkipsBucketDeletedAfterList(t *testing.T) {
 	})
 }
 
+func TestInfraListSetSkipsUnrelatedBucketConfiguration(t *testing.T) {
+	for _, setName := range []string{"wanted", "wanted-suffix", "", "other"} {
+		t.Run("tag="+setName, func(t *testing.T) {
+			installInfraListS3TestClient(t, infraListS3RoundTripFunc(func(request *http.Request) (*http.Response, error) {
+				switch {
+				case request.URL.Path == "/":
+					return infraListS3Response(request, http.StatusOK, infraListS3ListBucketsXML("cross-named-bucket")), nil
+				case request.URL.Query().Has("tagging"):
+					return infraListS3Response(request, http.StatusOK, `<Tagging><TagSet><Tag><Key>libaws.infraset</Key><Value>`+setName+`</Value></Tag></TagSet></Tagging>`), nil
+				default:
+					return infraListS3Response(request, http.StatusForbidden, `<Error><Code>AccessDenied</Code><Message>configuration probe</Message></Error>`), nil
+				}
+			}), true)
+			buckets, err := (infraListScope{setName: "wanted"}).listS3(context.Background(), make(chan *InfraTrigger, 1))
+			if setName == "wanted" {
+				if err == nil || !strings.Contains(err.Error(), "AccessDenied") {
+					t.Fatalf("selected bucket's real error was lost: %v", err)
+				}
+			} else if err != nil || len(buckets) != 0 {
+				t.Fatalf("unrelated bucket was described: buckets=%v err=%v", buckets, err)
+			}
+			// The global API must remain strict for the very same bucket.
+			if _, err := InfraListS3(context.Background(), make(chan *InfraTrigger, 1)); err == nil {
+				t.Fatal("global inventory stopped inspecting bucket configuration")
+			}
+		})
+	}
+}
+
 func TestInfraListS3PreservesOtherBucketErrors(t *testing.T) {
 	const bucket = "libaws-access-denied-after-list"
 	installInfraListS3TestClient(t, infraListS3RoundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -172,5 +201,25 @@ func TestInfraListS3PreservesOtherBucketErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "AccessDenied") {
 		t.Fatalf("InfraListS3 returned wrong error: %v", err)
+	}
+}
+
+func TestInfraListSetPreservesSelectedBucketDisappearance(t *testing.T) {
+	const bucket = "cross-named-bucket"
+	installInfraListS3TestClient(t, infraListS3RoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch {
+		case request.URL.Path == "/":
+			return infraListS3Response(request, 200, infraListS3ListBucketsXML(bucket)), nil
+		case request.URL.Query().Has("tagging"):
+			return infraListS3Response(request, 200, `<Tagging><TagSet><Tag><Key>libaws.infraset</Key><Value>wanted</Value></Tag></TagSet></Tagging>`), nil
+		default:
+			return infraListS3Response(request, 404, infraListS3NoSuchBucketXML(bucket)), nil
+		}
+	}), true)
+	if _, err := (infraListScope{setName: "wanted"}).listS3(context.Background(), make(chan *InfraTrigger, 1)); err == nil {
+		t.Fatal("lost selected resource error")
+	}
+	if _, err := InfraListS3(context.Background(), make(chan *InfraTrigger, 1)); err != nil {
+		t.Fatalf("changed global disappearance handling: %v", err)
 	}
 }
