@@ -11,6 +11,10 @@ run = lambda *a, **kw: shell.run(*a, stream=True, **kw)
 
 def test(tmp_path):
     assert os.environ['LIBAWS_TEST_ACCOUNT'] == run('libaws aws-account')
+    if not os.environ.get("DOCKER_HOST"):
+        os.environ["DOCKER_HOST"] = run(
+            "docker context inspect --format '{{.Endpoints.docker.Host}}'"
+        )
     docker_config = tmp_path / "docker"
     docker_config.mkdir()
     os.environ["DOCKER_CONFIG"] = str(docker_config)

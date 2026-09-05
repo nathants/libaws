@@ -10,7 +10,7 @@ dev = [
     "py-shell @ git+https://github.com/nathants/py-shell@dacb4922e13f947998ae31e40aec441c54471b36",
     "py-util @ git+https://github.com/nathants/py-util@115c1302c49c15ed5c46d5421f73022b5406096b",
     "pytest==9.1.1",
-    "pyyaml==6.0.2",
+    "pyyaml==6.0.3",
 ]
 
 [tool.uv]

@@ -28,6 +28,10 @@ def test(tmp_path):
     os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
     repository = f"test-ecr-{uid}"
     source_image = f"libaws-ecr-test:{uid}"
+    if not os.environ.get("DOCKER_HOST"):
+        os.environ["DOCKER_HOST"] = run(
+            "docker context inspect --format '{{.Endpoints.docker.Host}}'"
+        )
     docker_config = tmp_path / "docker"
     docker_config.mkdir()
     os.environ["DOCKER_CONFIG"] = str(docker_config)
