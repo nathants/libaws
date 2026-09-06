@@ -421,7 +421,7 @@ func main() {
 * Alarm: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/alarm)
 * API: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api), [custom domain](https://github.com/nathants/libaws/tree/master/examples/simple/go/api-domain)
 * DynamoDB: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/dynamodb), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/dynamodb), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/dynamodb)
-* EC2: [Spot CLI](https://github.com/nathants/libaws/tree/master/examples/misc/ec2) with VPC-selected or explicit subnets.
+* EC2: [CLI](https://github.com/nathants/libaws/tree/master/examples/misc/ec2) with Spot/on-demand launches and VPC-selected or explicit subnets.
 * ECR: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
 * Function URL: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api_and_stream)
 * Includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)

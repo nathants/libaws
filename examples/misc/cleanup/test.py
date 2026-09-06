@@ -21,7 +21,7 @@ PLAIN = [
     *(f"simple/go/{name}" for name in ("api", "api_and_stream", "dynamodb", "includes", "s3", "schedule", "sqs", "websocket")),
     *(f"simple/python/{name}" for name in ("api", "dynamodb", "includes", "s3", "schedule", "sqs", "websocket")),
 ]
-LIVE_EXAMPLES = ["simple/go/ecr", "simple/docker/ecr", "complex/s3-ec2", *PLAIN]
+LIVE_EXAMPLES = ["simple/go/ecr", "simple/docker/ecr", "complex/s3-ec2", "misc/ec2", *PLAIN]
 
 
 class InjectedFailure(RuntimeError):
@@ -149,6 +149,9 @@ def test_plain_failure_cleanup(example, failure, tmp_path):
 
 @pytest.mark.parametrize("example", LIVE_EXAMPLES)
 def test_live_failure_cleanup(example, tmp_path):
+    if example == "misc/ec2":
+        ec2_live_failure_cleanup(tmp_path)
+        return
     module = load(example)
     actual_run = module.run
     uid = None
@@ -211,6 +214,90 @@ def test_live_failure_cleanup(example, tmp_path):
             assert f"test-keypair-{uid}" not in actual_run("libaws ec2-ls-keypairs")
             assert vpc_id and vpc_id not in actual_run("libaws vpc-ls")
         safety.pop_all()
+
+
+def ec2_live_failure_cleanup(tmp_path):
+    module = load("misc/ec2")
+    actual_run = module.run
+    uid = None
+    vpc_id = None
+    fleet_file = tmp_path / "empty-fleet-id"
+    with patch.dict(os.environ), ExitStack() as safety:
+        def fail_with_empty_fleet(*args, **kwargs):
+            nonlocal uid, vpc_id
+            uid = os.environ.get("uid")
+            if args[:2] == (module.LIBAWS, "infra-ensure"):
+                safety.callback(actual_run, module.LIBAWS, "ec2-rm-keypair", f"test-keypair-{uid}")
+                safety.callback(actual_run, module.LIBAWS, "vpc-rm", f"vpc-test-{uid}")
+                safety.callback(module.cleanup_compute, uid)
+            if args[0] == "timeout":
+                # The real AWS request exists, but the simulated failed CLI has
+                # not returned an instance ID. It cannot launch before cleanup.
+                print(actual_run(
+                    "go", "test", "./lib", "-run", "^TestEC2ExampleEmptyFleet$", "-count=1", "-v",
+                    cwd=ROOT, env=dict(os.environ, LIBAWS_EC2_EXAMPLE_UID=uid, LIBAWS_EC2_EXAMPLE_FLEET_FILE=str(fleet_file)),
+                ), flush=True)
+                raise InjectedFailure("CLI failed with an owned empty fleet")
+            result = actual_run(*args, **kwargs)
+            if args[:2] == (module.LIBAWS, "vpc-id"):
+                vpc_id = result
+            return result
+
+        with patch.object(module, "run", side_effect=fail_with_empty_fleet):
+            with pytest.raises(InjectedFailure, match="owned empty fleet"):
+                module.test()
+        assert uid and vpc_id and fleet_file.is_file()
+        print(actual_run(
+            "go", "test", "./lib", "-run", "^TestEC2ExampleComputeAbsent$", "-count=1", "-v",
+            cwd=ROOT, env=dict(os.environ, LIBAWS_EC2_EXAMPLE_UID=uid, LIBAWS_EC2_EXAMPLE_FLEET_FILE=str(fleet_file)),
+        ), flush=True)
+        inventory = yaml.safe_load(actual_run(module.LIBAWS, "infra-ls", "--infraset", f"test-ec2-subnets-{uid}"))
+        assert inventory.get("infraset", {}) == {}, inventory
+        assert vpc_id not in actual_run(module.LIBAWS, "vpc-ls")
+        assert f"test-keypair-{uid}" not in actual_run(module.LIBAWS, "ec2-ls-keypairs")
+        safety.pop_all()
+
+
+@pytest.mark.parametrize("failure", ("provision", "launch", "compute-cleanup", "vpc-cleanup", "keypair-cleanup"))
+def test_ec2_failure_cleanup(failure):
+    module = load("misc/ec2")
+    commands = []
+
+    def fake_run(*args, cwd=module.DIRECTORY, env=None, stream=False):
+        commands.append(args)
+        if args[0] == "timeout":
+            raise InjectedFailure("launch")
+        if args[0] == "go":
+            assert "^TestEC2ExampleCleanup$" in args, args
+            if failure == "compute-cleanup":
+                raise InjectedFailure("compute cleanup")
+            return ""
+        command = args[1]
+        if command == "aws-account":
+            return "guarded"
+        if command == "ssh-keygen-ed25519":
+            (Path(cwd) / "id_ed25519.pub").write_text("ssh-ed25519 test\n")
+        if command == "infra-ensure" and failure == "provision":
+            raise InjectedFailure("partial provision")
+        if command == "vpc-rm" and failure == "vpc-cleanup":
+            raise InjectedFailure("VPC cleanup")
+        if command == "ec2-rm-keypair" and failure == "keypair-cleanup":
+            raise InjectedFailure("keypair cleanup")
+        return {
+            "vpc-id": "vpc-0123456789abcdef0", "ec2-id-sg": "sg-0123456789abcdef0",
+            "ec2-ls-instance-zones": "us-east-1a us-east-1b",
+            "vpc-ls-subnets": "subnet-a us-east-1a\nsubnet-b us-east-1b",
+        }.get(command, "")
+
+    with patch.dict(os.environ, LIBAWS_TEST_ACCOUNT="guarded"), patch.object(module, "run", side_effect=fake_run):
+        with pytest.raises(InjectedFailure):
+            module.test()
+        uid = os.environ["uid"]
+    finalizers = [args for args in commands if (args[0] == "go" or args[1] in ("vpc-rm", "ec2-rm-keypair"))]
+    assert len(finalizers) == 3, commands
+    assert "^TestEC2ExampleCleanup$" in finalizers[0]
+    assert finalizers[1] == (module.LIBAWS, "vpc-rm", f"vpc-test-{uid}")
+    assert finalizers[2] == (module.LIBAWS, "ec2-rm-keypair", f"test-keypair-{uid}")
 
 
 if __name__ == "__main__":

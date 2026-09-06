@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -57,13 +58,15 @@ func VpcListSubnets(ctx context.Context, vpcID string) ([]ec2types.Subnet, error
 	return out.Subnets, nil
 }
 
+var vpcIDPattern = regexp.MustCompile(`^vpc-([0-9a-f]{8}|[0-9a-f]{17})$`)
+
 func VpcID(ctx context.Context, name string) (string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "VpcID"}
 		d.Start()
 		defer d.End()
 	}
-	if strings.HasPrefix(name, "vpc-") {
+	if vpcIDPattern.MatchString(name) {
 		return name, nil
 	}
 	out, err := EC2Client().DescribeVpcs(ctx, &ec2.DescribeVpcsInput{

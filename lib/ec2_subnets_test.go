@@ -18,6 +18,7 @@ import (
 
 type ec2SubnetTestClient struct {
 	vpcName    string
+	vpcID      string
 	zones      []string
 	subnets    []ec2types.Subnet
 	failAction string
@@ -49,9 +50,9 @@ func (client *ec2SubnetTestClient) RoundTrip(r *http.Request) (*http.Response, e
 			if r.Form.Get("Filter.1.Name") != "tag:Name" || r.Form.Get("Filter.1.Value.1") != client.vpcName {
 				return nil, fmt.Errorf("unexpected VPC name filter: %v", r.Form)
 			}
-			body = "<vpcSet><item><vpcId>vpc-12345</vpcId></item></vpcSet>"
+			body = "<vpcSet><item><vpcId>" + client.vpcID + "</vpcId></item></vpcSet>"
 		case "DescribeSubnets":
-			if r.Form.Get("Filter.1.Name") != "vpc-id" || r.Form.Get("Filter.1.Value.1") != "vpc-12345" {
+			if r.Form.Get("Filter.1.Name") != "vpc-id" || r.Form.Get("Filter.1.Value.1") != client.vpcID {
 				return nil, fmt.Errorf("unexpected VPC ID filter: %v", r.Form)
 			}
 			body = "<subnetSet>"
@@ -71,6 +72,7 @@ func installEC2SubnetTestClient(t *testing.T) *ec2SubnetTestClient {
 	t.Helper()
 	client := &ec2SubnetTestClient{
 		vpcName: "test-vpc",
+		vpcID:   "vpc-0123456789abcdef0",
 		zones:   []string{"us-east-1a", "us-east-1b"},
 		subnets: []ec2types.Subnet{
 			{SubnetId: aws.String("subnet-a1"), AvailabilityZone: aws.String("us-east-1a")},
@@ -88,10 +90,14 @@ func installEC2SubnetTestClient(t *testing.T) *ec2SubnetTestClient {
 }
 
 func TestEC2SubnetsFromVpcSpotKeepsEverySubnet(t *testing.T) {
-	for _, name := range []string{"test-vpc", "vpc-12345", "vpc"} {
+	for _, name := range []string{"test-vpc", "vpc-prod", "vpc-12345", "vpc", "vpc-12345678", "vpc-0123456789abcdef0"} {
 		t.Run(name, func(t *testing.T) {
 			client := installEC2SubnetTestClient(t)
 			client.vpcName = name
+			isID := name == "vpc-12345678" || name == "vpc-0123456789abcdef0"
+			if isID {
+				client.vpcID = name
+			}
 			got, err := EC2SubnetsFromVpc(context.Background(), name, ec2types.InstanceTypeT3Small, true)
 			if err != nil {
 				t.Fatal(err)
@@ -100,7 +106,7 @@ func TestEC2SubnetsFromVpcSpotKeepsEverySubnet(t *testing.T) {
 			if !slices.Equal(got, want) {
 				t.Fatalf("subnets = %v, want every subnet %v", got, want)
 			}
-			if lookedUpName := slices.Contains(client.calls, "DescribeVpcs"); lookedUpName != (name != "vpc-12345") {
+			if lookedUpName := slices.Contains(client.calls, "DescribeVpcs"); lookedUpName == isID {
 				t.Fatalf("VPC name lookup = %t for %q", lookedUpName, name)
 			}
 		})
@@ -198,28 +204,40 @@ func TestEC2SubnetsFromVpcIntegration(t *testing.T) {
 	if len(instances) != 1 {
 		t.Fatalf("instances = %d, want one", len(instances))
 	}
+	lifecycle := os.Getenv("LIBAWS_EC2_SUBNET_TEST_LIFECYCLE")
+	if lifecycle != "spot" && lifecycle != "on-demand" {
+		t.Fatal("expected lifecycle must be spot or on-demand")
+	}
 	instance := instances[0]
-	if aws.ToString(instance.VpcId) != vpcID || instance.InstanceLifecycle != ec2types.InstanceLifecycleTypeSpot || !slices.Contains(expected, aws.ToString(instance.SubnetId)) {
-		t.Fatalf("unexpected launch: VPC=%s subnet=%s lifecycle=%s", aws.ToString(instance.VpcId), aws.ToString(instance.SubnetId), instance.InstanceLifecycle)
+	wantLifecycle := ec2types.InstanceLifecycleType("")
+	if lifecycle == "spot" {
+		wantLifecycle = ec2types.InstanceLifecycleTypeSpot
 	}
-	fleetID := EC2GetTag(instance.Tags, "aws:ec2spot:fleet-request-id", "")
-	if fleetID == "" {
-		t.Fatal("launched instance has no Spot Fleet request tag")
+	if aws.ToString(instance.VpcId) != vpcID || instance.InstanceLifecycle != wantLifecycle || !slices.Contains(expected, aws.ToString(instance.SubnetId)) || instance.IamInstanceProfile != nil {
+		t.Fatalf("unexpected launch: VPC=%s subnet=%s lifecycle=%s profile=%v", aws.ToString(instance.VpcId), aws.ToString(instance.SubnetId), instance.InstanceLifecycle, instance.IamInstanceProfile)
 	}
-	fleet, err := EC2DescribeSpotFleet(ctx, &fleetID)
-	if err != nil {
-		t.Fatal(err)
+	if lifecycle == "spot" {
+		fleetID := EC2GetTag(instance.Tags, "aws:ec2spot:fleet-request-id", "")
+		if fleetID == "" {
+			t.Fatal("launched instance has no Spot Fleet request tag")
+		}
+		fleet, err := EC2DescribeSpotFleet(ctx, &fleetID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var actual []string
+		for _, spec := range fleet.SpotFleetRequestConfig.LaunchSpecifications {
+			actual = append(actual, aws.ToString(spec.SubnetId))
+		}
+		slices.Sort(expected)
+		slices.Sort(actual)
+		if !slices.Equal(actual, expected) {
+			t.Fatalf("AWS fleet subnets = %v, want %v", actual, expected)
+		}
+		t.Logf("verified AWS fleet %s: subnets=%v", fleetID, actual)
+	} else {
+		t.Logf("verified on-demand instance %s: subnet=%s", instanceID, aws.ToString(instance.SubnetId))
 	}
-	var actual []string
-	for _, spec := range fleet.SpotFleetRequestConfig.LaunchSpecifications {
-		actual = append(actual, aws.ToString(spec.SubnetId))
-	}
-	slices.Sort(expected)
-	slices.Sort(actual)
-	if !slices.Equal(actual, expected) {
-		t.Fatalf("AWS fleet subnets = %v, want %v", actual, expected)
-	}
-	t.Logf("verified AWS fleet %s: subnets=%v", fleetID, actual)
 	all, err := EC2SubnetsFromVpc(ctx, vpcID, ec2types.InstanceTypeT3Small, true)
 	if err != nil {
 		t.Fatal(err)
@@ -228,12 +246,5 @@ func TestEC2SubnetsFromVpcIntegration(t *testing.T) {
 		if !slices.Contains(all, subnetID) {
 			t.Fatalf("VPC ID lookup omitted eligible subnet %s: %v", subnetID, all)
 		}
-	}
-	one, err := EC2SubnetsFromVpc(ctx, vpcID, ec2types.InstanceTypeT3Small, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(one) != 1 || !slices.Contains(all, one[0]) {
-		t.Fatalf("on-demand selection = %v, want one eligible subnet from %v", one, all)
 	}
 }

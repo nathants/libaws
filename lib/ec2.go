@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -25,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/smithy-go"
 	"github.com/gofrs/uuid"
 )
 
@@ -382,64 +384,73 @@ func EC2WaitState(ctx context.Context, instanceIDs []string, state ec2types.Inst
 	return err
 }
 
-func ec2FinalizeSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
-	if doDebug {
-		d := &Debug{start: time.Now(), name: "ec2FinalizeSpotFleet"}
-		d.Start()
-		defer d.End()
+const ec2SpotFleetCleanupTimeout = 5 * time.Minute
+
+func ec2CancelSpotFleet(ctx context.Context, id *string, terminate bool) error {
+	if aws.ToString(id) == "" {
+		return fmt.Errorf("spot fleet ID is required")
 	}
-	Logger.Println("teardown spot fleet", *spotFleetRequestId)
-	_, err := EC2Client().CancelSpotFleetRequests(ctx, &ec2.CancelSpotFleetRequestsInput{
-		SpotFleetRequestIds: []string{*spotFleetRequestId},
-		TerminateInstances:  aws.Bool(false),
+	Logger.Println("cancel spot fleet", *id, "terminate instances:", terminate)
+	out, err := EC2Client().CancelSpotFleetRequests(ctx, &ec2.CancelSpotFleetRequestsInput{
+		SpotFleetRequestIds: []string{*id},
+		TerminateInstances:  aws.Bool(terminate),
 	})
 	if err != nil {
-		Logger.Println("error:", err)
 		return err
+	}
+	var failures []error
+	for _, failure := range out.UnsuccessfulFleetRequests {
+		failures = append(failures, fmt.Errorf("cancel spot fleet %s: %s", aws.ToString(failure.SpotFleetRequestId), Pformat(failure.Error)))
+	}
+	if len(failures) > 0 {
+		return errors.Join(failures...)
+	}
+	if len(out.SuccessfulFleetRequests) != 1 || aws.ToString(out.SuccessfulFleetRequests[0].SpotFleetRequestId) != *id {
+		return fmt.Errorf("cancel spot fleet %s: missing or unexpected result: %s", *id, Pformat(out))
+	}
+	state := out.SuccessfulFleetRequests[0].CurrentSpotFleetRequestState
+	if !slices.Contains([]ec2types.BatchState{ec2types.BatchStateCancelled, ec2types.BatchStateCancelledRunning, ec2types.BatchStateCancelledTerminatingInstances}, state) {
+		return fmt.Errorf("cancel spot fleet %s: unexpected state %s", *id, state)
 	}
 	return nil
 }
 
-func EC2TeardownSpotFleet(ctx context.Context, spotFleetRequestId *string) error {
-	if doDebug {
-		d := &Debug{start: time.Now(), name: "EC2TeardownSpotFleet"}
-		d.Start()
-		defer d.End()
+// EC2TeardownSpotFleet cancels further launches and waits for its instances to
+// terminate. Already finalized fleets still need their retained instances removed.
+func EC2TeardownSpotFleet(ctx context.Context, id *string) error {
+	if aws.ToString(id) == "" {
+		return fmt.Errorf("spot fleet ID is required")
 	}
-	Logger.Println("teardown spot fleet", *spotFleetRequestId)
-	_, err := EC2Client().CancelSpotFleetRequests(ctx, &ec2.CancelSpotFleetRequestsInput{
-		SpotFleetRequestIds: []string{*spotFleetRequestId},
-		TerminateInstances:  aws.Bool(true),
-	})
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
+	ctx, cancel := context.WithTimeout(ctx, ec2SpotFleetCleanupTimeout)
+	defer cancel()
+	fleet, describeErr := EC2DescribeSpotFleet(ctx, id)
+	// Keep instances observed before cancellation as well as those it makes
+	// visible. AWS may remove terminating instances from the fleet's active list.
+	before, beforeErr := EC2DescribeSpotFleetActiveInstances(ctx, id)
+	var cancelErr error
+	if describeErr != nil || !slices.Contains(ec2FailedStates, fleet.SpotFleetRequestState) {
+		cancelErr = ec2CancelSpotFleet(ctx, id, true)
 	}
-	instances, err := EC2DescribeSpotFleetActiveInstances(ctx, spotFleetRequestId)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
+	after, afterErr := EC2DescribeSpotFleetActiveInstances(ctx, id)
+	cleanupErr := errors.Join(describeErr, beforeErr, cancelErr, afterErr)
 	var ids []string
-	for _, instance := range instances {
-		ids = append(ids, *instance.InstanceId)
+	for _, instance := range append(before, after...) {
+		if !slices.Contains(ids, *instance.InstanceId) {
+			ids = append(ids, *instance.InstanceId)
+		}
 	}
-	if len(ids) == 0 {
-		return nil
+	// A failed cancellation does not excuse abandoning the known instances.
+	if len(ids) > 0 {
+		_, err := EC2Client().TerminateInstances(ctx, &ec2.TerminateInstancesInput{InstanceIds: ids})
+		if err != nil {
+			return errors.Join(cleanupErr, err)
+		}
+		cleanupErr = errors.Join(cleanupErr, EC2WaitState(ctx, ids, ec2types.InstanceStateNameTerminated))
 	}
-	err = EC2WaitState(ctx, ids, ec2types.InstanceStateNameRunning)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
-	_, err = EC2Client().TerminateInstances(ctx, &ec2.TerminateInstancesInput{
-		InstanceIds: ids,
-	})
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
-	return nil
+	// Successful cancellation stops new launches and terminates any in-flight
+	// launches too. Wait for observed instances, not the eventual fleet metadata:
+	// AWS can retain cancelled_terminating long after the actual termination.
+	return cleanupErr
 }
 func ec2SpotFleetHistoryErrors(ctx context.Context, spotFleetRequestId *string) error {
 	if doDebug {
@@ -686,7 +697,7 @@ func makeBlockDeviceMapping(config *EC2Config) []ec2types.BlockDeviceMapping {
 	}}
 }
 
-func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationStrategy, config *EC2Config) ([]ec2types.Instance, error) {
+func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationStrategy, config *EC2Config) (instances []ec2types.Instance, err error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2RequestSpotFleet"}
 		d.Start()
@@ -768,17 +779,18 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 		Logger.Println("error:", err)
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ec2SpotFleetCleanupTimeout)
+			defer cancel()
+			err = errors.Join(err, EC2TeardownSpotFleet(cleanupCtx, spotFleet.SpotFleetRequestId))
+		}
+	}()
 	err = ec2WaitSpotFleet(ctx, spotFleet.SpotFleetRequestId, config.NumInstances)
 	if err != nil {
-		Logger.Println("error:", err)
-		err2 := EC2TeardownSpotFleet(context.Background(), spotFleet.SpotFleetRequestId)
-		if err2 != nil {
-			Logger.Println("error:", err2)
-			return nil, err2
-		}
 		return nil, err
 	}
-	err = ec2FinalizeSpotFleet(ctx, spotFleet.SpotFleetRequestId)
+	err = ec2CancelSpotFleet(ctx, spotFleet.SpotFleetRequestId, false)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +803,10 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 	for _, instance := range fleetInstances {
 		instanceIDs = append(instanceIDs, *instance.InstanceId)
 	}
-	instances, err := EC2DescribeInstances(ctx, instanceIDs)
+	if len(instanceIDs) == 0 {
+		return nil, fmt.Errorf("spot fleet %s returned no instances", *spotFleet.SpotFleetRequestId)
+	}
+	instances, err = EC2DescribeInstances(ctx, instanceIDs)
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -2912,10 +2927,12 @@ func EC2DeleteKeypair(ctx context.Context, keypairName string, preview bool) err
 		KeyNames: []string{keypairName},
 	})
 	if err != nil {
-		if !strings.Contains(err.Error(), "InvalidKeyPair.NotFound") {
-			Logger.Println("error:", err)
-			return err
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidKeyPair.NotFound" {
+			return nil
 		}
+		Logger.Println("error:", err)
+		return err
 	}
 	if len(out.KeyPairs) > 0 {
 		if !preview {

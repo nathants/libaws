@@ -5,13 +5,10 @@ import (
 	"errors"
 	"os"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 )
@@ -30,7 +27,6 @@ func TestS3EC2ExampleCleanup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 9*time.Minute)
 	defer cancel()
 	function := "test-lambda-" + uid
-	key := "test-keypair-" + uid
 	timeout := int32(lambdaAttrTimeoutDefault)
 	configuration, err := LambdaClient().GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{FunctionName: aws.String(function)})
 	if err != nil {
@@ -54,68 +50,5 @@ func TestS3EC2ExampleCleanup(t *testing.T) {
 			t.Fatal(ctx.Err())
 		}
 	}
-	fleets := ec2.NewDescribeSpotFleetRequestsPaginator(EC2Client(), &ec2.DescribeSpotFleetRequestsInput{})
-	for fleets.HasMorePages() {
-		page, err := fleets.NextPage(ctx)
-		if err != nil {
-			t.Error(err)
-			break
-		}
-		for _, fleet := range page.SpotFleetRequestConfigs {
-			if fleet.SpotFleetRequestConfig == nil || strings.HasPrefix(string(fleet.SpotFleetRequestState), "cancelled") {
-				continue
-			}
-			specifications := fleet.SpotFleetRequestConfig.LaunchSpecifications
-			owned := len(specifications) > 0
-			for _, specification := range specifications {
-				owned = owned && aws.ToString(specification.KeyName) == key
-			}
-			if !owned {
-				continue
-			}
-			result, err := EC2Client().CancelSpotFleetRequests(ctx, &ec2.CancelSpotFleetRequestsInput{
-				SpotFleetRequestIds: []string{aws.ToString(fleet.SpotFleetRequestId)},
-				TerminateInstances:  aws.Bool(true),
-			})
-			if err != nil {
-				t.Error(err)
-			} else if len(result.UnsuccessfulFleetRequests) != 0 || len(result.SuccessfulFleetRequests) != 1 {
-				t.Errorf("cancel owned fleet %s: %+v", aws.ToString(fleet.SpotFleetRequestId), result)
-			}
-		}
-	}
-	// Match the unique fixture key, not mutable infrastructure membership tags.
-	instances := ec2.NewDescribeInstancesPaginator(EC2Client(), &ec2.DescribeInstancesInput{
-		Filters: []ec2types.Filter{{Name: aws.String("key-name"), Values: []string{key}}},
-	})
-	var terminate, wait []string
-	for instances.HasMorePages() {
-		page, err := instances.NextPage(ctx)
-		if err != nil {
-			t.Error(err)
-			break
-		}
-		for _, reservation := range page.Reservations {
-			for _, instance := range reservation.Instances {
-				if instance.State.Name == ec2types.InstanceStateNameTerminated {
-					continue
-				}
-				id := aws.ToString(instance.InstanceId)
-				wait = append(wait, id)
-				if instance.State.Name != ec2types.InstanceStateNameShuttingDown {
-					terminate = append(terminate, id)
-				}
-			}
-		}
-	}
-	if len(terminate) > 0 {
-		if _, err := EC2Client().TerminateInstances(ctx, &ec2.TerminateInstancesInput{InstanceIds: terminate}); err != nil {
-			t.Error(err)
-		}
-	}
-	if len(wait) > 0 {
-		if err := EC2WaitState(ctx, wait, ec2types.InstanceStateNameTerminated); err != nil {
-			t.Error(err)
-		}
-	}
+	cleanupEC2ExampleCompute(t, ctx, "test-keypair-"+uid)
 }

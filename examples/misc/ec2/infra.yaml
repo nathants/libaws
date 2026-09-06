@@ -5,7 +5,7 @@ keypair:
     pubkey-content: ${pubkey}
 
 vpc:
-  test-vpc-${uid}:
+  vpc-test-${uid}:
     security-group:
       test-sg-${uid}:
         rule: [] # No ingress or instance credentials are needed for this test.
