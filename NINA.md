@@ -27,3 +27,4 @@
 - Read [test-performance.md](test-performance.md) when evaluating runner concurrency or execution location; it records the measurement conditions and retained timing evidence.
 - EC2 `--init` runs as the image's login user, not root; use explicit `sudo` for privileged guest setup. `examples/complex/s3-ec2` demonstrates small Debian Spot guests with S3 input/output and automatic poweroff. `examples/misc/ec2` covers CLI VPC/explicit-subnet selection against AWS's stored Spot Fleet request, using guests without ingress or instance credentials.
 - `restore_python_deps.sh` materializes the virtualenv interpreter and its aliases. Keep `pyvenv.cfg` pointing to the real base installation; uv-managed Python aliases and a `python3 -> python` symlink into a copied interpreter can otherwise lose the standard library.
+
