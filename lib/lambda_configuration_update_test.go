@@ -2,7 +2,10 @@ package lib
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,5 +144,78 @@ func TestLambdaEnsureFunctionConfigurationPreservesExplicitEmptyValue(t *testing
 	value, exists := client.updateInput.Environment.Variables["OPTIONAL"]
 	if !exists || value != "" {
 		t.Fatalf("explicit empty Lambda environment value missing from update: %#v", client.updateInput.Environment.Variables)
+	}
+}
+
+// Exercise libaws's update path through the real SDK serializer without AWS.
+type lambdaConfigurationHTTPForTest struct {
+	requests    int
+	updateBytes int
+}
+
+func (client *lambdaConfigurationHTTPForTest) Do(request *http.Request) (*http.Response, error) {
+	client.requests++
+	response := `{"Configuration":{"LastUpdateStatus":"Successful"}}`
+	if strings.HasSuffix(request.URL.Path, "/configuration") {
+		response = `{"Timeout":1,"MemorySize":128}`
+		if request.Method == http.MethodPut {
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				return nil, err
+			}
+			client.updateBytes = len(body)
+			response = `{}`
+		}
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK, Header: http.Header{},
+		Body: io.NopCloser(strings.NewReader(response)),
+	}, nil
+}
+
+func TestLambdaConfigurationRequestBoundaryMatchesSDK(t *testing.T) {
+	for _, test := range []struct {
+		name, character          string
+		padding, timeout, memory int
+		emptyVariable            bool
+	}{
+		{"backspace", "\b", 251, 60, 128, false},
+		{"form feed", "\f", 251, 60, 128, false},
+		{"line separator", "\u2028", 251, 60, 128, false},
+		{"paragraph separator", "\u2029", 251, 60, 128, false},
+		{"attributes", "\b", 248, 900, 10240, false},
+		{"multiple variables", "\b", 243, 60, 128, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			transport := &lambdaConfigurationHTTPForTest{}
+			client := lambda.New(lambda.Options{
+				Region: "us-east-1", Credentials: aws.AnonymousCredentials{}, HTTPClient: transport,
+			})
+			variables := map[string]string{"AA": strings.Repeat(test.character, 800) + strings.Repeat("x", test.padding)}
+			if test.emptyVariable {
+				variables["BB"] = ""
+			}
+			err := lambdaEnsureFunctionConfigurationWithClient(
+				context.Background(), client, &InfraLambda{Name: "function"}, variables,
+				test.timeout, test.memory, false, false, time.Second,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if transport.updateBytes != 5120 || transport.requests != 3 {
+				t.Fatalf("SDK update bytes=%d requests=%d, want 5120 bytes and read/update/wait", transport.updateBytes, transport.requests)
+			}
+			variables["AA"] += "x"
+			for _, preview := range []bool{false, true} {
+				transport.requests = 0
+				err = lambdaEnsureFunctionConfigurationWithClient(
+					context.Background(), client, &InfraLambda{Name: "function"}, variables,
+					test.timeout, test.memory, preview, false, time.Second,
+				)
+				if err == nil || !strings.Contains(err.Error(), "request size 5121 bytes") || transport.requests != 0 {
+					t.Fatalf("oversized update preview=%v error=%v requests=%d, want local rejection before AWS", preview, err, transport.requests)
+				}
+			}
+		})
 	}
 }

@@ -1080,7 +1080,7 @@ Defines allows on the Lambda's IAM role.
 Defines environment variables on the Lambda:
 
 * Names must match `[a-zA-Z][a-zA-Z0-9_]+` and may not be repeated.
-* The combined byte length of all names and values may not exceed 4 KiB.
+* The environment JSON is limited to 4 KiB; the complete configuration update to 5 KiB.
 * Values may be empty and are preserved exactly.
 
 * Schema:

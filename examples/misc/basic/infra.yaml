@@ -10,5 +10,6 @@ lambda:
       - -rrequirements.txt
     env:
       - uid=${uid}
+      - ${lambda_environment}
     policy:
       - AWSLambdaBasicExecutionRole

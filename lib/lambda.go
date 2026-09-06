@@ -31,6 +31,7 @@ import (
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
+	smithyjson "github.com/aws/smithy-go/encoding/json"
 )
 
 const (
@@ -81,7 +82,8 @@ const (
 	lambdaUrlFuncSid   = "FunctionUrlInvoke"
 	lambdaUrlInvokeSid = "FunctionUrlInvokeFunction"
 
-	lambdaEnvironmentMaxBytes = 4 * 1024
+	lambdaEnvironmentMaxBytes          = 4 * 1024
+	lambdaConfigurationRequestMaxBytes = 5 * 1024
 )
 
 var lambdaClient *lambda.Client
@@ -113,13 +115,43 @@ func validateLambdaContainerImageURI(imageURI string) error {
 func lambdaEnvironmentJSONSize(variables map[string]string) (int, error) {
 	var encoded strings.Builder
 	encoder := json.NewEncoder(&encoded)
-	// Smithy's AWS REST JSON encoder does not HTML-escape <, >, or &.
+	// Lambda measures its own compact JSON, not the SDK's wire encoding.
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(variables); err != nil {
 		return 0, fmt.Errorf("encode Lambda environment: %w", err)
 	}
-	// Encoder.Encode terminates the compact JSON object with one newline.
-	return encoded.Len() - 1, nil
+	// Encoder.Encode adds a newline and escapes U+2028/U+2029 as six bytes.
+	// Lambda uses their three UTF-8 bytes. Names have been validated as ASCII;
+	// count actual separators in values, not literal backslash-u sequences.
+	size := encoded.Len() - 1
+	for _, value := range variables {
+		size -= 3 * (strings.Count(value, "\u2028") + strings.Count(value, "\u2029"))
+	}
+	return size, nil
+}
+
+func validateLambdaConfigurationRequestSize(variables map[string]string, timeout, memory int) error {
+	// Encode the exact fields sent by lambdaEnsureFunctionConfigurationWithClient.
+	// Smithy uses longer escapes for backspace, form feed, and U+2028/U+2029
+	// than Lambda's environment-quota representation does.
+	encoder := smithyjson.NewEncoder()
+	request := encoder.Object()
+	environment := request.Key("Environment").Object()
+	if variables != nil {
+		values := environment.Key("Variables").Object()
+		for name, value := range variables {
+			values.Key(name).String(value)
+		}
+		values.Close()
+	}
+	environment.Close()
+	request.Key("MemorySize").Integer(int32(memory))
+	request.Key("Timeout").Integer(int32(timeout))
+	request.Close()
+	if size := len(encoder.Bytes()); size > lambdaConfigurationRequestMaxBytes {
+		return fmt.Errorf("lambda configuration request size %d bytes exceeds AWS Lambda limit %d bytes", size, lambdaConfigurationRequestMaxBytes)
+	}
+	return nil
 }
 
 func lambdaEnvironmentVariables(values []string) (map[string]string, error) {
@@ -3037,6 +3069,9 @@ func lambdaEnsureFunctionConfigurationWithClient(
 	if maxWait <= 0 {
 		return errors.New("lambda configuration update wait must be positive")
 	}
+	if err := validateLambdaConfigurationRequestSize(environmentVariables, timeout, memory); err != nil {
+		return err
+	}
 	outConf, err := client.GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{
 		FunctionName: aws.String(infraLambda.Name),
 	})
@@ -3192,6 +3227,12 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 	}
 	environmentVariables, err := lambdaEnvironmentVariables(infraLambda.Env)
 	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
+	// New functions must also fit the update request, so every accepted
+	// declaration remains reconcilable. Validate before packaging or provisioning.
+	if err := validateLambdaConfigurationRequestSize(environmentVariables, timeout, memory); err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
