@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	apitypes "github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	logstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
@@ -92,6 +91,7 @@ type InfraSet struct {
 type InfraApi struct {
 	apiID        string
 	infraSetName string
+	lambdaName   string // Set only after verifying the integration's actual target.
 	Dns          string `json:"dns,omitempty"    yaml:"dns,omitempty"`
 	Domain       string `json:"domain,omitempty" yaml:"domain,omitempty"`
 	ReadOnlyUrl  string `json:"url,omitempty"    yaml:"url,omitempty"`
@@ -277,11 +277,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list keypair
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		keypairs, err := scope.listKeypair(ctx)
 		if err != nil {
 			errs <- err
@@ -311,11 +307,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list api
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		apis, err := scope.listApi(ctx, triggersChan)
 		if err != nil {
 			errs <- err
@@ -345,11 +337,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list dynamo
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		tables, err := scope.listDynamoDB(ctx)
 		if err != nil {
 			errs <- err
@@ -379,11 +367,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list vpc
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		vpcs, err := scope.listVpc(ctx)
 		if err != nil {
 			errs <- err
@@ -413,11 +397,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list sqs
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		queues, err := scope.listSQS(ctx)
 		if err != nil {
 			errs <- err
@@ -447,11 +427,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list s3
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		buckets, err := scope.listS3(ctx, triggersChan)
 		if err != nil {
 			errs <- err
@@ -481,11 +457,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list event triggers
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		events, err := scope.listEvent(ctx, triggersChan)
 		if err != nil {
 			errs <- err
@@ -515,12 +487,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list CloudWatch alarm triggers
 	count++
 	go func() {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				logRecover(recovered)
-				errs <- fmt.Errorf("list CloudWatch alarm triggers: %v", recovered)
-			}
-		}()
+		defer infraListRecover(errs, "CloudWatch alarm triggers")
 		triggers, err := lambdaAlarmTriggers(ctx, scope.setName)
 		if err != nil {
 			errs <- err
@@ -535,11 +502,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list user
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		users, err := scope.listUser(ctx)
 		if err != nil {
 			errs <- err
@@ -569,11 +532,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list role
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		roles, err := scope.listRole(ctx)
 		if err != nil {
 			errs <- err
@@ -603,11 +562,7 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// list instance profile
 	count++
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errs <- fmt.Errorf("list infrastructure: %v", r)
-			}
-		}()
+		defer infraListRecover(errs, "infrastructure")
 		profiles, err := scope.listInstanceProfile(ctx)
 		if err != nil {
 			errs <- err
@@ -684,11 +639,9 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	// remove resources which are implicit to an existing lambda
 	var instanceProfileNames []string
 	var lambdaNames []string
-	var websocketNames []string
 	for _, infraSet := range infra.InfraSet {
 		for name := range infraSet.Lambda {
 			lambdaNames = append(lambdaNames, name)
-			websocketNames = append(websocketNames, name+LambdaWebsocketSuffix)
 		}
 		for name := range infraSet.InstanceProfile {
 			instanceProfileNames = append(instanceProfileNames, name)
@@ -720,9 +673,9 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 			}
 		}
 
-		for name := range infraSet.Api {
-			if slices.Contains(lambdaNames, name) || slices.Contains(websocketNames, name) {
-				delete(infraSet.Api, name) // shown as trigger of the lambda
+		for name, api := range infraSet.Api {
+			if api.lambdaName != "" && slices.Contains(lambdaNames, api.lambdaName) {
+				delete(infraSet.Api, name) // shown as a verified trigger of the lambda
 			}
 		}
 
@@ -788,36 +741,22 @@ func (scope infraListScope) listEvent(ctx context.Context, triggersChan chan<- *
 	for _, rule := range rules {
 		rule := rule
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logRecover(r)
-				}
-			}()
-			if scope.setName != "" {
-				out, err := EventsClient().ListTagsForResource(ctx, &events.ListTagsForResourceInput{ResourceARN: rule.Arn})
-				if err != nil {
-					var absent *eventtypes.ResourceNotFoundException
-					if errors.As(err, &absent) {
-						errChan <- nil
-					} else {
-						errChan <- err
-					}
-					return
-				}
-				if !lambdaSDKTagsOwned(out.Tags, scope.setName) {
-					errChan <- nil
-					return
-				}
-			}
-			targets, err := EventsListRuleTargets(ctx, *rule.Name, nil)
+			defer infraListRecover(errChan, fmt.Sprintf("EventBridge rule %q", aws.ToString(rule.Name)))
+			tagsOut, err := EventsClient().ListTagsForResource(ctx, &events.ListTagsForResourceInput{ResourceARN: rule.Arn})
 			if err != nil {
-				Logger.Println("error:", err)
-				errChan <- err
+				var absent *eventtypes.ResourceNotFoundException
+				if scope.setName != "" && errors.As(err, &absent) {
+					errChan <- nil
+				} else {
+					errChan <- err
+				}
 				return
 			}
-			tagsOut, err := EventsClient().ListTagsForResource(ctx, &events.ListTagsForResourceInput{
-				ResourceARN: rule.Arn,
-			})
+			if scope.setName != "" && !lambdaSDKTagsOwned(tagsOut.Tags, scope.setName) {
+				errChan <- nil
+				return
+			}
+			targets, err := EventsListRuleTargets(ctx, *rule.Name, nil)
 			if err != nil {
 				Logger.Println("error:", err)
 				errChan <- err
@@ -903,12 +842,7 @@ func (scope infraListScope) listLambda(ctx context.Context, triggersChan <-chan 
 	for _, fn := range fns {
 		fn := fn
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logRecover(r)
-					errChan <- fmt.Errorf("list Lambda %q: %v", aws.ToString(fn.FunctionName), r)
-				}
-			}()
+			defer infraListRecover(errChan, fmt.Sprintf("Lambda %q", aws.ToString(fn.FunctionName)))
 			infraLambda := &InfraLambda{
 				Name: *fn.FunctionName,
 			}
@@ -1202,6 +1136,10 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 			return result, nil
 		}
 	}
+	callerARN, err := StsArn(ctx)
+	if err != nil {
+		return nil, err
+	}
 	domains, err := ApiListDomains(ctx)
 	if err != nil {
 		Logger.Println("error:", err)
@@ -1283,11 +1221,7 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 	for _, api := range apis {
 		api := api
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logRecover(r)
-				}
-			}()
+			defer infraListRecover(errChan, fmt.Sprintf("API %q", aws.ToString(api.Name)))
 			infraApi := &InfraApi{
 				apiID: *api.ApiId,
 			}
@@ -1299,17 +1233,10 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 					}
 				}
 			}
-			out, err := ApiClient().GetIntegrations(ctx, &apigatewayv2.GetIntegrationsInput{
-				ApiId:      api.ApiId,
-				MaxResults: aws.String(fmt.Sprint(500)),
-			})
+			integrations, err := lambdaAPIIntegrations(ctx, ApiClient(), api.ApiId)
 			if err != nil {
 				Logger.Println("error:", err)
 				errChan <- err
-				return
-			}
-			if len(out.Items) != 1 {
-				errChan <- nil
 				return
 			}
 			attrs := []string{}
@@ -1325,14 +1252,13 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 				}
 			}
 			triggerType := lambdaTriggerApi
-			lambdaName := *api.Name
-			if api.RouteSelectionExpression != nil && *api.RouteSelectionExpression == lambdaRouteSelection { // websocket uses a suffix in addition to the lambda name
-				if !strings.HasSuffix(lambdaName, LambdaWebsocketSuffix) {
-					Logger.Println(*api.RouteSelectionExpression)
-					panic(lambdaName)
-				}
-				lambdaName = lambdaName[:len(lambdaName)-len(LambdaWebsocketSuffix)]
+			lambdaName := aws.ToString(api.Name)
+			candidate := api.ProtocolType == apitypes.ProtocolTypeHttp
+			if api.ProtocolType == apitypes.ProtocolTypeWebsocket && strings.HasSuffix(lambdaName, LambdaWebsocketSuffix) &&
+				aws.ToString(api.RouteSelectionExpression) == lambdaRouteSelection {
+				lambdaName = strings.TrimSuffix(lambdaName, LambdaWebsocketSuffix)
 				triggerType = lambdaTriggerWebsocket
+				candidate = true
 			}
 			if infraApi.Dns == "" && infraApi.Domain == "" {
 				infraApi.ReadOnlyUrl = fmt.Sprintf("%s.execute-api.%s.amazonaws.com", infraApi.apiID, Region())
@@ -1347,10 +1273,21 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 			if infraApi.ReadOnlyUrl != "" {
 				attrs = append(attrs, fmt.Sprintf("url=https://%s", infraApi.ReadOnlyUrl))
 			}
-			triggersChan <- &InfraTrigger{
-				lambdaName: lambdaName,
-				Type:       triggerType,
-				Attr:       attrs,
+			if candidate && lambdaNamePattern.MatchString(lambdaName) && len(integrations) == 1 &&
+				integrations[0].IntegrationType == apitypes.IntegrationTypeAwsProxy {
+				identity, err := lambdaIdentityFromCallerARN(lambdaName, scope.setName, Region(), callerARN)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				if lambdaAPIIntegrationMatches(&integrations[0], identity.arn) {
+					infraApi.lambdaName = lambdaName
+					triggersChan <- &InfraTrigger{
+						lambdaName: lambdaName,
+						Type:       triggerType,
+						Attr:       attrs,
+					}
+				}
 			}
 			lock.Lock()
 			if api.Name != nil {
@@ -1389,11 +1326,7 @@ func (scope infraListScope) listDynamoDB(ctx context.Context) (map[string]*Infra
 	for _, tableName := range tableNames {
 		tableName := tableName
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logRecover(r)
-				}
-			}()
+			defer infraListRecover(errChan, fmt.Sprintf("DynamoDB table %q", tableName))
 			infraDynamoDB := &InfraDynamoDB{}
 			var tags []dynamodbtypes.Tag
 			if scope.setName != "" {
@@ -1796,11 +1729,7 @@ func (scope infraListScope) listS3(ctx context.Context, triggersChan chan<- *Inf
 	for _, bucket := range buckets.Buckets {
 		bucket := bucket
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logRecover(r)
-				}
-			}()
+			defer infraListRecover(errChan, fmt.Sprintf("S3 bucket %q", aws.ToString(bucket.Name)))
 			infraS3 := &InfraS3{}
 			s3Client, err := S3ClientBucketRegion(ctx, *bucket.Name)
 			if err != nil {
@@ -1922,9 +1851,13 @@ func (scope infraListScope) listS3(ctx context.Context, triggersChan chan<- *Inf
 			if s3Default.metrics != metrics {
 				infraS3.Attr = append(infraS3.Attr, fmt.Sprintf("metrics=%t", metrics))
 			}
-			ttl := descr.Lifecycle
-			if len(ttl) == 1 && int32(s3Default.ttlDays) != *ttl[0].Expiration.Days {
-				infraS3.Attr = append(infraS3.Attr, fmt.Sprintf("ttldays=%d", *ttl[0].Expiration.Days))
+			ttlDays, err := s3LifecycleTTLDays(*bucket.Name, descr.Lifecycle)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			if int32(s3Default.ttlDays) != ttlDays {
+				infraS3.Attr = append(infraS3.Attr, fmt.Sprintf("ttldays=%d", ttlDays))
 			}
 			if descr.Notifications != nil {
 				for _, conf := range descr.Notifications.LambdaFunctionConfigurations {
@@ -1973,18 +1906,13 @@ func (scope infraListScope) listSQS(ctx context.Context) (map[string]*InfraSQS, 
 	for _, url := range urls {
 		url := url
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logRecover(r)
-				}
-			}()
+			defer infraListRecover(errChan, fmt.Sprintf("SQS queue %q", url))
 			var outTags *sqs.ListQueueTagsOutput
 			if scope.setName != "" {
 				var err error
 				outTags, err = SQSClient().ListQueueTags(ctx, &sqs.ListQueueTagsInput{QueueUrl: aws.String(url)})
 				if err != nil {
-					var absent *sqstypes.QueueDoesNotExist
-					if errors.As(err, &absent) {
+					if infraListSQSAbsent(err) {
 						errChan <- nil
 					} else {
 						errChan <- err
@@ -2008,7 +1936,7 @@ func (scope infraListScope) listSQS(ctx context.Context) (map[string]*InfraSQS, 
 				},
 			})
 			if err != nil {
-				if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+				if scope.setName == "" && infraListSQSAbsent(err) {
 					errChan <- nil
 					return
 				}

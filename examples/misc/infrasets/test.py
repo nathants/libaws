@@ -12,7 +12,11 @@ DIRECTORY = pathlib.Path(__file__).parent
 
 def run(*args):
     print("$", *args, flush=True)
-    return subprocess.check_output(args, cwd=DIRECTORY, text=True).strip()
+    try:
+        return subprocess.check_output(args, cwd=DIRECTORY, text=True).strip()
+    except subprocess.CalledProcessError as error:
+        print(error.output, end="", flush=True)
+        raise
 
 
 def listed(name):
@@ -42,7 +46,10 @@ def test():
         assert set(a[first]) == {"lambda", "s3"}, a
         assert set(a[first]["lambda"]) == {function}, a
         assert set(a[first]["s3"]) == {bucket}, a
-        assert set(b[second]) == {"dynamodb", "sqs", "user"}, b
+        assert set(b[second]) == {"lambda", "instance-profile", "s3", "dynamodb", "sqs", "user"}, b
+        assert b[second]["s3"] == {f"test-expiring-store-{uid}": {"attr": ["acl=private", "ttldays=7"]}}, b
+        assert set(b[second]["lambda"]) == {f"test-other-worker-{uid}"}, b
+        assert set(b[second]["instance-profile"]) == {f"test-profile-{uid}"}, b
         assert set(b[second]["dynamodb"]) == {f"test-records-{uid}"}, b
         assert "ttl=expires" in b[second]["dynamodb"][f"test-records-{uid}"]["attr"], b
         assert set(b[second]["sqs"]) == {f"test-queue-{uid}"}, b
@@ -53,6 +60,11 @@ def test():
         url = next(attr.removeprefix("url=") for x in triggers if x["type"] == "api" for attr in x["attr"] if attr.startswith("url="))
         with urllib.request.urlopen(url, timeout=30) as response:
             assert response.read() == b"owned-set"
+
+        # Leave time beyond the Go work deadline for fixture restoration.
+        print(run("env", f"LIBAWS_INFRALIST_TEST_UID={uid}", "go", "test", "../../../lib", "-run", "^TestInfraListSetIntegration$", "-count=1", "-timeout=20m", "-v"), flush=True)
+        assert listed(first) == a
+        assert listed(second) == b
 
         # A remains intact and usable throughout B's asynchronous deletion.
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -76,6 +88,8 @@ def test():
     assert listed(second) == {}
     assert function not in run("libaws", "lambda-ls")
     assert bucket not in run("libaws", "s3-ls")
+    assert f"test-expiring-store-{uid}" not in run("libaws", "s3-ls")
+    assert f"test-other-worker-{uid}" not in run("libaws", "lambda-ls")
     assert f"test-records-{uid}" not in run("libaws", "dynamodb-ls")
     assert f"test-queue-{uid}" not in run("libaws", "sqs-ls")
 

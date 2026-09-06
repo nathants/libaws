@@ -1129,10 +1129,7 @@ func (scope infraListScope) iamProfiles(ctx context.Context, pathPrefix *string)
 			return nil, err
 		}
 		for _, profile := range out.InstanceProfiles {
-			out, err := IamClient().ListInstanceProfileTags(ctx, &iam.ListInstanceProfileTagsInput{
-				InstanceProfileName: profile.InstanceProfileName,
-				MaxItems:            aws.Int32(100),
-			})
+			tags, err := iamListInstanceProfileTags(ctx, aws.ToString(profile.InstanceProfileName))
 			if err != nil {
 				var absent *iamtypes.NoSuchEntityException
 				if scope.setName != "" && errors.As(err, &absent) {
@@ -1141,11 +1138,8 @@ func (scope infraListScope) iamProfiles(ctx context.Context, pathPrefix *string)
 				Logger.Println("error:", err)
 				return nil, err
 			}
-			if len(out.Tags) == 100 {
-				panic("out overflow")
-			}
-			profile.Tags = out.Tags
-			if !scope.iamTagsMatch(out.Tags) {
+			profile.Tags = tags
+			if !scope.iamTagsMatch(tags) {
 				continue
 			}
 			p := &IamInstanceProfile{}

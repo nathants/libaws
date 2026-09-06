@@ -399,6 +399,28 @@ func validateS3EncryptionPolicy(bucket string, config *s3types.ServerSideEncrypt
 	return nil
 }
 
+func s3LifecycleTTLDays(bucket string, rules []s3types.LifecycleRule) (int32, error) {
+	if len(rules) == 0 {
+		return 0, nil
+	}
+	if len(rules) == 1 && rules[0].Expiration != nil && aws.ToInt32(rules[0].Expiration.Days) > 0 {
+		rule := rules[0]
+		days := *rule.Expiration.Days
+		rule.ID = nil // AWS rule identifiers do not affect expiration behavior.
+		if rule.Filter != nil && aws.ToString(rule.Filter.Prefix) == "" &&
+			reflect.DeepEqual(*rule.Filter, s3types.LifecycleRuleFilter{Prefix: rule.Filter.Prefix}) {
+			rule.Filter = nil
+		}
+		if reflect.DeepEqual(rule, s3types.LifecycleRule{
+			Expiration: &s3types.LifecycleExpiration{Days: aws.Int32(days)},
+			Status:     s3types.ExpirationStatusEnabled,
+		}) {
+			return days, nil
+		}
+	}
+	return 0, fmt.Errorf("unsupported lifecycle configuration for S3 bucket %q: expected one enabled, bucket-wide expiration in days", bucket)
+}
+
 func s3CreateBucketConfiguration(region string) *s3types.CreateBucketConfiguration {
 	if region == "us-east-1" {
 		return nil
@@ -785,7 +807,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 								Days: aws.Int32(int32(input.ttlDays)),
 							},
 							ID:     aws.String(fmt.Sprintf("ttlDays=%d", input.ttlDays)),
-							Prefix: aws.String(""),
+							Filter: &s3types.LifecycleRuleFilter{Prefix: aws.String("")},
 							Status: s3types.ExpirationStatusEnabled,
 						}},
 					},
@@ -816,8 +838,12 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 				Logger.Println("error:", err)
 				return err
 			}
-			ttlDays := ttlOut.Rules[0].Expiration.Days
-			if ttlDays == nil || *ttlDays != int32(input.ttlDays) {
+			var ttlDays *int32
+			if expiration := ttlOut.Rules[0].Expiration; expiration != nil {
+				ttlDays = expiration.Days
+			}
+			_, lifecycleErr := s3LifecycleTTLDays(input.name, ttlOut.Rules)
+			if lifecycleErr != nil || ttlDays == nil || *ttlDays != int32(input.ttlDays) {
 				if !preview {
 					_, err := S3Client().PutBucketLifecycleConfiguration(ctx, &s3.PutBucketLifecycleConfigurationInput{
 						ExpectedBucketOwner: aws.String(account),
@@ -825,7 +851,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 						LifecycleConfiguration: &s3types.BucketLifecycleConfiguration{
 							Rules: []s3types.LifecycleRule{
 								{
-									Prefix: aws.String(""),
+									Filter: &s3types.LifecycleRuleFilter{Prefix: aws.String("")},
 									Expiration: &s3types.LifecycleExpiration{
 										Days: aws.Int32(int32(input.ttlDays)),
 									},

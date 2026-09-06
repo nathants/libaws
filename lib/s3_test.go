@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -223,6 +224,25 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 		}
 		return out.ServerSideEncryptionConfiguration
 	}
+	waitEncryption := func(want *s3types.ServerSideEncryptionConfiguration) {
+		t.Helper()
+		waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		var actual *s3types.ServerSideEncryptionConfiguration
+		err := waitLiveAWSFixtureStable(waitCtx, func() (bool, error) {
+			out, err := client.GetBucketEncryption(waitCtx, &s3.GetBucketEncryptionInput{
+				Bucket: aws.String(bucket),
+			})
+			if err != nil {
+				return false, err
+			}
+			actual = out.ServerSideEncryptionConfiguration
+			return reflect.DeepEqual(actual, want), nil
+		})
+		if err != nil {
+			t.Fatalf("encryption fixture did not settle: %v; got %s", err, Pformat(actual))
+		}
+	}
 	capturePreview := func() (string, error) {
 		var logs strings.Builder
 		originalPrint := Logger.Print
@@ -254,23 +274,25 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 		t.Fatalf("new bucket encryption does not match policy: %v", err)
 	}
 
+	drift := &s3types.ServerSideEncryptionConfiguration{
+		Rules: []s3types.ServerSideEncryptionRule{{
+			ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
+				SSEAlgorithm: s3types.ServerSideEncryptionAes256,
+			},
+			BlockedEncryptionTypes: &s3types.BlockedEncryptionTypes{
+				EncryptionType: []s3types.EncryptionType{s3types.EncryptionTypeNone},
+			},
+			BucketKeyEnabled: aws.Bool(false),
+		}},
+	}
 	_, err = client.PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
-		Bucket: aws.String(bucket),
-		ServerSideEncryptionConfiguration: &s3types.ServerSideEncryptionConfiguration{
-			Rules: []s3types.ServerSideEncryptionRule{{
-				ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
-					SSEAlgorithm: s3types.ServerSideEncryptionAes256,
-				},
-				BlockedEncryptionTypes: &s3types.BlockedEncryptionTypes{
-					EncryptionType: []s3types.EncryptionType{s3types.EncryptionTypeNone},
-				},
-				BucketKeyEnabled: aws.Bool(false),
-			}},
-		},
+		Bucket:                            aws.String(bucket),
+		ServerSideEncryptionConfiguration: drift,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitEncryption(drift)
 	config = getEncryption()
 	err = validateS3EncryptionPolicy(bucket, config)
 	if err == nil {
@@ -297,6 +319,7 @@ func TestS3EnsureEncryptionOnByDefault(t *testing.T) {
 	if err := S3Ensure(ctx, input, false); err != nil {
 		t.Fatal(err)
 	}
+	waitEncryption(s3EncryptionConfig)
 	config = getEncryption()
 	if err := validateS3EncryptionPolicy(bucket, config); err != nil {
 		t.Fatalf("S3Ensure did not restore encryption policy: %v", err)

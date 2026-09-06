@@ -7,6 +7,7 @@ from pathlib import Path
 import shlex
 import subprocess
 import sys
+import time
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +16,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 DOCKER = [f"simple/docker/{name}" for name in ("api", "dynamodb", "ecr", "s3", "schedule", "sqs", "websocket")]
 EXAMPLES = [*DOCKER, "simple/go/ecr", "complex/s3-ec2"]
+PLAIN = [
+    "misc/api_binary", "misc/api_deep_routes",
+    *(f"simple/go/{name}" for name in ("api", "api_and_stream", "dynamodb", "includes", "s3", "schedule", "sqs", "websocket")),
+    *(f"simple/python/{name}" for name in ("api", "dynamodb", "includes", "s3", "schedule", "sqs", "websocket")),
+]
+LIVE_EXAMPLES = ["simple/go/ecr", "simple/docker/ecr", "complex/s3-ec2", *PLAIN]
 
 
 class InjectedFailure(RuntimeError):
@@ -29,7 +36,7 @@ def load(example):
 
 
 def invoke(module, example, tmp_path):
-    if example == "complex/s3-ec2":
+    if example == "complex/s3-ec2" or example in PLAIN:
         module.test()
     else:
         module.test(tmp_path)
@@ -105,7 +112,42 @@ def test_failure_cleanup(example, failure, tmp_path):
         assert any(c.startswith(f"LIBAWS_S3_EC2_CLEANUP_UID={uid} ") for c in commands), commands
 
 
-@pytest.mark.parametrize("example", ["simple/go/ecr", "simple/docker/ecr", "complex/s3-ec2"])
+@pytest.mark.parametrize("example", PLAIN)
+@pytest.mark.parametrize("failure", ["create", "post-create inventory", "cleanup-error"])
+def test_plain_failure_cleanup(example, failure, tmp_path):
+    module = load(example)
+    commands = []
+    local_files = []
+    inventory_reads = 0
+
+    def fake_run(command, *args, **kwargs):
+        nonlocal inventory_reads
+        commands.append(command)
+        if command == "libaws aws-account":
+            return "guarded"
+        if command.startswith("libaws infra-ls "):
+            inventory_reads += 1
+            if failure == "post-create inventory" and inventory_reads == 2:
+                raise InjectedFailure(command)
+            return "account: guarded\nregion: test-region\n"
+        if ((command == "libaws infra-ensure infra.yaml" and failure in ("create", "cleanup-error"))
+                or (command == "libaws infra-rm infra.yaml" and failure == "cleanup-error")):
+            raise InjectedFailure(command)
+        if command == "head -c 64 /dev/urandom >":
+            local_file = Path(args[0])
+            local_file.write_bytes(b"fixture")
+            local_files.append(local_file)
+        return ""
+
+    with patch.dict(os.environ, LIBAWS_TEST_ACCOUNT="guarded"), patch.object(module, "run", side_effect=fake_run):
+        with pytest.raises(InjectedFailure):
+            invoke(module, example, tmp_path)
+    assert "libaws infra-rm infra.yaml" in commands, commands
+    if example == "misc/api_binary":
+        assert local_files and all(not path.parent.exists() for path in local_files), local_files
+
+
+@pytest.mark.parametrize("example", LIVE_EXAMPLES)
 def test_live_failure_cleanup(example, tmp_path):
     module = load(example)
     actual_run = module.run
@@ -145,6 +187,21 @@ def test_live_failure_cleanup(example, tmp_path):
         assert inventory.get("infraset", {}) == {}, inventory
         result = subprocess.run(["libaws", "lambda-describe", f"test-lambda-{uid}"], capture_output=True, text=True)
         assert result.returncode != 0 and "ResourceNotFoundException" in result.stderr, result
+        declaration = yaml.safe_load(os.path.expandvars((ROOT / "examples" / example / "infra.yaml").read_text()))
+        for section, command in (("s3", "s3-ls"), ("dynamodb", "dynamodb-ls"), ("sqs", "sqs-ls")):
+            if declaration.get(section):
+                remaining = actual_run(f"libaws {command}")
+                # SQS deletion is asynchronous (up to 60 seconds). Still verify
+                # real queue names independently of their disappearing tags.
+                if section == "sqs":
+                    deadline = time.monotonic() + 90
+                    while any(name in remaining for name in declaration[section]) and time.monotonic() < deadline:
+                        time.sleep(1)
+                        remaining = actual_run(f"libaws {command}")
+                assert all(name not in remaining for name in declaration[section]), remaining
+        if example in PLAIN:
+            remaining = actual_run("libaws api-ls")
+            assert all(name not in remaining for name in declaration.get("lambda", {})), remaining
         for repository in repositories:
             assert repository not in actual_run("libaws ecr-ls").splitlines()
         for image in images:

@@ -44,6 +44,37 @@ assert test_runner.run_pool(range(6), 2, worker, lambda: True) == []
 	}
 }
 
+func TestSuiteRunnerShardsCleanupExamples(t *testing.T) {
+	command := exec.Command("uv", "run", "--locked", "python", "-c", `
+import os
+from pathlib import Path
+import tempfile
+import test_runner
+
+label = 'examples/misc/cleanup/test.py'
+jobs = [job for job in test_runner.discover() if job.startswith(label)]
+assert label not in jobs and len(jobs) > 1, f'cleanup cases are serialized in one worker: {jobs}'
+from examples.misc.cleanup.test import LIVE_EXAMPLES
+assert len(jobs) == len(LIVE_EXAMPLES) + 1 and len(set(jobs)) == len(jobs), jobs
+assert f'{label}::nonlive' in jobs, jobs
+with tempfile.TemporaryDirectory(prefix='libaws-runner-selection-') as temporary:
+    logs = Path(temporary)
+    assert test_runner.run_test(f'{label}::nonlive', logs)[2] == 0
+    # Exercise the actual process invocation, but collect rather than mutate AWS.
+    os.environ['PYTEST_ADDOPTS'] = '--collect-only'
+    for example in (LIVE_EXAMPLES[0], LIVE_EXAMPLES[-1]):
+        node = f'{label}::test_live_failure_cleanup[{example}]'
+        assert node in jobs, node
+        assert test_runner.run_test(node, logs)[2] == 0
+        output = (logs / (node.replace('/', '__') + '.log')).read_text()
+        assert 'collected 1 item' in output, output
+`)
+	command.Dir = ".."
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("cleanup job selection: %v\n%s", err, output)
+	}
+}
+
 func TestPythonRestoreResolvesLauncherBeforeCopyingInterpreter(t *testing.T) {
 	command := exec.Command("python3", "-c", `
 import os
@@ -54,7 +85,11 @@ import sys
 import tempfile
 
 script = Path('restore_python_deps.sh').resolve()
-real_python = Path(sys._base_executable).resolve()
+# A materialized venv python3 may report its sibling python as _base_executable.
+# Ask that canonical executable for the actual base installation.
+real_python = Path(subprocess.check_output(
+    [sys._base_executable, '-c', 'import sys; print(sys._base_executable)'], text=True,
+).strip()).resolve()
 with tempfile.TemporaryDirectory(prefix='libaws-restore-test-') as temporary:
     root = Path(temporary)
     launcher = root/'launcher'

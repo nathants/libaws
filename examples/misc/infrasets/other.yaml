@@ -1,5 +1,24 @@
 name: test-owned-${uid}-other
 
+lambda:
+  test-other-worker-${uid}:
+    entrypoint: main.py
+    attr:
+      - memory=128
+      - timeout=30
+    policy:
+      - AWSLambdaBasicExecutionRole
+
+instance-profile:
+  test-profile-${uid}:
+    allow:
+      - dynamodb:GetItem arn:aws:dynamodb:*:*:table/test-records-${uid}
+
+s3:
+  test-expiring-store-${uid}:
+    attr:
+      - ttldays=7
+
 dynamodb:
   test-records-${uid}:
     key:

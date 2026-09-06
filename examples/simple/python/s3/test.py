@@ -14,32 +14,34 @@ def test():
     os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
-    run("libaws infra-ensure infra.yaml --preview")
-    run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
-    infra.pop("region")
-    infra.pop("account")
-    infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
-    expected = {
-        "infraset": {
-            f"test-infraset-{uid}": {
-                "lambda": {
-                    f"test-lambda-{uid}": {
-                        "attr": ["timeout=60"],
-                        "policy": ["AWSLambdaBasicExecutionRole"],
-                        "trigger": [{"attr": [f"test-bucket-{uid}"],
-                                     "type": "s3"}],
-                    }
-                },
-                "s3": {f"test-bucket-{uid}": {'attr': ['acl=private']}},
+    try:
+        run("libaws infra-ensure infra.yaml --preview")
+        run("libaws infra-ensure infra.yaml")
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+        infra.pop("region")
+        infra.pop("account")
+        infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
+        expected = {
+            "infraset": {
+                f"test-infraset-{uid}": {
+                    "lambda": {
+                        f"test-lambda-{uid}": {
+                            "attr": ["timeout=60"],
+                            "policy": ["AWSLambdaBasicExecutionRole"],
+                            "trigger": [{"attr": [f"test-bucket-{uid}"],
+                                         "type": "s3"}],
+                        }
+                    },
+                    "s3": {f"test-bucket-{uid}": {'attr': ['acl=private']}},
+                }
             }
         }
-    }
-    assert infra == expected, infra
-    run(f"echo | libaws s3-put s3://test-bucket-{uid}/{uid}")
-    assert uid == run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1").split()[-1]
-    run("libaws infra-rm infra.yaml --preview")
-    run("libaws infra-rm infra.yaml")
+        assert infra == expected, infra
+        run(f"echo | libaws s3-put s3://test-bucket-{uid}/{uid}")
+        assert uid == run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1").split()[-1]
+        run("libaws infra-rm infra.yaml --preview")
+    finally:
+        run("libaws infra-rm infra.yaml")
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
 

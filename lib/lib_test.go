@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"os"
 	"testing"
+	"time"
 )
 
 func lambdaZipHashForTest(data []byte) string {
@@ -25,6 +26,30 @@ func requireLiveAWSAccount(t *testing.T) {
 	}
 	if account != expectedAccount {
 		t.Fatalf("AWS account = %s, want guarded account %s", account, expectedAccount)
+	}
+}
+
+// S3 can alternate new and old configuration after a write. Wait for stable
+// fixture reads before asserting behavior once; never retry failed assertions.
+func waitLiveAWSFixtureStable(ctx context.Context, ready func() (bool, error)) error {
+	var stableSince time.Time
+	for {
+		ok, err := ready()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			stableSince = time.Time{}
+		} else if stableSince.IsZero() {
+			stableSince = time.Now()
+		} else if time.Since(stableSince) >= 10*time.Second {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
 	}
 }
 

@@ -21,6 +21,14 @@ Retained evidence:
 - Parallel acceptance: Nina run `home_nathants_repos_libaws_dfc3c2835feed1dd_20260905T134515Z_rLMVs`, Shell `3474a6439e584540436099b0bdc4031f`, exit 0. Logs and `timings.tsv`: `/tmp/libaws-tests-_5cy8ixn`. The run's private scratch directory retains `final-suite-source.json`, `baseline-source.json`, `baseline-timings.tsv`, and `test-speedup-per-file.tsv`.
 - The Python interpreter restore portability fix was made afterward. Its focused regression, isolated test-file run, `make check`, and fresh Debian live-example run passed; the full-suite timing above was not rerun for that setup-only fix.
 
+## Cleanup-case scheduling, 2026-09-06
+
+Exploratory local acceptance against `ap-southeast-1`, with four workers: **103/103 jobs passed in 41m45s**, including checks/build and the exclusive S3/SES tests. Coverage now includes 20 live failure-teardown cases plus their nonlive regressions. The cleanup cases run as separate processes in the existing pool, not a nested pool; their 1800-second per-job timeout is unchanged.
+
+Cleanup jobs consumed **2,383.4s of summed worker time**; the longest was the S3→EC2 failure case at **490.8s**. Do not equate summed work with added wall time or compare this run directly with the older 75-job acceptance: coverage and fixture synchronization changed. An earlier unsharded run was stopped after 23m45s with only 9 of the 20 live cleanup cases complete; it is failure/debugging evidence, not a serial speedup baseline.
+
+Evidence: `/tmp/libaws-tests-y7jz6uoc/timings.tsv` and its per-job logs; Nina run `home_nathants_repos_libaws_dfc3c2835feed1dd_20260906T011447Z_rHbBk`, Shell `952cf53d0cf7d8569f412cf510c002a6`, exit 0, 07:44:55–08:26:40 UTC. Earlier failed full runs and focused repairs are retained in that run's scratch directory; they are not counted as successful timing samples.
+
 ## EC2 location experiment
 
 A clean official Debian 13/Trixie image (`ami-0392bbbc524789518`) ran on a `t3.small` Spot instance in `ap-southeast-1`: 2 vCPUs, 2 GiB RAM, encrypted delete-on-termination gp3 storage. Provisioning used `libaws ec2-*`; the working S3/EC2 example supplied the pattern for a dedicated VPC, unprivileged init with explicit `sudo`, S3 artifacts and automatic poweroff. No inbound access was needed for the successful probes.

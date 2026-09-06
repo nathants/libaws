@@ -11,6 +11,7 @@ import time
 ROOT = Path(__file__).resolve().parent
 # These tests deliberately observe/mutate account-wide state.
 EXCLUSIVE = {"lib/s3_test.go", "examples/simple/go/ses/test.py"}
+CLEANUP = "examples/misc/cleanup/test.py"
 
 
 def discover():
@@ -19,7 +20,15 @@ def discover():
     for directory, children, files in os.walk(ROOT / "examples"):
         children[:] = sorted(name for name in children if name not in (".venv", "node_modules", ".git"))
         if "test.py" in files:
-            tests.append(str((Path(directory) / "test.py").relative_to(ROOT)))
+            label = str((Path(directory) / "test.py").relative_to(ROOT))
+            if label == CLEANUP:
+                from examples.misc.cleanup.test import LIVE_EXAMPLES
+                # Separate processes isolate patched environment/cwd state, and
+                # the existing pool bounds total concurrency across all tests.
+                tests.append(f"{label}::nonlive")
+                tests.extend(f"{label}::test_live_failure_cleanup[{example}]" for example in LIVE_EXAMPLES)
+            else:
+                tests.append(label)
     missing = EXCLUSIVE - set(tests)
     if missing:
         raise RuntimeError(f"exclusive test entries no longer exist: {sorted(missing)}")
@@ -33,13 +42,22 @@ def run_test(label, logs):
     with tempfile.TemporaryDirectory(prefix="libaws-test-") as temporary, logfile.open("w") as output:
         env = os.environ.copy()
         env["PATH"] = str(ROOT) + os.pathsep + env["PATH"]
-        if label.endswith(".go"):
-            command = ["bash", str(ROOT / "test_one.sh"), Path(label).name.removesuffix("_test.go")]
+        source, _, selection = label.partition("::")
+        if source.endswith(".go"):
+            command = ["bash", str(ROOT / "test_one.sh"), Path(source).name.removesuffix("_test.go")]
             cwd = ROOT
         else:
             env["PYTEST_ADDOPTS"] = env.get("PYTEST_ADDOPTS", "") + f" --basetemp={temporary}/pytest -o cache_dir={temporary}/cache"
-            command = ["timeout", "--kill-after=30s", "1800", "uv", "run", "--locked", "python", "-u", "test.py"]
-            cwd = ROOT / Path(label).parent
+            command = ["timeout", "--kill-after=30s", "1800", "uv", "run", "--locked", "python", "-u"]
+            if source == CLEANUP and selection:
+                command += ["-m", "pytest", "-svvx", "--tb", "native"]
+                if selection == "nonlive":
+                    command += ["test.py", "-k", "not test_live_failure_cleanup"]
+                else:
+                    command += [f"test.py::{selection}"]
+            else:
+                command += ["test.py"]
+            cwd = ROOT / Path(source).parent
         try:
             status = subprocess.call(command, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         except OSError as error:

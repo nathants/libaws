@@ -14,33 +14,35 @@ def test():
     os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
-    run("libaws infra-ensure infra.yaml --preview")
-    run("libaws infra-ensure infra.yaml")
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
-    infra.pop("region")
-    infra.pop("account")
-    infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
-    expected = {
-        "infraset": {
-            f"test-infraset-{uid}": {
-                "lambda": {
-                    f"test-lambda-{uid}": {
-                        "attr": ["timeout=60"],
-                        "policy": ["AWSLambdaBasicExecutionRole"],
-                        "trigger": [
-                            {"attr": ["rate(1 minute)"],
-                             "type": "schedule"}
-                        ],
-                        "env": [f"uid={uid}"],
+    try:
+        run("libaws infra-ensure infra.yaml --preview")
+        run("libaws infra-ensure infra.yaml")
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+        infra.pop("region")
+        infra.pop("account")
+        infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
+        expected = {
+            "infraset": {
+                f"test-infraset-{uid}": {
+                    "lambda": {
+                        f"test-lambda-{uid}": {
+                            "attr": ["timeout=60"],
+                            "policy": ["AWSLambdaBasicExecutionRole"],
+                            "trigger": [
+                                {"attr": ["rate(1 minute)"],
+                                 "type": "schedule"}
+                            ],
+                            "env": [f"uid={uid}"],
+                        }
                     }
                 }
             }
         }
-    }
-    assert infra == expected, infra
-    assert uid == run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1").split()[-1]
-    run("libaws infra-rm infra.yaml --preview")
-    run("libaws infra-rm infra.yaml")
+        assert infra == expected, infra
+        assert uid == run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1").split()[-1]
+        run("libaws infra-rm infra.yaml --preview")
+    finally:
+        run("libaws infra-rm infra.yaml")
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
 

@@ -315,9 +315,9 @@ libaws infra-ls --infraset my-project
 libaws infra-ls --infraset my-project --env-values
 ```
 
-The selectors are mutually exclusive. Exact-set inventory reads membership metadata where AWS requires it, but describes only that set and its referenced children. Untagged roots and other sets are excluded. Membership and selected-resource errors remain errors; resources deleted before membership can be read are omitted. Empty results omit the `infraset` block. Global inventory behavior is unchanged.
+The selectors are mutually exclusive. Exact-set inventory includes owned resources, their referenced children, and verified triggers—not untagged roots or other sets. Shared DNS zones and certificates remain references. Unreadable ownership or selected resources cause errors; empty sets omit the `infraset` block.
 
-Triggers come from same-set resources and verified AWS relationships. SES uses exact receipt-rule source ARNs from the function's invocation permissions. Arbitrary untagged or cross-set inbound triggers are outside this owned-set view. Shared DNS zones and certificates remain references, not owned resources. Tag-scoped absence alone does not prove deletion if ownership tags were removed. The Go equivalent is `lib.InfraListSet(ctx, name, showEnvVarValues)`.
+Go: `lib.InfraListSet(ctx, name, showEnvVarValues)`.
 
 Depth-based colors by [YAML](https://gist.github.com/nathants/1955b2c3130b7d1a00c8420ad6231639)
 
@@ -673,7 +673,7 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   * `appendonly=VALUE`, values: `true | false`, default: `false`
   * `metrics=VALUE`, values: `true | false`, default: `false`
   * `cors=VALUE`, values: `true | false`, default: `false`
-  * `ttldays=VALUE`, values: `0 | n`, default: `0`
+  * `ttldays=VALUE`, values: `0 | n`, default: `0`. Bucket-wide expiration in days; inventory rejects other lifecycle forms.
   * `allow_put=VALUE`, values: `$principal.amazonaws.com`
 
 * Managed buckets require TLS, use SSE-S3 encryption, and reject SSE-C.

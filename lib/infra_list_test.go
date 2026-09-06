@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 type infraSetTransport func(*http.Request) (*http.Response, error)
@@ -33,15 +34,15 @@ func infraSetResponse(r *http.Request, status int, body string) *http.Response {
 func installInfraSetClients(t *testing.T, transport http.RoundTripper) {
 	t.Helper()
 	config := aws.Config{Region: "us-east-1", Credentials: credentials.NewStaticCredentialsProvider("key", "secret", ""), HTTPClient: &http.Client{Transport: transport}, RetryMaxAttempts: 1}
-	oldSession, oldAccount := sess, stsAccount
+	oldSession, oldAccount, oldARN := sess, stsAccount, stsArn
 	oldDynamo, oldIAM, oldLambda, oldSQS, oldEvents := dynamoDBClient, iamClient, lambdaClient, sqsClient, eventsClient
 	oldAPI, oldDNS := apiClient, r53Client
-	sess, stsAccount = &config, aws.String("123456789012")
+	sess, stsAccount, stsArn = &config, aws.String("123456789012"), aws.String("arn:aws:iam::123456789012:root")
 	dynamoDBClient, iamClient = dynamodb.NewFromConfig(config), iam.NewFromConfig(config)
 	lambdaClient, sqsClient, eventsClient = lambda.NewFromConfig(config), sqs.NewFromConfig(config), eventbridge.NewFromConfig(config)
 	apiClient, r53Client = apigatewayv2.NewFromConfig(config), route53.NewFromConfig(config)
 	t.Cleanup(func() {
-		sess, stsAccount = oldSession, oldAccount
+		sess, stsAccount, stsArn = oldSession, oldAccount, oldARN
 		dynamoDBClient, iamClient, lambdaClient, sqsClient, eventsClient = oldDynamo, oldIAM, oldLambda, oldSQS, oldEvents
 		apiClient, r53Client = oldAPI, oldDNS
 	})
@@ -151,6 +152,21 @@ func TestInfraListSetMembershipBeforeDescription(t *testing.T) {
 					t.Fatalf("unrelated resource was described: %v", err)
 				}
 			})
+		}
+	}
+}
+
+func TestSQSDeletePreservesIdentityErrors(t *testing.T) {
+	probe := errors.New("identity lookup probe")
+	installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+		return nil, probe
+	}))
+	oldClient := stsClient
+	stsClient, stsAccount = sts.NewFromConfig(*sess), nil
+	t.Cleanup(func() { stsClient = oldClient })
+	for _, preview := range []bool{false, true} {
+		if err := SQSDeleteQueue(context.Background(), "selected", preview); !errors.Is(err, probe) {
+			t.Fatalf("queue deletion reported success after identity failure: preview=%v err=%v", preview, err)
 		}
 	}
 }
@@ -295,7 +311,7 @@ func TestInfraListSetAPIBoundsDomainAndDNSReads(t *testing.T) {
 				var body string
 				switch r.URL.Path {
 				case "/v2/apis":
-					body = `{"items":[{"apiId":"selected","name":"cross-named-function","tags":{"libaws.infraset":"wanted"}},{"apiId":"unrelated","name":"other-function","tags":{"libaws.infraset":"wanted-suffix"}}]}`
+					body = `{"items":[{"apiId":"selected","name":"cross-named-function","protocolType":"HTTP","tags":{"libaws.infraset":"wanted"}},{"apiId":"unrelated","name":"other-function","protocolType":"HTTP","tags":{"libaws.infraset":"wanted-suffix"}}]}`
 				case "/v2/domainnames":
 					tag := "other"
 					if ownedDomain {
@@ -312,7 +328,7 @@ func TestInfraListSetAPIBoundsDomainAndDNSReads(t *testing.T) {
 					}
 					body = `<ListResourceRecordSetsResponse><ResourceRecordSets><ResourceRecordSet><Name>api.example.com.</Name><Type>A</Type><AliasTarget><HostedZoneId>ZAPIGATEWAY</HostedZoneId><DNSName>d-selected.execute-api.us-east-1.amazonaws.com.</DNSName><EvaluateTargetHealth>false</EvaluateTargetHealth></AliasTarget></ResourceRecordSet></ResourceRecordSets><IsTruncated>false</IsTruncated></ListResourceRecordSetsResponse>`
 				case "/v2/apis/selected/integrations":
-					body = `{"items":[{}]}`
+					body = `{"items":[{"integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:123456789012:function:cross-named-function"}]}`
 				default:
 					return nil, fmt.Errorf("unrelated resource hydration: %s", r.URL)
 				}
@@ -343,5 +359,228 @@ func TestInfraListLambdaReturnsDiscoveryErrorWithoutTriggerProducer(t *testing.T
 	}))
 	if _, err := InfraListLambda(context.Background(), nil, ""); err == nil || !strings.Contains(err.Error(), "function discovery probe") {
 		t.Fatalf("discovery error not returned: %v", err)
+	}
+}
+
+func TestInfraListSetPreservesSelectedQueueDisappearance(t *testing.T) {
+	for _, code := range []string{"QueueDoesNotExist", "AWS.SimpleQueueService.NonExistentQueue", "AccessDeniedException"} {
+		t.Run(code, func(t *testing.T) {
+			membershipMissing := false
+			installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+				switch Last(strings.Split(r.Header.Get("X-Amz-Target"), ".")) {
+				case "ListQueues":
+					return infraSetResponse(r, 200, `{"QueueUrls":["https://sqs.us-east-1.amazonaws.com/123456789012/selected"]}`), nil
+				case "ListQueueTags":
+					if !membershipMissing {
+						return infraSetResponse(r, 200, `{"Tags":{"libaws.infraset":"wanted"}}`), nil
+					}
+				case "GetQueueAttributes":
+				default:
+					return nil, fmt.Errorf("unexpected request: %s", r.Header.Get("X-Amz-Target"))
+				}
+				// An access-denied message containing a missing-queue code is not absence.
+				return infraSetResponse(r, 400, fmt.Sprintf(`{"__type":%q,"message":"AWS.SimpleQueueService.NonExistentQueue probe"}`, code)), nil
+			}))
+			if _, err := (infraListScope{setName: "wanted"}).listSQS(context.Background()); err == nil || !strings.Contains(err.Error(), code) {
+				t.Fatalf("selected queue error was lost: %v", err)
+			}
+			_, err := InfraListSQS(context.Background())
+			if (err != nil) != (code == "AccessDeniedException") {
+				t.Fatalf("global disappearance/access-error handling: %v", err)
+			}
+			membershipMissing = true
+			_, err = (infraListScope{setName: "wanted"}).listSQS(context.Background())
+			if (err != nil) != (code == "AccessDeniedException") {
+				t.Fatalf("membership disappearance/access-error handling: %v", err)
+			}
+		})
+	}
+}
+
+func TestInfraListSetPaginatesProfileMembership(t *testing.T) {
+	tagReads := 0
+	installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+		if err := r.ParseForm(); err != nil {
+			return nil, err
+		}
+		action := r.Form.Get("Action")
+		body := ""
+		switch action {
+		case "ListInstanceProfiles":
+			body = `<InstanceProfiles><member><InstanceProfileName>selected-profile</InstanceProfileName></member></InstanceProfiles><IsTruncated>false</IsTruncated>`
+		case "ListInstanceProfileTags":
+			tagReads++
+			if r.Form.Get("Marker") == "" {
+				body = `<Tags><member><Key>aaa</Key><Value>value</Value></member></Tags><IsTruncated>true</IsTruncated><Marker>next</Marker>`
+			} else if r.Form.Get("Marker") == "next" {
+				body = `<Tags><member><Key>libaws.infraset</Key><Value>wanted</Value></member></Tags><IsTruncated>false</IsTruncated>`
+			} else {
+				return nil, fmt.Errorf("unexpected marker: %s", r.Form.Get("Marker"))
+			}
+		default:
+			return nil, fmt.Errorf("unexpected request: %s", action)
+		}
+		return infraSetResponse(r, 200, "<"+action+"Response><"+action+"Result>"+body+"</"+action+"Result></"+action+"Response>"), nil
+	}))
+	out, err := (infraListScope{setName: "wanted"}).listInstanceProfile(context.Background())
+	if err != nil || tagReads != 2 || out["selected-profile"] == nil {
+		t.Fatalf("owned profile lost when membership tag occurs on a later page: out=%v reads=%d err=%v", out, tagReads, err)
+	}
+}
+
+func TestInfraListSetVerifiesAPIIntegrationRelationship(t *testing.T) {
+	for _, integration := range []string{
+		`{"integrationId":"integration","integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:123456789012:function:different-function"}`,
+		`{"integrationId":"integration","integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:999999999999:function:named-function"}`,
+		`{"integrationId":"integration","integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-west-2:123456789012:function:named-function"}`,
+		`{"integrationId":"integration","integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:123456789012:function:named-function:alias"}`,
+		`{"integrationId":"integration","integrationType":"HTTP_PROXY","integrationUri":"https://example.invalid"}`,
+	} {
+		t.Run(integration, func(t *testing.T) {
+			installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+				switch r.URL.Path {
+				case "/v2/apis":
+					return infraSetResponse(r, 200, `{"items":[{"apiId":"selected","name":"named-function","protocolType":"HTTP","tags":{"libaws.infraset":"wanted"}}]}`), nil
+				case "/v2/domainnames":
+					return infraSetResponse(r, 200, `{"items":[]}`), nil
+				case "/v2/apis/selected/integrations":
+					return infraSetResponse(r, 200, `{"items":[`+integration+`]}`), nil
+				default:
+					return nil, fmt.Errorf("unexpected request: %s", r.URL)
+				}
+			}))
+			triggers := make(chan *InfraTrigger, 10)
+			apis, err := (infraListScope{setName: "wanted"}).listApi(context.Background(), triggers)
+			if err != nil || apis["named-function"] == nil {
+				t.Fatalf("unmatched API should remain visible without a trigger: apis=%v err=%v", apis, err)
+			}
+			if len(triggers) != 0 {
+				t.Fatalf("fabricated Lambda trigger for integration %s: %+v", integration, <-triggers)
+			}
+		})
+	}
+}
+
+func TestInfraListSetUsesOneEventMembershipSnapshot(t *testing.T) {
+	tagReads := 0
+	installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+		switch Last(strings.Split(r.Header.Get("X-Amz-Target"), ".")) {
+		case "ListRules":
+			return infraSetResponse(r, 200, `{"Rules":[{"Name":"rule","Arn":"arn:aws:events:us-east-1:123456789012:rule/rule","ScheduleExpression":"rate(1 hour)"}]}`), nil
+		case "ListTagsForResource":
+			tagReads++
+			tag := "wanted"
+			if tagReads == 2 {
+				tag = "different-set"
+			}
+			return infraSetResponse(r, 200, fmt.Sprintf(`{"Tags":[{"Key":"libaws.infraset","Value":%q}]}`, tag)), nil
+		case "ListTargetsByRule":
+			return infraSetResponse(r, 200, `{"Targets":[{"Id":"target","Arn":"arn:aws:lambda:us-east-1:123456789012:function:named-function"}]}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected request: %s", r.Header.Get("X-Amz-Target"))
+		}
+	}))
+	out, err := (infraListScope{setName: "wanted"}).listEvent(context.Background(), make(chan *InfraTrigger, 1))
+	if err != nil || out["rule"] == nil || out["rule"].infraSetName != "wanted" || tagReads != 1 {
+		t.Fatalf("exact-set inventory did not preserve one verified ownership snapshot: out=%v tagReads=%d err=%v", out, tagReads, err)
+	}
+}
+
+func TestInfraListSetReturnsWorkerPanics(t *testing.T) {
+	probe := errors.New("resource decoding panic probe")
+	installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+		switch Last(strings.Split(r.Header.Get("X-Amz-Target"), ".")) {
+		case "ListQueues":
+			return infraSetResponse(r, 200, `{"QueueUrls":["https://sqs.us-east-1.amazonaws.com/123456789012/selected"]}`), nil
+		case "ListQueueTags":
+			return infraSetResponse(r, 200, `{"Tags":{"libaws.infraset":"wanted"}}`), nil
+		case "GetQueueAttributes":
+			panic(probe)
+		default:
+			return nil, fmt.Errorf("unexpected request: %s", r.Header.Get("X-Amz-Target"))
+		}
+	}))
+	if _, err := (infraListScope{setName: "wanted"}).listSQS(context.Background()); !errors.Is(err, probe) || !strings.Contains(err.Error(), "selected") {
+		t.Fatalf("worker panic did not return its identity and cause: %v", err)
+	}
+}
+
+func TestInfraListSetPaginatesAPIIntegrations(t *testing.T) {
+	for _, protocol := range []string{"HTTP", "WEBSOCKET"} {
+		for _, extraIntegration := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/extra=%v", protocol, extraIntegration), func(t *testing.T) {
+				name := "named-function"
+				if protocol == "WEBSOCKET" {
+					name += LambdaWebsocketSuffix
+				}
+				pages := 0
+				installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+					switch r.URL.Path {
+					case "/v2/apis":
+						return infraSetResponse(r, 200, fmt.Sprintf(`{"items":[{"apiId":"selected","name":%q,"protocolType":%q,"routeSelectionExpression":%q,"tags":{"libaws.infraset":"wanted"}}]}`, name, protocol, lambdaRouteSelection)), nil
+					case "/v2/domainnames":
+						return infraSetResponse(r, 200, `{"items":[]}`), nil
+					case "/v2/apis/selected/integrations":
+						pages++
+						integration := `{"integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:123456789012:function:named-function"}`
+						if r.URL.Query().Get("nextToken") == "" {
+							if !extraIntegration {
+								integration = ""
+							}
+							return infraSetResponse(r, 200, `{"items":[`+integration+`],"nextToken":"next"}`), nil
+						}
+						if r.URL.Query().Get("nextToken") != "next" {
+							return nil, errors.New("unexpected integration cursor")
+						}
+						return infraSetResponse(r, 200, `{"items":[`+integration+`]}`), nil
+					default:
+						return nil, fmt.Errorf("unrelated hydration: %s", r.URL)
+					}
+				}))
+				triggers := make(chan *InfraTrigger, 1)
+				out, err := (infraListScope{setName: "wanted"}).listApi(context.Background(), triggers)
+				if err != nil || out[name] == nil || pages != 2 {
+					t.Fatalf("paginated API: out=%v pages=%d err=%v", out, pages, err)
+				}
+				if extraIntegration {
+					if len(triggers) != 0 || out[name].lambdaName != "" {
+						t.Fatal("hid an API with multiple integrations behind a Lambda trigger")
+					}
+				} else {
+					if len(triggers) != 1 || out[name].lambdaName != "named-function" {
+						t.Fatal("lost the verified integration on the second page")
+					}
+					trigger := <-triggers
+					want := lambdaTriggerApi
+					if protocol == "WEBSOCKET" {
+						want = lambdaTriggerWebsocket
+					}
+					if trigger.Type != want || trigger.lambdaName != "named-function" {
+						t.Fatalf("wrong verified trigger: %+v", trigger)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestInfraListSetRejectsInvalidProfileTagCursors(t *testing.T) {
+	for _, marker := range []string{"", "repeated"} {
+		t.Run(marker, func(t *testing.T) {
+			reads := 0
+			installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+				if err := r.ParseForm(); err != nil {
+					return nil, err
+				}
+				if r.Form.Get("Action") != "ListInstanceProfileTags" {
+					return nil, errors.New("unexpected hydration")
+				}
+				reads++
+				return infraSetResponse(r, 200, `<ListInstanceProfileTagsResponse><ListInstanceProfileTagsResult><Tags/><IsTruncated>true</IsTruncated><Marker>`+marker+`</Marker></ListInstanceProfileTagsResult></ListInstanceProfileTagsResponse>`), nil
+			}))
+			if _, err := iamListInstanceProfileTags(context.Background(), "selected"); err == nil || !strings.Contains(err.Error(), "did not advance") || reads > 2 {
+				t.Fatalf("invalid membership cursor: reads=%d err=%v", reads, err)
+			}
+		})
 	}
 }

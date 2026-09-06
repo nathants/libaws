@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -14,13 +17,24 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	sestypes "github.com/aws/aws-sdk-go-v2/service/ses/types"
-	"slices"
-	"strings"
+	"github.com/aws/smithy-go"
 )
 
 // infraListScope selects membership before describing resource configuration.
 // Its zero value preserves the account-wide inventory behaviour.
 type infraListScope struct{ setName string }
+
+// Each inventory worker must report completion even if resource decoding panics.
+// Do not use logRecover here: it re-panics and terminates the caller's process.
+func infraListRecover(errs chan<- error, resource string) {
+	if recovered := recover(); recovered != nil {
+		if err, ok := recovered.(error); ok {
+			errs <- fmt.Errorf("list %s: %w", resource, err)
+		} else {
+			errs <- fmt.Errorf("list %s: %v", resource, recovered)
+		}
+	}
+}
 
 // InfraListSet lists the resources owned by one exact libaws.infraset tag value.
 func InfraListSet(ctx context.Context, name string, showEnvVarValues bool) (*InfraListOutput, error) {
@@ -111,6 +125,30 @@ func iamListRoleTags(ctx context.Context, name string) ([]iamtypes.Tag, error) {
 		}
 		marker = out.Marker
 	}
+}
+
+func iamListInstanceProfileTags(ctx context.Context, name string) ([]iamtypes.Tag, error) {
+	var tags []iamtypes.Tag
+	var marker *string
+	for {
+		out, err := IamClient().ListInstanceProfileTags(ctx, &iam.ListInstanceProfileTagsInput{InstanceProfileName: aws.String(name), Marker: marker})
+		if err != nil {
+			return nil, err
+		}
+		tags = append(tags, out.Tags...)
+		if !out.IsTruncated {
+			return tags, nil
+		}
+		if aws.ToString(out.Marker) == "" || aws.ToString(out.Marker) == aws.ToString(marker) {
+			return nil, errors.New("IAM instance-profile tag pagination did not advance")
+		}
+		marker = out.Marker
+	}
+}
+
+func infraListSQSAbsent(err error) bool {
+	var apiError smithy.APIError
+	return errors.As(err, &apiError) && slices.Contains([]string{"QueueDoesNotExist", "AWS.SimpleQueueService.NonExistentQueue"}, apiError.ErrorCode())
 }
 
 func infraListSecurityGroups(ctx context.Context, vpcIDs []string) ([]ec2types.SecurityGroup, error) {

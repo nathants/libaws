@@ -357,7 +357,7 @@ func SQSDeleteQueue(ctx context.Context, name string, preview bool) error {
 	url, err := SQSQueueUrl(ctx, name)
 	if err != nil {
 		Logger.Println("error:", err)
-		return nil
+		return err
 	}
 	if !preview {
 		_, err := SQSClient().DeleteQueue(ctx, &sqs.DeleteQueueInput{
