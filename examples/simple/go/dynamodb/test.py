@@ -61,6 +61,9 @@ def test():
             }
         }
         assert infra == expected, infra
+        result = subprocess.run(["libaws", "infra-ensure", "preview.yaml", "--preview"], capture_output=True, text=True)
+        assert result.returncode != 0 and "cannot update StartingPosition" in result.stderr, result
+        assert f"test-new-table-{uid}" not in run("libaws dynamodb-ls").splitlines()
         run(f"libaws dynamodb-item-put test-table-{uid} userid:s:jane version:n:1 data:s:{uid}")
         run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "put:"')
         assert uid == json.loads(run(f"libaws dynamodb-item-get test-other-table-{uid} userid:s:jane"))["data"]

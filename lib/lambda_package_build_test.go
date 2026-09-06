@@ -224,8 +224,9 @@ func TestLambdaPythonPackageIsByteReproducible(t *testing.T) {
 	}
 	for name, content := range map[string]string{
 		"main.py": "def main(event, context):\n    return 'ok'\n",
-		"dependency/setup.py": `from setuptools import setup
-setup(name="lambda-reproducibility-dependency", version="0.0.1", py_modules=["dependency"])
+		"dependency/setup.py": `import setuptools
+assert setuptools.__version__ == "83.0.0", setuptools.__version__
+setuptools.setup(name="lambda-reproducibility-dependency", version="0.0.1", py_modules=["dependency"])
 `,
 		"dependency/dependency.py": "VALUE = 'stable dependency'\n",
 	} {
@@ -233,11 +234,15 @@ setup(name="lambda-reproducibility-dependency", version="0.0.1", py_modules=["de
 			t.Fatal(err)
 		}
 	}
+	constraints, err := filepath.Abs("../build-requirements.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
 	name := "libaws-test-python-" + sha256Hex([]byte(source))[:12]
 	infraLambda := &InfraLambda{
 		Name:       name,
 		Entrypoint: filepath.Join(source, "main.py"),
-		Require:    []string{dependency},
+		Require:    []string{"--build-constraint=" + constraints, dependency},
 		dir:        source,
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(LambdaZipFile(name))) })

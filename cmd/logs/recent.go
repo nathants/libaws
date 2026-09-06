@@ -15,7 +15,7 @@ func init() {
 
 type logsRecentArgs struct {
 	Name     string `arg:"positional,required"`
-	NumLines int    `arg:"positional,required" help:"maximum number of recent log lines to show"`
+	NumLines int    `arg:"positional,required" help:"maximum number of recent log lines to show (1-10000)"`
 }
 
 func (logsRecentArgs) Description() string {

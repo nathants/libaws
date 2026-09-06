@@ -6,7 +6,9 @@ lambda:
     attr:
       - memory=128
       - timeout=60
+      - logs-ttl-days=${logs_ttl_days}
     require:
+      - --build-constraint=build-requirements.txt
       - -rrequirements.txt
     env:
       - uid=${uid}

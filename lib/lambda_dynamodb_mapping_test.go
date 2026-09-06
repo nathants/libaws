@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -522,4 +523,56 @@ func requireSingleEnabledDynamoDBMapping(t *testing.T, ctx context.Context, func
 
 func tableNamePointer(name string) *string {
 	return aws.String(name)
+}
+
+func TestLambdaDynamoDBMixedPreviewInspectsKnownMappings(t *testing.T) {
+	for _, newTable := range []bool{false, true} {
+		for _, changed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("new=%v/changed=%v", newTable, changed), func(t *testing.T) {
+				functionARN := "arn:aws:lambda:us-west-2:123456789012:function:function"
+				streamARN := "arn:aws:dynamodb:us-west-2:123456789012:table/existing/stream/current"
+				current := testLambdaDynamoDBMapping("current", streamARN, functionARN, "Enabled")
+				old := testLambdaDynamoDBMapping("old", strings.Replace(streamARN, "/existing/", "/removed/", 1), functionARN, "Enabled")
+				unresolved := testLambdaDynamoDBMapping("unresolved", strings.Replace(streamARN, "/existing/", "/missing/", 1), functionARN, "Enabled")
+				reads := 0
+				client := &lambdaEventSourceMappingClientStub{list: func(context.Context, *lambda.ListEventSourceMappingsInput) (*lambda.ListEventSourceMappingsOutput, error) {
+					reads++
+					return &lambda.ListEventSourceMappingsOutput{EventSourceMappings: []lambdatypes.EventSourceMappingConfiguration{current, old, unresolved}}, nil
+				}}
+				function := testLambdaDynamoDBInfra("existing", functionARN)
+				if changed {
+					function.Trigger[0].Attr[1] = "start=latest"
+				}
+				if newTable {
+					function.Trigger = append(function.Trigger, &InfraTrigger{Type: lambdaTriggerDynamoDB, Attr: []string{"missing", "start=latest"}})
+				}
+				var logs strings.Builder
+				oldLogger := *Logger
+				t.Cleanup(func() { *Logger = oldLogger })
+				Logger.disabled = false
+				Logger.Print = func(args ...any) { fmt.Fprint(&logs, args...) }
+				err := lambdaEnsureTriggerDynamoDB(context.Background(), client, func(_ context.Context, name string) (string, error) {
+					if name == "missing" {
+						return "", &ddbtypes.ResourceNotFoundException{Message: aws.String("not yet created")}
+					}
+					return streamARN, nil
+				}, function, true)
+				if changed {
+					if err == nil || !strings.Contains(err.Error(), "cannot update StartingPosition") {
+						t.Fatalf("immutable change hidden by unresolved table: %v", err)
+					}
+				} else {
+					if err != nil || !strings.Contains(logs.String(), "deleted trigger: function removed") {
+						t.Fatalf("known removal omitted: err=%v logs=%s", err, logs.String())
+					}
+					if newTable && strings.Contains(logs.String(), "deleted trigger: function missing") {
+						t.Fatalf("guessed deletion for an unresolved declared table: %s", logs.String())
+					}
+				}
+				if reads != 1 {
+					t.Fatalf("known mappings were not inspected: %d reads", reads)
+				}
+			})
+		}
+	}
 }

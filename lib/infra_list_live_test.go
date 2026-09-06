@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -238,6 +239,161 @@ func TestInfraListSetIntegration(t *testing.T) {
 				}
 			}
 		}
+	})
+
+	t.Run("qualified Lambda trigger identities", func(t *testing.T) {
+		otherFunction := "test-other-worker-" + uid
+		client := LambdaClient()
+		other, err := client.GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{FunctionName: aws.String(otherFunction)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tags, err := client.ListTags(ctx, &lambda.ListTagsInput{Resource: other.FunctionArn})
+		if err != nil || tags.Tags[infraSetTagName] != second {
+			t.Fatalf("alias source is not owned by the inventory fixture: %v", err)
+		}
+		var version *string
+		t.Cleanup(func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cleanupCancel()
+			var absent *lambdatypes.ResourceNotFoundException
+			if _, err := client.DeleteAlias(cleanupCtx, &lambda.DeleteAliasInput{FunctionName: aws.String(otherFunction), Name: aws.String(function)}); err != nil && !errors.As(err, &absent) {
+				t.Errorf("remove alias fixture: %v", err)
+			}
+			if version != nil {
+				if _, err := client.DeleteFunction(cleanupCtx, &lambda.DeleteFunctionInput{FunctionName: aws.String(otherFunction), Qualifier: version}); err != nil && !errors.As(err, &absent) {
+					t.Errorf("remove version fixture: %v", err)
+				}
+			}
+		})
+		published, err := client.PublishVersion(ctx, &lambda.PublishVersionInput{FunctionName: aws.String(otherFunction)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		version = published.Version
+		alias, err := client.CreateAlias(ctx, &lambda.CreateAliasInput{FunctionName: aws.String(otherFunction), Name: aws.String(function), FunctionVersion: version})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		t.Run("EventBridge relationship and hiding", func(t *testing.T) {
+			ruleName := function + lambdaEventRuleNameSeparator + "identity"
+			events := EventsClient()
+			t.Cleanup(func() {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cleanupCancel()
+				out, err := events.RemoveTargets(cleanupCtx, &eventbridge.RemoveTargetsInput{Rule: aws.String(ruleName), Ids: []string{"fixture", "extra"}})
+				var absent *eventtypes.ResourceNotFoundException
+				if err != nil && !errors.As(err, &absent) {
+					t.Errorf("remove rule targets: %v", err)
+				} else if out != nil && out.FailedEntryCount != 0 {
+					t.Errorf("remove rule targets: %s", Json(out.FailedEntries))
+				}
+				if _, err := events.DeleteRule(cleanupCtx, &eventbridge.DeleteRuleInput{Name: aws.String(ruleName)}); err != nil && !errors.As(err, &absent) {
+					t.Errorf("remove identity rule: %v", err)
+				}
+				if _, err := events.DescribeRule(cleanupCtx, &eventbridge.DescribeRuleInput{Name: aws.String(ruleName)}); !errors.As(err, &absent) {
+					t.Errorf("identity rule remains or deletion could not be verified: %v", err)
+				}
+			})
+			// A far-future schedule cannot invoke anything while this fixture exists.
+			const schedule = "cron(0 0 1 1 ? 2099)"
+			if _, err := events.PutRule(ctx, &eventbridge.PutRuleInput{Name: aws.String(ruleName), ScheduleExpression: aws.String(schedule), Tags: []eventtypes.Tag{{Key: aws.String(infraSetTagName), Value: aws.String(first)}}}); err != nil {
+				t.Fatal(err)
+			}
+			for _, target := range []*string{alias.AliasArn, functionOut.FunctionArn} {
+				out, err := events.PutTargets(ctx, &eventbridge.PutTargetsInput{Rule: aws.String(ruleName), Targets: []eventtypes.Target{{Id: aws.String("fixture"), Arn: target}}})
+				if err != nil || out.FailedEntryCount != 0 {
+					t.Fatalf("set rule target: out=%v err=%v", out, err)
+				}
+				if err := infraListLiveWait(ctx, func() (bool, error) {
+					targets, err := EventsListRuleTargets(ctx, ruleName, nil)
+					return len(targets) == 1 && aws.ToString(targets[0].Arn) == aws.ToString(target), err
+				}); err != nil {
+					t.Fatal(err)
+				}
+				inventory, err := InfraListSet(ctx, first, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				set := inventory.InfraSet[first]
+				if set == nil || set.Lambda[function] == nil {
+					t.Fatal("owned function is missing")
+				}
+				qualified := target == alias.AliasArn
+				if qualified {
+					if set.Event[ruleName] == nil || set.Event[ruleName].Target != aws.ToString(target) {
+						t.Fatal("qualified target was hidden by its misleading rule name")
+					}
+				} else if set.Event[ruleName] != nil {
+					t.Fatal("verified trigger was not folded into the function")
+				}
+				found := slices.ContainsFunc(set.Lambda[function].Trigger, func(trigger *InfraTrigger) bool {
+					return trigger.Type == lambdaTriggerSchedule && slices.Contains(trigger.Attr, schedule)
+				})
+				if found == qualified {
+					t.Fatalf("incorrect trigger reconstruction for %s", aws.ToString(target))
+				}
+			}
+			out, err := events.PutTargets(ctx, &eventbridge.PutTargetsInput{Rule: aws.String(ruleName), Targets: []eventtypes.Target{{Id: aws.String("extra"), Arn: alias.AliasArn}}})
+			if err != nil || out.FailedEntryCount != 0 {
+				t.Fatalf("add second target: out=%v err=%v", out, err)
+			}
+			if err := infraListLiveWait(ctx, func() (bool, error) {
+				targets, err := EventsListRuleTargets(ctx, ruleName, nil)
+				return len(targets) == 2, err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := InfraListSet(ctx, first, false); err == nil || !strings.Contains(err.Error(), "expected at most one target") {
+				t.Fatalf("multiple targets must not be represented as just the last one: %v", err)
+			}
+		})
+
+		t.Run("S3 qualified notification", func(t *testing.T) {
+			bucket := "test-inventory-identity-" + uid
+			s3Client := S3Client()
+			t.Cleanup(func() {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cleanupCancel()
+				if err := S3DeleteBucket(cleanupCtx, bucket, false); err != nil && !isS3NoSuchBucket(err) {
+					t.Errorf("remove identity bucket: %v", err)
+				}
+				if _, err := s3Client.GetBucketLocation(cleanupCtx, &s3.GetBucketLocationInput{Bucket: aws.String(bucket)}); !isS3NoSuchBucket(err) {
+					t.Errorf("identity bucket remains or deletion could not be verified: %v", err)
+				}
+			})
+			input, err := S3EnsureInput(first, bucket, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := S3Ensure(ctx, input, false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.AddPermission(ctx, &lambda.AddPermissionInput{
+				FunctionName: aws.String(otherFunction), Qualifier: aws.String(function), StatementId: aws.String("inventory-fixture"),
+				Action: aws.String("lambda:InvokeFunction"), Principal: aws.String("s3.amazonaws.com"),
+				SourceArn: aws.String("arn:aws:s3:::" + bucket), SourceAccount: aws.String(os.Getenv("LIBAWS_TEST_ACCOUNT")),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s3Client.PutBucketNotificationConfiguration(ctx, &s3.PutBucketNotificationConfigurationInput{
+				Bucket: aws.String(bucket), NotificationConfiguration: &s3types.NotificationConfiguration{
+					LambdaFunctionConfigurations: []s3types.LambdaFunctionConfiguration{{LambdaFunctionArn: alias.AliasArn, Events: []s3types.Event{s3types.EventS3ObjectCreated}}},
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := waitLiveAWSFixtureStable(ctx, func() (bool, error) {
+				out, err := s3Client.GetBucketNotificationConfiguration(ctx, &s3.GetBucketNotificationConfigurationInput{Bucket: aws.String(bucket)})
+				return err == nil && len(out.LambdaFunctionConfigurations) == 1 && aws.ToString(out.LambdaFunctionConfigurations[0].LambdaFunctionArn) == aws.ToString(alias.AliasArn), err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := InfraListSet(ctx, first, false); err == nil || !strings.Contains(err.Error(), "unsupported S3 Lambda notification") {
+				t.Fatalf("qualified S3 target must not be attributed to a different function: %v", err)
+			}
+		})
 	})
 
 	t.Run("profile tag pagination", func(t *testing.T) {

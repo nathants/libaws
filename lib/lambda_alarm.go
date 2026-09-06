@@ -373,23 +373,11 @@ func lambdaEnsureTriggerAlarm(
 	return permissionSIDs, nil
 }
 
-func lambdaAlarmFunctionName(actionARN string) (string, bool) {
-	parsed, err := awsarn.Parse(actionARN)
-	if err != nil || parsed.Service != "lambda" || parsed.Region == "" || parsed.AccountID == "" {
-		return "", false
-	}
-	resource := strings.Split(parsed.Resource, ":")
-	if len(resource) != 2 || resource[0] != "function" || resource[1] == "" {
-		return "", false
-	}
-	return resource[1], true
-}
-
 func lambdaAlarmActionFunctionName(alarm *cwtypes.MetricAlarm) (string, bool) {
 	if alarm == nil || alarm.AlarmArn == nil || len(alarm.AlarmActions) != 1 {
 		return "", false
 	}
-	name, exactFunctionARN := lambdaAlarmFunctionName(alarm.AlarmActions[0])
+	name, exactFunctionARN := lambdaUnqualifiedFunctionName(alarm.AlarmActions[0])
 	actionARN, actionErr := awsarn.Parse(alarm.AlarmActions[0])
 	alarmARN, alarmErr := awsarn.Parse(aws.ToString(alarm.AlarmArn))
 	if !exactFunctionARN || actionErr != nil || alarmErr != nil || alarmARN.Service != "cloudwatch" ||

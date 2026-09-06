@@ -9,4 +9,4 @@ lambda:
     policy:
       - AWSLambdaBasicExecutionRole
     include:
-      - include_me.txt
+      - "include*.txt"

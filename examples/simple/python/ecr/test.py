@@ -70,7 +70,7 @@ def exercise(tmp_path):
         run(f"docker tag {source_image} {image}")
         cleanup.callback(run, f"docker image rm {image}")
         run(f"docker push {image}")
-        assert uid in run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1")
+        assert uid in run(f"timeout --kill-after=5s 180 libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1")
         run("libaws infra-rm infra.yaml --preview")
     assert_cleanup(uid)
 
@@ -148,7 +148,7 @@ def test_cleanup_on_failure(tmp_path, failure):
                 or (failure == "push" and command.startswith("docker push "))
                 or (failure == "image-cleanup" and command.startswith("docker image rm "))):
             raise RuntimeError("injected failure")
-        if command.startswith("libaws logs-tail"):
+        if "libaws logs-tail" in command:
             return uid
         return ""
 

@@ -14,5 +14,15 @@ lambda:
           - name=test-alarm-invocations-${uid}
           - lambda-invocations=test-lambda-${uid}
           - at-least=1/minute
+      - type: alarm
+        attr:
+          - name=test-alarm-invocations_${uid}
+          - lambda-invocations=test-lambda-${uid}
+          - at-least=2147483647/minute
+      - type: alarm
+        attr:
+          - name=${long_alarm_name}
+          - lambda-invocations=test-lambda-${uid}
+          - at-least=2147483647/minute
     env:
       - uid=${uid}

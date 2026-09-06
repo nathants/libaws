@@ -1,5 +1,6 @@
 # type: ignore
 from contextlib import ExitStack
+from pathlib import Path
 import subprocess
 import uuid
 import pytest
@@ -77,6 +78,21 @@ def test(tmp_path):
         else:
             assert False, 'fail'
         assert 'ok' == run(f'curl {url} 2>/dev/null')
+        # Publish changed code; quick mode must use the image, never a local ZIP.
+        quick_context = tmp_path / "quick-image"
+        quick_context.mkdir()
+        (quick_context / "Dockerfile").write_text(Path("Dockerfile").read_text())
+        source = Path("main.js").read_text()
+        updated = source.replace("'ok\\n'", "'quick\\n'")
+        assert updated != source
+        (quick_context / "main.js").write_text(updated)
+        run("docker buildx build --provenance=false -t", container, "--network none", str(quick_context))
+        lines = run(f"docker push {container}").splitlines()
+        os.environ["digest"] = [x for x in lines[-1].split() if x.startswith("sha256:")][0]
+        run(f"libaws infra-ensure infra.yaml --quick test-lambda-{uid} --preview")
+        assert 'ok' == run(f'curl -f {url} 2>/dev/null')
+        run(f"libaws infra-ensure infra.yaml --quick test-lambda-{uid}")
+        assert 'quick' == run(f'curl -f {url} 2>/dev/null')
         run('libaws infra-rm infra.yaml --preview')
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra

@@ -502,6 +502,38 @@ func TestLambdaAPIDomainCleanupDeletesOwnedUnmappedDomainAndDNS(t *testing.T) {
 	}
 }
 
+func TestLambdaAPIDomainCleanupPreservesUnsupportedRoutingModes(t *testing.T) {
+	for _, mode := range []apitypes.RoutingMode{"", "UNKNOWN", apitypes.RoutingModeRoutingRuleOnly, apitypes.RoutingModeRoutingRuleThenApiMapping} {
+		for _, mapped := range []bool{false, true} {
+			for _, preview := range []bool{false, true} {
+				t.Run(string(mode)+"/mapped="+Json(mapped)+"/preview="+Json(preview), func(t *testing.T) {
+					apiClient := &fakeLambdaAPIDomainCleanupClient{mappings: &apigatewayv2.GetApiMappingsOutput{}}
+					if mapped {
+						apiClient.mappings.Items = []apitypes.ApiMapping{lambdaAPIDomainCleanupTestMapping()}
+					}
+					dnsClient := &fakeLambdaAPIDNSClient{pages: map[string]*route53.ListResourceRecordSetsOutput{
+						"": {ResourceRecordSets: []route53types.ResourceRecordSet{lambdaAPIDomainTestRecord()}},
+					}}
+					domain := lambdaAPIDomainFromGet(lambdaAPIDomainTestState(map[string]string{
+						infraSetTagName: "set", lambdaAPIDomainAPIIDTagName: "api-id", lambdaAPIDomainRoute53ZoneTagName: "/hostedzone/Z123",
+					}))
+					domain.RoutingMode = mode
+					if err := lambdaTriggerApiDeleteDnsWith(context.Background(), apiClient, dnsClient, "function", &apitypes.Api{ApiId: aws.String("api-id")}, *domain, "set", preview); err != nil {
+						t.Fatal(err)
+					}
+					wantMappings := 0
+					if mapped && !preview {
+						wantMappings = 1
+					}
+					if len(apiClient.deletedDomain) != 0 || len(dnsClient.changes) != 0 || len(apiClient.deletedMapping) != wantMappings {
+						t.Fatalf("unsupported routing mode cleanup: domains=%v DNS=%v mappings=%v", apiClient.deletedDomain, dnsClient.changes, apiClient.deletedMapping)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestLambdaAPIDomainCleanupPreservesSameSetUnmappedDomainOwnedByAnotherAPI(t *testing.T) {
 	apiClient := &fakeLambdaAPIDomainCleanupClient{mappings: &apigatewayv2.GetApiMappingsOutput{}}
 	dnsClient := &fakeLambdaAPIDNSClient{}

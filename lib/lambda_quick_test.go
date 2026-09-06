@@ -80,3 +80,16 @@ func TestLambdaPrepareQuickPackageBuildsMissingPythonPackage(t *testing.T) {
 		t.Fatalf("quick Python package builds=%d, want 1", createCalls)
 	}
 }
+
+func TestLambdaPrepareQuickContainerNeedsNoZip(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	infraLambda := &InfraLambda{Name: "container-fixture", runtime: lambdaRuntimeContainer}
+	calls := 0
+	packageFn := func(*InfraLambda) error { calls++; return nil }
+	if err := lambdaPrepareQuickPackage(infraLambda, packageFn, packageFn); err != nil {
+		t.Fatalf("container update tried to package a ZIP: %v", err)
+	}
+	if calls != 0 || Exists(lambdaPackageRoot()) {
+		t.Fatalf("container created local package state: calls=%d", calls)
+	}
+}

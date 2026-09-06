@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	apitypes "github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	logstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
@@ -238,6 +239,7 @@ type InfraS3 struct {
 
 type InfraEvent struct {
 	infraSetName string
+	lambdaName   string
 	Target       string   `json:"target,omitempty" yaml:"target,omitempty"`
 	Attr         []string `json:"attr,omitempty"   yaml:"attr,omitempty"`
 }
@@ -667,9 +669,9 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 			}
 		}
 
-		for name := range infraSet.Event {
-			if slices.Contains(lambdaNames, strings.Split(name, lambdaEventRuleNameSeparator)[0]) {
-				delete(infraSet.Event, name) // shown as trigger of the lambda
+		for name, event := range infraSet.Event {
+			if event.lambdaName != "" && slices.Contains(lambdaNames, event.lambdaName) {
+				delete(infraSet.Event, name) // shown as a verified trigger of the lambda
 			}
 		}
 
@@ -724,6 +726,26 @@ func (scope infraListScope) list(ctx context.Context, filter string, showEnvVarV
 	return infra, nil
 }
 
+// Reconstruct only exact, unqualified identities in the caller's account and region.
+func infraListLambdaName(ctx context.Context, functionARN string) (string, error) {
+	name := LambdaArnToLambdaName(functionARN)
+	if !lambdaNamePattern.MatchString(name) {
+		return "", nil
+	}
+	caller, err := StsArn(ctx)
+	if err != nil {
+		return "", err
+	}
+	identity, err := lambdaIdentityFromCallerARN(name, "", Region(), caller)
+	if err != nil {
+		return "", err
+	}
+	if identity.arn != functionARN {
+		return "", nil
+	}
+	return name, nil
+}
+
 func (scope infraListScope) listEvent(ctx context.Context, triggersChan chan<- *InfraTrigger) (map[string]*InfraEvent, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraListEvent"}
@@ -769,38 +791,38 @@ func (scope infraListScope) listEvent(ctx context.Context, triggersChan chan<- *
 					break
 				}
 			}
+			if len(targets) > 1 {
+				errChan <- fmt.Errorf("unsupported EventBridge rule %q: expected at most one target", aws.ToString(rule.Name))
+				return
+			}
 			for _, target := range targets {
-				if strings.HasPrefix(*target.Arn, "arn:aws:lambda:") {
-					if rule.ScheduleExpression != nil {
-						triggersChan <- &InfraTrigger{
-							lambdaName: Last(strings.Split(*target.Arn, ":")),
-							Type:       lambdaTriggerSchedule,
-							Attr:       []string{*rule.ScheduleExpression},
-						}
-					} else if rule.EventPattern != nil && *rule.EventPattern == lambdaEcrEventPattern {
-						triggersChan <- &InfraTrigger{
-							lambdaName: Last(strings.Split(*target.Arn, ":")),
-							Type:       lambdaTriggerEcr,
-						}
-					}
-					if rule.Name == nil {
-						rule.Name = aws.String("-")
-					}
-					if rule.EventPattern == nil {
-						rule.EventPattern = aws.String("-")
-					}
-					if target.Arn == nil {
-						target.Arn = aws.String("-")
-					}
-					infraEvent := &InfraEvent{
-						infraSetName: infraSetName,
-						Target:       *target.Arn,
-						Attr:         []string{"eventpattern=" + *rule.EventPattern, "target=" + *target.Arn},
-					}
-					lock.Lock()
-					results[*rule.Name] = infraEvent
-					lock.Unlock()
+				targetARN := aws.ToString(target.Arn)
+				parsed, err := arn.Parse(targetARN)
+				if err != nil || parsed.Service != "lambda" {
+					continue
 				}
+				lambdaName, err := infraListLambdaName(ctx, targetARN)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				infraEvent := &InfraEvent{
+					infraSetName: infraSetName,
+					Target:       targetARN,
+					Attr:         []string{"eventpattern=" + aws.ToString(rule.EventPattern), "target=" + targetARN},
+				}
+				if lambdaName != "" {
+					if rule.ScheduleExpression != nil {
+						infraEvent.lambdaName = lambdaName
+						triggersChan <- &InfraTrigger{lambdaName: lambdaName, Type: lambdaTriggerSchedule, Attr: []string{*rule.ScheduleExpression}}
+					} else if aws.ToString(rule.EventPattern) == lambdaEcrEventPattern {
+						infraEvent.lambdaName = lambdaName
+						triggersChan <- &InfraTrigger{lambdaName: lambdaName, Type: lambdaTriggerEcr}
+					}
+				}
+				lock.Lock()
+				results[aws.ToString(rule.Name)] = infraEvent
+				lock.Unlock()
 			}
 			errChan <- nil
 		}()
@@ -1861,13 +1883,16 @@ func (scope infraListScope) listS3(ctx context.Context, triggersChan chan<- *Inf
 			}
 			if descr.Notifications != nil {
 				for _, conf := range descr.Notifications.LambdaFunctionConfigurations {
-					if conf.LambdaFunctionArn != nil {
-						triggersChan <- &InfraTrigger{
-							lambdaName: LambdaArnToLambdaName(*conf.LambdaFunctionArn),
-							Type:       lambdaTrigerS3,
-							Attr:       []string{*bucket.Name},
-						}
+					lambdaName, err := infraListLambdaName(ctx, aws.ToString(conf.LambdaFunctionArn))
+					if err != nil {
+						errChan <- err
+						return
 					}
+					if lambdaName == "" {
+						errChan <- fmt.Errorf("unsupported S3 Lambda notification for bucket %q: %q; expected an unqualified function in the current account and region", aws.ToString(bucket.Name), aws.ToString(conf.LambdaFunctionArn))
+						return
+					}
+					triggersChan <- &InfraTrigger{lambdaName: lambdaName, Type: lambdaTrigerS3, Attr: []string{*bucket.Name}}
 				}
 			}
 			lock.Lock()
@@ -2144,7 +2169,7 @@ func infraEnsureDynamoDBGlobalIndexToAttrs(infraDynamoDB *InfraDynamoDB) error {
 					return err
 				}
 				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.ProvisionedThroughput.ReadCapacityUnits=%d", count, capacity))
-			case "write:":
+			case "write":
 				capacity, err := strconv.Atoi(v)
 				if err != nil {
 					Logger.Println("error:", err)
@@ -2184,7 +2209,7 @@ func infraEnsureDynamoDBLocalIndexToAttrs(infraDynamoDB *InfraDynamoDB) error {
 			}
 			switch k {
 			case "projection":
-				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=%s", count, strings.ToUpper(v)))
+				infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.ProjectionType=%s", count, strings.ToUpper(v)))
 				projection = true
 			default:
 				err := fmt.Errorf("unknown dynamodb local index attr: %s", attr)
@@ -2193,7 +2218,7 @@ func infraEnsureDynamoDBLocalIndexToAttrs(infraDynamoDB *InfraDynamoDB) error {
 			}
 		}
 		if !projection {
-			infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("GlobalSecondaryIndexes.%d.Projection.ProjectionType=ALL", count))
+			infraDynamoDB.Attr = append(infraDynamoDB.Attr, fmt.Sprintf("LocalSecondaryIndexes.%d.Projection.ProjectionType=ALL", count))
 		}
 		count++
 	}
@@ -2995,6 +3020,9 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 			}
 		}
 		for _, trigger := range infraLambda.Trigger {
+			if err := lambdaValidateTriggerSource(trigger); err != nil {
+				return nil, err
+			}
 			validTriggers := []string{lambdaTriggerSQS, lambdaTrigerS3, lambdaTriggerDynamoDB, lambdaTriggerApi, lambdaTriggerEcr, lambdaTriggerSchedule, lambdaTriggerWebsocket, lambdaTriggerSes, lambdaTriggerUrl, lambdaTriggerAlarm}
 			if !slices.Contains(validTriggers, trigger.Type) {
 				err := fmt.Errorf("unknown trigger: %#v", trigger)

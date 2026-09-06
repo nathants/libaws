@@ -10,6 +10,10 @@ dependencies = [
     "pyyaml==6.0.3",
 ]
 
+[dependency-groups]
+build = ["setuptools==83.0.0"]
+
 [tool.uv]
+build-constraint-dependencies = ["setuptools==83.0.0"]
 package = false
 exclude-newer = "14 days"

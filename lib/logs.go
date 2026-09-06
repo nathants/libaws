@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -90,10 +89,16 @@ func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttl
 	}
 	if ttlDays != int(*logGroup.RetentionInDays) {
 		if !preview {
-			_, err = LogsClient().PutRetentionPolicy(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
-				LogGroupName:    aws.String(logGroupName),
-				RetentionInDays: aws.Int32(int32(ttlDays)),
-			})
+			if ttlDays == 0 {
+				_, err = LogsClient().DeleteRetentionPolicy(ctx, &cloudwatchlogs.DeleteRetentionPolicyInput{
+					LogGroupName: aws.String(logGroupName),
+				})
+			} else {
+				_, err = LogsClient().PutRetentionPolicy(ctx, &cloudwatchlogs.PutRetentionPolicyInput{
+					LogGroupName:    aws.String(logGroupName),
+					RetentionInDays: aws.Int32(int32(ttlDays)),
+				})
+			}
 			if err != nil {
 				Logger.Println("error:", err)
 				return err
@@ -270,8 +275,8 @@ func logsRecentWithClient(
 	numLines int,
 	maxConcurrentRequests int,
 ) ([]string, error) {
-	if numLines <= 0 || numLines > math.MaxInt32 {
-		return nil, fmt.Errorf("number of recent log lines must be between 1 and %d", math.MaxInt32)
+	if numLines <= 0 || numLines > 10000 {
+		return nil, errors.New("number of recent log lines must be between 1 and 10000")
 	}
 	if maxConcurrentRequests <= 0 {
 		return nil, errors.New("maximum concurrent log requests must be positive")
@@ -286,15 +291,17 @@ func logsRecentWithClient(
 		return nil, err
 	}
 
+	for _, stream := range streamsOut.LogStreams {
+		if aws.ToString(stream.LogStreamName) == "" {
+			return nil, errors.New("CloudWatch returned an empty log stream name")
+		}
+	}
 	streamEvents := make([][]cwlogstypes.OutputLogEvent, len(streamsOut.LogStreams))
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(maxConcurrentRequests)
 	for index, stream := range streamsOut.LogStreams {
 		index := index
 		streamName := aws.ToString(stream.LogStreamName)
-		if streamName == "" {
-			return nil, errors.New("CloudWatch returned an empty log stream name")
-		}
 		group.Go(func() error {
 			out, err := client.GetLogEvents(groupCtx, &cloudwatchlogs.GetLogEventsInput{
 				LogGroupName:  aws.String(name),
@@ -341,7 +348,7 @@ func logsRecentWithClient(
 	return lines, nil
 }
 
-// LogsRecent returns up to numLines recent log lines.
+// LogsRecent returns up to numLines recent log lines (1–10000).
 func LogsRecent(ctx context.Context, name string, numLines int) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LogsRecent"}

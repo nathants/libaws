@@ -211,7 +211,7 @@ func TestLambdaAlarmFunctionNameRequiresUnqualifiedFunctionARN(t *testing.T) {
 		"arn:aws:lambda:us-west-2:337909772623:function:better-game":           "better-game",
 		"arn:aws-us-gov:lambda:us-gov-west-1:337909772623:function:government": "government",
 	} {
-		got, ok := lambdaAlarmFunctionName(arn)
+		got, ok := lambdaUnqualifiedFunctionName(arn)
 		if !ok || got != want {
 			t.Fatalf("lambda alarm action %q = %q, %v; want %q, true", arn, got, ok, want)
 		}
@@ -222,7 +222,7 @@ func TestLambdaAlarmFunctionNameRequiresUnqualifiedFunctionARN(t *testing.T) {
 		"arn:aws:sns:us-west-2:337909772623:topic",
 		"not-an-arn",
 	} {
-		if name, ok := lambdaAlarmFunctionName(arn); ok {
+		if name, ok := lambdaUnqualifiedFunctionName(arn); ok {
 			t.Fatalf("qualified or invalid Lambda action %q was accepted as %q", arn, name)
 		}
 	}

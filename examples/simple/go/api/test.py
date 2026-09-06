@@ -62,6 +62,7 @@ def test():
             }
         }
         assert infra == expected, infra
+        assert f"test-lambda-{uid}" in run("libaws api-ls").splitlines()
         assert_source_account_permissions(f"test-lambda-{uid}", "apigateway.amazonaws.com")
         url = run(f"libaws infra-url-api infra.yaml test-lambda-{uid}")
         for _ in range(10):

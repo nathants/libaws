@@ -1,0 +1,5 @@
+name: test-s3-keys-${uid}
+s3:
+  test-s3-keys-${uid}:
+    attr:
+      - versioning=true

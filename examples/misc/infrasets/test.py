@@ -37,10 +37,12 @@ def test():
             creations = [pool.submit(run, "libaws", "infra-ensure", path) for path in ("infra.yaml", "other.yaml")]
             for creation in creations:
                 creation.result()
-        # Re-ensure immediately after enabling TTL; both ensure and inventory
-        # must reread a transitioning status rather than wait on a stale response.
+        # The first ensure must configure TTL; a second ensure must not repair it.
+        b = listed(second)
+        assert "ttl=expires" in b[second]["dynamodb"][f"test-records-{uid}"]["attr"], b
         run("libaws", "infra-ensure", "other.yaml")
-        a, b = listed(first), listed(second)
+        a = listed(first)
+        assert listed(second) == b
         assert set(a) == {first}, a
         assert set(b) == {second}, b
         assert set(a[first]) == {"lambda", "s3"}, a

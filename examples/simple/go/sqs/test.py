@@ -59,6 +59,7 @@ def test():
             }
         }
         assert infra == expected, infra
+        run(f"LIBAWS_SQS_MAPPING_TEST_UID={uid} go test ../../../../lib -run '^TestLambdaSQSMappingIntegration$' -count=1 -v")
         run(f"libaws sqs-send test-queue-{uid} {uid}")
         assert uid == run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "thanks for:" | tail -n1').split()[-1]
         preview = captured("libaws infra-rm infra.yaml --preview")

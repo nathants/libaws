@@ -505,6 +505,14 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 				}
 			}
 			Logger.Println(PreviewString(preview)+"created table:", *input.TableName)
+			if ttl != nil {
+				if !preview {
+					if err := DynamoDBWaitForReady(ctx, *input.TableName); err != nil {
+						return err
+					}
+				}
+				return dynamoDBUpdateTTL(ctx, *input.TableName, ttl, preview)
+			}
 			return nil
 		}
 		Logger.Println("error:", err)
@@ -874,41 +882,38 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 	}
 	if ttl == nil {
 		if ttlOut.TimeToLiveDescription.TimeToLiveStatus == ddbtypes.TimeToLiveStatusEnabled {
-			if !preview {
-				_, err := DynamoDBClient().UpdateTimeToLive(ctx, &dynamodb.UpdateTimeToLiveInput{
-					TableName: input.TableName,
-					TimeToLiveSpecification: &ddbtypes.TimeToLiveSpecification{
-						AttributeName: ttlOut.TimeToLiveDescription.AttributeName,
-						Enabled:       aws.Bool(false),
-					},
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			Logger.Println(PreviewString(preview)+"disable ttl attr:", *ttlOut.TimeToLiveDescription.AttributeName+", table:", *input.TableName)
+			return dynamoDBUpdateTTL(ctx, *input.TableName, &ddbtypes.TimeToLiveSpecification{
+				AttributeName: ttlOut.TimeToLiveDescription.AttributeName,
+				Enabled:       aws.Bool(false),
+			}, preview)
 		}
-	} else {
-		if ttlOut.TimeToLiveDescription.TimeToLiveStatus == ddbtypes.TimeToLiveStatusDisabled {
-			if !*ttl.Enabled {
-				err := fmt.Errorf("expected ttl enabled, got: %s", PformatAlways(ttl))
-				Logger.Println("error:", err)
-				return err
-			}
-			if !preview {
-				_, err := DynamoDBClient().UpdateTimeToLive(ctx, &dynamodb.UpdateTimeToLiveInput{
-					TableName:               input.TableName,
-					TimeToLiveSpecification: ttl,
-				})
-				if err != nil {
-					Logger.Println("error:", err)
-					return err
-				}
-			}
-			Logger.Println(PreviewString(preview)+"enable ttl attr:", *ttl.AttributeName+", table:", *input.TableName)
+	} else if ttlOut.TimeToLiveDescription.TimeToLiveStatus == ddbtypes.TimeToLiveStatusDisabled {
+		if !*ttl.Enabled {
+			err := fmt.Errorf("expected ttl enabled, got: %s", PformatAlways(ttl))
+			Logger.Println("error:", err)
+			return err
+		}
+		return dynamoDBUpdateTTL(ctx, *input.TableName, ttl, preview)
+	}
+	return nil
+}
+
+func dynamoDBUpdateTTL(ctx context.Context, tableName string, ttl *ddbtypes.TimeToLiveSpecification, preview bool) error {
+	if !preview {
+		_, err := DynamoDBClient().UpdateTimeToLive(ctx, &dynamodb.UpdateTimeToLiveInput{
+			TableName:               aws.String(tableName),
+			TimeToLiveSpecification: ttl,
+		})
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
 		}
 	}
+	action := "disable"
+	if aws.ToBool(ttl.Enabled) {
+		action = "enable"
+	}
+	Logger.Println(PreviewString(preview)+action+" ttl attr:", aws.ToString(ttl.AttributeName)+", table:", tableName)
 	return nil
 }
 

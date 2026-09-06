@@ -202,6 +202,7 @@ def test():
             http_domain, min(work_deadline, time.monotonic() + 240)
         )
 
+        integration(uid, "verify-routing-cleanup", work_deadline)
         delete_lambda(http_function, work_deadline)
         delete_lambda(websocket_function, work_deadline)
         run_before(work_deadline, ["libaws", "infra-rm", "infra.yaml", "--preview"])

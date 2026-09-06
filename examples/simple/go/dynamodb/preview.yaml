@@ -1,0 +1,22 @@
+# Preview-only: adding a new table must not hide an invalid existing mapping change.
+name: test-infraset-${uid}
+
+dynamodb:
+  test-new-table-${uid}:
+    key:
+      - userid:s:hash
+    attr:
+      - stream=keys_only
+
+lambda:
+  test-lambda-${uid}:
+    entrypoint: main.go
+    trigger:
+      - type: dynamodb
+        attr:
+          - test-table-${uid}
+          - start=latest
+      - type: dynamodb
+        attr:
+          - test-new-table-${uid}
+          - start=latest

@@ -5,6 +5,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = ["boto3==1.43.77"]
 
 [dependency-groups]
+build = ["setuptools==83.0.0"]
 dev = [
     "py-pool @ git+https://github.com/nathants/py-pool@27b31ec18b326366c8c405076963e2934dd7b134",
     "py-shell @ git+https://github.com/nathants/py-shell@dacb4922e13f947998ae31e40aec441c54471b36",
@@ -14,5 +15,6 @@ dev = [
 ]
 
 [tool.uv]
+build-constraint-dependencies = ["setuptools==83.0.0"]
 package = false
 exclude-newer = "14 days"

@@ -7,6 +7,7 @@ lambda:
       - memory=128
       - timeout=60
     require:
+      - --build-constraint=build-requirements.txt
       - -rrequirements.txt
     env:
       - uid=${uid}

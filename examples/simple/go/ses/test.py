@@ -1,4 +1,5 @@
 # type: ignore
+from contextlib import ExitStack
 import json
 import os
 import subprocess
@@ -78,6 +79,15 @@ def receipt_rules():
     return run("libaws ses-ls-receipt-rules")
 
 
+def assert_removed(uid, function_name, bucket, domain):
+    assert domain not in receipt_rules()
+    assert bucket not in run("libaws s3-ls").split()
+    result = subprocess.run(["libaws", "lambda-describe", function_name], capture_output=True, text=True)
+    assert result.returncode != 0 and "ResourceNotFoundException" in result.stderr, result
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
+
+
 def test():
     assert os.environ["LIBAWS_TEST_ACCOUNT"] == run("libaws aws-account")
     os.environ["uid"] = uid = str(uuid.uuid4())[-12:]
@@ -85,7 +95,12 @@ def test():
     bucket = f"test-ses-bucket-{uid}"
     domain = f"test-ses-{uid}.{os.environ['LIBAWS_TEST_DOMAIN']}"
 
-    try:
+    with ExitStack() as cleanup:
+        cleanup.callback(assert_removed, uid, function_name, bucket, domain)
+        cleanup.callback(run, f"libaws s3-rm-bucket {bucket}")
+        cleanup.callback(run, f"libaws lambda-rm {function_name}")
+        cleanup.callback(run, f"libaws ses-rm-receipt-rule {domain}")
+        cleanup.callback(run, "libaws infra-rm infra.yaml")
         infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
         assert infra.get("infraset", {}) == {}, infra
 
@@ -97,6 +112,7 @@ def test():
         assert infra == expected(uid, domain), infra
         assert domain in receipt_rules()
         assert_source_account_permission(function_name, "ses.amazonaws.com")
+        run(f"LIBAWS_SES_ROLLBACK_TEST_DOMAIN={domain} go test ../../../../lib -run '^TestSESActiveRuleRollbackIntegration$' -count=1 -v")
 
         function_arn = f"arn:aws:lambda:{region}:{account}:function:{function_name}"
         captured(
@@ -125,11 +141,6 @@ def test():
         assert domain not in receipt_rules()
         infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
         assert infra.get("infraset", {}) == {}, infra
-    finally:
-        run("libaws infra-rm infra.yaml")
-        if domain in receipt_rules():
-            run(f"libaws ses-rm-receipt-rule {domain}")
-        assert domain not in receipt_rules()
 
 
 if __name__ == "__main__":

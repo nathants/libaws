@@ -2,7 +2,6 @@ package libaws
 
 import (
 	"context"
-	"strings"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/libaws/lib"
@@ -30,8 +29,7 @@ func s3Rm() {
 	configureS3Provider(args.R2)
 	ctx := context.Background()
 
-	args.Path = strings.ReplaceAll(args.Path, "s3://", "")
-	bucket, key, err := lib.SplitOnce(args.Path, "/")
+	bucket, key, err := lib.S3SplitPath(args.Path)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

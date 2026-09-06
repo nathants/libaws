@@ -584,3 +584,58 @@ func TestInfraListSetRejectsInvalidProfileTagCursors(t *testing.T) {
 		})
 	}
 }
+
+func TestInfraListEventVerifiesLambdaIdentity(t *testing.T) {
+	for _, target := range []string{
+		"multiple",
+		"arn:aws:lambda:us-east-1:123456789012:function:victim",
+		"arn:aws:lambda:us-east-1:123456789012:function:other-function:victim",
+		"arn:aws:lambda:us-east-1:999999999999:function:victim",
+		"arn:aws:lambda:us-west-2:123456789012:function:victim",
+		"arn:aws-cn:lambda:us-east-1:123456789012:function:victim",
+	} {
+		t.Run(target, func(t *testing.T) {
+			installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+				var body string
+				switch action := Last(strings.Split(r.Header.Get("X-Amz-Target"), ".")); action {
+				case "ListRules":
+					body = `{"Rules":[{"Name":"victim__schedule","Arn":"arn:aws:events:us-east-1:123456789012:rule/victim__schedule","ScheduleExpression":"rate(1 hour)"}]}`
+				case "ListTagsForResource":
+					body = `{"Tags":[{"Key":"libaws.infraset","Value":"wanted"}]}`
+				case "ListTargetsByRule":
+					body = fmt.Sprintf(`{"Targets":[{"Id":"target","Arn":%q}]}`, target)
+					if target == "multiple" {
+						body = `{"Targets":[{"Id":"one","Arn":"arn:aws:lambda:us-east-1:123456789012:function:victim"},{"Id":"two","Arn":"arn:aws:lambda:us-east-1:123456789012:function:other"}]}`
+					}
+				default:
+					return nil, fmt.Errorf("unexpected action %s", action)
+				}
+				return infraSetResponse(r, 200, body), nil
+			}))
+			triggers := make(chan *InfraTrigger, 2)
+			events, err := (infraListScope{setName: "wanted"}).listEvent(context.Background(), triggers)
+			if target == "multiple" {
+				if err == nil || !strings.Contains(err.Error(), "expected at most one target") || len(triggers) != 0 {
+					t.Fatalf("multiple targets must not be collapsed: events=%v triggers=%d err=%v", events, len(triggers), err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if event := events["victim__schedule"]; event == nil || event.Target != target {
+				t.Fatalf("event target not preserved: %+v", events)
+			}
+			if target == "arn:aws:lambda:us-east-1:123456789012:function:victim" {
+				if len(triggers) != 1 {
+					t.Fatal("local unqualified target lost")
+				}
+				if trigger := <-triggers; trigger.lambdaName != "victim" {
+					t.Fatalf("wrong trigger: %+v", trigger)
+				}
+			} else if len(triggers) != 0 {
+				t.Fatalf("fabricated local trigger from %s", target)
+			}
+		})
+	}
+}

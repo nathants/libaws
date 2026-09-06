@@ -2,7 +2,6 @@ package libaws
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -27,8 +26,7 @@ func (s3PresignGetArgs) Description() string {
 func s3PresignGet() {
 	var args s3PresignGetArgs
 	arg.MustParse(&args)
-	args.Path = strings.ReplaceAll(args.Path, "s3://", "")
-	bucket, key, err := lib.SplitOnce(args.Path, "/")
+	bucket, key, err := lib.S3SplitPath(args.Path)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

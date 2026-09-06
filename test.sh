@@ -8,11 +8,12 @@ trap 'status=$?; printf "TOTAL suite: %ss status=%s\n" "$((SECONDS - started))" 
 
 check_uv_export() {
     local requirements=$1
+    shift
     local dir generated status
     dir=$(dirname "$requirements")
     generated=$(mktemp)
     status=0
-    (cd "$dir" && uv lock --check && uv export --locked --no-dev --no-emit-project --no-header --no-annotate --no-hashes) > "$generated" || status=$?
+    (cd "$dir" && uv lock --check && uv export --locked "$@" --no-emit-project --no-header --no-annotate --no-hashes) > "$generated" || status=$?
     if ((status == 0)); then
         diff -u "$requirements" "$generated" || status=$?
     fi
@@ -21,10 +22,12 @@ check_uv_export() {
 }
 
 uv lock --check
+check_uv_export build-requirements.txt --only-group build
 
 while IFS= read -r requirements; do
     printf '\n=== %s ===\n' "$requirements"
-    check_uv_export "$requirements"
+    check_uv_export "$requirements" --no-dev
+    check_uv_export "$(dirname "$requirements")/build-requirements.txt" --only-group build
 done < <(find examples -type d \( -name .venv -o -name node_modules \) -prune -o -type f -name requirements.txt -print | sort)
 
 make check

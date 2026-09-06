@@ -1,0 +1,26 @@
+name: test-ddb-index-${uid}
+dynamodb:
+  test-ddb-index-${uid}:
+    key:
+      - id:s:hash
+      - created:n:range
+    attr:
+      - read=1
+      - write=1
+    global-index:
+      by-name:
+        key:
+          - name:s:hash
+        non-key:
+          - extra
+        attr:
+          - projection=include
+          - read=2
+          - write=3
+    local-index:
+      by-category:
+        key:
+          - id:s:hash
+          - category:s:range
+        attr:
+          - projection=keys_only

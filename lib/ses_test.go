@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	sesv2 "github.com/aws/aws-sdk-go-v2/service/ses"
@@ -478,6 +479,107 @@ func TestSesRmReceiptRulesetPropagatesMutationErrors(t *testing.T) {
 			test.set(client)
 			if err := sesRmReceiptRuleset(context.Background(), client, "mail.example", false); !errors.Is(err, failure) {
 				t.Fatalf("error = %v, want %v", err, failure)
+			}
+		})
+	}
+}
+
+type canceledSESClient struct {
+	*fakeSesReceiptRuleCleanupClient
+	cancel   context.CancelFunc
+	cancelAt string
+	restored []context.Context
+}
+
+func (client *canceledSESClient) CreateReceiptRuleSet(ctx context.Context, in *sesv2.CreateReceiptRuleSetInput, _ ...func(*sesv2.Options)) (*sesv2.CreateReceiptRuleSetOutput, error) {
+	out, err := client.fakeSesReceiptRuleCleanupClient.CreateReceiptRuleSet(ctx, in)
+	if err == nil && client.cancelAt == "create-set" {
+		client.cancel()
+	}
+	return out, err
+}
+
+func (client *canceledSESClient) SetActiveReceiptRuleSet(ctx context.Context, in *sesv2.SetActiveReceiptRuleSetInput, _ ...func(*sesv2.Options)) (*sesv2.SetActiveReceiptRuleSetOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if in.RuleSetName != nil {
+		client.restored = append(client.restored, ctx)
+	}
+	out, err := client.fakeSesReceiptRuleCleanupClient.SetActiveReceiptRuleSet(ctx, in)
+	if err == nil && in.RuleSetName == nil && client.cancelAt == "deactivate" {
+		client.cancel()
+	}
+	return out, err
+}
+
+func (client *canceledSESClient) DeleteReceiptRule(ctx context.Context, in *sesv2.DeleteReceiptRuleInput, _ ...func(*sesv2.Options)) (*sesv2.DeleteReceiptRuleOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	out, err := client.fakeSesReceiptRuleCleanupClient.DeleteReceiptRule(ctx, in)
+	if err == nil && client.cancelAt == "delete-rule" {
+		client.cancel()
+	}
+	return out, err
+}
+
+func (client *canceledSESClient) DeleteReceiptRuleSet(ctx context.Context, in *sesv2.DeleteReceiptRuleSetInput, _ ...func(*sesv2.Options)) (*sesv2.DeleteReceiptRuleSetOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	client.restored = append(client.restored, ctx)
+	return client.fakeSesReceiptRuleCleanupClient.DeleteReceiptRuleSet(ctx, in)
+}
+
+func (client *canceledSESClient) CreateReceiptRule(ctx context.Context, in *sesv2.CreateReceiptRuleInput, _ ...func(*sesv2.Options)) (*sesv2.CreateReceiptRuleOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	client.restored = append(client.restored, ctx)
+	return client.fakeSesReceiptRuleCleanupClient.CreateReceiptRule(ctx, in)
+}
+
+func TestSESRollbackSurvivesCancellation(t *testing.T) {
+	for _, action := range []string{"deactivate", "delete-rule", "create-set", "restore-failure"} {
+		t.Run(action, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			base := fakeSesRuleSet("mail.example")
+			base.active = "mail.example"
+			client := &canceledSESClient{fakeSesReceiptRuleCleanupClient: base, cancel: cancel, cancelAt: action}
+			var err error
+			failure := errors.New("restore denied")
+			if action == "create-set" {
+				base.ruleSets = nil
+				err = sesEnsureReceiptRulesetState(ctx, client, "mail.example", "bucket", "", "arn:aws:lambda:us-west-2:123456789012:function:function", false)
+			} else {
+				if action == "restore-failure" {
+					client.cancelAt, base.createRuleErr = "delete-rule", failure
+				}
+				err = sesRmReceiptRuleset(ctx, client, "mail.example", false)
+			}
+			if !errors.Is(err, context.Canceled) || len(client.restored) == 0 {
+				t.Fatalf("rollback could not run after cancellation: err=%v calls=%v", err, base.calls)
+			}
+			if action == "restore-failure" {
+				if !errors.Is(err, failure) || slices.Contains(base.calls, "activate") {
+					t.Fatalf("failed rollback lost error or activated empty set: %v calls=%v", err, base.calls)
+				}
+			} else if action == "create-set" {
+				if !slices.Equal(base.deletedRuleSets, []string{"mail.example"}) {
+					t.Fatalf("new empty rule set was not rolled back: %v", base.calls)
+				}
+			} else if !slices.Contains(base.calls, "activate") || (action == "delete-rule" && !reflect.DeepEqual(base.createdRule, &base.rules[0])) {
+				t.Fatalf("original rule/activation not restored: %v", base.calls)
+			}
+			for _, restoreCtx := range client.restored {
+				if deadline, ok := restoreCtx.Deadline(); !ok || time.Until(deadline) > time.Minute {
+					t.Fatalf("rollback must have a bounded deadline: %v %v", deadline, ok)
+				}
+				if restoreCtx.Err() == nil {
+					t.Fatal("rollback context not released")
+				}
 			}
 		})
 	}

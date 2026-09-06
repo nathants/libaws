@@ -576,6 +576,88 @@ func lambdaAPIDomainIntegrationVerifyCreated(
 	}
 }
 
+// Reuse only the example's unique HTTP domain, never the permanent ACM fixture.
+func lambdaAPIDomainIntegrationVerifyRoutingCleanup(t *testing.T, ctx context.Context, names lambdaAPIDomainIntegrationNames) {
+	t.Helper()
+	api, err := Api(ctx, names.httpAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zone := lambdaAPIDomainIntegrationRequireZone(t, ctx, names.zone)
+	before := lambdaAPIDomainIntegrationVerifyDomain(t, ctx, names.httpDomain, names.infraSet, api, aws.ToString(zone.Id))
+	mappings, err := lambdaAPIListMappings(ctx, ApiClient(), names.httpDomain)
+	if err != nil || len(mappings) != 1 {
+		t.Fatalf("owned root mapping: %v err=%v", mappings, err)
+	}
+	if _, err := ApiClient().DeleteApiMapping(ctx, &apigatewayv2.DeleteApiMappingInput{DomainName: before.DomainName, ApiMappingId: mappings[0].ApiMappingId}); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []apitypes.RoutingMode{apitypes.RoutingModeRoutingRuleOnly, apitypes.RoutingModeRoutingRuleThenApiMapping, apitypes.RoutingModeApiMappingOnly} {
+		t.Logf("prepare domain routing mode %s", mode)
+		for {
+			_, err := ApiClient().UpdateDomainName(ctx, &apigatewayv2.UpdateDomainNameInput{DomainName: before.DomainName, RoutingMode: mode})
+			if err == nil {
+				break
+			}
+			var throttled *apitypes.TooManyRequestsException
+			if !errors.As(err, &throttled) {
+				t.Fatal(err)
+			}
+			// Domain updates have a much lower quota than ordinary API reads.
+			if err := lambdaAPIDomainIntegrationWait(ctx, 15*time.Second); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var domain *apitypes.DomainName
+		for {
+			out, err := lambdaAPIDomainIntegrationGetDomain(ctx, names.httpDomain)
+			if err != nil {
+				t.Fatal(err)
+			}
+			domain = lambdaAPIDomainFromGet(out)
+			if domain.RoutingMode == mode && len(domain.DomainNameConfigurations) == 1 && domain.DomainNameConfigurations[0].DomainNameStatus == apitypes.DomainNameStatusAvailable {
+				break
+			}
+			if err := lambdaAPIDomainIntegrationWait(ctx, time.Second); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if mode == apitypes.RoutingModeApiMappingOnly {
+			break // Restore the normal example fixture after the preservation checks.
+		}
+		mappings, err := lambdaAPIListMappings(ctx, ApiClient(), names.httpDomain)
+		if err != nil || len(mappings) != 0 {
+			t.Fatalf("routing-mode fixture still has mappings: %v err=%v", mappings, err)
+		}
+		for _, preview := range []bool{true, false} {
+			if err := lambdaTriggerApiDeleteDns(ctx, names.httpFunction, api, *domain, names.infraSet, preview); err != nil {
+				t.Fatal(err)
+			}
+			after, err := lambdaAPIDomainIntegrationGetDomain(ctx, names.httpDomain)
+			if err != nil || after.RoutingMode != mode || !reflect.DeepEqual(after.Tags, before.Tags) {
+				t.Fatalf("cleanup changed routing domain: out=%v err=%v", after, err)
+			}
+			records, err := Route53ListRecords(ctx, aws.ToString(zone.Id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			matches := 0
+			for index := range records {
+				if lambdaAPIDNSRecordMatches(domain, &records[index]) {
+					matches++
+				}
+			}
+			if matches != 1 {
+				t.Fatalf("cleanup removed routing domain DNS: matching aliases=%d", matches)
+			}
+		}
+	}
+	if err := lambdaEnsureTriggerApiMapping(ctx, names.httpFunction, names.httpDomain, api, false); err != nil {
+		t.Fatal(err)
+	}
+	lambdaAPIDomainIntegrationVerifyCreated(t, ctx, names)
+}
+
 func lambdaAPIDomainIntegrationVerifySimpleRecord(
 	t *testing.T,
 	ctx context.Context,
@@ -818,6 +900,8 @@ func TestLambdaAPIDomainIntegration(t *testing.T) {
 		lambdaAPIDomainIntegrationVerifyFixture(t, ctx, names)
 	case "verify-created":
 		lambdaAPIDomainIntegrationVerifyCreated(t, ctx, names)
+	case "verify-routing-cleanup":
+		lambdaAPIDomainIntegrationVerifyRoutingCleanup(t, ctx, names)
 	case "verify-simple-record":
 		lambdaAPIDomainIntegrationVerifySimpleRecord(t, ctx, names)
 	case "verify-removed":

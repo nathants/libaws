@@ -33,6 +33,27 @@ def cleanup_compute(uid):
     )
 
 
+def verify_transfer_failure_exits(instance_id, env):
+    run(
+        "go", "test", "./lib", "-run", "^TestEC2TransferFailureFixture$", "-count=1", "-v",
+        cwd=ROOT, env=env, stream=True,
+    )
+    for command in ("ec2-scp", "ec2-rsync"):
+        args = [LIBAWS, command, "local-source", "local-destination", instance_id, "--private-ip"]
+        preview = subprocess.run([*args, "--preview"], capture_output=True, text=True, timeout=60)
+        assert preview.returncode == 0 and f"targeting: test-ec2-vpc-{env['uid']} {instance_id}" in preview.stderr, preview
+        # No user tag: the library returns an error without any per-host result.
+        missing_user = subprocess.run(args, capture_output=True, text=True, timeout=60)
+        assert missing_user.returncode == 1 and "no user tag available" in missing_user.stderr, missing_user
+        assert "failure:" not in missing_user.stderr, missing_user
+        # Supplying a user reaches per-host validation. Neither path is remote,
+        # so these exit-status assertions never start an SSH connection.
+        invalid_paths = subprocess.run([*args, "--user", "fixture"], capture_output=True, text=True, timeout=60)
+        assert invalid_paths.returncode == 1 and "neither source nor destination contains ':'" in invalid_paths.stderr, invalid_paths
+        assert "failure:" in invalid_paths.stderr and instance_id in invalid_paths.stderr, invalid_paths
+        print(f"verified {command}: selected guest, top-level failure=1, per-host failure=1", flush=True)
+
+
 def test():
     assert run(LIBAWS, "aws-account") == os.environ["LIBAWS_TEST_ACCOUNT"]
     os.environ["uid"] = uid = uuid.uuid4().hex[:12]
@@ -85,6 +106,8 @@ def test():
                     "go", "test", "./lib", "-run", "^TestEC2SubnetsFromVpcIntegration$",
                     "-count=1", "-v", cwd=ROOT, env=env, stream=True,
                 )
+                if mode == "vpc":
+                    verify_transfer_failure_exits(instance_id, dict(env, LIBAWS_EC2_EXAMPLE_UID=uid))
                 run(LIBAWS, "ec2-rm", instance_id, "--wait")
             run(
                 "go", "test", "./lib", "-run", "^TestEC2SpotFleetFailureIntegration$",

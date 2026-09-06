@@ -81,7 +81,7 @@ def test(tmp_path):
         run(f"docker tag {source_image} {image}")
         cleanup.callback(run, f"docker image rm {image}")
         run(f"docker push {image}")
-        assert uid in run(f"libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1")
+        assert uid in run(f"timeout --kill-after=5s 180 libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1")
         run("docker logout $(libaws ecr-url)")
         run(
             "LIBAWS_INTEGRATION=1 "

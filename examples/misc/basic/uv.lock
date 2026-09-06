@@ -6,6 +6,9 @@ requires-python = "==3.13.*"
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P14D"
 
+[manifest]
+build-constraints = [{ name = "setuptools", specifier = "==83.0.0" }]
+
 [[package]]
 name = "argh"
 version = "0.31.3"
@@ -107,6 +110,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+build = [
+    { name = "setuptools" },
+]
 dev = [
     { name = "py-pool" },
     { name = "py-shell" },
@@ -121,6 +127,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+build = [{ name = "setuptools", specifier = "==83.0.0" }]
 dev = [
     { name = "py-pool", git = "https://github.com/nathants/py-pool?rev=27b31ec18b326366c8c405076963e2934dd7b134" },
     { name = "py-shell", git = "https://github.com/nathants/py-shell?rev=dacb4922e13f947998ae31e40aec441c54471b36" },
@@ -220,6 +227,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0", size = 73075, upload-time = "2026-05-14T19:25:26.443Z" },
+]
+
+[[package]]
+name = "setuptools"
+version = "83.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/26/f5d29e25ffdb535afef2d35cdb55b325298f96debd670da4c325e08d70f4/setuptools-83.0.0.tar.gz", hash = "sha256:025bccbbf0fa05b6192bc64ae1e7b16e001fd6d6d4d5de03c97b1c1ade523bef", size = 1154254, upload-time = "2026-07-04T15:31:22.699Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/40/e1e72872c6354b306daef1703549e8e83b4d43cfea356311bf722a043752/setuptools-83.0.0-py3-none-any.whl", hash = "sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3", size = 1008090, upload-time = "2026-07-04T15:31:20.885Z" },
 ]
 
 [[package]]

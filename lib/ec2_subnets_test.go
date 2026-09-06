@@ -6,9 +6,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -181,6 +183,50 @@ func TestEC2SubnetsFromVpcPreservesAWSErrors(t *testing.T) {
 				t.Fatalf("continued after AWS error: %v", client.calls)
 			}
 		})
+	}
+}
+
+// Prepare the owned guest for the example's CLI failure-exit assertions. It is
+// terminated immediately afterward; no SSH ingress or guest software is needed.
+func TestEC2TransferFailureFixture(t *testing.T) {
+	id, uid := os.Getenv("LIBAWS_EC2_SUBNET_TEST_INSTANCE"), os.Getenv("LIBAWS_EC2_EXAMPLE_UID")
+	if id == "" || uid == "" {
+		t.Skip("run through examples/misc/ec2")
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{12}$`).MatchString(uid) {
+		t.Fatal("requires unique example ID")
+	}
+	requireLiveAWSAccount(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	instances, err := EC2DescribeInstances(ctx, []string{id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(instances) != 1 || aws.ToString(instances[0].KeyName) != "test-keypair-"+uid || EC2Name(instances[0].Tags) != "test-ec2-vpc-"+uid {
+		t.Fatal("requires the example's owned VPC-mode guest")
+	}
+	if EC2GetTag(instances[0].Tags, "user", "") == "" {
+		t.Fatal("new guest must initially have its login-user tag")
+	}
+	if _, err := EC2Client().DeleteTags(ctx, &ec2.DeleteTagsInput{
+		Resources: []string{id}, Tags: []ec2types.Tag{{Key: aws.String("user")}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		instances, err := EC2ListInstances(ctx, []string{id}, ec2types.InstanceStateNameRunning)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(instances) == 1 && EC2GetTag(instances[0].Tags, "user", "") == "" {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(time.Second):
+		}
 	}
 }
 

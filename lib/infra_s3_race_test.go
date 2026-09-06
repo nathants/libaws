@@ -324,3 +324,67 @@ func TestInfraListS3LifecycleRepresentation(t *testing.T) {
 		})
 	}
 }
+
+func TestInfraListS3VerifiesLambdaIdentity(t *testing.T) {
+	for _, target := range []string{
+		"arn:aws:lambda:us-east-1:123456789012:function:victim",
+		"arn:aws:lambda:us-east-1:123456789012:function:other-function:victim",
+		"arn:aws:lambda:us-east-1:999999999999:function:victim",
+		"arn:aws:lambda:us-west-2:123456789012:function:victim",
+		"arn:aws-cn:lambda:us-east-1:123456789012:function:victim",
+	} {
+		t.Run(target, func(t *testing.T) {
+			oldSession, oldARN := sess, stsArn
+			sess, stsArn = &aws.Config{Region: "us-east-1"}, aws.String("arn:aws:iam::123456789012:root")
+			t.Cleanup(func() { sess, stsArn = oldSession, oldARN })
+			installInfraListS3TestClient(t, infraListS3RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				status, body := 200, ""
+				switch {
+				case r.Method == http.MethodHead:
+					response := infraListS3Response(r, 200, "")
+					response.Header.Set("X-Amz-Bucket-Region", "us-east-1")
+					return response, nil
+				case r.URL.Path == "/":
+					body = infraListS3ListBucketsXML("fixture")
+				case r.URL.Query().Has("tagging"):
+					body = `<Tagging><TagSet><Tag><Key>libaws.infraset</Key><Value>wanted</Value></Tag></TagSet></Tagging>`
+				case r.URL.Query().Has("versioning"):
+					body = `<VersioningConfiguration/>`
+				case r.URL.Query().Has("acl"):
+					body = `<AccessControlPolicy/>`
+				case r.URL.Query().Has("cors"):
+					status, body = 404, `<Error><Code>NoSuchCORSConfiguration</Code></Error>`
+				case r.URL.Query().Has("encryption"):
+					body = `<ServerSideEncryptionConfiguration><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault><BlockedEncryptionTypes><EncryptionType>SSE-C</EncryptionType></BlockedEncryptionTypes><BucketKeyEnabled>false</BucketKeyEnabled></Rule></ServerSideEncryptionConfiguration>`
+				case r.URL.Query().Has("lifecycle"):
+					status, body = 404, `<Error><Code>NoSuchLifecycleConfiguration</Code></Error>`
+				case r.URL.Query().Has("logging"):
+					body = `<BucketLoggingStatus/>`
+				case r.URL.Query().Has("notification"):
+					body = `<NotificationConfiguration><CloudFunctionConfiguration><Id>fixture</Id><CloudFunction>` + target + `</CloudFunction><Event>s3:ObjectCreated:*</Event></CloudFunctionConfiguration></NotificationConfiguration>`
+				case r.URL.Query().Has("policy"):
+					status, body = 404, `<Error><Code>NoSuchBucketPolicy</Code></Error>`
+				case r.URL.Query().Has("replication"):
+					status, body = 404, `<Error><Code>ReplicationConfigurationNotFoundError</Code></Error>`
+				case r.URL.Query().Has("metrics"):
+					status, body = 404, `<Error><Code>NoSuchConfiguration</Code></Error>`
+				default:
+					return nil, fmt.Errorf("unexpected request: %s %s", r.Method, r.URL)
+				}
+				return infraListS3Response(r, status, body), nil
+			}), true)
+			triggers := make(chan *InfraTrigger, 1)
+			_, err := (infraListScope{setName: "wanted"}).listS3(context.Background(), triggers)
+			if target == "arn:aws:lambda:us-east-1:123456789012:function:victim" {
+				if err != nil || len(triggers) != 1 {
+					t.Fatalf("local unqualified trigger lost: %v", err)
+				}
+				if trigger := <-triggers; trigger.lambdaName != "victim" {
+					t.Fatalf("wrong trigger: %+v", trigger)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "unsupported S3 Lambda notification") || len(triggers) != 0 {
+				t.Fatalf("must reject unrepresentable target %s: triggers=%d err=%v", target, len(triggers), err)
+			}
+		})
+	}
+}

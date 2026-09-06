@@ -2,11 +2,67 @@ package lib
 
 import (
 	"context"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+// The opt-in R2 example invokes these fixture steps around its actual CLI calls.
+// Raw SDK cleanup is independent of the s3-rm wrapper under test.
+func TestR2ExampleFixture(t *testing.T) {
+	bucket := os.Getenv("LIBAWS_R2_TEST_BUCKET")
+	if bucket == "" {
+		t.Skip("run through examples/misc/r2")
+	}
+	account := os.Getenv("LIBAWS_R2_TEST_ACCOUNT")
+	if !r2AccountIDPattern.MatchString(account) || account != os.Getenv("R2_ACCOUNT_ID") || !regexp.MustCompile(`^libaws-testing-[0-9a-f]{32}$`).MatchString(bucket) {
+		t.Fatal("R2 fixture requires an explicitly authorized account and unique testing bucket")
+	}
+	client, err := newR2S3ClientFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	switch step := os.Getenv("LIBAWS_R2_TEST_STEP"); step {
+	case "absent":
+		_, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket), MaxKeys: aws.Int32(1)})
+		if !isS3NoSuchBucket(err) {
+			t.Fatalf("R2 fixture exists or absence could not be verified: %v", err)
+		}
+	case "create":
+		if _, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+			t.Fatal(err)
+		}
+	case "cleanup":
+		pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
+		for pages.HasMorePages() {
+			page, err := pages.NextPage(ctx)
+			if isS3NoSuchBucket(err) {
+				return
+			}
+			if err != nil {
+				t.Error(err)
+				break
+			}
+			for _, object := range page.Contents {
+				if _, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: object.Key}); err != nil {
+					t.Error(err)
+				}
+			}
+		}
+		if _, err := client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)}); err != nil && !isS3NoSuchBucket(err) {
+			t.Error(err)
+		}
+	default:
+		t.Fatalf("unknown R2 fixture step %q", step)
+	}
+}
 
 func TestNewR2S3ClientUsesOnlyExplicitR2Identity(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "aws-access-must-not-be-used")

@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/smithy-go"
 )
 
 const (
@@ -702,6 +703,23 @@ func IamEnsureManagedPolicy(ctx context.Context, policyName, description, policy
 	}
 }
 
+// A new-resource preview may list a principal that has not been created yet.
+// Missing policies after discovery, authorization failures, and other errors
+// are not evidence that the principal has no permissions.
+func iamPreviewMissingPrincipal(err error, preview bool) bool {
+	var absent *iamtypes.NoSuchEntityException
+	var operation *smithy.OperationError
+	if !preview || !errors.As(err, &absent) || !errors.As(err, &operation) {
+		return false
+	}
+	switch operation.OperationName {
+	case "ListAttachedUserPolicies", "ListAttachedRolePolicies", "ListRolePolicies":
+		return true
+	default:
+		return false
+	}
+}
+
 func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, preview bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "IamEnsureRoleAllows"}
@@ -777,7 +795,7 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 		Logger.Println(PreviewString(preview)+"attached role allow:", roleName, allow)
 	}
 	attachedAllows, err := IamListRoleAllows(ctx, roleName)
-	if err != nil && !preview {
+	if err != nil && !iamPreviewMissingPrincipal(err, preview) {
 		return err
 	}
 	for _, allow := range attachedAllows {
@@ -833,7 +851,7 @@ func IamEnsureUserPolicies(ctx context.Context, username string, policyNames []s
 	}
 	// Fetch currently attached user policies once and build a set
 	attachedPolicies, err := IamListUserPolicies(ctx, username)
-	if err != nil && !preview {
+	if err != nil && !iamPreviewMissingPrincipal(err, preview) {
 		Logger.Println("error:", err)
 		return err
 	}
@@ -879,7 +897,7 @@ func IamEnsureUserPolicies(ctx context.Context, username string, policyNames []s
 	}
 	// Detach any extra policies not requested
 	attachedPolicies, err = IamListUserPolicies(ctx, username)
-	if err != nil && !preview {
+	if err != nil && !iamPreviewMissingPrincipal(err, preview) {
 		Logger.Println("error:", err)
 		return err
 	}
@@ -931,7 +949,7 @@ outer:
 			return err
 		case 1:
 			rolePolicies, err := IamListRolePolicies(ctx, roleName)
-			if err != nil && !preview {
+			if err != nil && !iamPreviewMissingPrincipal(err, preview) {
 				Logger.Println("error:", err)
 				return err
 			}
@@ -961,7 +979,7 @@ outer:
 		}
 	}
 	attachedPolicies, err := IamListRolePolicies(ctx, roleName)
-	if err != nil && !preview {
+	if err != nil && !iamPreviewMissingPrincipal(err, preview) {
 		return err
 	}
 	for _, policy := range attachedPolicies {
@@ -1518,8 +1536,11 @@ func iamListUserTags(ctx context.Context, username string) ([]iamtypes.Tag, erro
 			return nil, err
 		}
 		tags = append(tags, out.Tags...)
-		if out.Marker == nil {
+		if !out.IsTruncated {
 			return tags, nil
+		}
+		if aws.ToString(out.Marker) == "" || aws.ToString(out.Marker) == aws.ToString(marker) {
+			return nil, errors.New("IAM user tag pagination did not advance")
 		}
 		marker = out.Marker
 	}

@@ -57,6 +57,8 @@ assert label not in jobs and len(jobs) > 1, f'cleanup cases are serialized in on
 from examples.misc.cleanup.test import LIVE_EXAMPLES
 assert len(jobs) == len(LIVE_EXAMPLES) + 1 and len(set(jobs)) == len(jobs), jobs
 assert f'{label}::nonlive' in jobs, jobs
+assert f'{label}::test_live_failure_cleanup[simple/go/ses]' in test_runner.EXCLUSIVE
+assert f'{label}::test_live_failure_cleanup[simple/go/alarm]' not in test_runner.EXCLUSIVE
 with tempfile.TemporaryDirectory(prefix='libaws-runner-selection-') as temporary:
     logs = Path(temporary)
     assert test_runner.run_test(f'{label}::nonlive', logs)[2] == 0

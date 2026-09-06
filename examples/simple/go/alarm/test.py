@@ -1,4 +1,5 @@
 # type: ignore
+from contextlib import ExitStack
 import json
 import os
 import subprocess
@@ -40,11 +41,16 @@ def expected(uid):
                             {
                                 "type": "alarm",
                                 "attr": [
-                                    f"name=test-alarm-invocations-{uid}",
+                                    f"name={name}",
                                     f"lambda-invocations=test-lambda-{uid}",
-                                    "at-least=1/minute",
+                                    f"at-least={threshold}/minute",
                                 ],
-                            },
+                            }
+                            for name, threshold in (
+                                (os.environ["long_alarm_name"], 2147483647),
+                                (f"test-alarm-invocations_{uid}", 2147483647),
+                                (f"test-alarm-invocations-{uid}", 1),
+                            )
                         ],
                         "env": [f"uid={uid}"],
                     }
@@ -73,14 +79,30 @@ def run_alarm_integration(mode, function_name, alarm_name):
     )
 
 
+def assert_removed(uid, function_name, alarm_names):
+    assert not alarm_names & cloudwatch_alarm_names()
+    result = subprocess.run(["libaws", "lambda-describe", function_name], capture_output=True, text=True)
+    assert result.returncode != 0 and "ResourceNotFoundException" in result.stderr, result
+    log_groups = {line.split()[0] for line in run("libaws logs-ls").splitlines()}
+    assert f"/aws/lambda/{function_name}" not in log_groups
+    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+    assert infra.get("infraset", {}) == {}, infra
+
+
 def test():
     assert os.environ["LIBAWS_TEST_ACCOUNT"] == run("libaws aws-account")
     os.environ["uid"] = uid = str(uuid.uuid4())[-12:]
     function_name = f"test-lambda-{uid}"
     invocation_name = f"test-alarm-invocations-{uid}"
-    alarm_names = {invocation_name}
+    os.environ["long_alarm_name"] = f"test-alarm-long-{uid}-".ljust(255, "x")
+    alarm_names = {invocation_name, f"test-alarm-invocations_{uid}", os.environ["long_alarm_name"]}
 
-    try:
+    with ExitStack() as cleanup:
+        cleanup.callback(assert_removed, uid, function_name, alarm_names)
+        cleanup.callback(run, f"libaws lambda-rm {function_name}")
+        for alarm_name in sorted(alarm_names):
+            cleanup.callback(run_alarm_integration, "force-cleanup", function_name, alarm_name)
+        cleanup.callback(run, "libaws infra-rm infra.yaml")
         infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
         assert infra.get("infraset", {}) == {}, infra
         run("libaws infra-ensure infra.yaml")
@@ -104,7 +126,9 @@ def test():
             f"arn:aws:cloudwatch:{region}:{account}:alarm:{name}"
             for name in alarm_names
         }
-        assert len(alarm_permissions) == 1, alarm_permissions
+        assert len(alarm_permissions) == len(alarm_names), alarm_permissions
+        assert len({statement["Sid"] for statement in alarm_permissions}) == len(alarm_names)
+        assert all(len(statement["Sid"]) <= 100 for statement in alarm_permissions)
         assert {statement["Resource"] for statement in alarm_permissions} == {
             expected_function_arn
         }
@@ -131,7 +155,7 @@ def test():
         expected_without_alarm = expected(uid)
         del expected_without_alarm["infraset"][f"test-infraset-{uid}"][
             "lambda"
-        ][function_name]["trigger"]
+        ][function_name]["trigger"][-1]
         assert drifted == expected_without_alarm, drifted
 
         preview = captured("libaws", "infra-ensure", "infra.yaml", "--preview")
@@ -146,18 +170,7 @@ def test():
 
         run_alarm_integration("delete-function", function_name, invocation_name)
         removal = captured("libaws", "infra-rm", "infra.yaml", "--preview")
-        assert removal.count("deleted CloudWatch metric alarm:") == 1, removal
-    finally:
-        run("libaws infra-rm infra.yaml")
-        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
-        assert infra.get("infraset", {}) == {}, infra
-        remaining_alarms = alarm_names & cloudwatch_alarm_names()
-        if remaining_alarms:
-            run_alarm_integration("force-cleanup", function_name, invocation_name)
-            remaining_alarms = alarm_names & cloudwatch_alarm_names()
-        assert not remaining_alarms, remaining_alarms
-        log_groups = {line.split()[0] for line in run("libaws logs-ls").splitlines()}
-        assert f"/aws/lambda/{function_name}" not in log_groups
+        assert removal.count("deleted CloudWatch metric alarm:") == len(alarm_names), removal
 
 
 if __name__ == "__main__":

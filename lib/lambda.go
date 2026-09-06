@@ -823,6 +823,21 @@ func lambdaS3SourceARN(functionARN, bucket string) (string, error) {
 	return fmt.Sprintf("arn:%s:s3:::%s", parsed.Partition, bucket), nil
 }
 
+func lambdaValidateTriggerSource(trigger *InfraTrigger) error {
+	switch trigger.Type {
+	case lambdaTrigerS3:
+		if len(trigger.Attr) != 1 || strings.TrimSpace(trigger.Attr[0]) == "" || strings.Contains(trigger.Attr[0], "=") {
+			return errors.New("s3 trigger requires exactly one nonempty bucket name")
+		}
+	case lambdaTriggerSQS:
+		if len(trigger.Attr) == 0 || strings.TrimSpace(trigger.Attr[0]) == "" || strings.Contains(trigger.Attr[0], "=") {
+			return errors.New("sqs trigger requires a nonempty queue name as its first attribute")
+		}
+	default:
+	}
+	return nil
+}
+
 func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, preview bool) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "LambdaEnsureTriggerS3"}
@@ -839,8 +854,12 @@ func LambdaEnsureTriggerS3(ctx context.Context, infraLambda *InfraLambda, previe
 		if trigger.Type != lambdaTrigerS3 {
 			continue
 		}
-		bucket := trigger.Attr[0]
-		triggerBuckets = append(triggerBuckets, bucket)
+		if err := lambdaValidateTriggerSource(trigger); err != nil {
+			return nil, err
+		}
+		triggerBuckets = append(triggerBuckets, trigger.Attr[0])
+	}
+	for _, bucket := range triggerBuckets {
 		sourceARN, err := lambdaS3SourceARN(infraLambda.Arn, bucket)
 		if err != nil {
 			return nil, err
@@ -911,13 +930,7 @@ func lambdaRemoveUnusedPermissions(ctx context.Context, name string, permissionS
 }
 
 func lambdaPermissionSID(callerPrincipal, callerARN string) string {
-	sid := strings.ReplaceAll(callerPrincipal, ".", "-") + "__" + Last(strings.Split(callerARN, ":"))
-	sid = strings.ReplaceAll(sid, "$", "DOLLAR")
-	sid = strings.ReplaceAll(sid, "*", "ALL")
-	sid = strings.ReplaceAll(sid, ".", "DOT")
-	sid = strings.ReplaceAll(sid, "-", "_")
-	sid = strings.ReplaceAll(sid, "/", "__")
-	return sid
+	return "libaws-" + sha256Hex([]byte(callerPrincipal+"\x00"+callerARN))
 }
 
 func lambdaAddPermissionInput(functionARN, sid, callerPrincipal, callerARN, sourceAccount string) *lambda.AddPermissionInput {
@@ -1068,9 +1081,21 @@ func lambdaEnsurePermission(ctx context.Context, name, callerPrincipal, callerAR
 	return lambdaEnsurePermissionWithSourceAccount(ctx, name, callerPrincipal, callerARN, sourceAccount, preview)
 }
 
-func LambdaArnToLambdaName(arn string) string {
-	// "arn:aws:lambda:%s:%s:function:%s"
-	name := Last(strings.Split(arn, ":"))
+func lambdaUnqualifiedFunctionName(functionARN string) (string, bool) {
+	parsed, err := arn.Parse(functionARN)
+	if err != nil || parsed.Service != "lambda" || parsed.Region == "" || parsed.AccountID == "" {
+		return "", false
+	}
+	resource := strings.Split(parsed.Resource, ":")
+	if len(resource) != 2 || resource[0] != "function" || resource[1] == "" {
+		return "", false
+	}
+	return resource[1], true
+}
+
+// LambdaArnToLambdaName returns an empty name for invalid or qualified ARNs.
+func LambdaArnToLambdaName(functionARN string) string {
+	name, _ := lambdaUnqualifiedFunctionName(functionARN)
 	return name
 }
 
@@ -1891,8 +1916,8 @@ func lambdaTriggerApiDeleteDnsWith(
 	}
 	ownedDomain := lambdaInfraSetTagOwned(domain.Tags, infraSetName) &&
 		domain.Tags[lambdaAPIDomainAPIIDTagName] == aws.ToString(api.ApiId)
-	managedDomain := ownedDomain && (len(mappings) == 0 ||
-		(len(mappings) == 1 && len(matchingMappings) == 1 && lambdaAPIRootMapping(&matchingMappings[0])))
+	managedDomain := ownedDomain && domain.RoutingMode == apitypes.RoutingModeApiMappingOnly &&
+		(len(mappings) == 0 || (len(mappings) == 1 && len(matchingMappings) == 1 && lambdaAPIRootMapping(&matchingMappings[0])))
 	if len(matchingMappings) == 0 && !managedDomain {
 		return nil
 	}
@@ -2133,14 +2158,14 @@ func lambdaEnsureTriggerDynamoDB(ctx context.Context, client lambdaEventSourceMa
 		Logger.Println("error:", err)
 		return err
 	}
-	unresolved := false
+	var unresolvedTables []string
 	for _, desiredMapping := range desired {
 		if desiredMapping.create.EventSourceArn == nil {
 			Logger.Println(PreviewString(true)+"created event source mapping:", infraLambda.Name, infraLambda.Arn, desiredMapping.tableName, strings.Join(desiredMapping.triggerAttrs, " "))
-			unresolved = true
+			unresolvedTables = append(unresolvedTables, desiredMapping.tableName)
 		}
 	}
-	if unresolved {
+	if len(unresolvedTables) > 0 && len(unresolvedTables) == len(desired) {
 		return nil
 	}
 	functionName := infraLambda.Name
@@ -2164,6 +2189,9 @@ func lambdaEnsureTriggerDynamoDB(ctx context.Context, client lambdaEventSourceMa
 
 	configuredStreamARNs := make([]string, 0, len(desired))
 	for _, desiredMapping := range desired {
+		if desiredMapping.create.EventSourceArn == nil {
+			continue
+		}
 		configuredStreamARNs = append(configuredStreamARNs, aws.ToString(desiredMapping.create.EventSourceArn))
 		var matches []*lambdaDynamoDBCurrentMapping
 		for _, mapping := range mappings {
@@ -2193,6 +2221,9 @@ func lambdaEnsureTriggerDynamoDB(ctx context.Context, client lambdaEventSourceMa
 		tableName, err := lambdaDynamoDBStreamTableName(streamARN)
 		if err != nil {
 			return err
+		}
+		if slices.Contains(unresolvedTables, tableName) {
+			continue
 		}
 		if preview {
 			Logger.Println(PreviewString(true)+"deleted trigger:", infraLambda.Name, tableName)
@@ -2619,6 +2650,9 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 	var queueNames []string
 	for _, trigger := range infraLambda.Trigger {
 		if trigger.Type == lambdaTriggerSQS {
+			if err := lambdaValidateTriggerSource(trigger); err != nil {
+				return err
+			}
 			triggers = append(triggers, trigger.Attr)
 			queueNames = append(queueNames, trigger.Attr[0])
 		}
@@ -2697,6 +2731,11 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 				needsUpdate := false
 				update := &lambda.UpdateEventSourceMappingInput{UUID: found.UUID}
 				update.FunctionName = input.FunctionName
+				if aws.ToString(found.State) != "Enabled" {
+					Logger.Printf(PreviewString(preview)+"will enable lambda event source mapping for %s %s: %s => Enabled\n", infraLambda.Name, queueName, aws.ToString(found.State))
+					update.Enabled = aws.Bool(true)
+					needsUpdate = true
+				}
 				if *found.BatchSize != *input.BatchSize {
 					Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d\n", infraLambda.Name, queueName, *found.BatchSize, *input.BatchSize)
 					update.BatchSize = input.BatchSize
@@ -2712,6 +2751,9 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 						_, err := LambdaClient().UpdateEventSourceMapping(ctx, update)
 						if err != nil {
 							Logger.Println("error:", err)
+							return err
+						}
+						if _, err := lambdaWaitEventSourceMappingEnabled(ctx, LambdaClient(), aws.ToString(found.UUID)); err != nil {
 							return err
 						}
 					}
@@ -2731,7 +2773,8 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 			Marker:       marker,
 		})
 		if err != nil {
-			if !preview {
+			var absent *lambdatypes.ResourceNotFoundException
+			if !preview || !errors.As(err, &absent) {
 				Logger.Println("error:", err)
 				return err
 			}
@@ -2949,8 +2992,12 @@ func LambdaIncludeInZip(infraLambda *InfraLambda) error {
 		}
 	}
 	for _, include := range includes {
-		_, errLink := os.Readlink(include)
-		if !Exists(include) && errLink != nil {
+		includePath := include
+		if !filepath.IsAbs(includePath) {
+			includePath = filepath.Join(dir, includePath)
+		}
+		_, errLink := os.Readlink(includePath)
+		if !Exists(includePath) && errLink != nil {
 			err := fmt.Errorf("no such path for include: %s", include)
 			Logger.Println("error:", err)
 			return err
@@ -3076,7 +3123,8 @@ func lambdaEnsureFunctionConfigurationWithClient(
 		FunctionName: aws.String(infraLambda.Name),
 	})
 	if err != nil {
-		if !preview {
+		var absent *lambdatypes.ResourceNotFoundException
+		if !preview || !errors.As(err, &absent) {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -3169,6 +3217,9 @@ func lambdaEnsureFunctionConfiguration(
 }
 
 func lambdaPrepareQuickPackage(infraLambda *InfraLambda, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
+	if infraLambda.runtime == lambdaRuntimeContainer {
+		return nil
+	}
 	if err := ensureLambdaPackageRoot(); err != nil {
 		return err
 	}

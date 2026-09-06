@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
@@ -37,8 +38,21 @@ func ApiList(ctx context.Context) ([]apitypes.Api, error) {
 	var token *string
 	var items []apitypes.Api
 	for {
-		out, err := ApiClient().GetApis(ctx, &apigatewayv2.GetApisInput{
-			NextToken: token,
+		var out *apigatewayv2.GetApisOutput
+		err := RetryAttempts(ctx, 6, func() error {
+			var err error
+			out, err = ApiClient().GetApis(ctx, &apigatewayv2.GetApisInput{NextToken: token})
+			if err != nil {
+				return retry.Unrecoverable(err) // The SDK already handles provider retries.
+			}
+			// Re-read incomplete list metadata on the same page; never expose nil
+			// identities or silently omit entries.
+			for _, api := range out.Items {
+				if api.Name == nil || aws.ToString(api.ApiId) == "" {
+					return fmt.Errorf("GetApis returned incomplete API metadata (id=%q name=%q)", aws.ToString(api.ApiId), aws.ToString(api.Name))
+				}
+			}
+			return nil
 		})
 		if err != nil {
 			Logger.Println("error:", err)

@@ -1,4 +1,5 @@
 # type: ignore
+from contextlib import ExitStack
 import json
 import os
 import subprocess
@@ -38,10 +39,16 @@ def test():
     infile = run("mktemp")
     os.environ["uid"] = uid = str(uuid.uuid4())[-12:]
     name = f"test-lambda-{uid}"
+    os.environ["logs_ttl_days"] = "7"
     # AA and the 12-byte uid occupy 30 bytes of JSON syntax/names/uid. The
     # separators add 6 UTF-8 bytes, leaving 4060 bytes at the 4 KiB quota.
     quota_value = "\u2028\u2029" + "x" * 4060
-    try:
+    with ExitStack() as cleanup:
+        cleanup.callback(assert_function_absent, name)
+        cleanup.callback(run, f"libaws lambda-rm {name}")
+        cleanup.callback(run, "libaws infra-rm infra.yaml")
+        cleanup.callback(environment, quota_value)
+        cleanup.callback(run, "rm -f", infile)
         infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
         assert infra.get("infraset", {}) == {}, infra
         for options in ([], ["--preview"]):
@@ -96,12 +103,12 @@ def test():
             actual = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
             assert actual["infraset"][f"test-infraset-{uid}"]["lambda"][name]["env"] == [f"AA={value}", f"uid={uid}"]
         environment(quota_value)
+        os.environ["logs_ttl_days"] = "0"
+        run("libaws infra-ensure infra.yaml --preview")
+        run("libaws infra-ensure infra.yaml")
+        actual = yaml.safe_load(run(f"libaws infra-ls --infraset test-infraset-{uid}"))
+        assert "logs-ttl-days=0" in actual["infraset"][f"test-infraset-{uid}"]["lambda"][name]["attr"]
         run("libaws infra-rm infra.yaml --preview")
-    finally:
-        environment(quota_value)
-        run("rm -f", infile)
-        run("libaws infra-rm infra.yaml")
-        assert_function_absent(name)
 
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra

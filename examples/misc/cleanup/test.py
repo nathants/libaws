@@ -21,7 +21,8 @@ PLAIN = [
     *(f"simple/go/{name}" for name in ("api", "api_and_stream", "dynamodb", "includes", "s3", "schedule", "sqs", "websocket")),
     *(f"simple/python/{name}" for name in ("api", "dynamodb", "includes", "s3", "schedule", "sqs", "websocket")),
 ]
-LIVE_EXAMPLES = ["simple/go/ecr", "simple/docker/ecr", "complex/s3-ec2", "misc/ec2", *PLAIN]
+FALLBACKS = ["simple/go/alarm", "simple/go/ses", "misc/basic"]
+LIVE_EXAMPLES = ["simple/go/ecr", "simple/docker/ecr", "complex/s3-ec2", "misc/ec2", *PLAIN, *FALLBACKS]
 
 
 class InjectedFailure(RuntimeError):
@@ -36,7 +37,7 @@ def load(example):
 
 
 def invoke(module, example, tmp_path):
-    if example == "complex/s3-ec2" or example in PLAIN:
+    if example == "complex/s3-ec2" or example in PLAIN or example in FALLBACKS:
         module.test()
     else:
         module.test(tmp_path)
@@ -45,7 +46,9 @@ def invoke(module, example, tmp_path):
 CASES = [(example, failure) for example in EXAMPLES for failure in (
     ("infra-create", "cleanup-errors") if example == "complex/s3-ec2" else
     ("infra-create", "repository-create", "build", "login", "push", "cleanup-errors")
-)] + [(example, "image-cleanup") for example in ("simple/go/ecr", "simple/docker/ecr")]
+)] + [(example, "image-cleanup") for example in ("simple/go/ecr", "simple/docker/ecr")] + [
+    (example, "event-timeout") for example in ("simple/go/ecr", "simple/docker/ecr", "simple/python/ecr")
+]
 
 
 @pytest.mark.parametrize("example,failure", CASES)
@@ -88,7 +91,10 @@ def test_failure_cleanup(example, failure, tmp_path):
             raise InjectedFailure(command)
         if command.startswith("docker push "):
             return "latest: digest: sha256:" + "a" * 64 + " size: 42"
-        if command.startswith("libaws logs-tail "):
+        if "libaws logs-tail " in command:
+            if failure == "event-timeout":
+                assert command.startswith("timeout --kill-after=5s 180 libaws logs-tail "), command
+                raise InjectedFailure("bounded ECR event wait timed out")
             return uid
         return ""
 
@@ -147,6 +153,84 @@ def test_plain_failure_cleanup(example, failure, tmp_path):
         assert local_files and all(not path.parent.exists() for path in local_files), local_files
 
 
+@pytest.mark.parametrize("example,failure", [
+    ("simple/go/alarm", "primary"), ("simple/go/alarm", "fallback"),
+    ("simple/go/ses", "primary"), ("simple/go/ses", "fallback"),
+    ("misc/basic", "primary"), ("misc/basic", "local"),
+])
+@pytest.mark.parametrize("stage", ["create", "post-create inventory"])
+def test_independent_finalizers(example, failure, stage, tmp_path):
+    module = load(example)
+    uid = "abcdef123456"
+    commands = []
+    created = cleaning = fallback_failed = False
+    alarms = set()
+    domain = f"test-ses-{uid}.example.invalid"
+
+    def fake_run(command, *args, **kwargs):
+        nonlocal created, cleaning, fallback_failed
+        commands.append(command)
+        if command == "libaws aws-account":
+            return "guarded"
+        if command == "mktemp":
+            return str(tmp_path / "input")
+        if command == "libaws infra-ensure infra.yaml":
+            created = True
+            alarms.update({f"test-alarm-invocations-{uid}", f"test-alarm-invocations_{uid}", os.environ.get("long_alarm_name", "")})
+            if stage == "create":
+                raise InjectedFailure("partial create")
+        if command == "libaws infra-rm infra.yaml":
+            cleaning = True
+            if failure == "primary":
+                raise InjectedFailure("primary cleanup")
+        if command == "rm -f":
+            cleaning = True
+            if failure == "local":
+                raise InjectedFailure("local cleanup")
+        if command.startswith("libaws infra-ls "):
+            if created and not cleaning:
+                raise InjectedFailure("post-create inventory")
+            return "account: guarded\nregion: test-region\n"
+        if command == "libaws cloudwatch-ls-alarms":
+            return "\n".join(json.dumps({"AlarmName": name}) for name in alarms)
+        if command == "libaws ses-ls-receipt-rules":
+            return domain if f"libaws ses-rm-receipt-rule {domain}" not in commands else ""
+        if "MODE=force-cleanup" in command or command.startswith("libaws ses-rm-receipt-rule "):
+            if failure == "fallback" and not fallback_failed:
+                fallback_failed = True
+                raise InjectedFailure("fallback cleanup")
+            for value in shlex.split(command):
+                if value.startswith("LIBAWS_LAMBDA_ALARM_TEST_ALARM="):
+                    alarms.discard(value.split("=", 1)[1])
+        return ""
+
+    def fake_process(args, **kwargs):
+        assert args[1] in ("lambda-describe", "infra-ensure"), args
+        return subprocess.CompletedProcess(args, 1, "", "ResourceNotFoundException; environment size 4097 bytes; request size 5121 bytes")
+
+    with patch.dict(os.environ, LIBAWS_TEST_ACCOUNT="guarded", LIBAWS_TEST_DOMAIN="example.invalid"), \
+            patch.object(module.uuid, "uuid4", return_value=uid), \
+            patch.object(module, "run", side_effect=fake_run), \
+            patch.object(module.subprocess, "run", side_effect=fake_process):
+        with pytest.raises((InjectedFailure, AssertionError)) as raised:
+            module.test()
+        error = raised.value
+        while not isinstance(error, InjectedFailure) and error.__context__ is not None:
+            error = error.__context__
+        assert isinstance(error, InjectedFailure), raised.value
+        assert created, commands
+        assert "libaws infra-rm infra.yaml" in commands, commands
+        if example == "simple/go/alarm":
+            for name in (f"test-alarm-invocations-{uid}", f"test-alarm-invocations_{uid}", os.environ["long_alarm_name"]):
+                assert any("MODE=force-cleanup" in command and f"LIBAWS_LAMBDA_ALARM_TEST_ALARM={name} " in command for command in commands), commands
+        elif example == "simple/go/ses":
+            assert f"libaws ses-rm-receipt-rule {domain}" in commands, commands
+            assert f"libaws s3-rm-bucket test-ses-bucket-{uid}" in commands, commands
+        else:
+            assert "rm -f" in commands, commands
+        assert f"libaws lambda-rm test-lambda-{uid}" in commands, commands
+
+
 @pytest.mark.parametrize("example", LIVE_EXAMPLES)
 def test_live_failure_cleanup(example, tmp_path):
     if example == "misc/ec2":
@@ -156,11 +240,12 @@ def test_live_failure_cleanup(example, tmp_path):
     actual_run = module.run
     uid = None
     vpc_id = None
+    created = False
     repositories = set()
     images = set()
     with patch.dict(os.environ), chdir(ROOT / "examples" / example), ExitStack() as safety:
         def fail_after_create(command, *args, **kwargs):
-            nonlocal uid, vpc_id
+            nonlocal uid, vpc_id, created
             uid = os.environ.get("uid")
             if command.startswith("libaws ecr-ensure "):
                 repository = command.split()[-1]
@@ -170,7 +255,13 @@ def test_live_failure_cleanup(example, tmp_path):
                 safety.callback(actual_run, "libaws infra-rm infra.yaml")
                 if example == "complex/s3-ec2":
                     safety.callback(actual_run, f"LIBAWS_S3_EC2_CLEANUP_UID={uid} LIBAWS_S3_EC2_DRAIN=yes go test ../../../lib -run '^TestS3EC2ExampleCleanup$' -count=1 -v")
+            if created and example in FALLBACKS and command == "libaws infra-rm infra.yaml":
+                raise InjectedFailure("after live create: primary cleanup")
             output = actual_run(command, *args, **kwargs)
+            if command == "libaws infra-ensure infra.yaml":
+                created = True
+            if created and example == "misc/basic" and command == "rm -f":
+                raise InjectedFailure("after live create: local cleanup")
             if command == f"libaws vpc-id test-vpc-{uid}":
                 vpc_id = output
             if command.startswith("docker build"):
@@ -185,7 +276,7 @@ def test_live_failure_cleanup(example, tmp_path):
         with patch.object(module, "run", side_effect=fail_after_create):
             with pytest.raises(InjectedFailure, match="after live create"):
                 invoke(module, example, tmp_path)
-        assert uid is not None
+        assert uid is not None and created
         inventory = yaml.safe_load(actual_run(f"libaws infra-ls --infraset test-infraset-{uid}"))
         assert inventory.get("infraset", {}) == {}, inventory
         result = subprocess.run(["libaws", "lambda-describe", f"test-lambda-{uid}"], capture_output=True, text=True)

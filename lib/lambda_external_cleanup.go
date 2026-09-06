@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -250,7 +251,7 @@ func lambdaPutEventTargets(ctx context.Context, client lambdaEventTargetWriter, 
 		return errors.New("EventBridge PutTargets returned nil output")
 	}
 	if out.FailedEntryCount != 0 || len(out.FailedEntries) != 0 {
-		return fmt.Errorf("EventBridge failed to put target for rule %q: %v", ruleName, out.FailedEntries)
+		return fmt.Errorf("EventBridge failed to put target for rule %q: %s", ruleName, Json(out.FailedEntries))
 	}
 	return nil
 }
@@ -388,14 +389,16 @@ func lambdaDeleteEventRule(
 		return errors.New("EventBridge RemoveTargets returned nil output")
 	}
 	if out.FailedEntryCount != 0 || len(out.FailedEntries) != 0 {
-		return fmt.Errorf("EventBridge failed to remove targets from rule %q: %v", aws.ToString(rule.Name), out.FailedEntries)
+		return fmt.Errorf("EventBridge failed to remove targets from rule %q: %s", aws.ToString(rule.Name), Json(out.FailedEntries))
 	}
 	if _, err := client.DeleteRule(ctx, &eventbridge.DeleteRuleInput{Name: rule.Name}); err != nil {
 		var notFound *eventbridgetypes.ResourceNotFoundException
 		if errors.As(err, &notFound) {
 			return nil
 		}
-		restoreErr := lambdaPutEventTargets(ctx, client, aws.ToString(rule.Name), []eventbridgetypes.Target{target})
+		restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		restoreErr := lambdaPutEventTargets(restoreCtx, client, aws.ToString(rule.Name), []eventbridgetypes.Target{target})
 		if restoreErr != nil {
 			return errors.Join(
 				fmt.Errorf("delete EventBridge rule %q: %w", aws.ToString(rule.Name), err),

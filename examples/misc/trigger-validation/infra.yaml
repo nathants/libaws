@@ -1,0 +1,12 @@
+# Intentionally invalid: source validation must happen before any provisioning.
+name: test-trigger-validation-${uid}
+
+s3:
+  test-trigger-source-${uid}: {}
+
+lambda:
+  test-trigger-function-${uid}:
+    entrypoint: main.go
+    trigger:
+      - type: ${trigger_type}
+        attr: ${trigger_attributes}

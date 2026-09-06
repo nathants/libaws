@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
@@ -418,13 +419,19 @@ type fakeLambdaEventCleanupClient struct {
 	removeFailure bool
 	putFailure    bool
 	deleteErr     error
+	afterRemove   context.CancelFunc
+	restoreCtx    context.Context
 }
 
 func (client *fakeLambdaEventCleanupClient) PutTargets(
-	_ context.Context,
+	ctx context.Context,
 	input *eventbridge.PutTargetsInput,
 	_ ...func(*eventbridge.Options),
 ) (*eventbridge.PutTargetsOutput, error) {
+	client.restoreCtx = ctx
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	client.putInputs = append(client.putInputs, input)
 	if client.putFailure {
 		return &eventbridge.PutTargetsOutput{
@@ -484,14 +491,20 @@ func (client *fakeLambdaEventCleanupClient) RemoveTargets(
 			}},
 		}, nil
 	}
+	if client.afterRemove != nil {
+		client.afterRemove()
+	}
 	return &eventbridge.RemoveTargetsOutput{}, nil
 }
 
 func (client *fakeLambdaEventCleanupClient) DeleteRule(
-	_ context.Context,
+	ctx context.Context,
 	input *eventbridge.DeleteRuleInput,
 	_ ...func(*eventbridge.Options),
 ) (*eventbridge.DeleteRuleOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	client.deleted = append(client.deleted, aws.ToString(input.Name))
 	if client.deleteErr != nil {
 		return nil, client.deleteErr
@@ -588,8 +601,8 @@ func TestLambdaCleanupECRTriggerAfterFunctionDeletionPreservesUnownedRules(t *te
 
 func TestLambdaEventTargetCreationFailsOnEntryFailure(t *testing.T) {
 	client := &fakeLambdaEventCleanupClient{putFailure: true}
-	if err := lambdaPutEventTarget(context.Background(), client, "rule", "arn:aws:lambda:region:account:function:function"); err == nil {
-		t.Fatal("PutTargets entry failure was ignored")
+	if err := lambdaPutEventTarget(context.Background(), client, "rule", "arn:aws:lambda:region:account:function:function"); err == nil || !strings.Contains(err.Error(), "ConcurrentModificationException") {
+		t.Fatalf("PutTargets entry failure details were lost: %v", err)
 	}
 }
 
@@ -597,8 +610,8 @@ func TestLambdaEventCleanupFailsOnRemoveTargetEntryFailure(t *testing.T) {
 	client := &fakeLambdaEventCleanupClient{removeFailure: true}
 	rule := &eventbridgetypes.Rule{Name: aws.String("rule")}
 	target := eventbridgetypes.Target{Id: aws.String("1")}
-	if err := lambdaDeleteEventRule(context.Background(), client, rule, target, false); err == nil {
-		t.Fatal("RemoveTargets entry failure was ignored")
+	if err := lambdaDeleteEventRule(context.Background(), client, rule, target, false); err == nil || !strings.Contains(err.Error(), "ConcurrentModificationException") {
+		t.Fatalf("RemoveTargets entry failure details were lost: %v", err)
 	}
 	if len(client.deleted) != 0 {
 		t.Fatal("rule was deleted after target removal failed")
@@ -648,5 +661,29 @@ func TestLambdaManualDeleteIntegration(t *testing.T) {
 	}
 	if functionARN, err := LambdaArn(ctx, name); err == nil || functionARN != "" {
 		t.Fatalf("manually deleted Lambda still resolves as %q with error %v", functionARN, err)
+	}
+}
+
+func TestLambdaEventRollbackSurvivesCancellation(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restore_failure=%v", fail), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			client := &fakeLambdaEventCleanupClient{afterRemove: cancel, putFailure: fail}
+			target := eventbridgetypes.Target{Id: aws.String("1"), Arn: aws.String("arn:aws:lambda:us-west-2:123456789012:function:function")}
+			err := lambdaDeleteEventRule(ctx, client, &eventbridgetypes.Rule{Name: aws.String("rule")}, target, false)
+			if !errors.Is(err, context.Canceled) || len(client.putInputs) != 1 || !reflect.DeepEqual(client.putInputs[0].Targets, []eventbridgetypes.Target{target}) {
+				t.Fatalf("canceled deletion did not restore original target: err=%v inputs=%v", err, client.putInputs)
+			}
+			if fail && !strings.Contains(err.Error(), "ConcurrentModificationException") {
+				t.Fatalf("rollback failure lost: %v", err)
+			}
+			if deadline, ok := client.restoreCtx.Deadline(); !ok || time.Until(deadline) > time.Minute {
+				t.Fatalf("rollback must have a bounded deadline: %v %v", deadline, ok)
+			}
+			if client.restoreCtx.Err() == nil {
+				t.Fatal("rollback context not released")
+			}
+		})
 	}
 }

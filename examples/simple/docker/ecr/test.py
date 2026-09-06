@@ -66,7 +66,7 @@ def test(tmp_path):
         run(f'docker tag {container} {test_image}')
         cleanup.callback(run, f"docker image rm {test_image}")
         run(f'docker push {test_image}')
-        assert uid in run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1')
+        assert uid in run(f'timeout --kill-after=5s 180 libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1')
         run('libaws infra-rm infra.yaml --preview')
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra

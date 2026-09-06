@@ -512,7 +512,13 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 	}
 	if exists {
+		if pabOut == nil {
+			pabOut = &s3.GetPublicAccessBlockOutput{}
+		}
 		conf := pabOut.PublicAccessBlockConfiguration
+		if conf == nil || conf.BlockPublicAcls == nil || conf.IgnorePublicAcls == nil || conf.BlockPublicPolicy == nil || conf.RestrictPublicBuckets == nil {
+			return fmt.Errorf("missing or incomplete public access block for bucket %q: restore the original public access block; acl public/private can only be set at bucket creation", input.name)
+		}
 		if input.acl == "private" {
 			if !(*conf.BlockPublicAcls && *conf.IgnorePublicAcls && *conf.BlockPublicPolicy && *conf.RestrictPublicBuckets) {
 				err := fmt.Errorf("acl public/private can only be set at bucket creation")
@@ -963,9 +969,6 @@ func S3DeleteBucket(ctx context.Context, bucket string, preview bool) error {
 		}
 		var objects []s3types.ObjectIdentifier
 		for _, obj := range out.Versions {
-			if obj.VersionId != nil && *obj.VersionId == "null" {
-				continue // "null" means unversioned
-			}
 			objects = append(objects, s3types.ObjectIdentifier{
 				Key:       obj.Key,
 				VersionId: obj.VersionId,

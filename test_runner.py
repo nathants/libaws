@@ -9,9 +9,12 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parent
-# These tests deliberately observe/mutate account-wide state.
-EXCLUSIVE = {"lib/s3_test.go", "examples/simple/go/ses/test.py"}
 CLEANUP = "examples/misc/cleanup/test.py"
+# These tests deliberately observe/mutate account-wide state.
+EXCLUSIVE = {
+    "lib/s3_test.go", "examples/simple/go/ses/test.py",
+    f"{CLEANUP}::test_live_failure_cleanup[simple/go/ses]",
+}
 
 
 def discover():

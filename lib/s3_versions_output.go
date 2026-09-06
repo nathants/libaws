@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"sort"
 	"strings"
 	"time"
@@ -54,19 +53,11 @@ func S3ListVersions(ctx context.Context, value string, recursive bool, output io
 		return nil
 	}
 
-	value = strings.ReplaceAll(value, "s3://", "")
-	bucket, key, err := SplitOnce(value, "/")
+	bucket, key, err := S3SplitPath(value)
 	if err != nil {
 		return err
 	}
-
-	splitKey := key
-	if !strings.HasSuffix(key, "/") {
-		splitKey = path.Dir(key) + "/"
-		if splitKey == "./" {
-			splitKey = ""
-		}
-	}
+	splitKey := s3ListingParent(key)
 
 	client, err := S3ClientBucketRegion(ctx, bucket)
 	if err != nil {
@@ -95,7 +86,7 @@ func S3ListVersions(ctx context.Context, value string, recursive bool, output io
 		for _, pre := range out.CommonPrefixes {
 			prefix := *pre.Prefix
 			if splitKey != "" {
-				prefix = strings.SplitN(prefix, splitKey, 2)[1]
+				prefix = strings.TrimPrefix(prefix, splitKey)
 			}
 			if _, err := fmt.Fprintln(output, " PRE", prefix); err != nil {
 				return err
@@ -106,7 +97,7 @@ func S3ListVersions(ctx context.Context, value string, recursive bool, output io
 		for _, obj := range out.Versions {
 			objKey := *obj.Key
 			if splitKey != "" && !recursive {
-				objKey = strings.SplitN(objKey, splitKey, 2)[1]
+				objKey = strings.TrimPrefix(objKey, splitKey)
 			}
 			kind := "HISTORICAL"
 			if *obj.IsLatest {
@@ -125,7 +116,7 @@ func S3ListVersions(ctx context.Context, value string, recursive bool, output io
 		for _, obj := range out.DeleteMarkers {
 			objKey := *obj.Key
 			if splitKey != "" && !recursive {
-				objKey = strings.SplitN(objKey, splitKey, 2)[1]
+				objKey = strings.TrimPrefix(objKey, splitKey)
 			}
 			kind := "HISTORICAL-DELETE"
 			if *obj.IsLatest {

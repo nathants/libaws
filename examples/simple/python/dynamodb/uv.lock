@@ -6,6 +6,9 @@ requires-python = "==3.13.*"
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P14D"
 
+[manifest]
+build-constraints = [{ name = "setuptools", specifier = "==83.0.0" }]
+
 [[package]]
 name = "argh"
 version = "0.31.3"
@@ -79,6 +82,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+build = [
+    { name = "setuptools" },
+]
 dev = [
     { name = "py-pool" },
     { name = "py-shell" },
@@ -91,6 +97,7 @@ dev = [
 requires-dist = [{ name = "boto3", specifier = "==1.43.77" }]
 
 [package.metadata.requires-dev]
+build = [{ name = "setuptools", specifier = "==83.0.0" }]
 dev = [
     { name = "py-pool", git = "https://github.com/nathants/py-pool?rev=27b31ec18b326366c8c405076963e2934dd7b134" },
     { name = "py-shell", git = "https://github.com/nathants/py-shell?rev=dacb4922e13f947998ae31e40aec441c54471b36" },
@@ -200,6 +207,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/76/43/35e4d8aa320bffe8287fe8f65f578fa2d2db0a64212f0e710dce58267854/s3transfer-0.19.2.tar.gz", hash = "sha256:ba0309fd86be3c27dbf78cdd813c13c5e1df16e5874b99d2535ebbdfb9892993", size = 165592, upload-time = "2026-07-22T19:30:44.432Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/e7/5c595c75e9f41a44f30e526eda465ea0b4eec93470e074e4a111b253f13a/s3transfer-0.19.2-py3-none-any.whl", hash = "sha256:d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25", size = 90216, upload-time = "2026-07-22T19:30:43.251Z" },
+]
+
+[[package]]
+name = "setuptools"
+version = "83.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/26/f5d29e25ffdb535afef2d35cdb55b325298f96debd670da4c325e08d70f4/setuptools-83.0.0.tar.gz", hash = "sha256:025bccbbf0fa05b6192bc64ae1e7b16e001fd6d6d4d5de03c97b1c1ade523bef", size = 1154254, upload-time = "2026-07-04T15:31:22.699Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/40/e1e72872c6354b306daef1703549e8e83b4d43cfea356311bf722a043752/setuptools-83.0.0-py3-none-any.whl", hash = "sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3", size = 1008090, upload-time = "2026-07-04T15:31:20.885Z" },
 ]
 
 [[package]]

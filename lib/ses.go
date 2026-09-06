@@ -97,6 +97,8 @@ func sesRestoreReceiptRuleset(
 	restoreActive bool,
 	cause error,
 ) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
 	var rollbackErrors []error
 	ruleRestored := true
 	if rule != nil {
@@ -296,6 +298,8 @@ func sesRollbackNewReceiptRuleset(
 	domain string,
 	cause error,
 ) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
 	_, rollbackErr := client.DeleteReceiptRuleSet(ctx, &sesv2.DeleteReceiptRuleSetInput{RuleSetName: aws.String(domain)})
 	if rollbackErr == nil || sesRuleSetDoesNotExist(rollbackErr) {
 		return cause

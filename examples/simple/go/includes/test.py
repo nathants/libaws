@@ -1,4 +1,7 @@
 # type: ignore
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import subprocess
 import uuid
 import pytest
 import sys
@@ -17,7 +20,11 @@ def test():
     try:
         run("libaws infra-ensure infra.yaml --preview")
         run("libaws infra-ensure infra.yaml")
-        run("libaws infra-ensure infra.yaml --preview")
+        with TemporaryDirectory() as caller:
+            declaration = str(Path(__file__).resolve().with_name("infra.yaml"))
+            run("libaws infra-ensure", declaration, "--preview", cwd=caller)
+            run("libaws infra-ensure", declaration, cwd=caller)
+            run("libaws infra-ensure", declaration, "--quick", f"test-lambda-{uid}", cwd=caller)
         infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
         infra.pop("region")
         infra.pop("account")
@@ -39,6 +46,8 @@ def test():
         run("libaws infra-rm infra.yaml --preview")
     finally:
         run("libaws infra-rm infra.yaml")
+    result = subprocess.run(["libaws", "lambda-describe", f"test-lambda-{uid}"], capture_output=True, text=True)
+    assert result.returncode != 0 and "ResourceNotFoundException" in result.stderr, result
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
 

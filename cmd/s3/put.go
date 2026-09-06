@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/alexflint/go-arg"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -37,8 +36,7 @@ func s3Put() {
 	configureS3Provider(args.R2)
 	ctx := context.Background()
 
-	args.Path = strings.ReplaceAll(args.Path, "s3://", "")
-	bucket, key, err := lib.SplitOnce(args.Path, "/")
+	bucket, key, err := lib.S3SplitPath(args.Path)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}

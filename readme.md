@@ -425,7 +425,7 @@ func main() {
 * ECR: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
 * Function URL: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api_and_stream)
 * Includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)
-* S3: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/s3), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/s3), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/s3)
+* S3: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/s3), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/s3), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/s3), [R2 CLI](https://github.com/nathants/libaws/tree/master/examples/misc/r2)
 * Schedule: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/schedule), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/schedule), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/schedule)
 * SES: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ses)
 * SQS: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/sqs), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/sqs), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/sqs)
@@ -434,6 +434,8 @@ func main() {
 ### Explore Complex Examples
 
 * [Coexisting infrastructure sets](https://github.com/nathants/libaws/tree/master/examples/misc/infrasets): exact-set inventory while an independent set is being removed.
+* [Literal S3 keys](https://github.com/nathants/libaws/tree/master/examples/misc/s3-keys): object/version CLI operations without path normalization.
+* [DynamoDB indexes](https://github.com/nathants/libaws/tree/master/examples/misc/dynamodb-indexes): provisioned global indexes and local-index projections.
 
 * [S3 append-only](https://github.com/nathants/libaws/tree/master/examples/complex/s3-appendonly): append-only storage with separate writer and reader IAM users.
 
@@ -678,6 +680,8 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
 
 * Managed buckets require TLS, use SSE-S3 encryption, and reject SSE-C.
 
+* S3 CLI paths preserve literal keys, including dot segments and repeated slashes; `s3-ls --quiet` prints full `bucket/key` paths.
+
 * `appendonly=true` requires `If-None-Match: *` for object creation and multipart completion, denies deletion, and cannot be combined with expiration.
 
 * Setting `cors=true` uses `*` for allowed origins. To specify one or more explicit origins, do this instead:
@@ -685,7 +689,7 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   * `corsorigin=http://localhost:8080`
   * `corsorigin=https://example.com`
 
-* Note: bucket ACL can only be set at bucket creation time
+* Bucket ACL can only be set at creation. Restore missing public-access-block settings before re-ensuring a bucket.
 
 * Schema:
 
@@ -747,7 +751,7 @@ Defines a [DynamoDB](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
 
   * `read=VALUE`, provisioned read capacity, default: `0`
   * `write=VALUE`, provisioned write capacity, default: `0`
-  * `ttl=ATTR_NAME`, optional, which attribute to read TTL from.
+  * `ttl=ATTR_NAME`, optional expiration attribute; enabled when the table is created.
 
 * On global indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-gsi.html) can be defined:
 
@@ -824,10 +828,12 @@ Defines a [DynamoDB](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
     test-table:
       key:
         - id:s:hash
+        - created:n:range
       local-index:
         test-index:
           key:
-            - hometown:s:hash
+            - id:s:hash
+            - hometown:s:range
   ```
 
 ### SQS
@@ -1007,7 +1013,7 @@ Defines Lambda attributes. The following can be defined:
 
 * `timeout=VALUE`, timeout in seconds, default: `300`
 
-* `logs-ttl-days=VALUE`, CloudWatch Logs retention in days, default: `7`
+* `logs-ttl-days=VALUE`, CloudWatch Logs retention in days; `0` disables expiration, default: `7`
 
 * Schema:
 
@@ -1103,7 +1109,7 @@ Defines environment variables on the Lambda:
 
 #### Include
 
-Defines extra content to include in the Lambda zip:
+Defines extra content to include in the Lambda zip. Relative paths resolve beside `infra.yaml`:
 
 * This is ignored when `entrypoint` is an ECR container URI.
 
@@ -1134,6 +1140,8 @@ Defines dependencies to install with pip in the virtualenv zip.
 
 * Relative paths, including `-rrequirements.txt` and local packages, resolve from the directory containing `infra.yaml`.
 
+* For source dependencies, add `--build-constraint=build-requirements.txt` with exact build-backend pins.
+
 * Schema:
 
   ```yaml
@@ -1154,7 +1162,7 @@ Defines dependencies to install with pip in the virtualenv zip.
 
 #### Trigger
 
-Defines triggers for the Lambda:
+Defines triggers for the Lambda. Trigger inventory requires unqualified functions in the current account and region.
 
 * Schema:
 
@@ -1176,6 +1184,7 @@ Defines triggers for the Lambda:
         - type: dynamodb
           attr:
             - test-table
+            - start=latest
   ```
 
 #### Trigger Types
@@ -1233,7 +1242,7 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
   * An exact or matching wildcard [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate must already exist.
 
-* `infra-rm` removes the custom domain and, for `dns=`, its managed alias. It leaves the hosted zone and certificate.
+* `infra-rm` removes exclusively managed domains and aliases; shared domains, routing-rule domains, hosted zones, and certificates remain.
 
 * Schema:
 
@@ -1293,7 +1302,7 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
   * An exact or matching wildcard [ACM](https://github.com/nathants/libaws/tree/master/cmd/acm/ls.go) certificate must already exist.
 
-* `infra-rm` removes the custom domain and, for `dns=`, its managed alias. It leaves the hosted zone and certificate.
+* `infra-rm` removes exclusively managed domains and aliases; shared domains, routing-rule domains, hosted zones, and certificates remain.
 
 * Schema:
 
@@ -1321,7 +1330,7 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
 Defines an [S3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-notificationconfig.html):
 
-* The only attribute must be the bucket name.
+* The only attribute must be a nonempty bucket name; validated before provisioning.
 
 * Object creation and deletion invoke the trigger.
 
@@ -1361,7 +1370,7 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
   * `parallel=VALUE`, parallelization factor, default: `1`
   * `retry=VALUE`, maximum retry attempts, default: `-1`
   * `window=VALUE`, maximum batching window in seconds, default: `0`
-  * `start=VALUE`, required starting position: `latest | trim_horizon`
+  * `start=VALUE`, required starting position: `latest | trim_horizon`; immutable on existing mappings.
 
 * Schema:
 
@@ -1388,9 +1397,9 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
 
 ##### SQS
 
-Defines a [SQS trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html):
+Defines a [SQS trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html). Ensuring a declared trigger re-enables a disabled mapping:
 
-* The first attribute must be the queue name.
+* The first attribute must be a nonempty queue name; validated before provisioning.
 
 * The following trigger [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html) can be defined:
 
@@ -1477,7 +1486,7 @@ Defines a [CloudWatch alarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest
 
 * The following attributes are required:
 
-  * `name=VALUE`, account-and-region-unique alarm name.
+  * `name=VALUE`, account-and-region-unique alarm name, 1–255 ASCII letters, digits, dots, hyphens, or underscores.
   * `lambda-invocations=VALUE`, Lambda to monitor.
   * `at-least=VALUE/minute`, positive integer invocation threshold, maximum: `2147483647`.
 
@@ -1551,6 +1560,8 @@ bash test.sh
 * An untagged, unmapped API Gateway custom domain named `acm-fixture.${LIBAWS_TEST_DOMAIN}`, associated with that certificate and without a Route53 alias. This keeps the certificate eligible for managed renewal.
 
 Tests create and remove only unique child resources outside these fixtures. `test.sh` runs account-exclusive tests first, then independent tests with four workers. Set `LIBAWS_TEST_JOBS=1` for sequential debugging or another positive worker count to change concurrency. Each test prints its path, status, duration, and retained log path; `timings.tsv` records per-test results. Interrupting the runner stops new tests and waits for started tests to finish cleanup. Do not run another live suite against the same scratch account concurrently.
+
+R2 tests are opt-in: set `LIBAWS_R2_TEST_ACCOUNT` to your `R2_ACCOUNT_ID` and supply `R2_ACCESS_KEY_ID` and `R2_ACCESS_KEY_SECRET`. They create and remove unique `libaws-testing-*` buckets.
 
 Run one example with:
 
