@@ -2854,7 +2854,7 @@ func lambdaCreateZipPy(infraLambda *InfraLambda) error {
 			args = append(args, fmt.Sprintf(`"%s"`, require))
 		}
 		arg := strings.Join(args, " ")
-		err = shell("%s/env/bin/pip install --no-compile %s", dir, arg)
+		err = shellAt(infraLambda.dir, "%s/env/bin/pip install --no-compile %s", dir, arg)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err

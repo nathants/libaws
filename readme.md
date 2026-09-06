@@ -1132,6 +1132,8 @@ Defines dependencies to install with pip in the virtualenv zip.
 
 * This is ignored unless the `entrypoint` is a Python file.
 
+* Relative paths, including `-rrequirements.txt` and local packages, resolve from the directory containing `infra.yaml`.
+
 * Schema:
 
   ```yaml

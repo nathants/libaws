@@ -2,9 +2,13 @@ package lib
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"os/exec"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -94,6 +98,42 @@ func EcrEnsure(ctx context.Context, name string, preview bool) error {
 		return err
 	}
 	return nil
+}
+
+func ecrLoginCommand(ctx context.Context, output *ecr.GetAuthorizationTokenOutput) (*exec.Cmd, error) {
+	if output == nil || len(output.AuthorizationData) != 1 {
+		return nil, errors.New("ECR returned invalid authorization data")
+	}
+	authorization := output.AuthorizationData[0]
+	if authorization.AuthorizationToken == nil || authorization.ProxyEndpoint == nil || strings.TrimSpace(*authorization.ProxyEndpoint) == "" {
+		return nil, errors.New("ECR returned incomplete authorization data")
+	}
+	credentials, err := base64.StdEncoding.DecodeString(*authorization.AuthorizationToken)
+	if err != nil {
+		return nil, fmt.Errorf("decode ECR authorization token: %w", err)
+	}
+	username, password, ok := strings.Cut(string(credentials), ":")
+	if !ok || username == "" || password == "" {
+		return nil, errors.New("invalid ECR authorization token")
+	}
+	command := exec.CommandContext(ctx, "docker", "login", "--username", username, "--password-stdin", *authorization.ProxyEndpoint)
+	command.Stdin = strings.NewReader(password)
+	return command, nil
+}
+
+// EcrLogin authenticates the current Docker configuration without putting the password in process arguments.
+func EcrLogin(ctx context.Context, stdout, stderr io.Writer) error {
+	output, err := EcrClient().GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
+	if err != nil {
+		return err
+	}
+	command, err := ecrLoginCommand(ctx, output)
+	if err != nil {
+		return err
+	}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	return command.Run()
 }
 
 func EcrUrl(ctx context.Context) (string, error) {

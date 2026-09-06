@@ -1,4 +1,6 @@
 # type: ignore
+from contextlib import ExitStack
+import subprocess
 import pytest
 import sys
 import shell
@@ -25,46 +27,57 @@ def test(tmp_path):
     repo_name = container.split('amazonaws.com/')[-1]
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
-    run(f'docker buildx build --provenance=false -t {container} --network host .')
-    run(f'libaws ecr-ensure {repo_name}')
-    run('libaws ecr-login')
-    lines = run(f"docker push {container}").splitlines()
-    digest = [x for x in lines[-1].split()
-              if x.startswith('sha256:')][0]
-    os.environ['digest'] = digest
-    run('libaws infra-ensure infra.yaml --preview')
-    run('libaws infra-ensure infra.yaml')
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
-    infra.pop("region")
-    infra.pop("account")
-    infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
-    expected = {
-        "infraset": {
-            f"test-infraset-{uid}": {
-                "lambda": {
-                    f"test-lambda-{uid}": {
-                        "attr": ["timeout=60"],
-                        "policy": ["AWSLambdaBasicExecutionRole"],
-                        "trigger": [{"type": "ecr"}],
+    with ExitStack() as cleanup:
+        # Register before provisioning; one cleanup failure must not block another.
+        cleanup.callback(run, f"libaws ecr-rm {repo_name}")
+        cleanup.callback(run, "libaws infra-rm infra.yaml")
+        run(f'docker buildx build --provenance=false -t {container} --network host .')
+        cleanup.callback(run, f"docker image rm {container}")
+        run(f'libaws ecr-ensure {repo_name}')
+        run('libaws ecr-login')
+        lines = run(f"docker push {container}").splitlines()
+        digest = [x for x in lines[-1].split()
+                  if x.startswith('sha256:')][0]
+        os.environ['digest'] = digest
+        run('libaws infra-ensure infra.yaml --preview')
+        run('libaws infra-ensure infra.yaml')
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+        infra.pop("region")
+        infra.pop("account")
+        infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
+        expected = {
+            "infraset": {
+                f"test-infraset-{uid}": {
+                    "lambda": {
+                        f"test-lambda-{uid}": {
+                            "attr": ["timeout=60"],
+                            "policy": ["AWSLambdaBasicExecutionRole"],
+                            "trigger": [{"type": "ecr"}],
+                        }
                     }
                 }
             }
         }
-    }
-    assert infra == expected, infra
-    run(f'libaws ecr-ensure test-trigger-{uid}')
-    run('libaws ecr-login')
-    test_image = f'$(libaws ecr-url)/test-trigger-{uid}:{uid}'
-    run(f'docker tag {container} {test_image}')
-    run(f'docker push {test_image}')
-    assert uid in run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1')
-    run('libaws infra-rm infra.yaml --preview')
-    run(f'docker image rm {test_image} {container}')
-    run(f'libaws ecr-rm test-trigger-{uid}')
-    run(f'libaws ecr-rm {repo_name}')
-    run('libaws infra-rm infra.yaml')
+        assert infra == expected, infra
+        cleanup.callback(run, f"libaws ecr-rm test-trigger-{uid}")
+        run(f'libaws ecr-ensure test-trigger-{uid}')
+        run('libaws ecr-login')
+        test_image = f'{account}.dkr.ecr.{region}.amazonaws.com/test-trigger-{uid}:{uid}'
+        run(f'docker tag {container} {test_image}')
+        cleanup.callback(run, f"docker image rm {test_image}")
+        run(f'docker push {test_image}')
+        assert uid in run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after {uid} | tail -n1')
+        run('libaws infra-rm infra.yaml --preview')
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
+
+    assert repo_name not in run("libaws ecr-ls").splitlines()
+    assert f"test-trigger-{uid}" not in run("libaws ecr-ls").splitlines()
+    for image in (container, test_image):
+        result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True)
+        assert result.returncode != 0 and "No such image" in result.stderr, result
+    result = subprocess.run(["libaws", "lambda-describe", f"test-lambda-{uid}"], capture_output=True, text=True)
+    assert result.returncode != 0 and "ResourceNotFoundException" in result.stderr, result
 
 if __name__ == '__main__':
     sys.exit(pytest.main([__file__, "-svvx", "--tb", "native"]))

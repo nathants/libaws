@@ -1,4 +1,6 @@
 # type: ignore
+from contextlib import ExitStack
+import subprocess
 import pytest
 import sys
 import shell
@@ -25,55 +27,65 @@ def test(tmp_path):
     repo_name = container.split('amazonaws.com/')[-1]
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
-    run(f'docker buildx build --provenance=false -t {container} --network host .')
-    run(f'libaws ecr-ensure {repo_name}')
-    run('libaws ecr-login')
-    lines = run(f"docker push {container}").splitlines()
-    digest = [x for x in lines[-1].split()
-              if x.startswith('sha256:')][0]
-    os.environ['digest'] = digest
-    run('libaws infra-ensure infra.yaml --preview')
-    run('libaws infra-ensure infra.yaml')
-    infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
-    infra.pop("region")
-    infra.pop("account")
-    infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
-    expected = {
-        "infraset": {
-            f"test-infraset-{uid}": {
-                "lambda": {
-                    f"test-lambda-{uid}": {
-                        "attr": ["timeout=60"],
-                        "policy": [
-                            "AWSLambdaSQSQueueExecutionRole",
-                            "AWSLambdaBasicExecutionRole",
-                        ],
-                        "trigger": [
-                            {
-                                "attr": [
-                                    f"test-queue-{uid}",
-                                    "batch=1",
-                                    "window=1",
-                                ],
-                                "type": "sqs",
-                            }
-                        ],
-                    }
-                },
-                "sqs": {
-                    f"test-queue-{uid}": {"attr": ["VisibilityTimeout=60"]}
-                },
+    with ExitStack() as cleanup:
+        # Register before provisioning; one cleanup failure must not block another.
+        cleanup.callback(run, f"libaws ecr-rm {repo_name}")
+        cleanup.callback(run, "libaws infra-rm infra.yaml")
+        run(f'docker buildx build --provenance=false -t {container} --network host .')
+        cleanup.callback(run, f"docker image rm {container}")
+        run(f'libaws ecr-ensure {repo_name}')
+        run('libaws ecr-login')
+        lines = run(f"docker push {container}").splitlines()
+        digest = [x for x in lines[-1].split()
+                  if x.startswith('sha256:')][0]
+        os.environ['digest'] = digest
+        run('libaws infra-ensure infra.yaml --preview')
+        run('libaws infra-ensure infra.yaml')
+        infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
+        infra.pop("region")
+        infra.pop("account")
+        infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
+        expected = {
+            "infraset": {
+                f"test-infraset-{uid}": {
+                    "lambda": {
+                        f"test-lambda-{uid}": {
+                            "attr": ["timeout=60"],
+                            "policy": [
+                                "AWSLambdaSQSQueueExecutionRole",
+                                "AWSLambdaBasicExecutionRole",
+                            ],
+                            "trigger": [
+                                {
+                                    "attr": [
+                                        f"test-queue-{uid}",
+                                        "batch=1",
+                                        "window=1",
+                                    ],
+                                    "type": "sqs",
+                                }
+                            ],
+                        }
+                    },
+                    "sqs": {
+                        f"test-queue-{uid}": {"attr": ["VisibilityTimeout=60"]}
+                    },
+                }
             }
         }
-    }
-    assert infra == expected, infra
-    run(f'libaws sqs-send test-queue-{uid} {uid}')
-    assert uid in run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "thanks for:" | tail -n1')
-    run('libaws infra-rm infra.yaml --preview')
-    run(f'libaws ecr-rm {repo_name}')
-    run('libaws infra-rm infra.yaml')
+        assert infra == expected, infra
+        run(f'libaws sqs-send test-queue-{uid} {uid}')
+        assert uid in run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "thanks for:" | tail -n1')
+        run('libaws infra-rm infra.yaml --preview')
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
+
+    assert repo_name not in run("libaws ecr-ls").splitlines()
+    for image in (container,):
+        result = subprocess.run(["docker", "image", "inspect", image], capture_output=True, text=True)
+        assert result.returncode != 0 and "No such image" in result.stderr, result
+    result = subprocess.run(["libaws", "lambda-describe", f"test-lambda-{uid}"], capture_output=True, text=True)
+    assert result.returncode != 0 and "ResourceNotFoundException" in result.stderr, result
 
 if __name__ == '__main__':
     sys.exit(pytest.main([__file__, "-svvx", "--tb", "native"]))
