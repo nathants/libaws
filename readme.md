@@ -421,6 +421,7 @@ func main() {
 * Alarm: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/alarm)
 * API: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api), [custom domain](https://github.com/nathants/libaws/tree/master/examples/simple/go/api-domain)
 * DynamoDB: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/dynamodb), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/dynamodb), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/dynamodb)
+* EC2: [Spot CLI](https://github.com/nathants/libaws/tree/master/examples/misc/ec2) with VPC-selected or explicit subnets.
 * ECR: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
 * Function URL: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api_and_stream)
 * Includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)
@@ -883,6 +884,8 @@ Defines an EC2 [keypair](https://docs.aws.amazon.com/AWSCloudFormation/latest/Us
 ### VPC
 
 Defines a default-like [VPC](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-vpc.html) with an [Internet Gateway](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-ec2-internetgateway.html) and [public access](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-dns.html#vpc-dns-support).
+
+`ec2-new --vpc NAME_OR_ID` selects subnets in zones offering `--type`: all matching VPC subnets for `--spot`, or one at random for on-demand. Explicit `--subnets "subnet-A subnet-B"` overrides this selection.
 
 * Schema:
 

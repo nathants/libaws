@@ -87,29 +87,9 @@ func handleRequest(ctx context.Context, event events.S3Event) (events.APIGateway
 	if err != nil {
 		panic(err)
 	}
-	vpcID, err := lib.VpcID(ctx, vpcName)
+	spotSubnetIDs, err := lib.EC2SubnetsFromVpc(ctx, vpcName, ec2types.InstanceTypeT3Small, true)
 	if err != nil {
 		panic(err)
-	}
-	zones, err := lib.EC2ZonesWithInstance(ctx, ec2types.InstanceTypeT3Small)
-	if err != nil {
-		panic(err)
-	}
-	subnets, err := lib.VpcSubnets(ctx, vpcID)
-	if err != nil {
-		panic(err)
-	}
-	var spotSubnetIDs []string
-	for _, subnet := range subnets {
-		for _, zone := range zones {
-			if zone == *subnet.AvailabilityZone {
-				spotSubnetIDs = append(spotSubnetIDs, *subnet.SubnetId)
-				break
-			}
-		}
-	}
-	if len(spotSubnetIDs) == 0 {
-		panic("no availability")
 	}
 	for _, record := range event.Records {
 		key := record.S3.Object.URLDecodedKey

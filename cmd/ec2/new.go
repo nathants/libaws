@@ -3,7 +3,6 @@ package libaws
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"strings"
 
@@ -29,8 +28,8 @@ type ec2NewArgs struct {
 	EphemeralKey   bool   `arg:"-e,--ephemeral-key" help:"add an additional ssh keypair to this instance.\n                         the private key will be written to /tmp/libaws/SSH_ID/id_ed25519.\n                         the SSH_ID will be tagged on the instance."`
 	SpotStrategy   string `arg:"-s,--spot" help:"leave unspecified to create on-demand instances.\n                         otherwise choose spotStrategy from: lowestPrice | diversified | capacityOptimized | capacityOptimizedPrioritized | priceCapacityOptimized"`
 	Sg             string `arg:"--sg,required" help:"security group name or id"`
-	SubnetIds      string `arg:"--subnets" help:"subnet-ids as space separated values"`
-	Vpc            string `arg:"-v,--vpc" help:"vpc name or id"`
+	SubnetIds      string `arg:"--subnets" help:"subnet-ids as space separated values; overrides --vpc subnet selection"`
+	Vpc            string `arg:"-v,--vpc" help:"vpc name or id; select subnets in zones offering --type.\n                         Spot uses all matching subnets; on-demand uses one."`
 	Gigs           int    `arg:"-g,--gigs" help:"ebs gigabytes\n                        " default:"16"`
 	Iops           int    `arg:"--iops" help:"gp3 iops\n                        " default:"3000"`
 	Throughput     int    `arg:"--throughput" help:"gp3 throughput mb/s\n                        " default:"125"`
@@ -43,48 +42,6 @@ type ec2NewArgs struct {
 
 func (ec2NewArgs) Description() string {
 	return "\ncreate ec2 instances\n"
-}
-
-func useSubnetsFromVpc(ctx context.Context, args *ec2NewArgs) {
-	if args.Vpc != "" {
-		zones, err := lib.EC2ZonesWithInstance(ctx, ec2types.InstanceType(args.Type))
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		if len(zones) == 0 {
-			lib.Logger.Fatal("error: no zones contain instance type " + args.Type)
-		}
-		vpcID := args.Vpc
-		if !strings.HasPrefix("vpc-", args.Vpc) {
-			vpcID, err = lib.VpcID(ctx, args.Vpc)
-			if err != nil {
-				lib.Logger.Fatal("error: ", err)
-			}
-		}
-		subnets, err := lib.VpcSubnets(ctx, vpcID)
-		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		if args.SpotStrategy == "" {
-			zone := zones[rand.Intn(len(zones))]
-			for _, subnet := range subnets {
-				if *subnet.AvailabilityZone == zone {
-					args.SubnetIds = *subnet.SubnetId
-					break
-				}
-			}
-			if len(lib.SplitWhiteSpace(args.SubnetIds)) != 1 {
-				lib.Logger.Fatalf("no subnet in zone %s for vpc %s", zone, vpcID)
-			}
-		} else {
-			for _, subnet := range subnets {
-				args.SubnetIds = " " + *subnet.SubnetId
-			}
-			if len(lib.SplitWhiteSpace(args.SubnetIds)) == 0 {
-				lib.Logger.Fatalf("no subnets for vpc %s", vpcID)
-			}
-		}
-	}
 }
 
 func ec2New() {
@@ -102,8 +59,13 @@ func ec2New() {
 	if args.Vpc == "" && len(lib.SplitWhiteSpace(args.SubnetIds)) == 0 {
 		p.Fail("you must specify one of --vpc | --subnets")
 	}
-	if len(lib.SplitWhiteSpace(args.SubnetIds)) == 0 {
-		useSubnetsFromVpc(ctx, &args)
+	subnetIDs := lib.SplitWhiteSpace(args.SubnetIds)
+	if len(subnetIDs) == 0 {
+		var err error
+		subnetIDs, err = lib.EC2SubnetsFromVpc(ctx, args.Vpc, ec2types.InstanceType(args.Type), args.SpotStrategy != "")
+		if err != nil {
+			lib.Logger.Fatal("error: ", err)
+		}
 	}
 	if strings.HasPrefix(args.Ami, "ami-") {
 		images, err := lib.EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
@@ -158,7 +120,7 @@ func ec2New() {
 		Key:            args.Key,
 		TempKey:        args.EphemeralKey,
 		SgID:           args.Sg,
-		SubnetIds:      lib.SplitWhiteSpace(args.SubnetIds),
+		SubnetIds:      subnetIDs,
 		Gigs:           args.Gigs,
 		Iops:           args.Iops,
 		Throughput:     args.Throughput,

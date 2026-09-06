@@ -1,0 +1,11 @@
+name: test-ec2-subnets-${uid}
+
+keypair:
+  test-keypair-${uid}:
+    pubkey-content: ${pubkey}
+
+vpc:
+  test-vpc-${uid}:
+    security-group:
+      test-sg-${uid}:
+        rule: [] # No ingress or instance credentials are needed for this test.
