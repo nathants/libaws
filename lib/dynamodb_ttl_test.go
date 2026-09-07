@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,8 @@ func TestDynamoDBEnsureTTLOnCreate(t *testing.T) {
 		name      string
 		ttl       bool
 		preview   bool
+		lag       bool
+		cancel    bool
 		failAt    string
 		wantCalls []string
 		wantLog   string
@@ -36,6 +39,14 @@ func TestDynamoDBEnsureTTLOnCreate(t *testing.T) {
 		{
 			name: "apply", ttl: true,
 			wantCalls: []string{"DescribeTable", "CreateTable", "DescribeTable", "UpdateTimeToLive"},
+		},
+		{
+			name: "metadata lag", ttl: true, lag: true,
+			wantCalls: []string{"DescribeTable", "CreateTable", "DescribeTable", "DescribeTable", "DescribeTable", "UpdateTimeToLive"},
+		},
+		{
+			name: "cancel during metadata lag", ttl: true, lag: true, cancel: true,
+			wantCalls: []string{"DescribeTable", "CreateTable", "DescribeTable"},
 		},
 		{
 			name:      "without TTL",
@@ -59,6 +70,8 @@ func TestDynamoDBEnsureTTLOnCreate(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
 			var calls []string
 			var logs strings.Builder
 			oldClient, oldLogger := dynamoDBClient, *Logger
@@ -74,6 +87,13 @@ func TestDynamoDBEnsureTTLOnCreate(t *testing.T) {
 				switch {
 				case len(calls) == 1 && action == "DescribeTable":
 					status, body = 400, `{"__type":"ResourceNotFoundException","message":"table does not exist"}`
+				case test.lag && action == "DescribeTable" && len(calls) == 3:
+					status, body = 400, `{"__type":"ResourceNotFoundException","message":"new table metadata has not propagated"}`
+					if test.cancel {
+						cancel()
+					}
+				case test.lag && action == "DescribeTable" && len(calls) == 4:
+					body = `{"Table":{"TableName":"test-ttl","TableStatus":"CREATING"}}`
 				case action == test.failAt:
 					status, body = 400, fmt.Sprintf(`{"__type":"ValidationException","message":"injected %s failure"}`, action)
 				case action == "DescribeTable":
@@ -109,8 +129,12 @@ func TestDynamoDBEnsureTTLOnCreate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = DynamoDBEnsure(context.Background(), input, ttl, test.preview)
-			if test.failAt == "" && err != nil {
+			err = DynamoDBEnsure(ctx, input, ttl, test.preview)
+			if test.cancel {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("creation wait did not preserve caller cancellation: %v", err)
+				}
+			} else if test.failAt == "" && err != nil {
 				t.Fatal(err)
 			}
 			if test.failAt != "" && (err == nil || !strings.Contains(err.Error(), "injected "+test.failAt+" failure")) {

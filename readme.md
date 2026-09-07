@@ -1397,7 +1397,7 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
 
 ##### SQS
 
-Defines a [SQS trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html). Ensuring a declared trigger re-enables a disabled mapping:
+Defines a [SQS trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html). Ensuring a declared trigger waits for pending changes and re-enables a disabled mapping:
 
 * The first attribute must be a nonempty queue name; validated before provisioning.
 

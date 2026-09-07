@@ -2714,6 +2714,19 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 					count++
 				}
 			}
+			if count == 1 && !preview {
+				current, err := lambdaWaitEventSourceMappingSettled(ctx, LambdaClient(), aws.ToString(found.UUID))
+				if err != nil {
+					return err
+				}
+				if current == nil {
+					count = 0 // A deleting mapping must be recreated, not updated.
+				} else {
+					found.State = current.state
+					found.BatchSize = current.batchSize
+					found.MaximumBatchingWindowInSeconds = current.maximumBatchingWindowInSeconds
+				}
+			}
 			switch count {
 			case 0:
 				if !preview {

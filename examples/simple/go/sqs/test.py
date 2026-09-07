@@ -26,6 +26,7 @@ def test():
     try:
         run("libaws infra-ensure infra.yaml --preview")
         run("libaws infra-ensure infra.yaml")
+        run(f"LIBAWS_SQS_MAPPING_TEST_UID={uid} go test ../../../../lib -run '^TestLambdaSQSMappingIntegration$' -count=1 -v")
         infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
         infra.pop("region")
         infra.pop("account")
@@ -59,7 +60,6 @@ def test():
             }
         }
         assert infra == expected, infra
-        run(f"LIBAWS_SQS_MAPPING_TEST_UID={uid} go test ../../../../lib -run '^TestLambdaSQSMappingIntegration$' -count=1 -v")
         run(f"libaws sqs-send test-queue-{uid} {uid}")
         assert uid == run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "thanks for:" | tail -n1').split()[-1]
         preview = captured("libaws infra-rm infra.yaml --preview")

@@ -507,8 +507,13 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 			Logger.Println(PreviewString(preview)+"created table:", *input.TableName)
 			if ttl != nil {
 				if !preview {
-					if err := DynamoDBWaitForReady(ctx, *input.TableName); err != nil {
-						return err
+					// Accepted creation may still read as absent before becoming ACTIVE.
+					waiter := dynamodb.NewTableExistsWaiter(DynamoDBClient(), func(options *dynamodb.TableExistsWaiterOptions) {
+						options.MinDelay = 2 * time.Second
+						options.MaxDelay = 2 * time.Second
+					})
+					if err := waiter.Wait(ctx, &dynamodb.DescribeTableInput{TableName: input.TableName}, 5*time.Minute); err != nil {
+						return fmt.Errorf("wait for new DynamoDB table %s: %w", *input.TableName, err)
 					}
 				}
 				return dynamoDBUpdateTTL(ctx, *input.TableName, ttl, preview)
