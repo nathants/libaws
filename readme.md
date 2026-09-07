@@ -112,36 +112,10 @@ The primary entrypoints are:
 
 `infra-ensure` is a [positive assertion](#tradeoffs). It asserts that some named infrastructure exists, and is configured correctly, creating or updating it if needed.
 
-Many other entrypoints exist, and can be explored by type. They fall into two categories:
+Other commands fall into two categories:
 
-* Mutate AWS state:
-
-  ```bash
-  >> libaws -h | grep ensure | wc -l
-  19
-
-  >> libaws -h | grep new | wc -l
-  1
-
-  >> libaws -h | grep rm | wc -l
-  26
-  ```
-
-* View AWS state:
-
-  ```bash
-  >> libaws -h | grep ls | wc -l
-  33
-
-  >> libaws -h | grep describe | wc -l
-  6
-
-  >> libaws -h | grep get | wc -l
-  16
-
-  >> libaws -h | grep scan | wc -l
-  1
-  ```
+* Mutate AWS state: `ensure`, `new`, and `rm`.
+* View AWS state: `ls`, `get`, `scan`, and `describe`.
 
 ## AWS SDK, Pulumi, Terraform, CloudFormation, and Serverless
 
@@ -308,16 +282,11 @@ func main() {
 
 ### View the Infrastructure Set
 
-`infra-ls` inventories the account. Its optional positional argument filters by name substring. Use `--infraset NAME` instead to select one exact `libaws.infraset` ownership tag, regardless of resource names:
+`infra-ls` lists the account. Select one exact set with `--infraset NAME`, or filter names with a positional substring; these selectors cannot be combined:
 
 ```bash
 libaws infra-ls --infraset my-project
-libaws infra-ls --infraset my-project --env-values
 ```
-
-The selectors are mutually exclusive. Exact-set inventory includes owned resources, their referenced children, and verified triggers—not untagged roots or other sets. Shared DNS zones and certificates remain references. Unreadable ownership or selected resources cause errors; empty sets omit the `infraset` block.
-
-Go: `lib.InfraListSet(ctx, name, showEnvVarValues)`.
 
 Depth-based colors by [YAML](https://gist.github.com/nathants/1955b2c3130b7d1a00c8420ad6231639)
 
@@ -340,80 +309,22 @@ Depth-based colors by [YAML](https://gist.github.com/nathants/1955b2c3130b7d1a00
 ### Explore the CLI
 
 ```bash
->> libaws -h | grep ensure | head
-
-codecommit-ensure             - ensure a codecommit repository
-dynamodb-ensure               - ensure a DynamoDB table
-ec2-ensure-keypair            - ensure a keypair
-ec2-ensure-sg                 - ensure a sg
-ecr-ensure                    - ensure ECR image
-iam-ensure-ec2-spot-roles     - ensure IAM EC2 spot roles that are needed to use EC2 spot
-iam-ensure-instance-profile   - ensure an IAM instance-profile
-iam-ensure-role               - ensure an IAM role
-iam-ensure-user-api           - ensure an IAM user with API key
-iam-ensure-user-api-key       - ensure an existing IAM user has one API access key
-iam-ensure-user-login         - ensure an IAM user with login
+libaws --help
 ```
 
 ### Explore a CLI Entrypoint
 
 ```bash
->> libaws s3-ensure -h
-
-Ensure a S3 bucket
-
-Example:
- - libaws s3-ensure test-bucket acl=public versioning=true
-
-Optional attrs:
- - acl=VALUE        (values = public | private, default = private)
- - versioning=VALUE (values = true | false,     default = false)
- - metrics=VALUE    (values = true | false,     default = false)
- - cors=VALUE       (values = true | false,     default = false)
- - ttldays=VALUE    (values = 0 | n,            default = 0)
-
-Setting 'cors=true' uses '*' for allowed origins. To specify one or more explicit origins, do this instead:
- - corsorigin=http://localhost:8080
- - corsorigin=https://example.com
-
-Note: bucket ACL can only be set at bucket creation time
-
-Usage: s3-ensure [--preview] NAME [ATTR [ATTR ...]]
-
-Positional arguments:
-  NAME
-  ATTR
-
-Options:
-  --preview, -p
-  --help, -h             display this help and exit
+libaws s3-ensure --help
 ```
 
 ### Explore the Go API
 
-```go
-package main
+Use editor completion, the [API reference](https://pkg.go.dev/github.com/nathants/libaws/lib), or local documentation:
 
-import (
-	"github.com/nathants/libaws/lib"
-)
-
-func main() {
-    lib. (TAB =>)
-      |--------------------------------------------------------------------------------|
-      |f AcmClient func() *acm.ACM (Function)                                          |
-      |f AcmClientExplicit func(accessKeyID string, accessKeySecret string, region stri|
-      |f AcmListCertificates func(ctx context.Context) ([]*acm.CertificateSummary, erro|
-      |f Api func(ctx context.Context, name string) (*apigatewayv2.Api, error) (Functio|
-      |f ApiClient func() *apigatewayv2.ApiGatewayV2 (Function)                        |
-      |f ApiClientExplicit func(accessKeyID string, accessKeySecret string, region stri|
-      |f ApiList func(ctx context.Context) ([]*apigatewayv2.Api, error) (Function)     |
-      |f ApiListDomains func(ctx context.Context) ([]*apigatewayv2.DomainName, error) (|
-      |f ApiUrl func(ctx context.Context, name string) (string, error) (Function)      |
-      |f ApiUrlDomain func(ctx context.Context, name string) (string, error) (Function)|
-      |...                                                                             |
-      |--------------------------------------------------------------------------------|
-}
+```bash
+go doc github.com/nathants/libaws/lib
+go doc github.com/nathants/libaws/lib.InfraListSet
 ```
 
 ### Explore Simple Examples
@@ -675,7 +586,7 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   * `appendonly=VALUE`, values: `true | false`, default: `false`
   * `metrics=VALUE`, values: `true | false`, default: `false`
   * `cors=VALUE`, values: `true | false`, default: `false`
-  * `ttldays=VALUE`, values: `0 | n`, default: `0`. Bucket-wide expiration in days; inventory rejects other lifecycle forms.
+  * `ttldays=VALUE`, values: `0 | n`, default: `0`. Bucket-wide expiration in days.
   * `allow_put=VALUE`, values: `$principal.amazonaws.com`
 
 * Managed buckets require TLS, use SSE-S3 encryption, and reject SSE-C.
@@ -751,7 +662,7 @@ Defines a [DynamoDB](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGu
 
   * `read=VALUE`, provisioned read capacity, default: `0`
   * `write=VALUE`, provisioned write capacity, default: `0`
-  * `ttl=ATTR_NAME`, optional expiration attribute; enabled when the table is created.
+  * `ttl=ATTR_NAME`, optional expiration attribute.
 
 * On global indices the following [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-gsi.html) can be defined:
 
@@ -1162,7 +1073,7 @@ Defines dependencies to install with pip in the virtualenv zip.
 
 #### Trigger
 
-Defines triggers for the Lambda. Trigger inventory requires unqualified functions in the current account and region.
+Defines triggers for the Lambda:
 
 * Schema:
 
@@ -1330,7 +1241,7 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
 Defines an [S3 trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket-notificationconfig.html):
 
-* The only attribute must be a nonempty bucket name; validated before provisioning.
+* The only attribute must be a nonempty bucket name.
 
 * Object creation and deletion invoke the trigger.
 
@@ -1397,9 +1308,9 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
 
 ##### SQS
 
-Defines a [SQS trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html). Ensuring a declared trigger waits for pending changes and re-enables a disabled mapping:
+Defines a [SQS trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html). Ensuring a declared trigger re-enables a disabled mapping:
 
-* The first attribute must be a nonempty queue name; validated before provisioning.
+* The first attribute must be a nonempty queue name.
 
 * The following trigger [attributes](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-eventsourcemapping.html) can be defined:
 
@@ -1460,7 +1371,7 @@ Defines a [schedule trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
 
 Defines an [ECR trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html):
 
-* Successful [image actions](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/lambda.go#L153) to any ECR repository will invoke the trigger.
+* Successful [image actions](https://github.com/nathants/libaws/blob/163533034af790187e56d4e267a797d8131f1307/lib/lambda.go#L153) from any ECR repository invoke the trigger; delivery is best-effort.
 
 * Schema:
 
@@ -1546,20 +1457,17 @@ Alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructur
 
 ## Testing
 
-Tests require Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), scratch-account credentials, and a delegated Route53 test domain:
+Tests require Go 1.27+, Python 3.12+, [uv](https://docs.astral.sh/uv/), rootless Docker, and the [check tools](Makefile). Use scratch-account credentials and a permanent, publicly delegated Route53 zone in that account:
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
 export LIBAWS_TEST_DOMAIN=scratch.example.com
-bash test.sh
+make test
 ```
 
-`LIBAWS_TEST_DOMAIN` must name a permanent, publicly delegated Route53 hosted zone in the selected account. Tests automatically ensure and preserve:
+Set `LIBAWS_TEST_JOBS` to change concurrency (default: `4`; `1` for sequential runs). Do not overlap live suites in one account.
 
-* An issued ACM certificate for `*.${LIBAWS_TEST_DOMAIN}` and its DNS validation record.
-* An untagged, unmapped API Gateway custom domain named `acm-fixture.${LIBAWS_TEST_DOMAIN}`, associated with that certificate and without a Route53 alias. This keeps the certificate eligible for managed renewal.
-
-Tests create and remove only unique child resources outside these fixtures. `test.sh` runs account-exclusive tests first, then independent tests with four workers. Set `LIBAWS_TEST_JOBS=1` for sequential debugging or another positive worker count to change concurrency. Each test prints its path, status, duration, and retained log path; `timings.tsv` records per-test results. Interrupting the runner stops new tests and waits for started tests to finish cleanup. Do not run another live suite against the same scratch account concurrently.
+Tests retain shared certificate, DNS, and API-domain fixtures; see [testing guidance](NINA.md#architecture-and-testing) for details.
 
 R2 tests are opt-in: set `LIBAWS_R2_TEST_ACCOUNT` to your `R2_ACCOUNT_ID` and supply `R2_ACCESS_KEY_ID` and `R2_ACCESS_KEY_SECRET`. They create and remove unique `libaws-testing-*` buckets.
 
@@ -1567,6 +1475,7 @@ Run one example with:
 
 ```bash
 make
+export PATH="$PWD:$PATH"
 cd examples/simple/python/api
 uv run --locked python -u test.py
 ```
