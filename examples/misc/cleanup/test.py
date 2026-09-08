@@ -423,5 +423,54 @@ def test_ec2_nvme_failure_cleanup(failure):
     assert sum("^TestEC2NVMeExampleCleanup$" in command for command in commands) == 1, commands
 
 
+@pytest.mark.parametrize("failure", ("prepare", "preview", "delete", "verify", "cleanup"))
+def test_ec2_ami_failure_cleanup(failure):
+    module = load("misc/ec2-ami")
+    commands = []
+    directories = []
+    fixture = {"target": "ami-fixture", "exclusive": "snap-exclusive", "shared": "snap-shared", "decoy": "snap-decoy"}
+    deleted = False
+
+    def fake_run(*args, env=None):
+        nonlocal deleted
+        commands.append(args)
+        if args[0] == "go":
+            directory = Path(env["LIBAWS_EC2_AMI_DIR"])
+            assert directory.is_dir()
+            assert env["LIBAWS_EC2_AMI_UID"] == "0123456789ab"
+            if "^TestEC2AmiExamplePrepare$" in args:
+                directories.append(directory)
+                if failure == "prepare":
+                    raise InjectedFailure("prepare")
+                (directory / "fixture.json").write_text(json.dumps(fixture))
+            if "^TestEC2AmiExampleVerify$" in args and failure == "verify":
+                raise InjectedFailure("verify")
+            if "^TestEC2AmiExampleCleanup$" in args and failure == "cleanup":
+                raise InjectedFailure("cleanup")
+            return subprocess.CompletedProcess(args, 0)
+        if args[1] == "aws-account":
+            return subprocess.CompletedProcess(args, 0, "guarded\n", "")
+        assert args[1:3] == ("ec2-rm-ami", fixture["target"]), args
+        if deleted:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if len(args) == 4:
+            if failure == "preview":
+                raise InjectedFailure("preview")
+            return subprocess.CompletedProcess(args, 0, "", "preview: deregister: ami-fixture\nsnap-exclusive\nsnap-shared\n")
+        if failure == "delete":
+            raise InjectedFailure("delete")
+        deleted = True
+        return subprocess.CompletedProcess(args, 0, "", "deleted backing snapshot: snap-exclusive\npreserved shared snapshot: snap-shared\n")
+
+    with patch.dict(os.environ, LIBAWS_TEST_ACCOUNT="guarded"), \
+            patch.object(module.uuid, "uuid4", return_value=module.uuid.UUID("0123456789abcdef0123456789abcdef")), \
+            patch.object(module, "run", side_effect=fake_run):
+        with pytest.raises(InjectedFailure, match=failure):
+            module.test()
+    assert "^TestEC2AmiExampleCleanup$" in commands[-1], commands
+    assert sum("^TestEC2AmiExampleCleanup$" in command for command in commands) == 1, commands
+    assert directories and all(not directory.exists() for directory in directories)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-svvx", "--tb", "native"]))

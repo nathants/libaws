@@ -320,6 +320,8 @@ libaws s3-ensure --help
 
 For `ec2-ssh`, `ec2-scp`, `ec2-rsync`, and `ec2-wait-ssh`, `-p`/`--preview` only lists targets; `--private-ip` has no short alias.
 
+`ec2-rm-ami AMI_ID` deregisters an owned AMI and asks EC2 to delete its associated snapshots, preserving snapshots used by other AMIs. `--preview`/`-p` lists verified backing snapshots as conditional deletions because sharing is checked at deletion time. Snapshot-deletion failures return an error even if deregistration succeeded; their snapshot IDs identify any remaining cleanup.
+
 ### Explore the Go API
 
 Use editor completion, the [API reference](https://pkg.go.dev/github.com/nathants/libaws/lib), or local documentation:
@@ -334,7 +336,7 @@ go doc github.com/nathants/libaws/lib.InfraListSet
 * Alarm: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/alarm)
 * API: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/api), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/api), [custom domain](https://github.com/nathants/libaws/tree/master/examples/simple/go/api-domain)
 * DynamoDB: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/dynamodb), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/dynamodb), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/dynamodb)
-* EC2: [CLI](https://github.com/nathants/libaws/tree/master/examples/misc/ec2) with Spot/on-demand launches, VPC-selected or explicit subnets, and scoped SSH readiness pruning.
+* EC2: [CLI](https://github.com/nathants/libaws/tree/master/examples/misc/ec2) with Spot/on-demand launches, VPC-selected or explicit subnets, and scoped SSH readiness pruning; [AMI cleanup](https://github.com/nathants/libaws/tree/master/examples/misc/ec2-ami) with shared-snapshot preservation.
 * ECR: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/ecr), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/ecr), [docker](https://github.com/nathants/libaws/tree/master/examples/simple/docker/ecr)
 * Function URL: [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/api_and_stream)
 * Includes: [python](https://github.com/nathants/libaws/tree/master/examples/simple/python/includes), [go](https://github.com/nathants/libaws/tree/master/examples/simple/go/includes)

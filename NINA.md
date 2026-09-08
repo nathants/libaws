@@ -9,8 +9,9 @@
 
 ## Architecture and testing
 
-- Use Spot EC2 instances for test fixtures to minimize cost; do not choose on-demand merely for convenience.
+- Prefer Spot EC2 instances for test fixtures when possible to reduce cost. On-demand instances are appropriate when needed, including tests of the on-demand launch path.
 - `ec2-new` identifies NVMe instance store by its exact sysfs model, not device numbering or an instance-family list. Initialize one unused whole device as ext4 at `/mnt`; preserve EBS, and reject partitions, signatures, mounts, holders, occupied/configured mountpoints, and failed safety reads before formatting. No instance store is a no-op. `lib/ec2_nvme_test.go` executes the actual bootstrap with controlled boundaries; `examples/misc/ec2` verifies a real `i4i.large` Spot guest, writable `/mnt`, used-disk refusal, and byte-identical EBS data via console output. Its owned EBS volume is deleted independently after key-scoped compute cleanup.
+- `EC2DeleteAmi` uses `DeregisterImage(DeleteAssociatedSnapshots=true)` so EC2 preserves shared snapshots at mutation time. Never infer backing snapshots from descriptions or replace this with a racy client-side scan/delete. Check every per-snapshot result. `examples/misc/ec2-ami` tests previews, exclusive deletion, shared/decoy preservation, and idempotence without launching guests; cleanup discovers only its unique creation-time tags. Local regressions: `bash test_one.sh ec2_ami`.
 
 - Build `infra.yaml` declarations around concrete project needs. Expose only the simple, opinionated subset of AWS behavior that we actually intend to use, add options only when a project needs them, and provide strong defaults for everything else. Do not mirror complete AWS service APIs; callers needing the full AWS configuration surface should use Terraform.
 - Keep `cmd/` packages as thin CLI wrappers: parse arguments, translate them into `lib/` calls, and handle process I/O and fatal errors.
