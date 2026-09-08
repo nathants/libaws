@@ -3,6 +3,7 @@ package lib
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"slices"
@@ -221,4 +222,196 @@ func TestEC2SpotFleetFailureIntegration(t *testing.T) {
 			assertEC2ExampleComputeAbsent(t, ctx, config.Key)
 		})
 	}
+}
+
+// The parent owns all three guests and has already registered independent
+// compute cleanup. No SSH ingress or guest credentials are introduced here.
+func TestEC2WaitGoSshScopeIntegration(t *testing.T) {
+	uid := ec2ExampleUID(t)
+	ids := strings.Fields(os.Getenv("LIBAWS_EC2_WAIT_TEST_INSTANCES"))
+	if len(ids) != 3 || ids[0] == ids[1] || ids[0] == ids[2] || ids[1] == ids[2] {
+		t.Fatal("parent must provide three distinct owned instances")
+	}
+	t.Setenv("PATH", t.TempDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
+	defer cancel()
+	realClient := EC2Client()
+	if err := ec2.NewInstanceRunningWaiter(realClient).Wait(ctx, &ec2.DescribeInstancesInput{InstanceIds: ids}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	readInstances := func() map[string]ec2types.Instance {
+		t.Helper()
+		out, err := realClient.DescribeInstances(ctx, &ec2.DescribeInstancesInput{InstanceIds: ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		instances := map[string]ec2types.Instance{}
+		for _, reservation := range out.Reservations {
+			for _, instance := range reservation.Instances {
+				id := aws.ToString(instance.InstanceId)
+				if !slices.Contains(ids, id) || aws.ToString(instance.KeyName) != "test-keypair-"+uid || instance.State == nil {
+					t.Fatalf("instance is not owned by the example: %s", id)
+				}
+				instances[id] = instance
+			}
+		}
+		if len(instances) != 3 {
+			t.Fatalf("missing owned instances: %d", len(instances))
+		}
+		return instances
+	}
+	instances := readInstances()
+	for _, instance := range instances {
+		if instance.State.Name != ec2types.InstanceStateNameRunning || aws.ToString(instance.PublicDnsName) == "" {
+			t.Fatalf("fixture is not running with public DNS: %s", aws.ToString(instance.InstanceId))
+		}
+	}
+	goodID, badID, unrelatedID := ids[0], ids[1], ids[2]
+	goodAddr, badAddr := aws.ToString(instances[goodID].PublicDnsName), aws.ToString(instances[badID].PublicDnsName)
+	var groupIDs []string
+	for _, group := range instances[badID].SecurityGroups {
+		groupIDs = append(groupIDs, aws.ToString(group.GroupId))
+	}
+	if len(groupIDs) != 1 {
+		t.Fatal("unready fixture must have only the example's no-ingress security group")
+	}
+	groups, err := realClient.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: groupIDs})
+	if err != nil || len(groups.SecurityGroups) != 1 || aws.ToString(groups.SecurityGroups[0].GroupName) != "test-sg-"+uid || len(groups.SecurityGroups[0].IpPermissions) != 0 {
+		t.Fatalf("unready fixture must have no ingress: %v", err)
+	}
+	key, err := os.ReadFile(os.Getenv("LIBAWS_EC2_WAIT_TEST_KEY"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Even a regression must not let this test terminate another fixture or
+	// any unrelated account resource. A blocked request still fails the test.
+	reads, terminations := 0, 0
+	pruning := false
+	omitID := ""
+	opts := realClient.Options()
+	opts.APIOptions = append(opts.APIOptions, func(stack *middleware.Stack) error {
+		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("guard SSH wait fixture", func(callCtx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+			if _, ok := in.Parameters.(*ec2.DescribeInstancesInput); ok {
+				reads++
+			}
+			if params, ok := in.Parameters.(*ec2.TerminateInstancesInput); ok {
+				terminations++
+				if !pruning || !slices.Equal(params.InstanceIds, []string{badID}) {
+					return middleware.InitializeOutput{}, middleware.Metadata{}, fmt.Errorf("blocked unsafe SSH wait termination: %v", params.InstanceIds)
+				}
+			}
+			out, metadata, err := next.HandleInitialize(callCtx, in)
+			if result, ok := out.Result.(*ec2.DescribeInstancesOutput); ok && err == nil && omitID != "" {
+				// Model one incomplete visibility read after a real AWS lookup.
+				// Subsequent responses are untouched and must recover the same ID.
+				for i := range result.Reservations {
+					result.Reservations[i].Instances = slices.DeleteFunc(result.Reservations[i].Instances, func(instance ec2types.Instance) bool {
+						return aws.ToString(instance.InstanceId) == omitID
+					})
+				}
+				omitID = ""
+			}
+			return out, metadata, err
+		}), middleware.Before)
+	})
+	ec2Client = ec2.New(opts)
+	t.Cleanup(func() { ec2Client = realClient })
+	for _, test := range []struct{ name, user, key, message string }{
+		{"missing-user", "", string(key), "expected user"},
+		{"missing-key", "fixture", "", "must be provided"},
+		{"invalid-key", "fixture", "invalid", "parse SSH private key"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ready, err := EC2WaitGoSsh(ctx, &EC2WaitGoSshInput{Selectors: ids[:2], MaxWaitSeconds: 1, User: test.user, Ed25519PrivKey: test.key})
+			if err == nil || !strings.Contains(err.Error(), test.message) || len(ready) != 0 || reads != 0 || terminations != 0 {
+				t.Fatalf("configuration failure reached AWS: ready=%v error=%v reads=%d terminations=%d", ready, err, reads, terminations)
+			}
+		})
+	}
+	if t.Failed() {
+		return
+	}
+	if !t.Run("initially-incomplete-explicit-IDs", func(t *testing.T) {
+		omitID = badID
+		ready, err := ec2WaitGoSsh(ctx, &EC2WaitGoSshInput{Selectors: ids[:2], MaxWaitSeconds: 1, User: "fixture", Ed25519PrivKey: string(key)}, func(_ context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, error) {
+			if reads != 2 || len(input.TargetAddrs) != 2 || !slices.Contains(input.TargetAddrs, goodAddr) || !slices.Contains(input.TargetAddrs, badAddr) {
+				t.Fatalf("SSH started without the complete live ID selection: reads=%d targets=%v", reads, input.TargetAddrs)
+			}
+			return []*ec2GoSshResult{{TargetAddr: goodAddr}, {TargetAddr: badAddr}}, nil
+		})
+		slices.Sort(ready)
+		expected := slices.Clone(ids[:2])
+		slices.Sort(expected)
+		if err != nil || !slices.Equal(ready, expected) || reads != 2 || terminations != 0 || omitID != "" {
+			t.Fatalf("incomplete initial lookup lost an explicit ID: ready=%v error=%v reads=%d terminations=%d", ready, err, reads, terminations)
+		}
+	}) {
+		return
+	}
+	reads = 0
+	pruning = true
+	ready, err := ec2WaitGoSsh(ctx, &EC2WaitGoSshInput{Selectors: ids[:2], MaxWaitSeconds: 1, User: "fixture", Ed25519PrivKey: string(key)}, func(callCtx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, error) {
+		if len(input.TargetAddrs) != 2 || !slices.Contains(input.TargetAddrs, goodAddr) || !slices.Contains(input.TargetAddrs, badAddr) {
+			t.Fatalf("unexpected live SSH targets: %v", input.TargetAddrs)
+		}
+		// Exercise a real SSH connection failure to the no-ingress guest. Only
+		// the ready host's SSH result is simulated; AWS lookup and pruning are real.
+		failedInput := *input
+		failedInput.TargetAddrs = []string{badAddr}
+		results, err := EC2GoSsh(callCtx, &failedInput)
+		if err == nil || len(results) != 1 || results[0].Err == nil || results[0].TargetAddr != badAddr {
+			t.Fatalf("expected a real per-host SSH failure: %v %v", results, err)
+		}
+		// Expire max-wait even if the network rejected the connection immediately.
+		time.Sleep(time.Second)
+		return append(results, &ec2GoSshResult{TargetAddr: goodAddr}), err
+	})
+	if err != nil || !slices.Equal(ready, []string{goodID}) || reads != 1 || terminations != 1 {
+		t.Fatalf("wrong live pruning: ready=%v error=%v reads=%d terminations=%d", ready, err, reads, terminations)
+	}
+	if err := ec2.NewInstanceTerminatedWaiter(realClient).Wait(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{badID}}, 3*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	instances = readInstances()
+	if instances[badID].State.Name != ec2types.InstanceStateNameTerminated || instances[goodID].State.Name != ec2types.InstanceStateNameRunning || instances[unrelatedID].State.Name != ec2types.InstanceStateNameRunning {
+		t.Fatal("pruning did not preserve both the ready and unselected guests")
+	}
+	t.Logf("terminated only %s; ready %s and unselected %s remain running", badID, goodID, unrelatedID)
+
+	t.Run("terminal-transition-keeps-survivor", func(t *testing.T) {
+		// The previously unselected guest now becomes the owned interruption
+		// fixture, after its survival in the pruning case has been asserted.
+		interruptedAddr := aws.ToString(instances[unrelatedID].PublicDnsName)
+		reads, terminations = 0, 0
+		pruning = false
+		probes := 0
+		ready, err := ec2WaitGoSsh(ctx, &EC2WaitGoSshInput{Selectors: []string{goodID, unrelatedID}, User: "fixture", Ed25519PrivKey: string(key)}, func(callCtx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, error) {
+			probes++
+			if probes == 1 {
+				if len(input.TargetAddrs) != 2 || !slices.Contains(input.TargetAddrs, goodAddr) || !slices.Contains(input.TargetAddrs, interruptedAddr) {
+					t.Fatalf("unexpected pre-interruption SSH targets: %v", input.TargetAddrs)
+				}
+				if _, err := realClient.TerminateInstances(callCtx, &ec2.TerminateInstancesInput{InstanceIds: []string{unrelatedID}}); err != nil {
+					t.Fatal(err)
+				}
+				// Wait only for fixture visibility, not for a failing wait assertion.
+				if err := ec2.NewInstanceTerminatedWaiter(realClient).Wait(callCtx, &ec2.DescribeInstancesInput{InstanceIds: []string{unrelatedID}}, 3*time.Minute); err != nil {
+					t.Fatal(err)
+				}
+				interrupted := errors.New("owned guest terminated during readiness wait")
+				return []*ec2GoSshResult{{TargetAddr: goodAddr}, {TargetAddr: interruptedAddr, Err: interrupted}}, interrupted
+			}
+			if !slices.Equal(input.TargetAddrs, []string{goodAddr}) {
+				t.Fatalf("terminal guest was retained as an SSH target: %v", input.TargetAddrs)
+			}
+			return []*ec2GoSshResult{{TargetAddr: goodAddr}}, nil
+		})
+		if err != nil || !slices.Equal(ready, []string{goodID}) || probes != 2 || reads != 2 || terminations != 0 {
+			t.Fatalf("interruption lost the healthy survivor: ready=%v error=%v probes=%d reads=%d terminations=%d", ready, err, probes, reads, terminations)
+		}
+		instances = readInstances()
+		if instances[goodID].State.Name != ec2types.InstanceStateNameRunning || instances[unrelatedID].State.Name != ec2types.InstanceStateNameTerminated {
+			t.Fatal("interruption did not preserve the healthy guest")
+		}
+	})
 }

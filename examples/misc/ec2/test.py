@@ -54,6 +54,37 @@ def verify_transfer_failure_exits(instance_id, env):
         print(f"verified {command}: selected guest, top-level failure=1, per-host failure=1", flush=True)
 
 
+def verify_wait_configuration_failures(instance_id, directory):
+    key = str(Path(directory) / "id_ed25519")
+    invalid = Path(directory) / "invalid-key"
+    invalid.write_text("not a private key")
+    missing = str(Path(directory) / "missing-key")
+    # Argument/file errors must be checked without AWS access. Fake credentials
+    # keep a future validation regression from gaining destructive permissions.
+    env = dict(os.environ, AWS_ACCESS_KEY_ID="fixture", AWS_SECRET_ACCESS_KEY="fixture",
+               AWS_SESSION_TOKEN="fixture", AWS_EC2_METADATA_DISABLED="true")
+    for args, message, code in (
+        (["--ed25519", key], "USER is required", 2),
+        (["--user", "fixture"], "must be provided", 1),
+        (["--user", "fixture", "--ed25519", missing], "read Ed25519 private key", 1),
+        (["--user", "fixture", "--rsa", missing], "read RSA private key", 1),
+        (["--user", "fixture", "--ed25519", str(invalid)], "parse SSH private key", 1),
+        (["--user", "fixture", "--rsa", str(invalid)], "parse SSH private key", 1),
+        (["--user", "fixture", "--ed25519", key, "--max-concurrency", "-1"], "must not be negative", 1),
+    ):
+        result = subprocess.run(
+            [LIBAWS, "ec2-wait-gossh", instance_id, "--max-wait", "1", *args],
+            capture_output=True, text=True, timeout=15, env=env,
+        )
+        assert result.returncode == code, result
+        if code == 2:  # go-arg writes usage and parser errors to stdout.
+            assert result.stdout.startswith("Usage:") and message in result.stdout and not result.stderr, result
+        else:
+            assert message in result.stderr and not result.stdout, result
+        assert "terminating" not in result.stderr, result
+    print("verified ec2-wait-gossh configuration and key-file failure exits", flush=True)
+
+
 def test():
     assert run(LIBAWS, "aws-account") == os.environ["LIBAWS_TEST_ACCOUNT"]
     os.environ["uid"] = uid = uuid.uuid4().hex[:12]
@@ -77,6 +108,7 @@ def test():
             eligible = sorted(subnet for subnet, zone in subnets if zone in zones)
             assert len(eligible) >= 2, "this regression requires a multi-subnet VPC"
 
+            instance_ids = []
             for mode, lifecycle, selection, expected in (
                 ("vpc", "spot", ["--vpc", vpc], eligible),
                 # Explicit subnet IDs bypass VPC discovery. The SG ID also needs
@@ -95,6 +127,7 @@ def test():
                     "--gigs", "8", "--seconds-timeout", "600", *selection,
                 )
                 assert re.fullmatch(r"i-[0-9a-f]+", instance_id), instance_id
+                instance_ids.append(instance_id)
                 env = dict(
                     os.environ,
                     LIBAWS_EC2_SUBNET_TEST_INSTANCE=instance_id,
@@ -108,6 +141,15 @@ def test():
                 )
                 if mode == "vpc":
                     verify_transfer_failure_exits(instance_id, dict(env, LIBAWS_EC2_EXAMPLE_UID=uid))
+            verify_wait_configuration_failures(instance_ids[0], directory)
+            run(
+                "go", "test", "./lib", "-run", "^TestEC2WaitGoSshScopeIntegration$",
+                "-count=1", "-v", cwd=ROOT, stream=True,
+                env=dict(os.environ, LIBAWS_EC2_EXAMPLE_UID=uid,
+                         LIBAWS_EC2_WAIT_TEST_INSTANCES=" ".join(instance_ids),
+                         LIBAWS_EC2_WAIT_TEST_KEY=str(Path(directory) / "id_ed25519")),
+            )
+            for instance_id in instance_ids:
                 run(LIBAWS, "ec2-rm", instance_id, "--wait")
             run(
                 "go", "test", "./lib", "-run", "^TestEC2SpotFleetFailureIntegration$",

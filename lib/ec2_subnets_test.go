@@ -186,8 +186,8 @@ func TestEC2SubnetsFromVpcPreservesAWSErrors(t *testing.T) {
 	}
 }
 
-// Prepare the owned guest for the example's CLI failure-exit assertions. It is
-// terminated immediately afterward; no SSH ingress or guest software is needed.
+// Prepare the owned guest for the example's CLI failure-exit assertions.
+// No SSH ingress or guest software is needed.
 func TestEC2TransferFailureFixture(t *testing.T) {
 	id, uid := os.Getenv("LIBAWS_EC2_SUBNET_TEST_INSTANCE"), os.Getenv("LIBAWS_EC2_EXAMPLE_UID")
 	if id == "" || uid == "" {

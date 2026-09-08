@@ -51,6 +51,7 @@ const (
 )
 
 var ec2RegexpAlpine = regexp.MustCompile(`alpine\-\d\d?\.\d\d?\.\d\d?`)
+var ec2RegexpInstanceID = regexp.MustCompile(`^i-([0-9a-f]{8}|[0-9a-f]{17})$`)
 
 var ec2Client *ec2.Client
 var ec2ClientLock sync.Mutex
@@ -2151,107 +2152,202 @@ type EC2WaitGoSshInput struct {
 }
 
 func EC2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput) ([]string, error) {
+	return ec2WaitGoSsh(ctx, input, EC2GoSsh)
+}
+
+func ec2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput, runSSH func(context.Context, *EC2GoSshInput) ([]*ec2GoSshResult, error)) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2WaitGoSsh"}
 		d.Start()
 		defer d.End()
 	}
+	if len(input.Selectors) == 0 {
+		return nil, fmt.Errorf("provide some selectors")
+	}
+	explicitIDs := true
+	for _, selector := range input.Selectors {
+		if strings.TrimSpace(selector) == "" {
+			return nil, fmt.Errorf("selectors must not be empty")
+		}
+		explicitIDs = explicitIDs && ec2RegexpInstanceID.MatchString(selector)
+	}
+	if input.MaxWaitSeconds < 0 {
+		return nil, fmt.Errorf("max wait must not be negative")
+	}
+	sshInput := &EC2GoSshInput{
+		NoTTY: true, User: input.User, TimeoutSeconds: 5, Cmd: "whoami >/dev/null",
+		MaxConcurrency: input.MaxConcurrency, Stdout: input.Stdout, Stderr: input.Stderr,
+		RsaPrivKey: input.RsaPrivKey, Ed25519PrivKey: input.Ed25519PrivKey,
+	}
+	// Configuration failures are not evidence that any host is unready.
+	if _, err := ec2GoSshConfig(sshInput); err != nil {
+		return nil, err
+	}
 	start := time.Now()
-	if input.Stderr == nil {
-		input.Stderr = os.Stderr
+	selectors := slices.Clone(input.Selectors)
+	var selected map[string]bool
+	if explicitIDs {
+		// Caller-supplied IDs remain authoritative even before EC2 exposes all
+		// their metadata. Selector expressions instead resolve to one snapshot.
+		selected = make(map[string]bool, len(selectors))
+		ids := selectors[:0]
+		for _, id := range selectors {
+			if !selected[id] {
+				selected[id] = true
+				ids = append(ids, id)
+			}
+		}
+		selectors = ids
 	}
-	if input.Stdout == nil {
-		input.Stdout = os.Stdout
-	}
+	initialLookup := true
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		now := time.Now()
-		allInstances, err := EC2ListInstances(ctx, input.Selectors, "")
+		instances, err := EC2ListInstances(ctx, selectors, "")
 		if err != nil {
 			return nil, err
 		}
-		var instances []ec2types.Instance
-		var pendingInstances []ec2types.Instance
-		for _, instance := range allInstances {
-			switch instance.State.Name {
-			case ec2types.InstanceStateNameRunning:
-				instances = append(instances, instance)
-			case ec2types.InstanceStateNamePending:
-				pendingInstances = append(pendingInstances, instance)
-			default:
-			}
-		}
-		var targetAddrs []string
-		for _, instance := range instances {
-			targetAddrs = append(targetAddrs, *instance.PublicDnsName)
-		}
-		// add an executable on PATH named `aws-ec2-ip-callback` which
-		// will be invoked with the ipv4 of all instances to be waited
-		// before each attempt
-		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(targetAddrs, " "))).Run()
-		results, err := EC2GoSsh(context.Background(), &EC2GoSshInput{
-			NoTTY:          true,
-			User:           input.User,
-			TimeoutSeconds: 5,
-			TargetAddrs:    targetAddrs,
-			Cmd:            "whoami >/dev/null",
-			MaxConcurrency: input.MaxConcurrency,
-			Stdout:         input.Stdout,
-			Stderr:         input.Stderr,
-			RsaPrivKey:     input.RsaPrivKey,
-			Ed25519PrivKey: input.Ed25519PrivKey,
-		})
-		for _, result := range results {
-			if result.Err == nil {
-				Logger.Printf("ready: %s\n", Green(result.TargetAddr))
-			} else {
-				Logger.Printf("unready: %s\n", Red(result.TargetAddr))
-			}
-		}
-		for _, instance := range pendingInstances {
-			Logger.Printf("pending: %s\n", Cyan(*instance.InstanceId))
-		}
-		if err == nil && len(pendingInstances) == 0 {
-			return targetAddrs, nil
-		}
-		if len(pendingInstances) == 0 && input.MaxWaitSeconds != 0 && time.Since(start) > time.Duration(input.MaxWaitSeconds)*time.Second {
-			var ready []string
-			var terminate []string
-			for _, result := range results {
-				if result.Err != nil {
-					Logger.Printf("terminating unready instance:", result.TargetAddr)
-					terminate = append(terminate, result.TargetAddr)
-				} else {
-					ready = append(ready, result.TargetAddr)
+		if selected == nil {
+			// Resolve names/tags once. Later polls and termination must never
+			// acquire new instances because a selector or address was reused.
+			var ids []string
+			var active []ec2types.Instance
+			for _, instance := range instances {
+				if instance.State == nil {
+					return nil, fmt.Errorf("missing state for instance %s", aws.ToString(instance.InstanceId))
+				}
+				if instance.State.Name == ec2types.InstanceStateNamePending || instance.State.Name == ec2types.InstanceStateNameRunning {
+					ids = append(ids, aws.ToString(instance.InstanceId))
+					active = append(active, instance)
 				}
 			}
-			instances, err := EC2ListInstances(context.Background(), terminate, "running")
-			if err != nil {
-				Logger.Println("error:", err)
-				return nil, err
+			if len(ids) == 0 {
+				if len(instances) > 0 || time.Since(start) >= 15*time.Second {
+					return nil, fmt.Errorf("no pending or running instances found for those selectors")
+				}
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(time.Second):
+				}
+				continue
 			}
-			var ids []string
+			selected = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				if id == "" || selected[id] {
+					return nil, fmt.Errorf("missing or duplicate selected instance ID: %q", id)
+				}
+				selected[id] = true
+			}
+			selectors, instances = ids, active
+		}
+		seen := make(map[string]bool, len(instances))
+		for _, instance := range instances {
+			id := aws.ToString(instance.InstanceId)
+			if !selected[id] || seen[id] || instance.State == nil {
+				return nil, fmt.Errorf("invalid selected instance metadata: %q", id)
+			}
+			seen[id] = true
+		}
+		if len(instances) != len(selected) {
+			if !initialLookup || time.Since(start) >= 15*time.Second {
+				return nil, fmt.Errorf("incomplete selected instance lookup: got %d, want %d", len(instances), len(selected))
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Second):
+			}
+			continue
+		}
+		if initialLookup {
 			for _, instance := range instances {
-				ids = append(ids, *instance.InstanceId)
+				Logger.Println(EC2Name(instance.Tags), *instance.InstanceId)
 			}
-			if len(ids) > 0 {
-				_, err := EC2Client().TerminateInstances(context.Background(), &ec2.TerminateInstancesInput{
-					InstanceIds: ids,
-				})
-				if err != nil {
-					Logger.Println("error:", err)
+			initialLookup = false
+		}
+		targetIDs := make(map[string]string, len(instances))
+		sshInput.TargetAddrs = nil
+		pending := 0
+		for _, instance := range instances {
+			id := aws.ToString(instance.InstanceId)
+			switch instance.State.Name {
+			case ec2types.InstanceStateNameRunning:
+				addr := aws.ToString(instance.PublicDnsName)
+				if addr == "" || targetIDs[addr] != "" {
+					return nil, fmt.Errorf("missing or duplicate SSH address for instance %s", id)
+				}
+				targetIDs[addr] = id
+				sshInput.TargetAddrs = append(sshInput.TargetAddrs, addr)
+			case ec2types.InstanceStateNamePending:
+				pending++
+				Logger.Printf("pending: %s\n", Cyan(id))
+			case ec2types.InstanceStateNameShuttingDown, ec2types.InstanceStateNameTerminated:
+				// A confirmed terminal transition can only shrink the pinned set;
+				// it is not a failed SSH probe and needs no further termination.
+				delete(selected, id)
+				Logger.Printf("excluding %s instance: %s\n", instance.State.Name, id)
+			default:
+				return nil, fmt.Errorf("selected instance %s is %s", id, instance.State.Name)
+			}
+		}
+		selectors = slices.DeleteFunc(selectors, func(id string) bool { return !selected[id] })
+		if len(selectors) == 0 {
+			return nil, fmt.Errorf("no instances became ready")
+		}
+		var results []*ec2GoSshResult
+		if len(sshInput.TargetAddrs) > 0 {
+			// An optional callback on PATH receives the selected addresses before
+			// each attempt, with a one-second delay after a successful callback.
+			_ = exec.CommandContext(ctx, "bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(sshInput.TargetAddrs, " "))).Run()
+			results, err = runSSH(ctx, sshInput)
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		// Only a complete, unambiguous per-host result set permits pruning.
+		if len(results) != len(targetIDs) {
+			return nil, errors.Join(err, fmt.Errorf("incomplete SSH results: got %d, want %d", len(results), len(targetIDs)))
+		}
+		var ready, terminate []string
+		for _, result := range results {
+			if result == nil || targetIDs[result.TargetAddr] == "" {
+				return nil, errors.Join(err, fmt.Errorf("nil, unknown or duplicate SSH result"))
+			}
+			id := targetIDs[result.TargetAddr]
+			delete(targetIDs, result.TargetAddr)
+			if result.Err == nil {
+				Logger.Printf("ready: %s\n", Green(id))
+				ready = append(ready, id)
+			} else {
+				Logger.Printf("unready: %s\n", Red(id))
+				terminate = append(terminate, id)
+			}
+		}
+		if (err == nil) != (len(terminate) == 0) {
+			return nil, errors.Join(err, fmt.Errorf("inconsistent SSH results"))
+		}
+		if pending == 0 && len(terminate) == 0 {
+			return ready, nil
+		}
+		if pending == 0 && input.MaxWaitSeconds != 0 && time.Since(start) > time.Duration(input.MaxWaitSeconds)*time.Second {
+			if len(terminate) > 0 {
+				Logger.Println("terminating unready instances:", terminate)
+				if _, err := EC2Client().TerminateInstances(ctx, &ec2.TerminateInstancesInput{InstanceIds: terminate}); err != nil {
 					return nil, err
 				}
 			}
 			if len(ready) == 0 {
-				err := fmt.Errorf("no instances became ready")
-				Logger.Println("error:", err)
-				return nil, err
+				return nil, fmt.Errorf("no instances became ready")
 			}
 			return ready, nil
 		}
-		secondsToWait := 5 - (time.Since(now).Seconds())
-		if secondsToWait > 0 {
-			time.Sleep(time.Duration(secondsToWait) * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Until(now.Add(5 * time.Second))):
 		}
 	}
 }
@@ -2764,12 +2860,30 @@ type ec2GoSshResult struct {
 	TargetAddr string
 }
 
-func pubKey(privKey string) (ssh.AuthMethod, error) {
+func ec2GoSshConfig(input *EC2GoSshInput) (*ssh.ClientConfig, error) {
+	if input.User == "" {
+		return nil, fmt.Errorf("expected user")
+	}
+	if input.MaxConcurrency < 0 || input.TimeoutSeconds < 0 {
+		return nil, fmt.Errorf("SSH concurrency and timeout must not be negative")
+	}
+	privKey := input.RsaPrivKey
+	if privKey == "" {
+		privKey = input.Ed25519PrivKey
+	}
+	if privKey == "" {
+		return nil, fmt.Errorf("one of RsaPrivKey or Ed25519PrivKey must be provided")
+	}
 	signer, err := ssh.ParsePrivateKey([]byte(privKey))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse SSH private key: %w", err)
 	}
-	return ssh.PublicKeys(signer), nil
+	return &ssh.ClientConfig{
+		User:            input.User,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		Timeout:         5 * time.Second,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}, nil
 }
 
 func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, error) {
@@ -2790,30 +2904,9 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 	if !strings.HasPrefix(input.Cmd, "#!") && !strings.HasPrefix(input.Cmd, "set ") {
 		input.Cmd = "#!/bin/bash\nset -eou pipefail\n" + input.Cmd
 	}
-	if input.User == "" {
-		return nil, fmt.Errorf("expected user")
-	}
-	auth := []ssh.AuthMethod{}
-	if input.RsaPrivKey != "" {
-		key, err := pubKey(input.RsaPrivKey)
-		if err == nil {
-			auth = append(auth, key)
-		}
-	} else if input.Ed25519PrivKey != "" {
-		key, err := pubKey(input.Ed25519PrivKey)
-		if err == nil {
-			auth = append(auth, key)
-		}
-	} else {
-		err := fmt.Errorf("one of RsaPrivKey or Ed25519PrivKey must be provided")
-		Logger.Println("error:", err)
+	config, err := ec2GoSshConfig(input)
+	if err != nil {
 		return nil, err
-	}
-	config := &ssh.ClientConfig{
-		User:            input.User,
-		Auth:            auth,
-		Timeout:         5 * time.Second,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 	if input.MaxConcurrency == 0 {
 		input.MaxConcurrency = 32

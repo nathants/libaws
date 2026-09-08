@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"slices"
-	"time"
 
 	"github.com/alexflint/go-arg"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/nathants/libaws/lib"
 )
 
@@ -19,9 +16,9 @@ func init() {
 
 type ec2WaitGoSshArgs struct {
 	Selectors          []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
-	User               string   `arg:"-u,--user" help:"gossh user if not tagged on instance as 'user'"`
+	User               string   `arg:"-u,--user,required" help:"SSH user"`
 	MaxConcurrency     int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent waitgossh connections"`
-	MaxWait            int      `arg:"-w,--max-wait" help:"after this many seconds, terminate any instances not ready and return instance-id of all ready instances"`
+	MaxWait            int      `arg:"-w,--max-wait" help:"after this many seconds and no instances remain pending, terminate only selected SSH failures and return ready instance IDs; 0 waits indefinitely"`
 	Ed25519PrivKeyFile string   `arg:"-e,--ed25519" help:"private key"`
 	RsaPrivKeyFile     string   `arg:"-r,--rsa" help:"private key"`
 }
@@ -34,42 +31,20 @@ func ec2WaitGoSsh() {
 	var args ec2WaitGoSshArgs
 	arg.MustParse(&args)
 	ctx := context.Background()
-	fail := true
-	for _, s := range args.Selectors {
-		if s != "" {
-			fail = false
-			break
-		}
-	}
-	if fail {
-		lib.Logger.Fatal("error: provide some selectors")
-	}
-	start := time.Now()
-	var instances []ec2types.Instance
+	var rsaBytes, edBytes []byte
 	var err error
-	for {
-		instances, err = lib.EC2ListInstances(ctx, args.Selectors, "")
+	if args.RsaPrivKeyFile != "" {
+		rsaBytes, err = os.ReadFile(args.RsaPrivKeyFile)
 		if err != nil {
-			lib.Logger.Fatal("error: ", err)
-		}
-		if time.Since(start) > 15*time.Second {
-			lib.Logger.Fatal("error: no instances found for those selectors")
-		}
-		if len(instances) > 0 {
-			break
+			lib.Logger.Fatal("error: read RSA private key: ", err)
 		}
 	}
-	for _, instance := range instances {
-		states := []ec2types.InstanceStateName{
-			ec2types.InstanceStateNamePending,
-			ec2types.InstanceStateNameRunning,
-		}
-		if slices.Contains(states, instance.State.Name) {
-			lib.Logger.Println(lib.EC2Name(instance.Tags), *instance.InstanceId)
+	if args.Ed25519PrivKeyFile != "" {
+		edBytes, err = os.ReadFile(args.Ed25519PrivKeyFile)
+		if err != nil {
+			lib.Logger.Fatal("error: read Ed25519 private key: ", err)
 		}
 	}
-	rsaBytes, _ := os.ReadFile(args.RsaPrivKeyFile)
-	edBytes, _ := os.ReadFile(args.Ed25519PrivKeyFile)
 	readyIDs, err := lib.EC2WaitGoSsh(ctx, &lib.EC2WaitGoSshInput{
 		Selectors:      args.Selectors,
 		MaxWaitSeconds: args.MaxWait,
