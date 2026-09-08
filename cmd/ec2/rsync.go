@@ -21,7 +21,7 @@ type ec2RsyncArgs struct {
 	Destination    string   `arg:"positional,required"`
 	Selectors      []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
 	User           string   `arg:"-u,--user" help:"ssh user if not tagged on instance as 'user'"`
-	PrivateIP      bool     `arg:"-p,--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
+	PrivateIP      bool     `arg:"--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
 	MaxConcurrency int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent rsync connections"`
 	Key            string   `arg:"-k,--key" help:"rsync private key"`
 	Preview        bool     `arg:"-p,--preview"`

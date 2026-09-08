@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+from ipaddress import IPv4Address
 import os
 from pathlib import Path
 import re
@@ -52,6 +53,50 @@ def verify_transfer_failure_exits(instance_id, env):
         assert invalid_paths.returncode == 1 and "neither source nor destination contains ':'" in invalid_paths.stderr, invalid_paths
         assert "failure:" in invalid_paths.stderr and instance_id in invalid_paths.stderr, invalid_paths
         print(f"verified {command}: selected guest, top-level failure=1, per-host failure=1", flush=True)
+
+
+def verify_transport_flags(instance_id):
+    with tempfile.TemporaryDirectory(prefix="libaws-ec2-flags-") as temp:
+        directory = Path(temp)
+        marker = directory / "transport.log"
+        # Discovery uses real AWS; transport is recorded locally. The restricted
+        # PATH also prevents the optional readiness callback from running.
+        for name in ("ssh", "scp", "rsync"):
+            stub = directory / name
+            stub.write_text('#!/bin/sh\nprintf \'%s\\n\' "$0" "$@" >> "$LIBAWS_EC2_TRANSPORT_LOG"\n')
+            stub.chmod(0o700)
+        source = directory / "source"
+        source.write_text("fixture\n")
+        env = dict(os.environ, PATH=str(directory), LIBAWS_EC2_TRANSPORT_LOG=str(marker))
+        for command, args, transport in (
+            ("ec2-ssh", [instance_id, "--cmd", "true"], "ssh"),
+            ("ec2-scp", [str(source), ":/tmp/fixture-destination", instance_id], "scp"),
+            ("ec2-rsync", [str(source), ":/tmp/fixture-destination", instance_id], "rsync"),
+            # Never allow automatic termination, even if preview regresses.
+            ("ec2-wait-ssh", [instance_id, "--max-wait", "0"], "ssh"),
+        ):
+            base = [LIBAWS, command, *args, "--user", "fixture"]
+            for flags in (["--preview"], ["-p"], ["--preview", "--private-ip"], ["-p", "--private-ip"]):
+                result = subprocess.run(
+                    [*base, *flags], env=env, stdin=subprocess.DEVNULL,
+                    capture_output=True, text=True, timeout=60,
+                )
+                assert result.returncode == 0 and not result.stdout, result
+                assert "preview: targeting:" in result.stderr and instance_id in result.stderr, result
+                assert not marker.exists(), marker.read_text()
+            private = subprocess.run(
+                [*base, "--private-ip"], env=env, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True, timeout=60,
+            )
+            assert private.returncode == 0 and "preview:" not in private.stderr, private
+            assert private.stdout.strip() == (instance_id if command == "ec2-wait-ssh" else ""), private
+            assert marker.is_file(), private
+            argv = marker.read_text().splitlines()
+            assert argv[0] == str(directory / transport), argv
+            targets = [arg.removeprefix("fixture@").split(":")[0] for arg in argv if arg.startswith("fixture@")]
+            assert len(targets) == 1 and IPv4Address(targets[0]).is_private, argv
+            marker.unlink()
+            print(f"verified {command}: -p/--preview never starts transport; --private-ip selects private IPv4", flush=True)
 
 
 def verify_wait_configuration_failures(instance_id, directory):
@@ -140,6 +185,7 @@ def test():
                     "-count=1", "-v", cwd=ROOT, env=env, stream=True,
                 )
                 if mode == "vpc":
+                    verify_transport_flags(instance_id)
                     verify_transfer_failure_exits(instance_id, dict(env, LIBAWS_EC2_EXAMPLE_UID=uid))
             verify_wait_configuration_failures(instance_ids[0], directory)
             run(

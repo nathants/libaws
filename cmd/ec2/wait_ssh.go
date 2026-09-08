@@ -20,7 +20,7 @@ func init() {
 type ec2WaitSshArgs struct {
 	Selectors      []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
 	User           string   `arg:"-u,--user" help:"ssh user if not tagged on instance as 'user'"`
-	PrivateIP      bool     `arg:"-p,--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
+	PrivateIP      bool     `arg:"--private-ip" help:"use ec2 private-ip instead of public-dns for host address"`
 	MaxConcurrency int      `arg:"-m,--max-concurrency" default:"32" help:"max concurrent waitssh connections"`
 	Key            string   `arg:"-k,--key" help:"waitssh private key"`
 	MaxWait        int      `arg:"-w,--max-wait" help:"after this many seconds, terminate any instances not ready and return instance-id of all ready instances"`

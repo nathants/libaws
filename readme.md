@@ -318,6 +318,8 @@ libaws --help
 libaws s3-ensure --help
 ```
 
+For `ec2-ssh`, `ec2-scp`, `ec2-rsync`, and `ec2-wait-ssh`, `-p`/`--preview` only lists targets; `--private-ip` has no short alias.
+
 ### Explore the Go API
 
 Use editor completion, the [API reference](https://pkg.go.dev/github.com/nathants/libaws/lib), or local documentation:

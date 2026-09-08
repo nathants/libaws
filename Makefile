@@ -1,4 +1,4 @@
-.PHONY: test libaws check check-deps check-static check-ineff check-err check-vet test-lib check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck
+.PHONY: test libaws check check-deps check-static check-ineff check-err check-vet test-lib check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck check-cli-aliases
 
 all: libaws
 
@@ -7,7 +7,10 @@ libaws:
 
 
 
-check: check-deps check-static check-ineff check-err check-vet check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck
+check: check-deps check-static check-ineff check-err check-vet check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck check-cli-aliases
+
+check-cli-aliases: libaws
+	@python3 check_cli_aliases.py
 
 # body-close
 
