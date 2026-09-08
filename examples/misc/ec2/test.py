@@ -1,5 +1,6 @@
 from contextlib import ExitStack
 from ipaddress import IPv4Address
+import json
 import os
 from pathlib import Path
 import re
@@ -130,6 +131,31 @@ def verify_wait_configuration_failures(instance_id, directory):
     print("verified ec2-wait-gossh configuration and key-file failure exits", flush=True)
 
 
+def verify_instance_store(uid, key, sg_id):
+    with tempfile.TemporaryDirectory(prefix="libaws-nvme-") as directory, ExitStack() as cleanup:
+        env = dict(os.environ, LIBAWS_EC2_EXAMPLE_UID=uid, LIBAWS_EC2_NVME_DIR=directory)
+        cleanup.callback(
+            run, "go", "test", "./lib", "-run", "^TestEC2NVMeExampleCleanup$", "-count=1", "-v",
+            cwd=ROOT, env=env, stream=True,
+        )
+        run(
+            "go", "test", "./lib", "-run", "^TestEC2NVMeExamplePrepare$", "-count=1", "-v",
+            cwd=ROOT, env=env, stream=True,
+        )
+        fixture = json.loads((Path(directory) / "fixture.json").read_text())
+        instance_id = run(
+            "timeout", "--signal=INT", "--kill-after=330s", "300",
+            LIBAWS, "ec2-new", f"test-ec2-nvme-{uid}", "--spot", "lowestPrice", "--type", "i4i.large",
+            "--ami", "trixie", "--key", key, "--sg", sg_id, "--subnets", fixture["subnet"],
+            "--gigs", "8", "--seconds-timeout", "900", "--init", str(Path(directory) / "init.sh"),
+        )
+        assert re.fullmatch(r"i-[0-9a-f]+", instance_id), instance_id
+        run(
+            "go", "test", "./lib", "-run", "^TestEC2NVMeExampleIntegration$", "-count=1", "-v",
+            cwd=ROOT, env=dict(env, LIBAWS_EC2_NVME_INSTANCE=instance_id), stream=True,
+        )
+
+
 def test():
     assert run(LIBAWS, "aws-account") == os.environ["LIBAWS_TEST_ACCOUNT"]
     os.environ["uid"] = uid = uuid.uuid4().hex[:12]
@@ -201,6 +227,7 @@ def test():
                 "go", "test", "./lib", "-run", "^TestEC2SpotFleetFailureIntegration$",
                 "-count=1", "-v", cwd=ROOT, env=dict(os.environ, LIBAWS_EC2_EXAMPLE_UID=uid), stream=True,
             )
+            verify_instance_store(uid, key, sg_id)
 
     inventory = yaml.safe_load(run(LIBAWS, "infra-ls", "--infraset", infraset))
     assert inventory.get("infraset", {}) == {}, inventory

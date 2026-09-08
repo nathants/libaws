@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -17,19 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/smithy-go/middleware"
 )
-
-func ec2ExampleUID(t *testing.T) string {
-	t.Helper()
-	uid := os.Getenv("LIBAWS_EC2_EXAMPLE_UID")
-	if uid == "" {
-		t.Skip("run through examples/misc/ec2 or its live failure-cleanup test")
-	}
-	if !regexp.MustCompile(`^[0-9a-f]{12}$`).MatchString(uid) {
-		t.Fatal("EC2 example requires a unique 12-hex uid")
-	}
-	requireLiveAWSAccount(t)
-	return uid
-}
 
 func ec2ExampleConfig(t *testing.T, ctx context.Context, uid string) *EC2Config {
 	t.Helper()

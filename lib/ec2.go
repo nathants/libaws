@@ -637,47 +637,60 @@ fi
 `
 
 const nvmeInit = `
-# pick the first nvme drive which is NOT mounted as / and prepare that as /mnt
-set -x
-while true; do
-    echo 'wait for /dev/nvme*'
-    if sudo fdisk -l | grep /dev/nvme &>/dev/null; then
-        break
-    fi
-    sleep 1
+(
+set -euo pipefail
+fail() { echo "instance-store initialization: $*" >&2; exit 1; }
+
+# Nitro exposes EBS as NVMe too. Only the exact instance-store model is eligible.
+disk=""
+for sys in /sys/block/nvme*n*; do
+    [ -f "$sys/device/model" ] || continue
+    read -r model < "$sys/device/model"
+    [ "$model" = "Amazon EC2 NVMe Instance Storage" ] || continue
+    disk="/dev/${sys##*/}"
+    break
 done
+[ -n "$disk" ] || exit 0
 
-# alpine arm64 is different from not alpine x86_64, not sure about alpine x86_64
-if which apk &>/dev/null; then
-    sudo apk add e2fsprogs
-    disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | tail -n1)
-    (
-     echo n # Add a new partition
-     echo p # Primary partition
-     echo 1 # Partition number
-     echo   # First sector (Accept default: 1)
-     echo   # Last sector (Accept default: varies)
-     echo w # Write changes
-    ) | sudo fdisk $disk
-else
-    disk=$(sudo fdisk -l | grep ^Disk | grep nvme | awk '{print $2}' | tr -d : | sort -u | grep -v $(df / | grep /dev | awk '{print $1}' | head -c11) | tail -n1)
-    (
-     echo g # Create a new empty GPT partition table
-     echo n # Add a new partition
-     echo 1 # Partition number
-     echo   # First sector (Accept default: 1)
-     echo   # Last sector (Accept default: varies)
-     echo w # Write changes
-    ) | sudo fdisk $disk
+if command -v apk >/dev/null; then
+    sudo apk add e2fsprogs lsblk wipefs findmnt blkid
 fi
+layout=$(sudo lsblk --noheadings --raw --output TYPE "$disk")
+[ "$layout" = disk ] || fail "$disk has partitions or dependent devices"
+readonly=$(sudo lsblk --nodeps --noheadings --raw --output RO "$disk")
+[ "$readonly" = 0 ] || fail "$disk is not writable"
+holders=$(ls -A "$sys/holders")
+[ -z "$holders" ] || fail "$disk is in use"
+mounts=$(sudo lsblk --noheadings --raw --output MOUNTPOINT "$disk")
+[ -z "$mounts" ] || fail "$disk is mounted"
+signatures=$(sudo wipefs --no-act --noheadings --output TYPE "$disk")
+[ -z "$signatures" ] || fail "$disk has existing signatures: $signatures"
 
-sleep 5
-yes | sudo mkfs.ext4 -E nodiscard ${disk}p1
+# Do not cover existing data or add a second fstab entry for the mountpoint.
+[ ! -L /mnt ] || fail "/mnt is a symlink"
+if [ -e /mnt ]; then
+    [ -d /mnt ] || fail "/mnt is not a directory"
+    contents=$(sudo ls -A /mnt)
+    [ -z "$contents" ] || fail "/mnt is not empty"
+fi
+mountpoints=$(findmnt --raw --noheadings --output TARGET)
+[ -n "$mountpoints" ] || fail "cannot read the mount table"
+while IFS= read -r target; do
+    [ "$target" != /mnt ] || fail "/mnt is already mounted"
+done <<< "$mountpoints"
+entries=$(sudo awk '$2 == "/mnt" {print}' /etc/fstab)
+[ -z "$entries" ] || fail "/mnt is already configured in fstab"
+
+# One whole-device filesystem needs no partitioning or partition-device wait.
+sudo mkfs.ext4 -E nodiscard "$disk"
+uuid=$(sudo blkid -p -s UUID -o value "$disk")
+[[ "$uuid" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] || fail "invalid filesystem UUID"
 sudo mkdir -p /mnt
-sudo mount -o nodiscard,noatime ${disk}p1 /mnt
-sudo chown -R $(whoami):$(whoami) /mnt
-echo ${disk}p1 /mnt ext4 nodiscard,noatime 0 1 | sudo tee -a /etc/fstab
-set +x
+sudo mount -o nodiscard,noatime "$disk" /mnt
+sudo chown "$(id -u):$(id -g)" /mnt
+printf 'UUID=%s /mnt ext4 nodiscard,noatime,nofail 0 2\n' "$uuid" | sudo tee -a /etc/fstab >/dev/null
+echo "initialized instance store: $disk -> /mnt"
+)
 `
 
 func makeBlockDeviceMapping(config *EC2Config) []ec2types.BlockDeviceMapping {
@@ -821,13 +834,7 @@ func makeInit(config *EC2Config) (string, error) {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	init := config.Init
-	for _, instanceType := range []string{"i3", "i3en", "i4i", "c5d", "m5d", "r5d", "z1d", "c6gd", "c6id", "m6gd", "r6gd", "c5ad", "is4gen", "im4gn", "g6"} {
-		if instanceType == strings.Split(string(config.InstanceType), ".")[0] {
-			init = nvmeInit + init
-			break
-		}
-	}
+	init := nvmeInit + config.Init
 	if config.SecondsTimeout != 0 {
 		init = strings.Replace(timeoutInit, "TIMEOUT_SECONDS", fmt.Sprint(config.SecondsTimeout), 1) + init
 	}

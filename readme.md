@@ -806,6 +806,8 @@ Defines a default-like [VPC](https://docs.aws.amazon.com/AWSCloudFormation/lates
 
 `ec2-new --vpc NAME_OR_ID` selects subnets in zones offering `--type`: all matching VPC subnets for `--spot`, or one at random for on-demand. Explicit `--subnets "subnet-A subnet-B"` overrides this selection.
 
+Before `--init`, one detected NVMe instance-store disk is formatted as whole-device ext4 and mounted at `/mnt`, writable by the login user. EBS disks are excluded. Existing partitions, signatures, device use, an occupied `/mnt`, or failed safety reads abort initialization. Without instance store, no disk changes are made. The mount is recorded by filesystem UUID.
+
 * Schema:
 
   ```yaml

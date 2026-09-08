@@ -391,5 +391,37 @@ def test_ec2_failure_cleanup(failure):
     assert finalizers[2] == (module.LIBAWS, "ec2-rm-keypair", f"test-keypair-{uid}")
 
 
+@pytest.mark.parametrize("failure", ("prepare", "launch", "verify", "cleanup"))
+def test_ec2_nvme_failure_cleanup(failure):
+    module = load("misc/ec2")
+    commands = []
+    uid = "0123456789ab"
+
+    def fake_run(*args, cwd=module.DIRECTORY, env=None, stream=False):
+        commands.append(args)
+        if args[0] == "timeout":
+            if failure == "launch":
+                raise InjectedFailure("launch")
+            return "i-0123456789abcdef0"
+        assert args[0] == "go", args
+        if "^TestEC2NVMeExamplePrepare$" in args:
+            if failure == "prepare":
+                raise InjectedFailure("prepare")
+            (Path(env["LIBAWS_EC2_NVME_DIR"]) / "fixture.json").write_text(json.dumps({"subnet": "subnet-fixture"}))
+        if "^TestEC2NVMeExampleIntegration$" in args:
+            raise InjectedFailure("verify")
+        if "^TestEC2NVMeExampleCleanup$" in args:
+            assert env["LIBAWS_EC2_EXAMPLE_UID"] == uid
+            if failure == "cleanup":
+                raise InjectedFailure("cleanup")
+        return ""
+
+    with patch.object(module, "run", side_effect=fake_run):
+        with pytest.raises(InjectedFailure, match=failure):
+            module.verify_instance_store(uid, f"test-keypair-{uid}", "sg-fixture")
+    assert "^TestEC2NVMeExampleCleanup$" in commands[-1], commands
+    assert sum("^TestEC2NVMeExampleCleanup$" in command for command in commands) == 1, commands
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-svvx", "--tb", "native"]))
