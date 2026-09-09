@@ -52,3 +52,4 @@
 - Spot Fleet cancellation must check per-fleet results, not just HTTP success. Teardown tracks instances before/after cancellation and waits for their termination, not eventual `cancelled_*` fleet bookkeeping. Every failure after fleet creation uses a fresh, bounded five-minute cleanup context and retains both launch and cleanup errors; callers that kill interrupted processes must allow that cleanup window. Spot Fleet validity timestamps must use whole seconds; AWS rejects fractional seconds.
 - `restore_python_deps.sh` materializes the virtualenv interpreter and its aliases. Keep `pyvenv.cfg` pointing to the real base installation; uv-managed Python aliases and a `python3 -> python` symlink into a copied interpreter can otherwise lose the standard library.
 
+
