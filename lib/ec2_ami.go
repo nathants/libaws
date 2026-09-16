@@ -28,7 +28,7 @@ func EC2DeleteAmi(ctx context.Context, amiID string, preview bool) error {
 	if err != nil {
 		var apiError smithy.APIError
 		if errors.As(err, &apiError) && apiError.ErrorCode() == "InvalidAMIID.NotFound" {
-			return nil
+			return ec2AmiForeignOwner(ctx, amiID)
 		}
 		return err
 	}
@@ -36,7 +36,7 @@ func EC2DeleteAmi(ctx context.Context, amiID string, preview bool) error {
 		return fmt.Errorf("incomplete or ambiguous AMI lookup for %s", amiID)
 	}
 	if len(images.Images) == 0 {
-		return nil
+		return ec2AmiForeignOwner(ctx, amiID)
 	}
 	image := images.Images[0]
 	if aws.ToString(image.ImageId) != amiID || aws.ToString(image.OwnerId) == "" {
@@ -106,4 +106,31 @@ func EC2DeleteAmi(ctx context.Context, amiID string, preview bool) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// ec2AmiForeignOwner distinguishes a deleted AMI, which is a no-op, from one
+// that exists under another owner, which must never be reported as deleted.
+// The caller only reaches this after its self-owned lookup returned nothing.
+func ec2AmiForeignOwner(ctx context.Context, amiID string) error {
+	images, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		ImageIds: []string{amiID}, IncludeDeprecated: aws.Bool(true), IncludeDisabled: aws.Bool(true),
+	})
+	if err != nil {
+		var apiError smithy.APIError
+		if errors.As(err, &apiError) && apiError.ErrorCode() == "InvalidAMIID.NotFound" {
+			return nil
+		}
+		return err
+	}
+	if aws.ToString(images.NextToken) != "" || len(images.Images) > 1 {
+		return fmt.Errorf("incomplete or ambiguous AMI lookup for %s", amiID)
+	}
+	if len(images.Images) == 0 {
+		return nil
+	}
+	image := images.Images[0]
+	if aws.ToString(image.ImageId) != amiID || aws.ToString(image.OwnerId) == "" {
+		return fmt.Errorf("invalid AMI metadata for %s", amiID)
+	}
+	return fmt.Errorf("AMI %s is not owned by this account (owner %s)", amiID, aws.ToString(image.OwnerId))
 }

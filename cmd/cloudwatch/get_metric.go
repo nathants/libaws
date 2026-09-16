@@ -22,7 +22,7 @@ type cloudwatchGetMetricArgs struct {
 	Dimension string `arg:"positional,required"`
 	FromHours int    `arg:"-f,--from-hours" default:"72" help:"get data no older than this"`
 	ToHours   int    `arg:"-t,--to-hours" default:"0" help:"get data no younger than this"`
-	Period    int    `arg:"-p,--period" default:"60" help:"granularity of data in seconds"`
+	Period    int    `arg:"--period" default:"60" help:"granularity of data in seconds"`
 	Stat      string `arg:"-s,--stat" default:"Average" help:"how to summarize data"`
 }
 

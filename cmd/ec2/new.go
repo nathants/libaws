@@ -35,7 +35,7 @@ type ec2NewArgs struct {
 	Throughput     int    `arg:"--throughput" help:"gp3 throughput mb/s\n                        " default:"125"`
 	Init           string `arg:"-i,--init" help:"cloud init bash script"`
 	Tags           string `arg:"--tags" help:"space separated values like: key=value"`
-	Profile        string `arg:"-p,--profile" help:"iam instance profile name"`
+	Profile        string `arg:"--profile" help:"iam instance profile name"`
 	SecondsTimeout int    `arg:"--seconds-timeout" default:"0" help:"will $(sudo poweroff) after this many seconds.\n                         calls $(bash /etc/timeout.sh) and waits 60 seconds for it to exit before calling $(sudo poweroff).\n                         set to 0 to disable.\n                         $(sudo journalctl -f -u timeout.service) to follow logs.\n                        "`
 	Wait           bool   `arg:"-w,--wait" default:"false" help:"wait for ssh"`
 }

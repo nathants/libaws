@@ -49,6 +49,8 @@ def test():
             assert fixture["decoy"] not in preview.stderr, preview
         run("go", "test", "./lib", "-run", "^TestEC2AmiExampleVerifyPreview$", "-count=1", "-v", env=env)
         verify_snapshot_deletion(fixture, env)
+        # A visible AMI owned by another account must fail, not report success.
+        run("go", "test", "./lib", "-run", "^TestEC2AmiExampleRejectsForeignOwner$", "-count=1", "-v", env=env)
         # Repeating deletion after confirmed absence is a no-op.
         for flags in ([], ["--preview"]):
             absent = run(CLI, "ec2-rm-ami", fixture["target"], *flags)

@@ -26,12 +26,18 @@ def check():
             if not line.startswith("  --"):
                 continue
             declaration = re.split(r"\s{2,}|\s+\[", line.strip(), maxsplit=1)[0]
+            flags = set()
             for spelling in declaration.split(", "):
                 flag = spelling.split()[0]
                 assert flag.startswith("-"), line
                 if flag in seen:
                     conflicts.append(f"{command}: duplicate option {flag}")
                 seen.add(flag)
+                flags.add(flag)
+            if "-p" in flags and "--preview" not in flags:
+                conflicts.append(f"{command}: -p is reserved for --preview: {declaration}")
+            if "--preview" in flags and "-p" not in flags:
+                conflicts.append(f"{command}: --preview must keep the -p alias: {declaration}")
         assert {"--help", "-h"} <= seen, result
     if conflicts:
         raise SystemExit("\n".join(conflicts))

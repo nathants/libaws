@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -307,4 +308,38 @@ func TestEC2AmiExampleCleanup(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A public AMI is visible to every account and owned by none of them. Deleting
+// it must fail before any mutation; no fixture is created and no guest runs.
+func TestEC2AmiExampleRejectsForeignOwner(t *testing.T) {
+	ec2AmiExample(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	images, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Owners: []string{"amazon"},
+		Filters: []ec2types.Filter{
+			{Name: aws.String("state"), Values: []string{"available"}},
+			{Name: aws.String("architecture"), Values: []string{"x86_64"}},
+			{Name: aws.String("root-device-type"), Values: []string{"ebs"}},
+		},
+		MaxResults: aws.Int32(5),
+	})
+	if err != nil || len(images.Images) == 0 {
+		t.Fatalf("find an amazon-owned public AMI: %v", err)
+	}
+	foreign := aws.ToString(images.Images[0].ImageId)
+	if !ec2RegexpAmiID.MatchString(foreign) || aws.ToString(images.Images[0].OwnerId) == "" {
+		t.Fatalf("invalid public AMI fixture: %q", foreign)
+	}
+	for _, preview := range []bool{true, false} {
+		if err := EC2DeleteAmi(ctx, foreign, preview); err == nil || !strings.Contains(err.Error(), "not owned") {
+			t.Fatalf("foreign AMI was not refused: %v", err)
+		}
+	}
+	check, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{ImageIds: []string{foreign}})
+	if err != nil || len(check.Images) != 1 || check.Images[0].State != ec2types.ImageStateAvailable || aws.ToString(check.Images[0].OwnerId) == "" {
+		t.Fatalf("foreign AMI was mutated: %v", err)
+	}
+	t.Logf("refused to delete %s owned by %s without mutation", foreign, aws.ToString(check.Images[0].OwnerId))
 }

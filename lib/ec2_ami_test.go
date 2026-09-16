@@ -196,31 +196,55 @@ func TestEC2DeleteAmiWithoutSnapshotsStillChecksReturn(t *testing.T) {
 }
 
 func TestEC2DeleteAmiAbsentAndCanceled(t *testing.T) {
-	for name, body := range map[string]string{
-		"empty":        "<imagesSet/>",
-		"deregistered": strings.ReplaceAll("<imagesSet>"+amiTestImage(amiTestID)+"</imagesSet>", "available", "deregistered"),
-		"not-found":    `<Response><Errors><Error><Code>InvalidAMIID.NotFound</Code><Message>fixture missing</Message></Error></Errors></Response>`,
+	for name, test := range map[string]struct {
+		body      string
+		status    int
+		wantCalls int
+	}{
+		"empty":        {"<imagesSet/>", 200, 4},
+		"deregistered": {strings.ReplaceAll("<imagesSet>"+amiTestImage(amiTestID)+"</imagesSet>", "available", "deregistered"), 200, 2},
+		"not-found":    {`<Response><Errors><Error><Code>InvalidAMIID.NotFound</Code><Message>fixture missing</Message></Error></Errors></Response>`, 400, 4},
 	} {
 		t.Run(name, func(t *testing.T) {
 			calls := installEC2AmiTestClient(t, func(action string, _ url.Values) (string, int) {
 				if action != "DescribeImages" {
 					return "", 0
 				}
-				if name == "not-found" {
-					return body, 400
-				}
-				return body, 200
+				return test.body, test.status
 			})
 			for _, preview := range []bool{true, false} {
 				if err := EC2DeleteAmi(context.Background(), amiTestID, preview); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if !slices.Equal(*calls, []string{"DescribeImages", "DescribeImages"}) {
+			// A scoped miss is rechecked without the owner scope, so every call
+			// must still be a read.
+			if len(*calls) != test.wantCalls || slices.ContainsFunc(*calls, func(action string) bool { return action != "DescribeImages" }) {
 				t.Fatalf("absent AMI caused mutation: %v", *calls)
 			}
 		})
 	}
+	t.Run("foreign-owner", func(t *testing.T) {
+		calls := installEC2AmiTestClient(t, func(action string, params url.Values) (string, int) {
+			if action != "DescribeImages" {
+				return "", 0
+			}
+			if params.Get("Owner.1") == "self" {
+				return "<imagesSet/>", 200
+			}
+			return "<imagesSet>" + amiTestImage(amiTestID, amiTestSnapshot) + "</imagesSet>", 200
+		})
+		for _, preview := range []bool{true, false} {
+			// An AMI owned by another account must fail before preview or mutation.
+			err := EC2DeleteAmi(context.Background(), amiTestID, preview)
+			if err == nil || !strings.Contains(err.Error(), "not owned") {
+				t.Fatalf("foreign AMI was not refused: %v", err)
+			}
+		}
+		if len(*calls) != 4 || slices.ContainsFunc(*calls, func(action string) bool { return action != "DescribeImages" }) {
+			t.Fatalf("foreign AMI caused mutation: %v", *calls)
+		}
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	calls := installEC2AmiTestClient(t, func(action string, _ url.Values) (string, int) {
