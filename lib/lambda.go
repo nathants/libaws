@@ -2827,12 +2827,27 @@ func lambdaUpdateZipGo(infraLambda *InfraLambda) error {
 	return lambdaCreateZipGo(infraLambda)
 }
 
-func lambdaCreateZipGo(infraLambda *InfraLambda) error {
-	if doDebug {
-		d := &Debug{start: time.Now(), name: "lambdaCreateZipGo"}
-		d.Start()
-		defer d.End()
+// classifyLambdaEntrypoint maps a declared entrypoint to its Lambda runtime and
+// handler. Container entrypoints are validated as digest-qualified here.
+func classifyLambdaEntrypoint(entrypoint string) (string, string, error) {
+	switch {
+	case strings.HasSuffix(entrypoint, ".py"):
+		return lambdaRuntimePython, strings.TrimSuffix(path.Base(entrypoint), ".py") + ".main", nil
+	case strings.HasSuffix(entrypoint, ".go"):
+		return lambdaRuntimeGo, "main", nil
+	case strings.Contains(entrypoint, ".dkr.ecr."):
+		if err := validateLambdaContainerImageURI(entrypoint); err != nil {
+			return "", "", err
+		}
+		return lambdaRuntimeContainer, "main", nil
+	default:
+		return "", "", fmt.Errorf("unknown entrypoint type: %s", entrypoint)
 	}
+}
+
+// lambdaBuildGoBootstrap compiles the Go entrypoint package into output as the
+// Lambda bootstrap binary.
+func lambdaBuildGoBootstrap(infraLambda *InfraLambda, output string) error {
 	entrypointInfo, err := os.Stat(infraLambda.Entrypoint)
 	if err != nil {
 		return fmt.Errorf("lambda Go entrypoint %q: %w", infraLambda.Entrypoint, err)
@@ -2840,24 +2855,31 @@ func lambdaCreateZipGo(infraLambda *InfraLambda) error {
 	if !entrypointInfo.Mode().IsRegular() {
 		return fmt.Errorf("lambda Go entrypoint is not a regular file: %s", infraLambda.Entrypoint)
 	}
+	prefix := ""
+	ldflags := os.Getenv("LDFLAGS")
+	if ldflags != " " {
+		prefix = " " // ldflags might contain secrets, shellAt() logs cmdString on error unless it starts with whitespace
+	}
+	return shellAt(path.Dir(infraLambda.Entrypoint), "%sCGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s .",
+		prefix,
+		ldflags,
+		output,
+	)
+}
+
+func lambdaCreateZipGo(infraLambda *InfraLambda) error {
+	if doDebug {
+		d := &Debug{start: time.Now(), name: "lambdaCreateZipGo"}
+		d.Start()
+		defer d.End()
+	}
 	dir, err := resetLambdaPackageDir(infraLambda.Name)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
 	zipFile := LambdaZipFile(infraLambda.Name)
-	prefix := ""
-	ldflags := os.Getenv("LDFLAGS")
-	if ldflags != " " {
-		prefix = " " // ldflags might contain secrets, shellAt() logs cmdString on error unless it starts with whitespace
-	}
-	err = shellAt(path.Dir(infraLambda.Entrypoint), "%sCGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags='-s -w %s' -tags 'netgo osusergo purego' -o %s .",
-		prefix,
-		ldflags,
-		path.Join(dir, "bootstrap"),
-	)
-	if err != nil {
-		Logger.Println("error:", err)
+	if err := lambdaBuildGoBootstrap(infraLambda, path.Join(dir, "bootstrap")); err != nil {
 		return err
 	}
 	err = shellAt(dir, "zip -0 %s ./bootstrap", zipFile)

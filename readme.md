@@ -103,6 +103,13 @@ The primary entrypoints are:
   libaws infra-ensure ./infra.yaml --quick LAMBDA_NAME
   ```
 
+* [infra-ensure --build-only / --from-build](#build-and-deploy-lambda-artifacts-separately): build Lambda artifacts on one host, deploy them on another.
+
+  ```bash
+  libaws infra-ensure ./infra.yaml --build-only ./build
+  libaws infra-ensure ./infra.yaml --from-build ./build
+  ```
+
 * [infra-rm](#delete-the-infrastructure-set): remove an infrastructure set.
 
   ```bash
@@ -154,6 +161,7 @@ If you want to use the full AWS API, there are many great tools:
   * [View the infrastructure set](#view-the-infrastructure-set)
   * [Trigger the infrastructure set](#trigger-the-infrastructure-set)
   * [Quickly update Lambda code](#quickly-update-lambda-code)
+  * [Build and deploy Lambda artifacts separately](#build-and-deploy-lambda-artifacts-separately)
   * [Delete the infrastructure set](#delete-the-infrastructure-set)
 * [Usage](#usage)
 
@@ -299,6 +307,17 @@ Depth-based colors by [YAML](https://gist.github.com/nathants/1955b2c3130b7d1a00
 ### Quickly Update Lambda Code
 
 ![](https://github.com/nathants/libaws/raw/master/gif/update.gif)
+
+### Build and Deploy Lambda Artifacts Separately
+
+Build the infrastructure set's Go Lambda code into a directory of artifacts, then deploy those exact bytes from the directory:
+
+```bash
+libaws infra-ensure ./infra.yaml --build-only ./build
+libaws infra-ensure ./infra.yaml --from-build ./build
+```
+
+`--build-only` writes each artifact and a `manifest.json` recording its name, file, sha256, and source Git commit and dirty state. It never accesses AWS. `--from-build` uses only hash-verified artifacts: it never compiles, and it never reads Lambda entrypoint sources. A missing or mismatched artifact fails the deploy, as does `--from-build` when the selected infrastructure set needs no artifact. Both flags also combine with `--quick LAMBDA_NAME`.
 
 ### Delete the Infrastructure Set
 

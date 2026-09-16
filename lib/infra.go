@@ -2278,65 +2278,64 @@ func InfraEnsureSQS(ctx context.Context, infraSet *InfraSet, preview bool) error
 }
 
 func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool) error {
+	return infraEnsureLambda(ctx, infraSet, quick, preview, showEnvVarValues, nil)
+}
+
+// validateLambdaSelection checks every declared Lambda name and that quick mode
+// names one of them, before any provider call.
+func validateLambdaSelection(infraSet *InfraSet, quick string) error {
+	for lambdaName := range infraSet.Lambda {
+		if err := validateLambdaName(lambdaName); err != nil {
+			return err
+		}
+	}
+	if quick != "" {
+		if _, ok := infraSet.Lambda[quick]; !ok {
+			return fmt.Errorf("cannot use quick mode for unknown lambda name: %s", quick)
+		}
+	}
+	return nil
+}
+
+func infraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool, artifacts *infraBuildArtifacts) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsureLambda"}
 		d.Start()
 		defer d.End()
 	}
-	for lambdaName := range infraSet.Lambda {
-		if err := validateLambdaName(lambdaName); err != nil {
-			Logger.Println("error:", err)
-			return err
-		}
-	}
-	if quick != "" {
-		found := false
-		for lambdaName := range infraSet.Lambda {
-			if quick == lambdaName {
-				found = true
-			}
-		}
-		if !found {
-			err := fmt.Errorf("cannot use quick mode for unknown lambda name: %s", quick)
-			Logger.Println("error:", err)
-			return err
-		}
+	if err := validateLambdaSelection(infraSet, quick); err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
 	for lambdaName, infraLambda := range infraSet.Lambda {
 		if quick != "" && quick != lambdaName {
 			continue
 		}
 		infraLambda.Name = lambdaName
-		if strings.HasSuffix(infraLambda.Entrypoint, ".py") {
-			infraLambda.runtime = lambdaRuntimePython
-			infraLambda.handler = strings.TrimSuffix(path.Base(infraLambda.Entrypoint), ".py") + ".main"
-			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipPy, lambdaCreateZipPy)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
+		runtime, handler, err := classifyLambdaEntrypoint(infraLambda.Entrypoint)
+		if err != nil {
+			Logger.Println("error:", err)
+			return err
+		}
+		infraLambda.runtime = runtime
+		infraLambda.handler = handler
+		var updateZipFn LambdaUpdateZipFn
+		var createZipFn LambdaCreateZipFn
+		switch runtime {
+		case lambdaRuntimePython:
+			updateZipFn, createZipFn = lambdaUpdateZipPy, lambdaCreateZipPy
+		case lambdaRuntimeGo:
+			updateZipFn, createZipFn = lambdaUpdateZipGo, lambdaCreateZipGo
+			if artifacts != nil {
+				updateZipFn, createZipFn = artifacts.packageGoLambda, artifacts.packageGoLambda
 			}
-		} else if strings.HasSuffix(infraLambda.Entrypoint, ".go") {
-			infraLambda.runtime = lambdaRuntimeGo
-			infraLambda.handler = "main"
-			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipGo, lambdaCreateZipGo)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-		} else if strings.Contains(infraLambda.Entrypoint, ".dkr.ecr.") {
-			if err := validateLambdaContainerImageURI(infraLambda.Entrypoint); err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-			infraLambda.runtime = lambdaRuntimeContainer
-			infraLambda.handler = "main"
-			err := lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, lambdaUpdateZipFake, lambdaCreateZipFake)
-			if err != nil {
-				Logger.Println("error:", err)
-				return err
-			}
-		} else {
-			err := fmt.Errorf("unknown entrypoint type: %s", infraLambda.Entrypoint)
+		case lambdaRuntimeContainer:
+			updateZipFn, createZipFn = lambdaUpdateZipFake, lambdaCreateZipFake
+		default:
+			panic("unknown lambda runtime: " + runtime)
+		}
+		err = lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, updateZipFn, createZipFn)
+		if err != nil {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -2365,6 +2364,10 @@ func lambdaUpdateZipFake(_ *InfraLambda) error { return nil }
 func lambdaCreateZipFake(_ *InfraLambda) error { return nil }
 
 func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool) error {
+	return infraEnsure(ctx, infraSet, quick, preview, showEnvVarValues, nil)
+}
+
+func infraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool, artifacts *infraBuildArtifacts) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "InfraEnsure"}
 		d.Start()
@@ -2402,7 +2405,7 @@ func InfraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview,
 			return err
 		}
 	}
-	err := InfraEnsureLambda(ctx, infraSet, quick, preview, showEnvVarValues)
+	err := infraEnsureLambda(ctx, infraSet, quick, preview, showEnvVarValues, artifacts)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err

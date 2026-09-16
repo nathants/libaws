@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"testing"
@@ -26,6 +27,9 @@ func requireLiveAWSAccount(t *testing.T) {
 	if expectedAccount == "" {
 		t.Skip("set LIBAWS_TEST_ACCOUNT to run live AWS tests")
 	}
+	if !liveAWSCredentialsConfigured() {
+		t.Skip("LIBAWS_TEST_ACCOUNT is set but no AWS credentials are configured")
+	}
 	account, err := StsAccount(context.Background())
 	if err != nil {
 		t.Fatalf("verify AWS account: %v", err)
@@ -33,6 +37,32 @@ func requireLiveAWSAccount(t *testing.T) {
 	if account != expectedAccount {
 		t.Fatalf("AWS account = %s, want guarded account %s", account, expectedAccount)
 	}
+}
+
+// liveAWSCredentialsConfigured reports whether a local source exists for the
+// default AWS credential chain. Without one, an opted-in live test would stall
+// resolving IMDS instead of running or failing meaningfully. A configured
+// source that turns out invalid still fails loudly.
+func liveAWSCredentialsConfigured() bool {
+	if os.Getenv("AWS_ACCESS_KEY_ID") != "" && os.Getenv("AWS_SECRET_ACCESS_KEY") != "" {
+		return true
+	}
+	if os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE") != "" && os.Getenv("AWS_ROLE_ARN") != "" {
+		return true
+	}
+	if os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") != "" || os.Getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI") != "" {
+		return true
+	}
+	path := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		path = filepath.Join(home, ".aws", "credentials")
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() > 0
 }
 
 // S3 can alternate new and old configuration after a write. Wait for stable
@@ -204,4 +234,45 @@ func cleanupEC2ExampleCompute(t *testing.T, ctx context.Context, key string) {
 		}
 	}
 	assertEC2ExampleComputeAbsent(t, ctx, key)
+}
+
+func TestLiveAWSCredentialsConfigured(t *testing.T) {
+	for _, name := range []string{
+		"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+		"AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN",
+		"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+		"AWS_SHARED_CREDENTIALS_FILE",
+	} {
+		t.Setenv(name, "")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if liveAWSCredentialsConfigured() {
+		t.Fatal("credentials reported without any configured source")
+	}
+	credentials := filepath.Join(home, ".aws", "credentials")
+	if err := os.MkdirAll(filepath.Dir(credentials), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credentials, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if liveAWSCredentialsConfigured() {
+		t.Fatal("empty shared credentials file reported as configured")
+	}
+	if err := os.WriteFile(credentials, []byte("[default]\naws_access_key_id = fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !liveAWSCredentialsConfigured() {
+		t.Fatal("shared credentials file was not detected")
+	}
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(home, "missing"))
+	if liveAWSCredentialsConfigured() {
+		t.Fatal("missing shared credentials file reported as configured")
+	}
+	t.Setenv("AWS_ACCESS_KEY_ID", "fixture-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture-secret")
+	if !liveAWSCredentialsConfigured() {
+		t.Fatal("environment credentials were not detected")
+	}
 }
