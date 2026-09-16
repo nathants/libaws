@@ -67,9 +67,8 @@ func validateInfraBuildArtifact(artifact InfraBuildArtifact) error {
 }
 
 type infraBuildArtifacts struct {
-	dir      string
-	entries  map[string]InfraBuildArtifact
-	consumed map[string]bool
+	dir     string
+	entries map[string]InfraBuildArtifact
 }
 
 func loadInfraBuildArtifacts(dir string) (*infraBuildArtifacts, error) {
@@ -79,6 +78,13 @@ func loadInfraBuildArtifacts(dir string) (*infraBuildArtifacts, error) {
 	root, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("inspect build directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("build directory is not a directory: %s", root)
 	}
 	data, err := os.ReadFile(filepath.Join(root, infraBuildManifestFile))
 	if err != nil {
@@ -95,9 +101,8 @@ func loadInfraBuildArtifacts(dir string) (*infraBuildArtifacts, error) {
 		return nil, errors.New("build manifest lists no artifacts")
 	}
 	artifacts := &infraBuildArtifacts{
-		dir:      root,
-		entries:  map[string]InfraBuildArtifact{},
-		consumed: map[string]bool{},
+		dir:     root,
+		entries: map[string]InfraBuildArtifact{},
 	}
 	for _, artifact := range manifest.Artifacts {
 		if err := validateInfraBuildArtifact(artifact); err != nil {
@@ -128,7 +133,7 @@ func InfraBuildOnly(infraSet *InfraSet, quick, buildDir string) error {
 		Logger.Println("error:", err)
 		return err
 	}
-	if err := os.MkdirAll(root, 0o700); err != nil {
+	if err := verifyBuildDir(root); err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
@@ -213,22 +218,20 @@ func InfraEnsureWithArtifacts(ctx context.Context, infraSet *InfraSet, quick str
 		Logger.Println("error:", err)
 		return err
 	}
-	if err := validateArtifactSelection(infraSet, quick); err != nil {
+	if err := artifacts.verifySelection(infraSet, quick); err != nil {
 		Logger.Println("error:", err)
 		return err
 	}
 	if err := infraEnsure(ctx, infraSet, quick, preview, showEnvVarValues, artifacts); err != nil {
 		return err
 	}
-	if len(artifacts.consumed) == 0 {
-		err := errors.New("no prebuilt artifact was needed for this deployment")
-		Logger.Println("error:", err)
-		return err
-	}
 	return nil
 }
 
-func validateArtifactSelection(infraSet *InfraSet, quick string) error {
+// verifySelection hash-verifies every selected artifact before any provider
+// call, and requires at least one selected Go Lambda.
+func (artifacts *infraBuildArtifacts) verifySelection(infraSet *InfraSet, quick string) error {
+	selected := 0
 	for lambdaName, infraLambda := range infraSet.Lambda {
 		if quick != "" && quick != lambdaName {
 			continue
@@ -237,11 +240,18 @@ func validateArtifactSelection(infraSet *InfraSet, quick string) error {
 		if err != nil {
 			return err
 		}
-		if runtime == lambdaRuntimeGo {
-			return nil
+		if runtime != lambdaRuntimeGo {
+			continue
 		}
+		if _, err := artifacts.verifiedPath(lambdaName); err != nil {
+			return err
+		}
+		selected++
 	}
-	return errors.New("no Lambda in the selected infrastructure set requires a prebuilt artifact")
+	if selected == 0 {
+		return errors.New("no Lambda in the selected infrastructure set requires a prebuilt artifact")
+	}
+	return nil
 }
 
 func (artifacts *infraBuildArtifacts) verifiedPath(name string) (string, error) {
@@ -254,7 +264,7 @@ func (artifacts *infraBuildArtifacts) verifiedPath(name string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("inspect Lambda artifact: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("lambda artifact is not a regular file: %s", source)
 	}
 	hash, err := sha256File(source)
@@ -264,7 +274,6 @@ func (artifacts *infraBuildArtifacts) verifiedPath(name string) (string, error) 
 	if hash != artifact.Sha256 {
 		return "", fmt.Errorf("lambda artifact sha256 mismatch: manifest %s, file %s: %s", artifact.Sha256, hash, source)
 	}
-	artifacts.consumed[name] = true
 	return source, nil
 }
 
@@ -289,6 +298,34 @@ func (artifacts *infraBuildArtifacts) packageGoLambda(infraLambda *InfraLambda) 
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
+	}
+	return nil
+}
+
+// verifyBuildDir proves buildDir is or becomes a writable directory before any
+// artifact is written into it.
+func verifyBuildDir(dir string) error {
+	if info, err := os.Stat(dir); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("build directory is not a directory: %s", dir)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect build directory: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create build directory: %w", err)
+	}
+	probe, err := os.CreateTemp(dir, ".libaws-build-probe-*")
+	if err != nil {
+		return fmt.Errorf("build directory is not writable: %s: %w", dir, err)
+	}
+	path := probe.Name()
+	if err := probe.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("build directory is not writable: %s: %w", dir, err)
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("build directory is not writable: %s: %w", dir, err)
 	}
 	return nil
 }

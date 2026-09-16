@@ -259,9 +259,6 @@ func TestLambdaPackageFromArtifactIgnoresEntrypointSource(t *testing.T) {
 	if err := artifacts.packageGoLambda(infraLambda); err != nil {
 		t.Fatalf("package artifact without source: %v", err)
 	}
-	if !artifacts.consumed[name] {
-		t.Fatal("artifact verification was not recorded")
-	}
 	bootstrapBytes, err := os.ReadFile(filepath.Join(buildDir, name, infraBuildBootstrapName))
 	if err != nil {
 		t.Fatal(err)
@@ -409,6 +406,101 @@ func TestInfraEnsureWithArtifactsRequiresPrebuiltSelection(t *testing.T) {
 	err = InfraEnsureWithArtifacts(context.Background(), infraSet, "", true, false, dir)
 	if err == nil || !strings.Contains(err.Error(), "requires a prebuilt artifact") {
 		t.Fatalf("artifact-free selection error = %v", err)
+	}
+}
+
+func TestVerifySelectionChecksEverySelectedArtifact(t *testing.T) {
+	source, entrypoint := writeTestGoLambda(t, "artifact-fixture")
+	commitTestRepo(t, source)
+	name := "libaws-test-verify-selection"
+	t.Setenv("LDFLAGS", " ")
+	buildDir := filepath.Join(t.TempDir(), "artifacts")
+	infraSet := &InfraSet{Lambda: map[string]*InfraLambda{name: {Entrypoint: entrypoint}}}
+	if err := InfraBuildOnly(infraSet, "", buildDir); err != nil {
+		t.Fatalf("build artifacts: %v", err)
+	}
+	artifacts, err := loadInfraBuildArtifacts(buildDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := artifacts.verifySelection(infraSet, ""); err != nil {
+		t.Fatalf("verify selection: %v", err)
+	}
+	// A quick selection scoped to a Python Lambda consumes no artifact.
+	mixed := &InfraSet{Lambda: map[string]*InfraLambda{
+		name:                        {Entrypoint: entrypoint},
+		"libaws-test-verify-python": {Entrypoint: "main.py"},
+	}}
+	err = artifacts.verifySelection(mixed, "libaws-test-verify-python")
+	if err == nil || !strings.Contains(err.Error(), "requires a prebuilt artifact") {
+		t.Fatalf("python quick selection error = %v", err)
+	}
+	unknown := &InfraSet{Lambda: map[string]*InfraLambda{
+		"libaws-test-verify-unknown": {Entrypoint: entrypoint},
+	}}
+	err = artifacts.verifySelection(unknown, "")
+	if err == nil || !strings.Contains(err.Error(), "no artifact for Lambda") {
+		t.Fatalf("undeclared selection error = %v", err)
+	}
+	bootstrap := filepath.Join(buildDir, name, infraBuildBootstrapName)
+	file, err := os.OpenFile(bootstrap, os.O_WRONLY|os.O_APPEND, 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte("tampered")); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err = loadInfraBuildArtifacts(buildDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = artifacts.verifySelection(infraSet, "")
+	if err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
+		t.Fatalf("tampered selection error = %v", err)
+	}
+}
+
+func TestVerifyBuildDir(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "artifacts")
+	if err := verifyBuildDir(missing); err != nil {
+		t.Fatalf("create build directory: %v", err)
+	}
+	if info, err := os.Stat(missing); err != nil || !info.IsDir() {
+		t.Fatalf("build directory was not created: %v %v", info, err)
+	}
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyBuildDir(file); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("file build directory error = %v", err)
+	}
+	if os.Geteuid() != 0 {
+		readonly := filepath.Join(t.TempDir(), "readonly")
+		if err := os.Mkdir(readonly, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		if err := verifyBuildDir(readonly); err == nil || !strings.Contains(err.Error(), "not writable") {
+			t.Fatalf("read-only build directory error = %v", err)
+		}
+	}
+}
+
+func TestLoadInfraBuildArtifactsRejectsInvalidDirectories(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "artifacts")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadInfraBuildArtifacts(file); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("file build directory error = %v", err)
+	}
+	missing := filepath.Join(t.TempDir(), "missing")
+	if _, err := loadInfraBuildArtifacts(missing); err == nil || !strings.Contains(err.Error(), "inspect build directory") {
+		t.Fatalf("missing build directory error = %v", err)
 	}
 }
 

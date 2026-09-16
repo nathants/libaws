@@ -317,7 +317,7 @@ libaws infra-ensure ./infra.yaml --build-only ./build
 libaws infra-ensure ./infra.yaml --from-build ./build
 ```
 
-`--build-only` writes each artifact and a `manifest.json` recording its name, file, sha256, and source Git commit and dirty state. It never accesses AWS. `--from-build` uses only hash-verified artifacts: it never compiles, and it never reads Lambda entrypoint sources. A missing or mismatched artifact fails the deploy, as does `--from-build` when the selected infrastructure set needs no artifact. Both flags also combine with `--quick LAMBDA_NAME`.
+`--build-only` writes each artifact and a `manifest.json` recording its name, file, sha256, and the entrypoint Git checkout's commit and dirty state. It never accesses AWS. `--from-build` uses only hash-verified artifacts: it never compiles, and it never reads Lambda entrypoint sources. Only Go Lambdas are built into artifacts; Python and container Lambdas are unaffected, and Python Lambdas still package from their entrypoint and requirements on the deploy host. A missing or mismatched artifact fails before any AWS call, as does `--from-build` when the selected infrastructure set needs no artifact. An empty directory value, a `--from-build` path without a manifest, and an unwritable `--build-only` directory are errors. Both flags also combine with `--quick LAMBDA_NAME`.
 
 ### Delete the Infrastructure Set
 
