@@ -899,6 +899,15 @@ Defines an EC2 [instance profile](https://docs.aws.amazon.com/AWSCloudFormation/
 
 Defines a [Lambda](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html).
 
+Full ensure adds required role grants before creating or updating code, retaining
+prior grants until activation succeeds. API identities are resolved before
+API-dependent grants. A failed prerequisite prevents activation; a failed
+activation leaves prior grants intact. Obsolete grants are removed afterward.
+This orders acknowledged AWS operations, not global IAM propagation or drainage
+of already-running invocations. Stage permission removals in a later deployment
+when old invocations still require them. `--quick` remains a configuration/code
+update and requires infrastructure prerequisites to be deployed already.
+
 * Schema:
 
   ```yaml

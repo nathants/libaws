@@ -3352,9 +3352,15 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		Logger.Println("error:", err)
 		return err
 	}
-	err = IamEnsureRolePolicies(ctx, infraLambda.Name, infraLambda.Policy, preview)
-	if err != nil {
-		Logger.Println("error:", err)
+	// Keep the running code's grants until replacement activation succeeds.
+	// API identities must exist before their required grants can be resolved.
+	if err := lambdaPrepareIAMAPIs(ctx, infraLambda, preview); err != nil {
+		return err
+	}
+	if err := iamEnsureRolePolicies(ctx, infraLambda.Name, infraLambda.Policy, preview, false); err != nil {
+		return err
+	}
+	if err := iamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview, false); err != nil {
 		return err
 	}
 	arnRole, err := IamRoleArn(ctx, "lambda", infraLambda.Name)
@@ -3532,9 +3538,11 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		return err
 	}
 	permissionSids = append(permissionSids, sids...)
-	err = IamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview) // ensure role allows after api trigger because it defines $API_ID and WEBSOCKET_ID
-	if err != nil {
-		Logger.Println("error:", err)
+	// Activation completed; failed activation leaves the prior grants intact.
+	if err := IamEnsureRolePolicies(ctx, infraLambda.Name, infraLambda.Policy, preview); err != nil {
+		return err
+	}
+	if err := IamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview); err != nil {
 		return err
 	}
 	err = LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview)

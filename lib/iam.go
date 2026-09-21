@@ -721,6 +721,11 @@ func iamPreviewMissingPrincipal(err error, preview bool) bool {
 }
 
 func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, preview bool) error {
+	return iamEnsureRoleAllows(ctx, roleName, allows, preview, true)
+}
+
+// Lambda adds prerequisites before code activation and prunes only afterward.
+func iamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, preview, prune bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "IamEnsureRoleAllows"}
 		d.Start()
@@ -780,6 +785,9 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 			if equal {
 				continue
 			}
+			if !prune {
+				return fmt.Errorf("role allow %s differs at the same policy name; cannot preserve it during activation", allow.policyName())
+			}
 		}
 		if !preview {
 			_, err := IamClient().PutRolePolicy(ctx, &iam.PutRolePolicyInput{
@@ -793,6 +801,9 @@ func IamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 			}
 		}
 		Logger.Println(PreviewString(preview)+"attached role allow:", roleName, allow)
+	}
+	if !prune {
+		return nil
 	}
 	attachedAllows, err := IamListRoleAllows(ctx, roleName)
 	if err != nil && !iamPreviewMissingPrincipal(err, preview) {
@@ -920,6 +931,10 @@ func IamEnsureUserPolicies(ctx context.Context, username string, policyNames []s
 }
 
 func IamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []string, preview bool) error {
+	return iamEnsureRolePolicies(ctx, roleName, policyNames, preview, true)
+}
+
+func iamEnsureRolePolicies(ctx context.Context, roleName string, policyNames []string, preview, prune bool) error {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "IamEnsureRolePolicies"}
 		d.Start()
@@ -977,6 +992,9 @@ outer:
 			}
 			return err
 		}
+	}
+	if !prune {
+		return nil
 	}
 	attachedPolicies, err := IamListRolePolicies(ctx, roleName)
 	if err != nil && !iamPreviewMissingPrincipal(err, preview) {

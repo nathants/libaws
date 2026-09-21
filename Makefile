@@ -7,7 +7,11 @@ libaws:
 
 
 
-check: check-deps check-static check-ineff check-err check-vet check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck check-cli-aliases
+check: check-deps check-static check-ineff check-err check-vet check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck check-cli-aliases check-lambda-iam
+
+.PHONY: check-lambda-iam
+check-lambda-iam:
+	go test ./lib -run '^TestLambdaEnsureIAM' -count=1
 
 check-cli-aliases: libaws
 	@python3 check_cli_aliases.py
