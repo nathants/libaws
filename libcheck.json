@@ -1,0 +1,5 @@
+{
+  "go": {
+    ".": {"disable": ["deadcode"]}
+  }
+}

@@ -1,61 +1,26 @@
-.PHONY: test libaws check check-deps check-static check-ineff check-err check-vet test-lib check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck check-cli-aliases
+.PHONY: all libaws check libcheck-installed check-lint check-security check-cli-aliases check-lambda-iam test
 
 all: libaws
 
 libaws:
 	CGO_ENABLED=0 go build -tags 'netgo osusergo purego'
 
+check: check-lint check-security check-cli-aliases check-lambda-iam
 
+libcheck-installed:
+	@command -v libcheck >/dev/null || { echo 'libcheck not found; install it with: go install github.com/nathants/libcheck@latest' >&2; exit 1; }
 
-check: check-deps check-static check-ineff check-err check-vet check-bodyclose check-lint check-nargs check-fmt check-hasdefault check-hasdefer check-govulncheck check-cli-aliases check-lambda-iam
+check-lint: libcheck-installed
+	@libcheck check
 
-.PHONY: check-lambda-iam
-check-lambda-iam:
-	go test ./lib -run '^TestLambdaEnsureIAM' -count=1
+check-security: libcheck-installed
+	@libcheck security
 
 check-cli-aliases: libaws
 	@python3 check_cli_aliases.py
 
-# body-close
-
-check-deps:
-	@for tool in staticcheck golint ineffassign errcheck bodyclose nargs go-hasdefault go-hasdefer govulncheck; do \
-		command -v "$$tool" >/dev/null || { echo "missing required check tool: $$tool" >&2; exit 1; }; \
-	done
-
-check-govulncheck: check-deps
-	@govulncheck ./...
-
-check-hasdefault: check-deps
-	@go-hasdefault $(shell find -type f -name "*.go") || true
-
-check-hasdefer: check-deps
-	@go-hasdefer $(shell find -type f -name "*.go") || true
-
-check-fmt: check-deps
-	@files="$$(find . -type f -name '*.go' -print0 | xargs -0 -r gofmt -l)"; \
-		if [ -n "$$files" ]; then printf 'unformatted Go files:\n%s\n' "$$files" >&2; exit 1; fi
-
-check-nargs: check-deps
-	@nargs ./...
-
-check-bodyclose: check-deps
-	@go vet -vettool=$(shell which bodyclose) ./...
-
-check-lint: check-deps
-	@golint ./... | grep -v -e unexported -e "should be" || true
-
-check-static: check-deps
-	@staticcheck ./...
-
-check-ineff: check-deps
-	@ineffassign ./...
-
-check-err: check-deps
-	@errcheck ./...
-
-check-vet: check-deps
-	@go vet ./...
+check-lambda-iam:
+	go test ./lib -run '^TestLambdaEnsureIAM' -count=1
 
 test:
 	bash restore_python_deps.sh
