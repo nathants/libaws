@@ -495,8 +495,7 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 		TableName: input.TableName,
 	})
 	if err != nil {
-		var rnfe *ddbtypes.ResourceNotFoundException
-		if errors.As(err, &rnfe) {
+		if _, ok := errors.AsType[*ddbtypes.ResourceNotFoundException](err); ok {
 			if !preview {
 				_, err = DynamoDBClient().CreateTable(ctx, input)
 				if err != nil {
@@ -999,8 +998,7 @@ func DynamoDBDeleteTable(ctx context.Context, tableName string, preview bool, no
 	}
 	err := DynamoDBWaitForReady(ctx, tableName)
 	if err != nil {
-		var rnfe *ddbtypes.ResourceNotFoundException
-		if errors.As(err, &rnfe) {
+		if _, ok := errors.AsType[*ddbtypes.ResourceNotFoundException](err); ok {
 			return nil
 		}
 		return err
@@ -1036,8 +1034,7 @@ func DynamoDBWaitForGone(ctx context.Context, tableName string) error {
 			TableName: aws.String(tableName),
 		})
 		if err != nil {
-			var rnfe *ddbtypes.ResourceNotFoundException
-			if errors.As(err, &rnfe) {
+			if _, ok := errors.AsType[*ddbtypes.ResourceNotFoundException](err); ok {
 				return nil
 			}
 			return err
@@ -1097,8 +1094,7 @@ func DynamoDBStreamArn(ctx context.Context, tableName string) (string, error) {
 			TableName: aws.String(tableName),
 		})
 		if err != nil {
-			var rnfe *ddbtypes.ResourceNotFoundException
-			if errors.As(err, &rnfe) {
+			if _, ok := errors.AsType[*ddbtypes.ResourceNotFoundException](err); ok {
 				expectedErr = err
 				return nil
 			}

@@ -42,8 +42,7 @@ func codeCommitEnsure() {
 		fmt.Println(lib.Pformat(createOut.RepositoryMetadata))
 		return
 	}
-	var rne *cctypes.RepositoryNameExistsException
-	if errors.As(err, &rne) {
+	if _, ok := errors.AsType[*cctypes.RepositoryNameExistsException](err); ok {
 	} else {
 		lib.Logger.Fatal("error: ", err)
 	}

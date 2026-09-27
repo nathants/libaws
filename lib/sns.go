@@ -77,8 +77,7 @@ func SNSEnsure(ctx context.Context, name string, preview bool) error {
 		TopicArn: aws.String(snsArn),
 	})
 	if err != nil {
-		var nfe *snstypes.NotFoundException
-		if !errors.As(err, &nfe) {
+		if _, ok := errors.AsType[*snstypes.NotFoundException](err); !ok {
 			return err
 		}
 		if !preview {

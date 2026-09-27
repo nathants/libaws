@@ -77,8 +77,7 @@ func TestInfraListSetIntegration(t *testing.T) {
 		bucket, setName := "test-inventory-lifecycle-"+uid, first+"-lifecycle"
 		client := S3Client()
 		_, err := client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
-		var absent *s3types.NotFound
-		if !errors.As(err, &absent) {
+		if _, ok := errors.AsType[*s3types.NotFound](err); !ok {
 			t.Fatalf("lifecycle fixture must not exist: %v", err)
 		}
 		t.Cleanup(func() {
@@ -514,8 +513,7 @@ func TestInfraListSetIntegration(t *testing.T) {
 		client := EventsClient()
 		name := "test-inventory-event-" + uid
 		_, err := client.DescribeRule(ctx, &eventbridge.DescribeRuleInput{Name: aws.String(name)})
-		var absent *eventtypes.ResourceNotFoundException
-		if !errors.As(err, &absent) {
+		if _, ok := errors.AsType[*eventtypes.ResourceNotFoundException](err); !ok {
 			t.Fatalf("race fixture rule must not exist: %v", err)
 		}
 		t.Cleanup(func() {

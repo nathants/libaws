@@ -33,7 +33,8 @@ func (client *ec2SubnetTestClient) RoundTrip(r *http.Request) (*http.Response, e
 	}
 	action := r.Form.Get("Action")
 	client.calls = append(client.calls, action)
-	body, status := "", http.StatusOK
+	var body string
+	status := http.StatusOK
 	if action == client.failAction {
 		body = `<Response><Errors><Error><Code>UnauthorizedOperation</Code><Message>denied subnet probe</Message></Error></Errors></Response>`
 		status = http.StatusForbidden

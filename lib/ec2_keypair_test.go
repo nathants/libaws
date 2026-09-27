@@ -22,7 +22,8 @@ func (client *ec2KeypairTestClient) RoundTrip(r *http.Request) (*http.Response, 
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
-	body, status := "", http.StatusOK
+	var body string
+	status := http.StatusOK
 	switch r.Form.Get("Action") {
 	case "DescribeKeyPairs":
 		if client.code != "" {

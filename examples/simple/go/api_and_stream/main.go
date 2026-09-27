@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 )
 
-func streamHandler(_ context.Context, _ *events.LambdaFunctionURLRequest) (*events.LambdaFunctionURLStreamingResponse, error) {
+func streamHandler(_ context.Context, _ *events.LambdaFunctionURLRequest) *events.LambdaFunctionURLStreamingResponse {
 	pr, pw := io.Pipe()
 	go func() {
 		defer func() { _ = pw.Close() }()
@@ -26,13 +26,13 @@ func streamHandler(_ context.Context, _ *events.LambdaFunctionURLRequest) (*even
 			"Content-Type": "text/plain",
 		},
 		Body: pr,
-	}, nil
+	}
 }
 
 func dispatch(ctx context.Context, raw json.RawMessage) (any, error) {
 	var urlReq events.LambdaFunctionURLRequest
 	if json.Unmarshal(raw, &urlReq) == nil && urlReq.RequestContext.HTTP.Method != "" {
-		return streamHandler(ctx, &urlReq)
+		return streamHandler(ctx, &urlReq), nil
 	}
 	var apiReq events.APIGatewayProxyRequest
 	if json.Unmarshal(raw, &apiReq) == nil && apiReq.HTTPMethod != "" {

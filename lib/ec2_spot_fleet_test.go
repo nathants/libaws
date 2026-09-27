@@ -76,7 +76,7 @@ func TestEC2TeardownSpotFleetChecksCancellationResult(t *testing.T) {
 		"wrong-state": spotFleetTestCancelResult(spotFleetTestID, "active"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			installEC2SpotFleetTestClient(t, func(ctx context.Context, action string, form url.Values) (string, int) {
+			installEC2SpotFleetTestClient(t, func(_ context.Context, action string, _ url.Values) (string, int) {
 				switch action {
 				case "CancelSpotFleetRequests":
 					return response, 200
@@ -105,7 +105,7 @@ func TestEC2TeardownSpotFleetWaitsForTermination(t *testing.T) {
 		t.Run(initial, func(t *testing.T) {
 			state := initial
 			cancellations := 0
-			installEC2SpotFleetTestClient(t, func(ctx context.Context, action string, form url.Values) (string, int) {
+			installEC2SpotFleetTestClient(t, func(_ context.Context, action string, _ url.Values) (string, int) {
 				switch action {
 				case "DescribeSpotFleetRequests":
 					if initial == "cancelled_terminating" {
@@ -238,7 +238,7 @@ func TestEC2RequestSpotFleetCleansEveryPostCreateFailure(t *testing.T) {
 
 func TestEC2ExampleDiscoveryPreservesOwnedPages(t *testing.T) {
 	key := "test-keypair-abcdef123456"
-	installEC2SpotFleetTestClient(t, func(ctx context.Context, action string, form url.Values) (string, int) {
+	installEC2SpotFleetTestClient(t, func(_ context.Context, action string, form url.Values) (string, int) {
 		if form.Get("NextToken") != "" {
 			return `<Response><Errors><Error><Code>UnauthorizedOperation</Code><Message>second page denied</Message></Error></Errors></Response>`, 403
 		}
@@ -274,7 +274,7 @@ func TestEC2TeardownSpotFleetWaitsForLateInstances(t *testing.T) {
 	state := "active"
 	reads := 0
 	terminated := false
-	installEC2SpotFleetTestClient(t, func(ctx context.Context, action string, form url.Values) (string, int) {
+	installEC2SpotFleetTestClient(t, func(_ context.Context, action string, _ url.Values) (string, int) {
 		switch action {
 		case "DescribeSpotFleetRequests":
 			return spotFleetTestState(state), 200

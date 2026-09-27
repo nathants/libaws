@@ -43,7 +43,7 @@ func TestLambdaSQSReenablesDisabledMapping(t *testing.T) {
 							"UUID": "fixture", "FunctionArn": functionARN, "EventSourceArn": "arn:aws:sqs:us-west-2:123456789012:queue",
 							"State": state, "BatchSize": 10, "MaximumBatchingWindowInSeconds": 0,
 						}
-						body := ""
+						var body string
 						switch {
 						case request.Method == "GET" && strings.HasSuffix(request.URL.Path, "/event-source-mappings"):
 							body = Json(map[string]any{"EventSourceMappings": []any{mapping}})
@@ -182,7 +182,8 @@ func TestLambdaSQSSettlesMappingsBeforeReconciliation(t *testing.T) {
 						"UUID": "fixture", "FunctionArn": functionARN, "EventSourceArn": sourceARN,
 						"State": test.state, "BatchSize": 10, "MaximumBatchingWindowInSeconds": 0,
 					}
-					status, body := 200, ""
+					status := 200
+					var body string
 					switch {
 					case request.Method == "GET" && strings.HasSuffix(request.URL.Path, "/event-source-mappings"):
 						body = Json(map[string]any{"EventSourceMappings": []any{mapping}})

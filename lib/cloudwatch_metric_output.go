@@ -3,6 +3,7 @@ package lib
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -29,10 +30,8 @@ func CloudwatchWriteMetricData(w io.Writer, metrics []string, dimension string, 
 		if metric == "" {
 			return fmt.Errorf("metric %d is empty", i)
 		}
-		for _, existingMetric := range metrics[:i] {
-			if existingMetric == metric {
-				return fmt.Errorf("metric %q was requested more than once", metric)
-			}
+		if slices.Contains(metrics[:i], metric) {
+			return fmt.Errorf("metric %q was requested more than once", metric)
 		}
 		metricIndexes[fmt.Sprintf("m%d", i)] = i
 	}

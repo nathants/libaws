@@ -72,8 +72,7 @@ func EcrEnsure(ctx context.Context, name string, preview bool) error {
 		RepositoryNames: []string{name},
 	})
 	if err != nil {
-		var notFound *ecrtypes.RepositoryNotFoundException
-		if !errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*ecrtypes.RepositoryNotFoundException](err); !ok {
 			Logger.Println("error:", err)
 			return err
 		}

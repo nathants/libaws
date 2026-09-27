@@ -213,7 +213,7 @@ func EC2ListInstances(ctx context.Context, selectors []string, state ec2types.In
 		} else if strings.HasSuffix(selectors[0], ".ec2.internal") {
 			kind = KindPrivateDnsName
 		} else if isIPAddress(selectors[0]) {
-			part := strings.Split(selectors[0], ".")[0]
+			part, _, _ := strings.Cut(selectors[0], ".")
 			if part == "10" || part == "172" {
 				kind = KindPrivateIPAddress
 			} else {
@@ -2014,6 +2014,9 @@ func EC2NameColored(instance ec2types.Instance) string {
 		name = Green(name)
 	case ec2types.InstanceStateNamePending:
 		name = Cyan(name)
+	case ec2types.InstanceStateNameShuttingDown, ec2types.InstanceStateNameTerminated,
+		ec2types.InstanceStateNameStopping, ec2types.InstanceStateNameStopped:
+		fallthrough
 	default:
 		name = Red(name)
 	}
@@ -2072,6 +2075,8 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 				instances = append(instances, instance)
 			case ec2types.InstanceStateNamePending:
 				pendingInstances = append(pendingInstances, instance)
+			case ec2types.InstanceStateNameShuttingDown, ec2types.InstanceStateNameTerminated,
+				ec2types.InstanceStateNameStopping, ec2types.InstanceStateNameStopped:
 			default:
 			}
 		}
@@ -2296,6 +2301,8 @@ func ec2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput, runSSH func(con
 				// it is not a failed SSH probe and needs no further termination.
 				delete(selected, id)
 				Logger.Printf("excluding %s instance: %s\n", instance.State.Name, id)
+			case ec2types.InstanceStateNameStopping, ec2types.InstanceStateNameStopped:
+				fallthrough
 			default:
 				return nil, fmt.Errorf("selected instance %s is %s", id, instance.State.Name)
 			}
@@ -2620,7 +2627,7 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 		},
 	})
 	if err != nil && !preview {
-		line := strings.Split(err.Error(), "\n")[0]
+		line, _, _ := strings.Cut(err.Error(), "\n")
 		if line != "InvalidParameterValue: vpc-id" {
 			Logger.Println("error:", err)
 			return err
@@ -2728,10 +2735,8 @@ func EC2EnsureSg(ctx context.Context, input *ec2EnsureSgInput, preview bool) err
 							Logger.Println("error:", err)
 							return err
 						}
-						for _, ruleFound := range rules {
-							if ruleFound == r {
-								return nil
-							}
+						if slices.Contains(rules, r) {
+							return nil
 						}
 					}
 					return fmt.Errorf("didn't find rule: %#v", r)
@@ -2928,7 +2933,6 @@ func EC2GoSsh(ctx context.Context, input *EC2GoSshInput) ([]*ec2GoSshResult, err
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	for _, addr := range input.TargetAddrs {
-		addr := addr
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {

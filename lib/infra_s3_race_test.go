@@ -233,7 +233,8 @@ func TestInfraListSetRejectsUnsupportedBucketLifecycle(t *testing.T) {
 		t.Run(lifecycle, func(t *testing.T) {
 			const bucket = "selected-date-lifecycle"
 			installInfraListS3TestClient(t, infraListS3RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				status, body := 200, ""
+				status := 200
+				var body string
 				switch {
 				case r.URL.Path == "/":
 					body = infraListS3ListBucketsXML(bucket)
@@ -338,7 +339,8 @@ func TestInfraListS3VerifiesLambdaIdentity(t *testing.T) {
 			sess, stsArn = &aws.Config{Region: "us-east-1"}, aws.String("arn:aws:iam::123456789012:root")
 			t.Cleanup(func() { sess, stsArn = oldSession, oldARN })
 			installInfraListS3TestClient(t, infraListS3RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				status, body := 200, ""
+				status := 200
+				var body string
 				switch {
 				case r.Method == http.MethodHead:
 					response := infraListS3Response(r, 200, "")

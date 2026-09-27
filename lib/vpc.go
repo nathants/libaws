@@ -263,7 +263,7 @@ func VpcEnsure(ctx context.Context, infraSetName, vpcName string, preview bool) 
 			return "", err
 		}
 		for i, zone := range zones {
-			str := strings.Split(cidr, "/")[0]
+			str, _, _ := strings.Cut(cidr, "/")
 			slice := strings.Split(str, ".")[:2]
 			slice = append(slice, fmt.Sprint(16*i+1))
 			slice = append(slice, "0/20")

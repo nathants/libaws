@@ -199,8 +199,7 @@ func lambdaCleanupAPITriggers(
 			}
 			integrations, err := lambdaAPIIntegrations(ctx, client, api.ApiId)
 			if err != nil {
-				var notFound *apitypes.NotFoundException
-				if errors.As(err, &notFound) {
+				if _, ok := errors.AsType[*apitypes.NotFoundException](err); ok {
 					continue
 				}
 				return err
@@ -213,8 +212,7 @@ func lambdaCleanupAPITriggers(
 			}
 			if !preview {
 				if _, err := client.DeleteApi(ctx, &apigatewayv2.DeleteApiInput{ApiId: api.ApiId}); err != nil {
-					var notFound *apitypes.NotFoundException
-					if !errors.As(err, &notFound) {
+					if _, ok := errors.AsType[*apitypes.NotFoundException](err); !ok {
 						return err
 					}
 				}
@@ -320,8 +318,7 @@ func lambdaEventRuleTagOwned(ctx context.Context, client lambdaEventCleanupClien
 	}
 	out, err := client.ListTagsForResource(ctx, &eventbridge.ListTagsForResourceInput{ResourceARN: rule.Arn})
 	if err != nil {
-		var notFound *eventbridgetypes.ResourceNotFoundException
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); ok {
 			return false, nil
 		}
 		return false, err
@@ -379,8 +376,7 @@ func lambdaDeleteEventRule(
 		Ids:  []string{aws.ToString(target.Id)},
 	})
 	if err != nil {
-		var notFound *eventbridgetypes.ResourceNotFoundException
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); ok {
 			return nil
 		}
 		return err
@@ -392,8 +388,7 @@ func lambdaDeleteEventRule(
 		return fmt.Errorf("EventBridge failed to remove targets from rule %q: %s", aws.ToString(rule.Name), Json(out.FailedEntries))
 	}
 	if _, err := client.DeleteRule(ctx, &eventbridge.DeleteRuleInput{Name: rule.Name}); err != nil {
-		var notFound *eventbridgetypes.ResourceNotFoundException
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); ok {
 			return nil
 		}
 		restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
@@ -431,8 +426,7 @@ func lambdaCleanupScheduleTriggers(
 		}
 		targets, err := lambdaEventTargets(ctx, client, rule.Name)
 		if err != nil {
-			var notFound *eventbridgetypes.ResourceNotFoundException
-			if errors.As(err, &notFound) {
+			if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); ok {
 				continue
 			}
 			return err
@@ -477,8 +471,7 @@ func lambdaCleanupECRTrigger(
 		}
 		targets, err := lambdaEventTargets(ctx, client, rule.Name)
 		if err != nil {
-			var notFound *eventbridgetypes.ResourceNotFoundException
-			if errors.As(err, &notFound) {
+			if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); ok {
 				continue
 			}
 			return err

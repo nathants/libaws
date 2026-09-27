@@ -50,9 +50,6 @@ func credsAdd() {
 		dir = "secure/aws_creds"
 	}
 	root := path.Join(home, dir)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
 	err = os.MkdirAll(root, 0700)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)

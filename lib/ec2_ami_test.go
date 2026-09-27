@@ -157,7 +157,7 @@ func TestEC2DeleteAmiRefusesInvalidMetadata(t *testing.T) {
 }
 
 func TestEC2DeleteAmiValidatesBeforeReadsAndPropagatesDenials(t *testing.T) {
-	calls := installEC2AmiTestClient(t, func(action string, _ url.Values) (string, int) {
+	calls := installEC2AmiTestClient(t, func(_ string, _ url.Values) (string, int) {
 		return `<Response><Errors><Error><Code>UnauthorizedOperation</Code><Message>fixture denied</Message></Error></Errors></Response>`, 403
 	})
 	for _, id := range []string{"", " ", "*", "ami-*", "ami-foo", "i-00000000000000001"} {

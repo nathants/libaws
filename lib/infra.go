@@ -761,7 +761,6 @@ func (scope infraListScope) listEvent(ctx context.Context, triggersChan chan<- *
 	}
 	errChan := make(chan error)
 	for _, rule := range rules {
-		rule := rule
 		go func() {
 			defer infraListRecover(errChan, fmt.Sprintf("EventBridge rule %q", aws.ToString(rule.Name)))
 			tagsOut, err := EventsClient().ListTagsForResource(ctx, &events.ListTagsForResourceInput{ResourceARN: rule.Arn})
@@ -862,7 +861,6 @@ func (scope infraListScope) listLambda(ctx context.Context, triggersChan <-chan 
 	res := map[string]*InfraLambda{}
 	lock := &sync.Mutex{}
 	for _, fn := range fns {
-		fn := fn
 		go func() {
 			defer infraListRecover(errChan, fmt.Sprintf("Lambda %q", aws.ToString(fn.FunctionName)))
 			infraLambda := &InfraLambda{
@@ -925,8 +923,7 @@ func (scope infraListScope) listLambda(ctx context.Context, triggersChan <-chan 
 					Attr:       []string{"url=" + strings.Trim(*outUrl.FunctionUrl, "/")},
 				})
 			} else {
-				var notFound *lambdatypes.ResourceNotFoundException
-				if !errors.As(err, &notFound) {
+				if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 					Logger.Println("error:", err)
 					errChan <- err
 					return
@@ -1204,8 +1201,7 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 				domainName := aws.ToString(domain.DomainName)
 				mappings, err := lambdaAPIListMappings(ctx, ApiClient(), domainName)
 				if err != nil {
-					var notFound *apitypes.NotFoundException
-					if errors.As(err, &notFound) {
+					if _, ok := errors.AsType[*apitypes.NotFoundException](err); ok {
 						continue
 					}
 					Logger.Println("error:", err)
@@ -1241,7 +1237,6 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 	}
 	errChan := make(chan error)
 	for _, api := range apis {
-		api := api
 		go func() {
 			defer infraListRecover(errChan, fmt.Sprintf("API %q", aws.ToString(api.Name)))
 			infraApi := &InfraApi{
@@ -1346,7 +1341,6 @@ func (scope infraListScope) listDynamoDB(ctx context.Context) (map[string]*Infra
 	}
 	errChan := make(chan error)
 	for _, tableName := range tableNames {
-		tableName := tableName
 		go func() {
 			defer infraListRecover(errChan, fmt.Sprintf("DynamoDB table %q", tableName))
 			infraDynamoDB := &InfraDynamoDB{}
@@ -1355,8 +1349,7 @@ func (scope infraListScope) listDynamoDB(ctx context.Context) (map[string]*Infra
 				var err error
 				tags, err = DynamoDBListTags(ctx, tableName)
 				if err != nil {
-					var absent *dynamodbtypes.ResourceNotFoundException
-					if errors.As(err, &absent) {
+					if _, ok := errors.AsType[*dynamodbtypes.ResourceNotFoundException](err); ok {
 						errChan <- nil
 					} else {
 						errChan <- err
@@ -1632,7 +1625,7 @@ func (scope infraListScope) listEC2(ctx context.Context, vpcIDs []string) (map[s
 		vs := ec2s[k]
 		ec2 := vs[0]
 		ec2.Count = len(vs)
-		name := strings.Split(k, "::")[0]
+		name, _, _ := strings.Cut(k, "::")
 		_, ok := result[name]
 		if !ok {
 			result[name] = ec2
@@ -1749,7 +1742,6 @@ func (scope infraListScope) listS3(ctx context.Context, triggersChan chan<- *Inf
 	}
 	errChan := make(chan error)
 	for _, bucket := range buckets.Buckets {
-		bucket := bucket
 		go func() {
 			defer infraListRecover(errChan, fmt.Sprintf("S3 bucket %q", aws.ToString(bucket.Name)))
 			infraS3 := &InfraS3{}
@@ -1929,7 +1921,6 @@ func (scope infraListScope) listSQS(ctx context.Context) (map[string]*InfraSQS, 
 	lock := &sync.Mutex{}
 	res := map[string]*InfraSQS{}
 	for _, url := range urls {
-		url := url
 		go func() {
 			defer infraListRecover(errChan, fmt.Sprintf("SQS queue %q", url))
 			var outTags *sqs.ListQueueTagsOutput

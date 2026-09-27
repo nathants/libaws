@@ -334,8 +334,7 @@ func sesEnsureReceiptRulesetState(
 	if !found && !preview {
 		_, err := client.CreateReceiptRuleSet(ctx, &sesv2.CreateReceiptRuleSetInput{RuleSetName: aws.String(domain)})
 		if err != nil {
-			var exists *sestypes.AlreadyExistsException
-			if !errors.As(err, &exists) {
+			if _, ok := errors.AsType[*sestypes.AlreadyExistsException](err); !ok {
 				return err
 			}
 			found = true

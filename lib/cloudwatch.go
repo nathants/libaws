@@ -298,6 +298,8 @@ func cloudwatchGetMetricDataPages(
 				if !hasMore {
 					return nil, fmt.Errorf("CloudWatch metric %q ended with status PartialData", metrics[metricIndex])
 				}
+			case cwtypes.StatusCodeInternalError, cwtypes.StatusCodeForbidden:
+				fallthrough
 			default:
 				return nil, fmt.Errorf(
 					"CloudWatch metric %q returned status %q",

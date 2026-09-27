@@ -152,7 +152,7 @@ func TestEC2AmiExampleVerifyPreview(t *testing.T) {
 func waitEC2AmiFixtureAbsent(ctx context.Context, kind, id string) error {
 	for {
 		var err error
-		missing := ""
+		var missing string
 		switch kind {
 		case "image":
 			var out *ec2.DescribeImagesOutput

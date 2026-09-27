@@ -58,7 +58,7 @@ func (client *fakeLogsRecentClient) GetLogEvents(
 	if _, err := fmt.Sscanf(aws.ToString(input.LogStreamName), "stream-%d", &ordinal); err != nil {
 		return nil, err
 	}
-	timestamp := int64(1_000 + ordinal)
+	timestamp := 1_000 + ordinal
 	return &cloudwatchlogs.GetLogEventsOutput{
 		Events: []cwlogstypes.OutputLogEvent{{
 			Timestamp: aws.Int64(timestamp),

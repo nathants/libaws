@@ -96,6 +96,9 @@ func EC2DeleteAmi(ctx context.Context, amiID string, preview bool) error {
 			Logger.Println("deleted backing snapshot:", id)
 		case ec2types.SnapshotReturnCodesWarnSkipped:
 			Logger.Println("preserved shared snapshot:", id)
+		case ec2types.SnapshotReturnCodesErrorMissingPermissions, ec2types.SnapshotReturnCodesErrorCodeInternalError,
+			ec2types.SnapshotReturnCodesErrorCodeClientError:
+			fallthrough
 		default:
 			failures = append(failures, fmt.Errorf("delete backing snapshot %s after deregistering %s: %s", id, amiID, deleted.ReturnCode))
 		}

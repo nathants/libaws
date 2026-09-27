@@ -36,9 +36,6 @@ func credsLs() {
 		dir = "secure/aws_creds"
 	}
 	root := path.Join(home, dir)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
@@ -50,7 +47,7 @@ func credsLs() {
 		if !strings.HasSuffix(entry.Name(), ".creds") {
 			continue
 		}
-		name := strings.Split(entry.Name(), ".")[0]
+		name, _, _ := strings.Cut(entry.Name(), ".")
 		fmt.Println(name)
 	}
 

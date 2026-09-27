@@ -37,9 +37,6 @@ func credsSet() {
 		dir = "secure/aws_creds"
 	}
 	root := path.Join(home, dir)
-	if err != nil {
-		lib.Logger.Fatal("error: ", err)
-	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
@@ -51,7 +48,7 @@ func credsSet() {
 		if !strings.HasSuffix(entry.Name(), ".creds") {
 			continue
 		}
-		name := strings.Split(entry.Name(), ".")[0]
+		name, _, _ := strings.Cut(entry.Name(), ".")
 		if name == args.Name {
 			err = os.MkdirAll(path.Join(home, ".aws"), 0700)
 			if err != nil {

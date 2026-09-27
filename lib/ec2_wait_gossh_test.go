@@ -220,7 +220,7 @@ func TestEC2WaitGoSshResults(t *testing.T) {
 			if reads != 1 || sshCalls != 1 || terminations != wantTerminations {
 				t.Fatalf("reads=%d SSH calls=%d terminations=%d", reads, sshCalls, terminations)
 			}
-			if test.sshError == globalError && !errors.Is(err, globalError) {
+			if errors.Is(test.sshError, globalError) && !errors.Is(err, globalError) {
 				t.Fatalf("lost global SSH error: %v", err)
 			}
 			if test.failTerminate && !errors.Is(err, terminateError) {

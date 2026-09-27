@@ -56,16 +56,14 @@ func TestLambdaIAMOrderingIntegration(t *testing.T) {
 	if _, err := oldLambda.GetFunction(ctx, &lambda.GetFunctionInput{FunctionName: aws.String(name)}); err == nil {
 		t.Fatal("fixture Lambda already exists")
 	} else {
-		var absent *lambdatypes.ResourceNotFoundException
-		if !errors.As(err, &absent) {
+		if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 			t.Fatal(err)
 		}
 	}
 	if _, err := oldIAM.GetRole(ctx, &iam.GetRoleInput{RoleName: aws.String(name)}); err == nil {
 		t.Fatal("fixture role already exists")
 	} else {
-		var absent *iamtypes.NoSuchEntityException
-		if !errors.As(err, &absent) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); !ok {
 			t.Fatal(err)
 		}
 	}
@@ -102,8 +100,7 @@ func TestLambdaIAMOrderingIntegration(t *testing.T) {
 			t.Error(err)
 		}
 		if _, err := LogsClient().DeleteLogGroup(cleanup, &cloudwatchlogs.DeleteLogGroupInput{LogGroupName: aws.String(logGroup)}); err != nil {
-			var absent *cwlogstypes.ResourceNotFoundException
-			if !errors.As(err, &absent) {
+			if _, ok := errors.AsType[*cwlogstypes.ResourceNotFoundException](err); !ok {
 				t.Error(err)
 			}
 		}
@@ -113,16 +110,14 @@ func TestLambdaIAMOrderingIntegration(t *testing.T) {
 		if _, err := oldLambda.GetFunction(cleanup, &lambda.GetFunctionInput{FunctionName: aws.String(name)}); err == nil {
 			t.Error("fixture Lambda remains")
 		} else {
-			var absent *lambdatypes.ResourceNotFoundException
-			if !errors.As(err, &absent) {
+			if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 				t.Error(err)
 			}
 		}
 		if _, err := oldIAM.GetRole(cleanup, &iam.GetRoleInput{RoleName: aws.String(name)}); err == nil {
 			t.Error("fixture role remains")
 		} else {
-			var absent *iamtypes.NoSuchEntityException
-			if !errors.As(err, &absent) {
+			if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); !ok {
 				t.Error(err)
 			}
 		}
@@ -159,9 +154,13 @@ func TestLambdaIAMOrderingIntegration(t *testing.T) {
 						return nil, err
 					}
 					equal, err := iamPolicyEqual(doc, grant.policyDocument())
-					if err != nil || !equal {
+					if err != nil {
 						cancel()
-						return nil, fmt.Errorf("before real activation, grant differs: %v", err)
+						return nil, fmt.Errorf("before real activation, grant differs: %w", err)
+					}
+					if !equal {
+						cancel()
+						return nil, errors.New("before real activation, grant differs")
 					}
 				}
 				policies, err := IamListRolePolicies(request.Context(), name)
@@ -220,8 +219,7 @@ func TestLambdaIAMOrderingIntegration(t *testing.T) {
 	if _, err := oldIAM.GetRolePolicy(ctx, &iam.GetRolePolicyInput{RoleName: aws.String(name), PolicyName: aws.String(oldGrant.policyName())}); err == nil {
 		t.Fatal("obsolete inline grant was not pruned")
 	} else {
-		var absent *iamtypes.NoSuchEntityException
-		if !errors.As(err, &absent) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); !ok {
 			t.Fatal(err)
 		}
 	}

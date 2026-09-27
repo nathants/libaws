@@ -42,8 +42,7 @@ func LogsEnsureGroup(ctx context.Context, infrasetName, logGroupName string, ttl
 	})
 	if err != nil || out.LogStreams == nil {
 		if err != nil {
-			var rnfe *cwlogstypes.ResourceNotFoundException
-			if !errors.As(err, &rnfe) {
+			if _, ok := errors.AsType[*cwlogstypes.ResourceNotFoundException](err); !ok {
 				Logger.Println("error:", err)
 				return err
 			}
@@ -144,8 +143,7 @@ func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
 		LogGroupName: aws.String(name),
 	})
 	if err != nil {
-		var rnfe *cwlogstypes.ResourceNotFoundException
-		if !errors.As(err, &rnfe) {
+		if _, ok := errors.AsType[*cwlogstypes.ResourceNotFoundException](err); !ok {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -156,8 +154,7 @@ func LogsDeleteGroup(ctx context.Context, name string, preview bool) error {
 			LogGroupName: aws.String(name),
 		})
 		if err != nil {
-			var rnfe *cwlogstypes.ResourceNotFoundException
-			if !errors.As(err, &rnfe) {
+			if _, ok := errors.AsType[*cwlogstypes.ResourceNotFoundException](err); !ok {
 				Logger.Println("error:", err)
 				return err
 			}
@@ -300,7 +297,6 @@ func logsRecentWithClient(
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(maxConcurrentRequests)
 	for index, stream := range streamsOut.LogStreams {
-		index := index
 		streamName := aws.ToString(stream.LogStreamName)
 		group.Go(func() error {
 			out, err := client.GetLogEvents(groupCtx, &cloudwatchlogs.GetLogEventsInput{

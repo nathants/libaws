@@ -291,8 +291,7 @@ func lambdaDeleteAPIDNSRecord(
 	}
 	records, err := route53ListRecords(ctx, client, zoneID)
 	if err != nil {
-		var notFound *route53types.NoSuchHostedZone
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*route53types.NoSuchHostedZone](err); ok {
 			return false, nil
 		}
 		return false, err

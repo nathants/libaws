@@ -50,7 +50,7 @@ func ec2LsSnapshots() {
 	for _, snapshot := range snapshots {
 		amiID := "-"
 		if snapshot.Description != nil {
-			for _, part := range strings.Split(*snapshot.Description, " ") {
+			for part := range strings.SplitSeq(*snapshot.Description, " ") {
 				if strings.HasPrefix(part, "ami-") {
 					amiID = part
 					break

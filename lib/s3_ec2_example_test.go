@@ -30,8 +30,7 @@ func TestS3EC2ExampleCleanup(t *testing.T) {
 	timeout := int32(lambdaAttrTimeoutDefault)
 	configuration, err := LambdaClient().GetFunctionConfiguration(ctx, &lambda.GetFunctionConfigurationInput{FunctionName: aws.String(function)})
 	if err != nil {
-		var missing *lambdatypes.ResourceNotFoundException
-		if !errors.As(err, &missing) {
+		if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 			t.Error(err)
 		}
 	} else if configuration.Timeout != nil {

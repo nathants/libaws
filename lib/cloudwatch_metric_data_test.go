@@ -369,7 +369,7 @@ func TestCloudwatchGetMetricSparseIntegration(t *testing.T) {
 
 func cloudwatchMetricLineAt(output string, timestamp time.Time) string {
 	prefix := "timestamp=" + timestamp.UTC().Format(time.RFC3339Nano) + " "
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if strings.HasPrefix(line, prefix) {
 			return line
 		}

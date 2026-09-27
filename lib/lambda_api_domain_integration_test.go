@@ -233,6 +233,8 @@ func lambdaAPIDomainIntegrationEnsureCertificate(
 		case acmtypes.CertificateStatusFailed, acmtypes.CertificateStatusValidationTimedOut,
 			acmtypes.CertificateStatusRevoked, acmtypes.CertificateStatusExpired:
 			return "", fmt.Errorf("ACM certificate %q entered terminal status %s", certificateARN, certificate.Status)
+		case acmtypes.CertificateStatusPendingValidation, acmtypes.CertificateStatusIssued, acmtypes.CertificateStatusInactive:
+		default:
 		}
 		validationRecord, err := lambdaAPIDomainIntegrationValidationRecord(certificate, wildcard)
 		if err != nil {
@@ -325,12 +327,10 @@ func lambdaAPIDomainIntegrationEnsureFixtureDomain(
 			if err == nil {
 				break
 			}
-			var conflict *apitypes.ConflictException
-			if errors.As(err, &conflict) {
+			if _, ok := errors.AsType[*apitypes.ConflictException](err); ok {
 				break
 			}
-			var throttled *apitypes.TooManyRequestsException
-			if !errors.As(err, &throttled) {
+			if _, ok := errors.AsType[*apitypes.TooManyRequestsException](err); !ok {
 				return err
 			}
 			if err := lambdaAPIDomainIntegrationWait(ctx, 5*time.Second); err != nil {
@@ -406,7 +406,7 @@ func lambdaAPIDomainIntegrationVerifyFixture(
 	t *testing.T,
 	ctx context.Context,
 	names lambdaAPIDomainIntegrationNames,
-) route53types.HostedZone {
+) {
 	t.Helper()
 	zone := lambdaAPIDomainIntegrationRequireZone(t, ctx, names.zone)
 	if nameservers, err := net.LookupNS(names.zone); err != nil || len(nameservers) == 0 {
@@ -457,7 +457,6 @@ func lambdaAPIDomainIntegrationVerifyFixture(
 		t.Fatalf("fixture ACM certificate = %#v", certificate)
 	}
 	lambdaAPIDomainIntegrationVerifyValidationRecord(t, ctx, zone, certificate, wildcard)
-	return zone
 }
 
 func lambdaAPIDomainIntegrationEnsureFixture(
@@ -599,8 +598,7 @@ func lambdaAPIDomainIntegrationVerifyRoutingCleanup(t *testing.T, ctx context.Co
 			if err == nil {
 				break
 			}
-			var throttled *apitypes.TooManyRequestsException
-			if !errors.As(err, &throttled) {
+			if _, ok := errors.AsType[*apitypes.TooManyRequestsException](err); !ok {
 				t.Fatal(err)
 			}
 			// Domain updates have a much lower quota than ordinary API reads.
@@ -686,8 +684,7 @@ func lambdaAPIDomainIntegrationWaitForDomainRemoval(t *testing.T, ctx context.Co
 	t.Helper()
 	for {
 		_, err := lambdaAPIDomainIntegrationGetDomain(ctx, domainName)
-		var notFound *apitypes.NotFoundException
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*apitypes.NotFoundException](err); ok {
 			return
 		}
 		if err != nil {
@@ -764,8 +761,7 @@ func lambdaAPIDomainIntegrationCleanupDomain(
 			DomainName:   aws.String(domainName),
 			ApiMappingId: mapping.ApiMappingId,
 		}); err != nil {
-			var notFound *apitypes.NotFoundException
-			if !errors.As(err, &notFound) {
+			if _, ok := errors.AsType[*apitypes.NotFoundException](err); !ok {
 				t.Error(err)
 				return
 			}
@@ -802,8 +798,7 @@ func lambdaAPIDomainIntegrationCleanupAPI(t *testing.T, ctx context.Context, api
 		return
 	}
 	if _, err := ApiClient().DeleteApi(ctx, &apigatewayv2.DeleteApiInput{ApiId: api.ApiId}); err != nil {
-		var notFound *apitypes.NotFoundException
-		if !errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*apitypes.NotFoundException](err); !ok {
 			t.Error(err)
 		}
 	}

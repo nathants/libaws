@@ -367,8 +367,7 @@ func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, previ
 			FunctionName: aws.String(infraLambda.Name),
 		})
 		if err != nil {
-			var notFound *lambdatypes.ResourceNotFoundException
-			if !errors.As(err, &notFound) {
+			if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 				Logger.Println("error:", err)
 				return nil, err
 			}
@@ -405,8 +404,7 @@ func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, previ
 			FunctionName: aws.String(infraLambda.Name),
 		})
 		if err != nil {
-			var nfe *lambdatypes.ResourceNotFoundException
-			if !errors.As(err, &nfe) {
+			if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 				Logger.Println("error:", err)
 				return nil, err
 			}
@@ -465,8 +463,7 @@ func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, previ
 				if !preview {
 					_, err := LambdaClient().AddPermission(ctx, permission.input)
 					if err != nil {
-						var conflict *lambdatypes.ResourceConflictException
-						if !errors.As(err, &conflict) {
+						if _, ok := errors.AsType[*lambdatypes.ResourceConflictException](err); !ok {
 							Logger.Println("error:", err)
 							return nil, err
 						}
@@ -492,8 +489,7 @@ func LambdaEnsureTriggerURL(ctx context.Context, infraLambda *InfraLambda, previ
 			}
 			Logger.Println(PreviewString(preview)+"deleted function url:", infraLambda.Name)
 		} else {
-			var notFound *lambdatypes.ResourceNotFoundException
-			if !errors.As(err, &notFound) {
+			if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 				Logger.Println("error:", err)
 				return nil, err
 			}
@@ -515,8 +511,7 @@ func LambdaArn(ctx context.Context, name string) (string, error) {
 			FunctionName: aws.String(name),
 		})
 		if err != nil {
-			var notFound *lambdatypes.ResourceNotFoundException
-			if errors.As(err, &notFound) {
+			if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); ok {
 				expectedErr = err
 				return nil
 			}
@@ -586,8 +581,7 @@ func lambdaResolveIdentityWith(
 		}
 		return lambdaIdentity{name: name, arn: functionARN, infraSetName: infraSetName, exists: true}, nil
 	}
-	var notFound *lambdatypes.ResourceNotFoundException
-	if !errors.As(err, &notFound) {
+	if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 		return lambdaIdentity{}, err
 	}
 	callerARN, err := resolveCallerARN(ctx)
@@ -719,8 +713,7 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 			Name: aws.String(ruleName),
 		})
 		if err != nil {
-			var rnfe *eventbridgetypes.ResourceNotFoundException
-			if !errors.As(err, &rnfe) {
+			if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); !ok {
 				return nil, err
 			}
 			if !preview {
@@ -756,8 +749,7 @@ func LambdaEnsureTriggerEcr(ctx context.Context, infraLambda *InfraLambda, previ
 		err = Retry(ctx, func() error {
 			var err error
 			targets, err = EventsListRuleTargets(ctx, ruleName, nil)
-			var rnfe *eventbridgetypes.ResourceNotFoundException
-			if errors.As(err, &rnfe) {
+			if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); ok {
 				return nil
 			}
 			return err
@@ -898,8 +890,7 @@ func lambdaRemoveUnusedPermissions(ctx context.Context, name string, permissionS
 		FunctionName: aws.String(name),
 	})
 	if err != nil {
-		var notFound *lambdatypes.ResourceNotFoundException
-		if !errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); !ok {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -1026,8 +1017,7 @@ func lambdaEnsurePermissionWithSourceAccount(ctx context.Context, name, callerPr
 	err := Retry(ctx, func() error {
 		out, err := LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{FunctionName: aws.String(name)})
 		if err != nil {
-			var notFound *lambdatypes.ResourceNotFoundException
-			if errors.As(err, &notFound) {
+			if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); ok {
 				return nil
 			}
 			return err
@@ -1120,7 +1110,7 @@ func lambdaEnsureTriggerApi(ctx context.Context, infraSetName, apiName, arnLambd
 		if !preview {
 			input := &apigatewayv2.CreateApiInput{
 				Name:         aws.String(apiName),
-				ProtocolType: apitypes.ProtocolType(protocolType),
+				ProtocolType: protocolType,
 				Tags: map[string]string{
 					infraSetTagName: infraSetName,
 				},
@@ -1145,7 +1135,7 @@ func lambdaEnsureTriggerApi(ctx context.Context, infraSetName, apiName, arnLambd
 		Logger.Println(PreviewString(preview)+"created api:", apiName)
 		return nil, nil
 	}
-	if api.ProtocolType != apitypes.ProtocolType(protocolType) {
+	if api.ProtocolType != protocolType {
 		err := fmt.Errorf("api protocol type misconfigured for %s %s: %v != %v", apiName, *api.ApiId, api.ProtocolType, protocolType)
 		Logger.Println("error:", err)
 		return nil, err
@@ -1245,8 +1235,7 @@ func lambdaEnsureTriggerApiIntegrationStageRoute(ctx context.Context, name, arnL
 		StageName: aws.String(lambdaDollarDefault),
 	})
 	if err != nil {
-		var nfe *apitypes.NotFoundException
-		if !errors.As(err, &nfe) {
+		if _, ok := errors.AsType[*apitypes.NotFoundException](err); !ok {
 			Logger.Println("error:", err)
 			return "", err
 		}
@@ -1362,8 +1351,7 @@ func lambdaEnsureTriggerApiDomainName(ctx context.Context, name, domain, infraSe
 		DomainName: aws.String(domain),
 	})
 	if err != nil {
-		var nfe *apitypes.NotFoundException
-		if !errors.As(err, &nfe) {
+		if _, ok := errors.AsType[*apitypes.NotFoundException](err); !ok {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -1615,8 +1603,7 @@ func lambdaEnsureTriggerApiMapping(ctx context.Context, name, subDomain string, 
 	}
 	mappings, err := lambdaAPIListMappings(ctx, ApiClient(), subDomain)
 	if err != nil {
-		var notFound *apitypes.NotFoundException
-		if !errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*apitypes.NotFoundException](err); !ok {
 			Logger.Println("error:", err)
 			return err
 		}
@@ -2021,8 +2008,7 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 				Name: aws.String(scheduleName),
 			})
 			if err != nil {
-				var rnfe *eventbridgetypes.ResourceNotFoundException
-				if !errors.As(err, &rnfe) {
+				if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); !ok {
 					return nil, err
 				}
 				if !preview {
@@ -2058,8 +2044,7 @@ func LambdaEnsureTriggerSchedule(ctx context.Context, infraLambda *InfraLambda, 
 			err = Retry(ctx, func() error {
 				var err error
 				targets, err = EventsListRuleTargets(ctx, scheduleName, nil)
-				var rnfe *eventbridgetypes.ResourceNotFoundException
-				if errors.As(err, &rnfe) {
+				if _, ok := errors.AsType[*eventbridgetypes.ResourceNotFoundException](err); ok {
 					return nil
 				}
 				return err
@@ -2423,7 +2408,7 @@ func lambdaCreateDynamoDBMapping(ctx context.Context, client lambdaEventSourceMa
 	if output == nil || output.UUID == nil || *output.UUID == "" {
 		return fmt.Errorf("created Lambda event source mapping lacks a UUID")
 	}
-	if _, err := lambdaWaitEventSourceMappingEnabled(ctx, client, *output.UUID); err != nil {
+	if err := lambdaWaitEventSourceMappingEnabled(ctx, client, *output.UUID); err != nil {
 		return err
 	}
 	Logger.Println("created event source mapping:", infraLambda.Name, infraLambda.Arn, aws.ToString(desired.create.EventSourceArn), strings.Join(desired.triggerAttrs, " "))
@@ -2454,7 +2439,7 @@ func lambdaConvergeDynamoDBMapping(ctx context.Context, client lambdaEventSource
 			Logger.Println("error:", err)
 			return err
 		}
-		if _, err := lambdaWaitEventSourceMappingEnabled(ctx, client, aws.ToString(current.uuid)); err != nil {
+		if err := lambdaWaitEventSourceMappingEnabled(ctx, client, aws.ToString(current.uuid)); err != nil {
 			return err
 		}
 	}
@@ -2528,18 +2513,18 @@ func lambdaWaitEventSourceMappingSettled(ctx context.Context, client lambdaEvent
 	}
 }
 
-func lambdaWaitEventSourceMappingEnabled(ctx context.Context, client lambdaEventSourceMappingClient, uuid string) (*lambdaDynamoDBCurrentMapping, error) {
+func lambdaWaitEventSourceMappingEnabled(ctx context.Context, client lambdaEventSourceMappingClient, uuid string) error {
 	mapping, err := lambdaWaitEventSourceMappingSettled(ctx, client, uuid)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if mapping == nil {
-		return nil, fmt.Errorf("lambda event source mapping %s disappeared before reaching Enabled", uuid)
+		return fmt.Errorf("lambda event source mapping %s disappeared before reaching Enabled", uuid)
 	}
 	if aws.ToString(mapping.state) != "Enabled" {
-		return nil, fmt.Errorf("lambda event source mapping %s reached %s instead of Enabled: %s", uuid, aws.ToString(mapping.state), aws.ToString(mapping.stateTransitionReason))
+		return fmt.Errorf("lambda event source mapping %s reached %s instead of Enabled: %s", uuid, aws.ToString(mapping.state), aws.ToString(mapping.stateTransitionReason))
 	}
-	return mapping, nil
+	return nil
 }
 
 func lambdaWaitEventSourceMappingDeleted(ctx context.Context, client lambdaEventSourceMappingClient, uuid string) error {
@@ -2766,7 +2751,7 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 							Logger.Println("error:", err)
 							return err
 						}
-						if _, err := lambdaWaitEventSourceMappingEnabled(ctx, LambdaClient(), aws.ToString(found.UUID)); err != nil {
+						if err := lambdaWaitEventSourceMappingEnabled(ctx, LambdaClient(), aws.ToString(found.UUID)); err != nil {
 							return err
 						}
 					}
@@ -3393,8 +3378,7 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 			FunctionName: aws.String(infraLambda.Name),
 		})
 		if err != nil {
-			var notFound *lambdatypes.ResourceNotFoundException
-			if errors.As(err, &notFound) {
+			if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); ok {
 				expectedErr = err
 				return nil
 			}
@@ -3817,8 +3801,7 @@ func LambdaDeleteFunction(ctx context.Context, name string, preview bool) error 
 		FunctionName: aws.String(name),
 	})
 	if err != nil {
-		var notFound *lambdatypes.ResourceNotFoundException
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); ok {
 			return nil
 		}
 	}
@@ -3828,8 +3811,7 @@ func LambdaDeleteFunction(ctx context.Context, name string, preview bool) error 
 				FunctionName: aws.String(name),
 			})
 			if err != nil {
-				var notFound *lambdatypes.ResourceNotFoundException
-				if errors.As(err, &notFound) {
+				if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); ok {
 					return nil
 				}
 				return err

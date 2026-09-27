@@ -158,7 +158,7 @@ func TestInfraListSetMembershipBeforeDescription(t *testing.T) {
 
 func TestSQSDeletePreservesIdentityErrors(t *testing.T) {
 	probe := errors.New("identity lookup probe")
-	installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+	installInfraSetClients(t, infraSetTransport(func(_ *http.Request) (*http.Response, error) {
 		return nil, probe
 	}))
 	oldClient := stsClient
@@ -354,7 +354,7 @@ func TestInfraListSetAPIBoundsDomainAndDNSReads(t *testing.T) {
 }
 
 func TestInfraListLambdaReturnsDiscoveryErrorWithoutTriggerProducer(t *testing.T) {
-	installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+	installInfraSetClients(t, infraSetTransport(func(_ *http.Request) (*http.Response, error) {
 		return nil, errors.New("function discovery probe")
 	}))
 	if _, err := InfraListLambda(context.Background(), nil, ""); err == nil || !strings.Contains(err.Error(), "function discovery probe") {
@@ -404,7 +404,7 @@ func TestInfraListSetPaginatesProfileMembership(t *testing.T) {
 			return nil, err
 		}
 		action := r.Form.Get("Action")
-		body := ""
+		var body string
 		switch action {
 		case "ListInstanceProfiles":
 			body = `<InstanceProfiles><member><InstanceProfileName>selected-profile</InstanceProfileName></member></InstanceProfiles><IsTruncated>false</IsTruncated>`

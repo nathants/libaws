@@ -178,8 +178,7 @@ func (scope infraListScope) sesRules(ctx context.Context, functionARN string) ([
 	}
 	out, err := LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{FunctionName: aws.String(functionARN)})
 	if err != nil {
-		var absent *lambdatypes.ResourceNotFoundException
-		if errors.As(err, &absent) {
+		if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); ok {
 			return nil, nil
 		} // no resource-based policy
 		return nil, err

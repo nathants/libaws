@@ -69,7 +69,8 @@ func TestPreviewReadErrors(t *testing.T) {
 					calls := 0
 					transport := previewReadTransport(func(request *http.Request) (*http.Response, error) {
 						calls++
-						status, body := 403, ""
+						status := 403
+						var body string
 						if strings.HasPrefix(request.URL.Host, "iam.") {
 							if err := request.ParseForm(); err != nil {
 								return nil, err
@@ -127,7 +128,8 @@ func TestPreviewPreservesPolicyDisappearanceAfterDiscovery(t *testing.T) {
 			if err := request.ParseForm(); err != nil {
 				return nil, err
 			}
-			status, body := 200, ""
+			status := 200
+			var body string
 			switch action := request.Form.Get("Action"); action {
 			case "ListRolePolicies":
 				body = `<ListRolePoliciesResponse><ListRolePoliciesResult><PolicyNames><member>existing</member></PolicyNames></ListRolePoliciesResult></ListRolePoliciesResponse>`

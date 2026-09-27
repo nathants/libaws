@@ -135,8 +135,7 @@ func TestResolveS3BucketRegionReturnsTypedNoSuchBucket(t *testing.T) {
 	if region != "" {
 		t.Fatalf("missing bucket region = %q, want empty", region)
 	}
-	var missing *s3types.NoSuchBucket
-	if !errors.As(err, &missing) {
+	if _, ok := errors.AsType[*s3types.NoSuchBucket](err); !ok {
 		t.Fatalf("missing bucket error = %T %v, want *types.NoSuchBucket", err, err)
 	}
 	if !isS3NoSuchBucket(err) {

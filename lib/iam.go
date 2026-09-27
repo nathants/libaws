@@ -60,7 +60,7 @@ func (allow *IamAllow) policyName() string {
 	action := strings.ReplaceAll(allow.Action, "*", "ALL")
 	resource := strings.ReplaceAll(allow.Resource, "*", "ALL")
 	var parts []string
-	for _, part := range strings.Split(resource, ":") { // arn:aws:service:account:region:target
+	for part := range strings.SplitSeq(resource, ":") { // arn:aws:service:account:region:target
 		if !slices.Contains([]string{"arn", "aws", "s3", "dynamodb", "sqs", "sns"}, part) {
 			parts = append(parts, strings.ReplaceAll(part, "/", "__"))
 		}
@@ -199,8 +199,7 @@ func IamDeleteUser(ctx context.Context, name string, preview bool) error {
 		UserName: aws.String(name),
 	})
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			return nil
 		}
 		Logger.Println("error:", err)
@@ -262,8 +261,7 @@ func IamDeleteRole(ctx context.Context, roleName string, preview bool) error {
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			return nil
 		}
 		Logger.Println("error:", err)
@@ -302,8 +300,7 @@ func IamDeleteInstanceProfile(ctx context.Context, profileName string, preview b
 		InstanceProfileName: aws.String(profileName),
 	})
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			return nil
 		}
 		Logger.Println("error:", err)
@@ -311,8 +308,7 @@ func IamDeleteInstanceProfile(ctx context.Context, profileName string, preview b
 	}
 	err = IamEnsureRoleAllows(ctx, profileName, []string{}, preview)
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 		} else {
 			Logger.Println("error:", err)
 			return err
@@ -320,8 +316,7 @@ func IamDeleteInstanceProfile(ctx context.Context, profileName string, preview b
 	}
 	err = IamEnsureRolePolicies(ctx, profileName, []string{}, preview)
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 		} else {
 			Logger.Println("error:", err)
 			return err
@@ -333,8 +328,7 @@ func IamDeleteInstanceProfile(ctx context.Context, profileName string, preview b
 			RoleName:            aws.String(profileName),
 		})
 		if err != nil {
-			var nse *iamtypes.NoSuchEntityException
-			if errors.As(err, &nse) {
+			if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			} else {
 				Logger.Println("error:", err)
 				return err
@@ -344,8 +338,7 @@ func IamDeleteInstanceProfile(ctx context.Context, profileName string, preview b
 			RoleName: aws.String(profileName),
 		})
 		if err != nil {
-			var nse *iamtypes.NoSuchEntityException
-			if errors.As(err, &nse) {
+			if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			} else {
 				Logger.Println("error:", err)
 				return err
@@ -415,8 +408,7 @@ func (scope infraListScope) iamRoles(ctx context.Context, pathPrefix *string) ([
 			if scope.setName != "" {
 				tags, err := iamListRoleTags(ctx, aws.ToString(role.RoleName))
 				if err != nil {
-					var absent *iamtypes.NoSuchEntityException
-					if errors.As(err, &absent) {
+					if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 						continue
 					}
 					return nil, err
@@ -489,8 +481,7 @@ func IamEnsureUserAllows(ctx context.Context, username string, allows []string, 
 			PolicyName: aws.String(desired.policyName),
 		})
 		if err != nil {
-			var nse *iamtypes.NoSuchEntityException
-			if errors.As(err, &nse) {
+			if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			} else {
 				Logger.Println("error:", err)
 				return err
@@ -765,8 +756,7 @@ func iamEnsureRoleAllows(ctx context.Context, roleName string, allows []string, 
 			PolicyName: aws.String(allow.policyName()),
 		})
 		if err != nil {
-			var nse *iamtypes.NoSuchEntityException
-			if errors.As(err, &nse) {
+			if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			} else {
 				Logger.Println("error:", err)
 				return err
@@ -1571,8 +1561,7 @@ func IamEnsureUser(ctx context.Context, infraSetName, username string, policies,
 	out, err := IamClient().GetUser(ctx, &iam.GetUserInput{UserName: aws.String(username)})
 	missing := false
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if !errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); !ok {
 			return err
 		}
 		missing = true
@@ -1632,8 +1621,7 @@ func IamEnsureUserApi(ctx context.Context, username string, preview bool) (*iamt
 	}
 	_, err := IamClient().GetUser(ctx, &iam.GetUserInput{UserName: aws.String(username)})
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if !errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); !ok {
 			return nil, err
 		}
 		if !preview {
@@ -1691,8 +1679,7 @@ func IamEnsureUserLogin(ctx context.Context, username, password string, preview 
 		UserName: aws.String(username),
 	})
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			if !preview {
 				_, err := IamClient().CreateUser(ctx, &iam.CreateUserInput{
 					UserName: aws.String(username),
@@ -1712,8 +1699,7 @@ func IamEnsureUserLogin(ctx context.Context, username, password string, preview 
 		UserName: aws.String(username),
 	})
 	if err != nil {
-		var nse *iamtypes.NoSuchEntityException
-		if errors.As(err, &nse) {
+		if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); ok {
 			_, err = IamClient().CreateLoginProfile(ctx, &iam.CreateLoginProfileInput{
 				Password:              aws.String(password),
 				UserName:              aws.String(username),

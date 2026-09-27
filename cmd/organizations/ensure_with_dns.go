@@ -97,7 +97,7 @@ func organizationsEnsureWithDns() {
 		lib.Logger.Fatal("error: ", err)
 	}
 	cmd := []string{fmt.Sprintf("libaws creds-set PARENT_NAME && libaws route53-ensure-record %s %s TTL=172800 Type=NS", args.ParentDomain, args.ChildSubDomain)}
-	for _, line := range strings.Split(string(bytes), "\n") {
+	for line := range strings.SplitSeq(string(bytes), "\n") {
 		if line != "" {
 			cmd = append(cmd, "Value="+line)
 		}
