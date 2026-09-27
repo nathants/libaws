@@ -64,13 +64,16 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
-	// Keep the transitive module graph above GO-2026-5320, GO-2026-6179, and GO-2026-6180.
-	github.com/yuin/goldmark v1.7.17 // indirect
-	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
 
-exclude gopkg.in/yaml.v2 v2.2.2
+exclude (
+	// appengine's x/text v0.3.8 requirement would otherwise put goldmark and
+	// x/mod versions affected by GO-2026-5320, GO-2026-6179, and
+	// GO-2026-6180 into the module graph.
+	golang.org/x/text v0.3.8
+	gopkg.in/yaml.v2 v2.2.2
+)
