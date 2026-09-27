@@ -20,3 +20,6 @@ dev = [
 build-constraint-dependencies = ["setuptools==83.0.0"]
 package = false
 exclude-newer = "14 days"
+# These Git sources have no wheels. Listing them exempts exactly these packages
+# from a user-level `no-build = true`; everything else stays wheel-only.
+no-binary-package = ["py-pool", "py-shell", "py-util"]
