@@ -1,0 +1,12 @@
+{
+    "compilerOptions": {
+        "allowJs": true,
+        "checkJs": true,
+        "noEmit": true,
+        "strict": true,
+        "module": "nodenext",
+        "target": "es2024",
+        "types": ["node"]
+    },
+    "include": ["*/main.js"]
+}

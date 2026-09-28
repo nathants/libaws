@@ -1,8 +1,8 @@
-"use strict";
+'use strict';
 
-exports.handler = async (event, context) => {
-  for (const record of event['Records']) {
-    console.log('thanks for:', JSON.stringify(record));
-  }
-  context.succeed();
-}
+/** @type {import('aws-lambda').SQSHandler} */
+exports.handler = async event => {
+    for (const record of event.Records) {
+        console.log('thanks for:', JSON.stringify(record));
+    }
+};

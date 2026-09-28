@@ -1,0 +1,9 @@
+{
+    "name": "libaws-docker-examples",
+    "private": true,
+    "devDependencies": {
+        "@types/aws-lambda": "8.10.163",
+        "@types/node": "24.13.4",
+        "typescript": "7.0.2"
+    }
+}

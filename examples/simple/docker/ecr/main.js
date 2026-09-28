@@ -1,6 +1,6 @@
-"use strict";
+'use strict';
 
-exports.handler = async (event, context) => {
-  console.log('got:', JSON.stringify(event));
-  context.succeed();
-}
+/** @type {import('aws-lambda').EventBridgeHandler<string, unknown, void>} */
+exports.handler = async event => {
+    console.log('got:', JSON.stringify(event));
+};

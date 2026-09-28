@@ -1,22 +1,22 @@
 name: test-infraset-${uid}
 
 sqs:
- test-queue-${uid}:
-   attr:
-     - timeout=60
+    test-queue-${uid}:
+        attr:
+            - timeout=60
 
 lambda:
-  test-lambda-${uid}:
-    entrypoint: ${account}.dkr.ecr.${region}.amazonaws.com/test-container-${uid}@${digest}
-    attr:
-      - memory=128
-      - timeout=60
-    policy:
-      - AWSLambdaBasicExecutionRole
-      - AWSLambdaSQSQueueExecutionRole
-    trigger:
-      - type: sqs
+    test-lambda-${uid}:
+        entrypoint: ${account}.dkr.ecr.${region}.amazonaws.com/test-container-${uid}@${digest}
         attr:
-          - test-queue-${uid}
-          - batch=1
-          - window=1
+            - memory=128
+            - timeout=60
+        policy:
+            - AWSLambdaBasicExecutionRole
+            - AWSLambdaSQSQueueExecutionRole
+        trigger:
+            - type: sqs
+              attr:
+                  - test-queue-${uid}
+                  - batch=1
+                  - window=1

@@ -1491,7 +1491,7 @@ Alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructur
 
 ## Testing
 
-Tests require Go 1.27+, Python 3.12+, [uv](https://docs.astral.sh/uv/), rootless Docker, and [libcheck](https://github.com/nathants/libcheck) on `PATH`. Use scratch-account credentials and a permanent, publicly delegated Route53 zone in that account:
+Tests require Go 1.27+, Python 3.12+, [uv](https://docs.astral.sh/uv/), Node with [pnpm](https://pnpm.io/), rootless Docker, and [libcheck](https://github.com/nathants/libcheck) on `PATH`. Use scratch-account credentials and a permanent, publicly delegated Route53 zone in that account:
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM
