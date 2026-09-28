@@ -137,10 +137,16 @@ func ApiUrl(ctx context.Context, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	scheme, stage := "https", ""
+	if api.ProtocolType == apitypes.ProtocolTypeWebsocket {
+		scheme, stage = "wss", "/"+lambdaDollarDefault
+	}
 	url := fmt.Sprintf(
-		"https://%s.execute-api.%s.amazonaws.com",
+		"%s://%s.execute-api.%s.amazonaws.com%s",
+		scheme,
 		*api.ApiId,
 		Region(),
+		stage,
 	)
 	return url, nil
 }

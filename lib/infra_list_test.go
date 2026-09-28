@@ -303,6 +303,51 @@ func TestInfraListSetSESUsesExactInvocationGrants(t *testing.T) {
 	}
 }
 
+func TestInfraListAPIURLsUseProtocolAndDomainMapping(t *testing.T) {
+	for _, protocol := range []string{"HTTP", "WEBSOCKET"} {
+		for _, customDomain := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/domain=%v", protocol, customDomain), func(t *testing.T) {
+				name, scheme, stage := "function", "https", ""
+				if protocol == "WEBSOCKET" {
+					name, scheme, stage = name+LambdaWebsocketSuffix, "wss", "/$default"
+				}
+				endpoint := "selected.execute-api.us-east-1.amazonaws.com" + stage
+				if customDomain {
+					endpoint = "d-selected.execute-api.us-east-1.amazonaws.com"
+				}
+				installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+					var body string
+					switch r.URL.Path {
+					case "/v2/apis":
+						body = fmt.Sprintf(`{"items":[{"apiId":"selected","name":%q,"protocolType":%q,"routeSelectionExpression":%q,"tags":{"libaws.infraset":"wanted"}}]}`, name, protocol, lambdaRouteSelection)
+					case "/v2/domainnames":
+						body = `{"items":[]}`
+						if customDomain {
+							body = `{"items":[{"domainName":"api.example.com","tags":{"libaws.infraset":"wanted"},"domainNameConfigurations":[{"apiGatewayDomainName":"d-selected.execute-api.us-east-1.amazonaws.com"}]}]}`
+						}
+					case "/v2/domainnames/api.example.com/apimappings":
+						body = `{"items":[{"apiMappingId":"mapping","apiId":"selected","apiMappingKey":"","stage":"$default"}]}`
+					case "/v2/apis/selected/integrations":
+						body = `{"items":[{"integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:123456789012:function:function"}]}`
+					default:
+						return nil, fmt.Errorf("unexpected request: %s", r.URL)
+					}
+					return infraSetResponse(r, 200, body), nil
+				}))
+				triggers := make(chan *InfraTrigger, 1)
+				apis, err := (infraListScope{setName: "wanted"}).listApi(context.Background(), triggers)
+				if err != nil || apis[name] == nil || apis[name].ReadOnlyUrl != endpoint || len(triggers) != 1 {
+					t.Fatalf("API endpoint: apis=%+v triggers=%d err=%v", apis, len(triggers), err)
+				}
+				trigger := <-triggers
+				if !slices.Contains(trigger.Attr, "url="+scheme+"://"+endpoint) {
+					t.Fatalf("trigger URL: %+v", trigger)
+				}
+			})
+		}
+	}
+}
+
 func TestInfraListSetAPIBoundsDomainAndDNSReads(t *testing.T) {
 	for _, ownedDomain := range []bool{false, true} {
 		t.Run(fmt.Sprint(ownedDomain), func(t *testing.T) {

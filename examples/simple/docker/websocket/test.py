@@ -47,7 +47,7 @@ def test(tmp_path):
         infra.pop("region")
         infra.pop("account")
         infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
-        infra["infraset"][f"test-infraset-{uid}"]["lambda"][f"test-lambda-{uid}"]['trigger'][0].pop("attr")
+        inventory_url, = infra["infraset"][f"test-infraset-{uid}"]["lambda"][f"test-lambda-{uid}"]['trigger'][0].pop("attr")
         expected = {
             "infraset": {
                 f"test-infraset-{uid}": {
@@ -62,7 +62,28 @@ def test(tmp_path):
             }
         }
         assert infra == expected, infra
-        run(f"libaws infra-url-websocket infra.yaml test-lambda-{uid}")
+        url = run(f"libaws infra-url-websocket infra.yaml test-lambda-{uid}")
+        assert inventory_url == f"url={url}", (inventory_url, url)
+        # A successful upgrade exercises the deployed $connect handler, not
+        # just API configuration. Node's built-in client needs no dependency.
+        subprocess.run(["node", "-e", """
+            const socket = new WebSocket(process.argv[1]);
+            let opened = false;
+            socket.addEventListener('error', event => {
+                console.error(event);
+                process.exitCode = 1;
+            });
+            socket.addEventListener('open', () => {
+                opened = true;
+                socket.close(1000);
+            });
+            socket.addEventListener('close', event => {
+                if (!opened || event.code !== 1000 || !event.wasClean) {
+                    console.error('WebSocket failed:', {opened, code: event.code, clean: event.wasClean});
+                    process.exitCode = 1;
+                }
+            });
+        """, url], check=True, timeout=45)
         run("libaws infra-rm infra.yaml --preview")
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra

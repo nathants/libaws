@@ -1239,6 +1239,8 @@ Defines a Lambda [function URL](https://docs.aws.amazon.com/lambda/latest/dg/url
 
 Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) websocket API:
 
+* `infra-url-websocket infra.yaml NAME` returns the default connection URL, `wss://API_ID.execute-api.REGION.amazonaws.com/$default`. The stage is required on the default endpoint, not on a custom-domain root mapping.
+
 * Add a custom domain with attr: `domain=ws.example.com`
 
 * Add a custom domain and update Route53 with attr: `dns=ws.example.com`
@@ -1491,7 +1493,7 @@ Alternatively, lift and shift to [other](https://www.pulumi.com/) [infrastructur
 
 ## Testing
 
-Tests require Go 1.27+, Python 3.12+, [uv](https://docs.astral.sh/uv/), Node with [pnpm](https://pnpm.io/), rootless Docker, and [libcheck](https://github.com/nathants/libcheck) on `PATH`. Use scratch-account credentials and a permanent, publicly delegated Route53 zone in that account:
+Tests require Go 1.27+, Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 22+ with [pnpm](https://pnpm.io/), rootless Docker, and [libcheck](https://github.com/nathants/libcheck) on `PATH`. Use scratch-account credentials and a permanent, publicly delegated Route53 zone in that account:
 
 ```bash
 export LIBAWS_TEST_ACCOUNT=$ACCOUNT_NUM

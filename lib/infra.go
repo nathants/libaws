@@ -1279,6 +1279,9 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 			}
 			if infraApi.Dns == "" && infraApi.Domain == "" {
 				infraApi.ReadOnlyUrl = fmt.Sprintf("%s.execute-api.%s.amazonaws.com", infraApi.apiID, Region())
+				if api.ProtocolType == apitypes.ProtocolTypeWebsocket {
+					infraApi.ReadOnlyUrl += "/" + lambdaDollarDefault
+				}
 			} else if infraApi.Domain != "" {
 				for _, d := range domains {
 					if *d.DomainName == infraApi.Domain {
@@ -1288,7 +1291,11 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 				}
 			}
 			if infraApi.ReadOnlyUrl != "" {
-				attrs = append(attrs, fmt.Sprintf("url=https://%s", infraApi.ReadOnlyUrl))
+				scheme := "https"
+				if api.ProtocolType == apitypes.ProtocolTypeWebsocket {
+					scheme = "wss"
+				}
+				attrs = append(attrs, fmt.Sprintf("url=%s://%s", scheme, infraApi.ReadOnlyUrl))
 			}
 			if candidate && lambdaNamePattern.MatchString(lambdaName) && len(integrations) == 1 &&
 				integrations[0].IntegrationType == apitypes.IntegrationTypeAwsProxy {

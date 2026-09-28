@@ -18,6 +18,32 @@ func (transport apiListTransport) Do(request *http.Request) (*http.Response, err
 	return transport(request)
 }
 
+func TestApiURLUsesProtocolAndDefaultStage(t *testing.T) {
+	for _, test := range []struct {
+		protocol, want string
+	}{
+		{"HTTP", "https://fixture.execute-api.us-east-1.amazonaws.com"},
+		{"WEBSOCKET", "wss://fixture.execute-api.us-east-1.amazonaws.com/$default"},
+	} {
+		t.Run(test.protocol, func(t *testing.T) {
+			oldClient, oldSession := apiClient, sess
+			t.Cleanup(func() { apiClient, sess = oldClient, oldSession })
+			sess = &aws.Config{Region: "us-east-1"}
+			apiClient = apigatewayv2.NewFromConfig(aws.Config{
+				Region: "us-east-1", Credentials: aws.AnonymousCredentials{}, RetryMaxAttempts: 1,
+				HTTPClient: apiListTransport(func(request *http.Request) (*http.Response, error) {
+					body := fmt.Sprintf(`{"items":[{"apiId":"fixture","name":"example","protocolType":%q}]}`, test.protocol)
+					return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+				}),
+			})
+			got, err := ApiUrl(context.Background(), "example")
+			if err != nil || got != test.want {
+				t.Fatalf("ApiUrl = %q, %v; want %q", got, err, test.want)
+			}
+		})
+	}
+}
+
 func TestApiListRequiresCompleteIdentity(t *testing.T) {
 	for _, test := range []struct {
 		name, malformed  string
