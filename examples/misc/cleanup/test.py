@@ -22,7 +22,8 @@ PLAIN = [
     *(f"simple/python/{name}" for name in ("api", "dynamodb", "includes", "s3", "schedule", "sqs", "websocket")),
 ]
 FALLBACKS = ["simple/go/alarm", "simple/go/ses", "misc/basic"]
-LIVE_EXAMPLES = ["simple/go/ecr", "simple/docker/ecr", "complex/s3-ec2", "misc/ec2", *PLAIN, *FALLBACKS]
+# A ":push" case fails the image push itself, before any digest exists.
+LIVE_EXAMPLES = ["simple/go/ecr", "simple/docker/ecr", "simple/docker/ecr:push", "complex/s3-ec2", "misc/ec2", *PLAIN, *FALLBACKS]
 
 
 class InjectedFailure(RuntimeError):
@@ -236,6 +237,7 @@ def test_live_failure_cleanup(example, tmp_path):
     if example == "misc/ec2":
         ec2_live_failure_cleanup(tmp_path)
         return
+    example, _, stage = example.partition(":")
     module = load(example)
     actual_run = module.run
     uid = None
@@ -257,6 +259,8 @@ def test_live_failure_cleanup(example, tmp_path):
                     safety.callback(actual_run, f"LIBAWS_S3_EC2_CLEANUP_UID={uid} LIBAWS_S3_EC2_DRAIN=yes go test ../../../lib -run '^TestS3EC2ExampleCleanup$' -count=1 -v")
             if created and example in FALLBACKS and command == "libaws infra-rm infra.yaml":
                 raise InjectedFailure("after live create: primary cleanup")
+            if stage == "push" and command.startswith("docker push "):
+                raise InjectedFailure("after live create: image push")
             output = actual_run(command, *args, **kwargs)
             if command == "libaws infra-ensure infra.yaml":
                 created = True
@@ -276,7 +280,7 @@ def test_live_failure_cleanup(example, tmp_path):
         with patch.object(module, "run", side_effect=fail_after_create):
             with pytest.raises(InjectedFailure, match="after live create"):
                 invoke(module, example, tmp_path)
-        assert uid is not None and created
+        assert uid is not None and (created or stage == "push")
         inventory = yaml.safe_load(actual_run(f"libaws infra-ls --infraset test-infraset-{uid}"))
         assert inventory.get("infraset", {}) == {}, inventory
         result = subprocess.run(["libaws", "lambda-describe", f"test-lambda-{uid}"], capture_output=True, text=True)

@@ -23,7 +23,9 @@ def test(tmp_path):
     os.environ["DOCKER_CONFIG"] = str(docker_config)
     account = os.environ['account'] = run('libaws aws-account')
     region = os.environ['region'] = run('libaws aws-region')
-    os.environ['digest'] = 'fake'
+    # A well-formed placeholder lets the pre-registered infra-rm parse the
+    # declaration if a failure happens before the push reports the real digest.
+    os.environ['digest'] = 'sha256:' + '0' * 64
     container = f'{account}.dkr.ecr.{region}.amazonaws.com/test-container-{uid}'
     repo_name = container.split('amazonaws.com/')[-1]
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
