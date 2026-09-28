@@ -1,3 +1,3 @@
-FROM public.ecr.aws/lambda/nodejs:22.2026.08.20.17@sha256:27f7508ebf5adda871e16beda3527604be928292f86ed47402baccbfe49494c4
+FROM public.ecr.aws/lambda/nodejs:24.2026.09.13.11@sha256:9447dbf363ef0959a47e36f9f32694c7ae77e7bd1c6b7aaac6ba406bc6ea54c7
 COPY main.js ./
 CMD ["main.handler"]
