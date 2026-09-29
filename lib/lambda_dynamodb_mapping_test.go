@@ -387,7 +387,7 @@ func TestLambdaDynamoDBStreamMappingIntegration(t *testing.T) {
 		Arn:  functionARN,
 		Trigger: []*InfraTrigger{{
 			Type: lambdaTriggerDynamoDB,
-			Attr: []string{tableName, "start=trim_horizon", "batch=1", "parallel=10", "retry=0", "window=1"},
+			Attr: []string{tableName, "start=trim_horizon", "batch=1", "parallel=10", "retry=3", "window=1"},
 		}},
 	}
 

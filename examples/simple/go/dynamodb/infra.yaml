@@ -30,7 +30,8 @@ lambda:
           - start=trim_horizon
           - batch=1
           - parallel=10
-          - retry=0
+          # Failed batches are logged and retried three times, then discarded.
+          - retry=3
           - window=1
     env:
       - uid=${uid}

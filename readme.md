@@ -1177,7 +1177,7 @@ Defines an [SES](https://docs.aws.amazon.com/ses/latest/dg/receiving-email.html)
 
 Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-apigatewayv2-api.html) HTTP API:
 
-* Add a custom domain with attr: `domain=api.example.com`
+* Add a custom domain with attr: `domain=api.example.com`. Inventory reports `url=https://api.example.com`; use `api-url-domain NAME` to obtain the DNS alias target for externally managed DNS.
 
 * Add a custom domain and update Route53 with attr: `dns=api.example.com`
 
@@ -1241,7 +1241,7 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
 * `infra-url-websocket infra.yaml NAME` returns the default connection URL, `wss://API_ID.execute-api.REGION.amazonaws.com/$default`. The stage is required on the default endpoint, not on a custom-domain root mapping.
 
-* Add a custom domain with attr: `domain=ws.example.com`
+* Add a custom domain with attr: `domain=ws.example.com`. Inventory reports `url=wss://ws.example.com`; use `api-url-domain NAME` to obtain the DNS alias target for externally managed DNS.
 
 * Add a custom domain and update Route53 with attr: `dns=ws.example.com`
 
@@ -1318,6 +1318,8 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
   * `retry=VALUE`, maximum retry attempts, default: `-1`
   * `window=VALUE`, maximum batching window in seconds, default: `0`
   * `start=VALUE`, required starting position: `latest | trim_horizon`; immutable on existing mappings.
+
+* Handlers must return or raise an error for Lambda to count failures and retry; an HTTP-shaped error response does not fail a stream invocation. The examples log record IDs, source ARNs, and failed operations without item contents. Their three-retry limit permits discarded batches; logs and error metrics are not durable failed-event storage. The default `retry=-1` retries until records expire from the stream (24 hours).
 
 * Schema:
 

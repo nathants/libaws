@@ -50,7 +50,7 @@ def test():
                             "trigger": [{"attr": [f"test-table-{uid}",
                                                   "batch=1",
                                                   "parallel=10",
-                                                  "retry=0",
+                                                  "retry=3",
                                                   "start=trim_horizon",
                                                   "window=1"],
                                          "type": "dynamodb"}],
@@ -65,13 +65,14 @@ def test():
         assert result.returncode != 0 and "cannot update StartingPosition" in result.stderr, result
         assert f"test-new-table-{uid}" not in run("libaws dynamodb-ls").splitlines()
         run(f"libaws dynamodb-item-put test-table-{uid} userid:s:jane version:n:1 data:s:{uid}")
-        run(f'libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "put:"')
+        run(f'timeout --kill-after=5s 180 libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "dynamodb record copied"')
         assert uid == json.loads(run(f"libaws dynamodb-item-get test-other-table-{uid} userid:s:jane"))["data"]
         preview = captured("libaws infra-rm infra.yaml --preview")
         os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_TABLE"] = f"test-table-{uid}"
         os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_OUTPUT_TABLE"] = f"test-other-table-{uid}"
         os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_FUNCTION"] = f"test-lambda-{uid}"
         run("go test ../../../../lib -run '^TestLambdaDynamoDBStreamMappingIntegration$' -count=1 -v")
+        run(f"LIBAWS_DYNAMODB_EXAMPLE_UID={uid} go test ../../../../lib -run '^TestDynamoDBExampleFailures$' -count=1 -v")
     finally:
         run("libaws infra-rm infra.yaml")
     assert "deleted trigger:" in preview, preview

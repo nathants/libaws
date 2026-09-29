@@ -313,7 +313,7 @@ func TestInfraListAPIURLsUseProtocolAndDomainMapping(t *testing.T) {
 				}
 				endpoint := "selected.execute-api.us-east-1.amazonaws.com" + stage
 				if customDomain {
-					endpoint = "d-selected.execute-api.us-east-1.amazonaws.com"
+					endpoint = "api.example.com"
 				}
 				installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
 					var body string

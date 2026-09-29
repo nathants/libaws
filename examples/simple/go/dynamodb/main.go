@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -12,52 +14,41 @@ import (
 	"github.com/nathants/libaws/lib"
 )
 
-type RecordKey struct {
-	UserID  string `json:"userid"  dynamodbav:"userid"`
-	Version int    `json:"version" dynamodbav:"version"`
-}
-
-type RecordData struct {
-	Data string `json:"data" dynamodbav:"data"`
-}
-
-type Record struct {
-	RecordKey
-	RecordData
-}
-
 var uid = os.Getenv("uid")
+var logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-func handleRequest(ctx context.Context, event events.DynamoDBEvent) (events.APIGatewayProxyResponse, error) {
+func recordFailure(record events.DynamoDBEventRecord, operation string, err error) error {
+	logger.Error("dynamodb record failed", "event_id", record.EventID, "source_arn", record.EventSourceArn, "operation", operation, "error", err.Error())
+	return fmt.Errorf("%s for record %s: %w", operation, record.EventID, err)
+}
+
+func handleRequest(ctx context.Context, event events.DynamoDBEvent) error {
 	for _, record := range event.Records {
-		item, err := lib.FromDynamoDBEventAVMap(record.Change.Keys)
+		keys, err := lib.FromDynamoDBEventAVMap(record.Change.Keys)
 		if err != nil {
-			lib.Logger.Println("error:", err)
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: err.Error()}, nil
+			return recordFailure(record, "decode keys", err)
 		}
 		out, err := lib.DynamoDBClient().GetItem(ctx, &dynamodb.GetItemInput{
-			TableName: aws.String("test-table-" + uid),
-			Key:       item,
+			TableName:      aws.String("test-table-" + uid),
+			Key:            keys,
+			ConsistentRead: aws.Bool(true),
 		})
 		if err != nil {
-			lib.Logger.Println("error:", err)
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: err.Error()}, nil
+			return recordFailure(record, "GetItem", err)
 		}
-		if out.Item == nil {
-			lib.Logger.Println("error:", err)
-			return events.APIGatewayProxyResponse{StatusCode: 404}, nil
+		if len(out.Item) == 0 {
+			return recordFailure(record, "GetItem", errors.New("source item no longer exists"))
 		}
 		_, err = lib.DynamoDBClient().PutItem(ctx, &dynamodb.PutItemInput{
 			TableName: aws.String("test-other-table-" + uid),
 			Item:      out.Item,
 		})
 		if err != nil {
-			lib.Logger.Println("error:", err)
-			return events.APIGatewayProxyResponse{StatusCode: 500, Body: err.Error()}, nil
+			return recordFailure(record, "PutItem", err)
 		}
-		fmt.Printf("put: %#v\n", out.Item)
+		logger.Info("dynamodb record copied", "event_id", record.EventID)
 	}
-	return events.APIGatewayProxyResponse{StatusCode: 200}, nil
+	return nil
 }
 
 func main() {

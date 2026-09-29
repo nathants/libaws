@@ -1283,12 +1283,7 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 					infraApi.ReadOnlyUrl += "/" + lambdaDollarDefault
 				}
 			} else if infraApi.Domain != "" {
-				for _, d := range domains {
-					if *d.DomainName == infraApi.Domain {
-						infraApi.ReadOnlyUrl = *d.DomainNameConfigurations[0].ApiGatewayDomainName
-						break
-					}
-				}
+				infraApi.ReadOnlyUrl = infraApi.Domain
 			}
 			if infraApi.ReadOnlyUrl != "" {
 				scheme := "https"

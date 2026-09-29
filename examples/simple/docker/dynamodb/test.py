@@ -79,21 +79,9 @@ def test(tmp_path):
         }
         assert infra == expected, infra
         run(f'libaws dynamodb-item-put test-table-{uid} userid:s:jane version:n:1 data:s:{uid}')
-        run(f'timeout --kill-after=5s 180 libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "put:"')
+        run(f'timeout --kill-after=5s 180 libaws logs-tail /aws/lambda/test-lambda-{uid} --from-hours 1 --exit-after "dynamodb record copied"')
         assert uid == json.loads(run(f'libaws dynamodb-item-get test-other-table-{uid} userid:s:jane'))['data']
-        # Wrong key types fail GetItem; a missing source item fails PutItem.
-        # Both are real DynamoDB errors and must fail the Lambda invocation,
-        # not merely appear in logs while the handler acknowledges success.
-        for key in ({"userid": {"N": "1"}, "version": {"N": "1"}},
-                    {"userid": {"S": f"missing-{uid}"}, "version": {"N": "1"}}):
-            payload = {"Records": [{"dynamodb": {"Keys": key}}]}
-            result = subprocess.run(
-                ["libaws", "lambda-invoke", f"test-lambda-{uid}", "--payload-string", json.dumps(payload)],
-                capture_output=True, text=True, timeout=90,
-            )
-            assert result.returncode == 1 and result.stdout == "", result
-            error = json.loads(result.stderr.strip().splitlines()[-1])
-            assert error["errorType"] == "ValidationException", error
+        run(f"LIBAWS_DYNAMODB_EXAMPLE_UID={uid} go test ../../../../lib -run '^TestDynamoDBExampleFailures$' -count=1 -v")
         run('libaws infra-rm infra.yaml --preview')
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
