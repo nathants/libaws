@@ -40,10 +40,13 @@ def test():
                                               "key": ["userid:s:hash",
                                                       "version:n:range"]},
                     },
+                    "s3": {f"test-failed-events-{uid}": {"attr": ["acl=private", "metrics=false"]}},
                     "lambda": {
                         f"test-lambda-{uid}": {
                             "allow": [f"dynamodb:GetItem arn:aws:dynamodb:*:*:table/test-table-{uid}",
-                                      f"dynamodb:PutItem arn:aws:dynamodb:*:*:table/test-other-table-{uid}"],
+                                      f"dynamodb:PutItem arn:aws:dynamodb:*:*:table/test-other-table-{uid}",
+                                      f"s3:ListBucket arn:aws:s3:::test-failed-events-{uid}",
+                                      f"s3:PutObject arn:aws:s3:::test-failed-events-{uid}/*"],
                             "attr": ["timeout=60"],
                             "policy": ["AWSLambdaDynamoDBExecutionRole",
                                        "AWSLambdaBasicExecutionRole"],
@@ -52,7 +55,8 @@ def test():
                                                   "parallel=10",
                                                   "retry=3",
                                                   "start=trim_horizon",
-                                                  "window=1"],
+                                                  "window=1",
+                                                  f"on-failure=arn:aws:s3:::test-failed-events-{uid}"],
                                          "type": "dynamodb"}],
                             "env": [f"uid={uid}"],
                         }
@@ -72,6 +76,7 @@ def test():
         os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_OUTPUT_TABLE"] = f"test-other-table-{uid}"
         os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_FUNCTION"] = f"test-lambda-{uid}"
         run("go test ../../../../lib -run '^TestLambdaDynamoDBStreamMappingIntegration$' -count=1 -v")
+        os.environ["LIBAWS_DYNAMODB_FAILURE_BUCKET"] = f"test-failed-events-{uid}"
         run(f"LIBAWS_DYNAMODB_EXAMPLE_UID={uid} go test ../../../../lib -run '^TestDynamoDBExampleFailures$' -count=1 -v")
     finally:
         run("libaws infra-rm infra.yaml")

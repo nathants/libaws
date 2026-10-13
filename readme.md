@@ -1318,8 +1318,11 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
   * `retry=VALUE`, maximum retry attempts, default: `-1`
   * `window=VALUE`, maximum batching window in seconds, default: `0`
   * `start=VALUE`, required starting position: `latest | trim_horizon`; immutable on existing mappings.
+  * `on-failure=ARN`, optional S3 bucket ARN for complete failed invocation records. Removing it clears the destination; previews never change it.
 
 * Handlers must return or raise an error for Lambda to count failures and retry; an HTTP-shaped error response does not fail a stream invocation. The examples log record IDs, source ARNs, and failed operations without item contents. Their three-retry limit permits discarded batches; logs and error metrics are not durable failed-event storage. The default `retry=-1` retries until records expire from the stream (24 hours).
+
+* An S3 failure destination retains the original payload after retries are exhausted or the stream record expires. Declare the private bucket separately and grant the execution role `s3:PutObject` on its objects and `s3:ListBucket` on the bucket. Keep the bucket until failed records are reconciled; monitor destination delivery failures. No replay or cleanup worker is created. AWS recommends an `s3:ResourceAccount` IAM condition to prevent delivery to a bucket recreated in another account; conditional grants require a separately managed IAM policy.
 
 * Schema:
 

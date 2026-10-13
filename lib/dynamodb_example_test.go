@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -11,8 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // Run after the example's successful stream copy and any mapping tests. The
@@ -106,5 +111,82 @@ func TestDynamoDBExampleFailures(t *testing.T) {
 		if t.Failed() {
 			return
 		}
+	}
+	if bucket := os.Getenv("LIBAWS_DYNAMODB_FAILURE_BUCKET"); bucket != "" {
+		if bucket != "test-failed-events-"+uid {
+			t.Fatal("failure bucket does not belong to this fixture")
+		}
+		t.Run("discarded stream invocation retains its complete payload", func(t *testing.T) {
+			assertDynamoDBFailurePayload(t, ctx, source, bucket, uid)
+		})
+	}
+}
+
+func assertDynamoDBFailurePayload(t *testing.T, ctx context.Context, source, bucket, uid string) {
+	t.Helper()
+	// The output table was removed above. This real stream event must fail all
+	// configured retries before Lambda itself delivers it to the S3 destination.
+	marker := "retained-" + uid
+	private := "private-failed-image-" + uid
+	_, err := DynamoDBClient().PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(source),
+		Item: map[string]ddbtypes.AttributeValue{
+			"userid":  &ddbtypes.AttributeValueMemberS{Value: marker},
+			"version": &ddbtypes.AttributeValueMemberN{Value: "1"},
+			"data":    &ddbtypes.AttributeValueMemberS{Value: private},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		objects, err := S3Client().ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(bucket)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if aws.ToBool(objects.IsTruncated) {
+			t.Fatal("unexpectedly large disposable failure bucket")
+		}
+		for _, object := range objects.Contents {
+			response, err := S3Client().GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: object.Key})
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+			closeErr := response.Body.Close()
+			if readErr != nil || closeErr != nil {
+				t.Fatal("read failure destination", readErr, closeErr)
+			}
+			if response.ServerSideEncryption == "" {
+				t.Fatal("failure payload lacks encryption at rest")
+			}
+			var envelope struct {
+				RequestContext struct {
+					Condition string `json:"condition"`
+				} `json:"requestContext"`
+				Payload string `json:"payload"`
+			}
+			if json.Unmarshal(body, &envelope) != nil {
+				t.Fatal("invalid failure envelope")
+			}
+			var event events.DynamoDBEvent
+			if json.Unmarshal([]byte(envelope.Payload), &event) != nil {
+				t.Fatal("missing complete failure payload")
+			}
+			for _, record := range event.Records {
+				if record.Change.Keys["userid"].String() != marker {
+					continue
+				}
+				if record.Change.NewImage["data"].String() != private || envelope.RequestContext.Condition != "RetryAttemptsExhausted" {
+					t.Fatal("discarded stream image or failure reason was lost")
+				}
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Lambda did not retain the discarded stream event")
+		}
+		time.Sleep(time.Second)
 	}
 }

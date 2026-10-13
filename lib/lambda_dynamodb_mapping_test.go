@@ -391,6 +391,32 @@ func TestLambdaDynamoDBStreamMappingIntegration(t *testing.T) {
 		}},
 	}
 
+	if destination := dynamoDBFailureDestination(initial.DestinationConfig); destination != "" {
+		// Exercise removal and restoration through the real ensure owner.
+		if err := LambdaEnsureTriggerDynamoDB(ctx, infraLambda, true); err != nil {
+			t.Fatal(err)
+		}
+		previewed := requireSingleEnabledDynamoDBMapping(t, ctx, functionName, initialARN)
+		if dynamoDBFailureDestination(previewed.DestinationConfig) != destination {
+			t.Fatal("preview changed the failure destination")
+		}
+		if err := LambdaEnsureTriggerDynamoDB(ctx, infraLambda, false); err != nil {
+			t.Fatal(err)
+		}
+		cleared := requireSingleEnabledDynamoDBMapping(t, ctx, functionName, initialARN)
+		if dynamoDBFailureDestination(cleared.DestinationConfig) != "" {
+			t.Fatal("failure destination was not cleared")
+		}
+		infraLambda.Trigger[0].Attr = append(infraLambda.Trigger[0].Attr, "on-failure="+destination)
+		if err := LambdaEnsureTriggerDynamoDB(ctx, infraLambda, false); err != nil {
+			t.Fatal(err)
+		}
+		restored := requireSingleEnabledDynamoDBMapping(t, ctx, functionName, initialARN)
+		if dynamoDBFailureDestination(restored.DestinationConfig) != destination {
+			t.Fatal("failure destination was not restored")
+		}
+	}
+
 	if _, err := LambdaClient().UpdateEventSourceMapping(ctx, &lambda.UpdateEventSourceMappingInput{UUID: initial.UUID, Enabled: aws.Bool(false)}); err != nil {
 		t.Fatal(err)
 	}
@@ -574,5 +600,75 @@ func TestLambdaDynamoDBMixedPreviewInspectsKnownMappings(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestDynamoDBFailureDestination(t *testing.T) {
+	const stream = "arn:aws:dynamodb:us-west-2:123456789012:table/table/stream/current"
+	const destination = "arn:aws:s3:::private-failed-events"
+	resolve := func(context.Context, string) (string, error) { return stream, nil }
+	infra := testLambdaDynamoDBInfra("table", "arn:aws:lambda:us-west-2:123456789012:function:function")
+	infra.Trigger[0].Attr = append(infra.Trigger[0].Attr, "on-failure="+destination)
+	desired, err := lambdaDynamoDBDesiredMappings(context.Background(), resolve, infra, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := desired[0].create.DestinationConfig; got == nil || got.OnFailure == nil || aws.ToString(got.OnFailure.Destination) != destination {
+		t.Fatal("creation lost the failure destination")
+	}
+	mapping := testLambdaDynamoDBMapping("mapping", stream, infra.Arn, "Enabled")
+	writes := 0
+	client := &lambdaEventSourceMappingClientStub{
+		list: func(context.Context, *lambda.ListEventSourceMappingsInput) (*lambda.ListEventSourceMappingsOutput, error) {
+			return &lambda.ListEventSourceMappingsOutput{EventSourceMappings: []lambdatypes.EventSourceMappingConfiguration{mapping}}, nil
+		},
+		get: func(context.Context, *lambda.GetEventSourceMappingInput) (*lambda.GetEventSourceMappingOutput, error) {
+			result := testLambdaDynamoDBGetOutput(mapping)
+			result.DestinationConfig = mapping.DestinationConfig
+			return result, nil
+		},
+		update: func(_ context.Context, input *lambda.UpdateEventSourceMappingInput) (*lambda.UpdateEventSourceMappingOutput, error) {
+			writes++
+			if input.DestinationConfig == nil || input.DestinationConfig.OnFailure == nil {
+				t.Fatal("destination change omitted configuration")
+			}
+			mapping.DestinationConfig = input.DestinationConfig
+			return &lambda.UpdateEventSourceMappingOutput{UUID: mapping.UUID}, nil
+		},
+	}
+	for _, preview := range []bool{true, false, false} {
+		before := writes
+		if err := lambdaEnsureTriggerDynamoDB(context.Background(), client, resolve, infra, preview); err != nil {
+			t.Fatal(err)
+		}
+		if preview && writes != before {
+			t.Fatal("preview mutated the mapping")
+		}
+	}
+	if writes != 1 || aws.ToString(mapping.DestinationConfig.OnFailure.Destination) != destination {
+		t.Fatal("destination did not converge idempotently")
+	}
+	infra.Trigger[0].Attr = infra.Trigger[0].Attr[:2]
+	if err := lambdaEnsureTriggerDynamoDB(context.Background(), client, resolve, infra, false); err != nil {
+		t.Fatal(err)
+	}
+	if writes != 2 || aws.ToString(mapping.DestinationConfig.OnFailure.Destination) != "" {
+		t.Fatal("removing the declaration did not clear the destination")
+	}
+}
+
+func TestDynamoDBFailureDestinationRejectsUnsupportedTargets(t *testing.T) {
+	for _, destination := range []string{"", "private-bucket", "arn:aws:sqs:us-west-2:123456789012:queue", "arn:aws:s3:::bucket/prefix", "arn:aws:s3:us-west-2:123456789012:bucket", "arn:aws:s3:::*", "arn:aws:s3:::Invalid Bucket"} {
+		t.Run(destination, func(t *testing.T) {
+			infra := testLambdaDynamoDBInfra("table", "function")
+			infra.Trigger[0].Attr = append(infra.Trigger[0].Attr, "on-failure="+destination)
+			_, err := lambdaDynamoDBDesiredMappings(context.Background(), func(context.Context, string) (string, error) {
+				t.Fatal("invalid destination reached provider reads")
+				return "", nil
+			}, infra, false)
+			if err == nil || !strings.Contains(err.Error(), "destination") {
+				t.Fatalf("invalid destination accepted or misreported: %v", err)
+			}
+		})
 	}
 }

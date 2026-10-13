@@ -11,6 +11,12 @@ dynamodb:
     key:
       - userid:s:hash
 
+s3:
+  test-failed-events-${uid}:
+    attr:
+      - acl=private
+      - metrics=false
+
 lambda:
   test-lambda-${uid}:
     entrypoint: main.go
@@ -23,6 +29,8 @@ lambda:
     allow:
       - dynamodb:GetItem arn:aws:dynamodb:*:*:table/test-table-${uid}
       - dynamodb:PutItem arn:aws:dynamodb:*:*:table/test-other-table-${uid}
+      - s3:PutObject arn:aws:s3:::test-failed-events-${uid}/*
+      - s3:ListBucket arn:aws:s3:::test-failed-events-${uid}
     trigger:
       - type: dynamodb
         attr:
@@ -30,8 +38,9 @@ lambda:
           - start=trim_horizon
           - batch=1
           - parallel=10
-          # Failed batches are logged and retried three times, then discarded.
+          # Retain the complete invocation after three failed retries.
           - retry=3
+          - on-failure=arn:aws:s3:::test-failed-events-${uid}
           - window=1
     env:
       - uid=${uid}

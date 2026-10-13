@@ -2250,6 +2250,7 @@ type lambdaDynamoDBCurrentMapping struct {
 	maximumRetryAttempts           *int32
 	parallelizationFactor          *int32
 	startingPosition               lambdatypes.EventSourcePosition
+	destinationConfig              *lambdatypes.DestinationConfig
 }
 
 func lambdaDynamoDBDesiredMappings(ctx context.Context, resolveStreamARN lambdaDynamoDBStreamARNResolver, infraLambda *InfraLambda, preview bool) ([]*lambdaDynamoDBDesiredMapping, error) {
@@ -2307,6 +2308,11 @@ func lambdaDynamoDBDesiredMappings(ctx context.Context, resolveStreamARN lambdaD
 					return nil, err
 				}
 				create.ParallelizationFactor = aws.Int32(int32(factor))
+			case "on-failure":
+				if err := validateDynamoDBFailureDestination(value); err != nil {
+					return nil, err
+				}
+				create.DestinationConfig = &lambdatypes.DestinationConfig{OnFailure: &lambdatypes.OnFailure{Destination: aws.String(value)}}
 			case "StartingPosition":
 				create.StartingPosition = lambdatypes.EventSourcePosition(strings.ToUpper(value))
 			default:
@@ -2347,6 +2353,7 @@ func lambdaDynamoDBCurrentMappingFromConfiguration(mapping lambdatypes.EventSour
 		mapping.MaximumRetryAttempts,
 		mapping.ParallelizationFactor,
 		mapping.StartingPosition,
+		mapping.DestinationConfig,
 	)
 }
 
@@ -2364,10 +2371,11 @@ func lambdaDynamoDBCurrentMappingFromGet(mapping *lambda.GetEventSourceMappingOu
 		mapping.MaximumRetryAttempts,
 		mapping.ParallelizationFactor,
 		mapping.StartingPosition,
+		mapping.DestinationConfig,
 	)
 }
 
-func lambdaDynamoDBCurrentMappingFromValues(uuid, eventSourceARN, state, stateTransitionReason *string, batchSize, maximumBatchingWindowInSeconds, maximumRetryAttempts, parallelizationFactor *int32, startingPosition lambdatypes.EventSourcePosition) (*lambdaDynamoDBCurrentMapping, error) {
+func lambdaDynamoDBCurrentMappingFromValues(uuid, eventSourceARN, state, stateTransitionReason *string, batchSize, maximumBatchingWindowInSeconds, maximumRetryAttempts, parallelizationFactor *int32, startingPosition lambdatypes.EventSourcePosition, destinationConfig *lambdatypes.DestinationConfig) (*lambdaDynamoDBCurrentMapping, error) {
 	if uuid == nil || *uuid == "" {
 		return nil, fmt.Errorf("lambda event source mapping lacks a UUID")
 	}
@@ -2387,6 +2395,7 @@ func lambdaDynamoDBCurrentMappingFromValues(uuid, eventSourceARN, state, stateTr
 		maximumRetryAttempts:           maximumRetryAttempts,
 		parallelizationFactor:          parallelizationFactor,
 		startingPosition:               startingPosition,
+		destinationConfig:              destinationConfig,
 	}, nil
 }
 
@@ -2470,6 +2479,13 @@ func lambdaDynamoDBMappingUpdate(infraLambda *InfraLambda, desired *lambdaDynamo
 		update.MaximumBatchingWindowInSeconds = desired.create.MaximumBatchingWindowInSeconds
 		needsUpdate = true
 	}
+	if before, after := dynamoDBFailureDestination(current.destinationConfig), dynamoDBFailureDestination(desired.create.DestinationConfig); before != after {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping failure destination for %s %s: %s => %s\n", infraLambda.Name, desired.tableName, before, after)
+		// AWS requires an explicit empty destination to remove it; omitting the
+		// configuration leaves a previously configured destination unchanged.
+		update.DestinationConfig = &lambdatypes.DestinationConfig{OnFailure: &lambdatypes.OnFailure{Destination: aws.String(after)}}
+		needsUpdate = true
+	}
 	if current.startingPosition != desired.create.StartingPosition {
 		return nil, false, fmt.Errorf("cannot update StartingPosition for %s %s: %s => %s", infraLambda.Name, desired.tableName, current.startingPosition, desired.create.StartingPosition)
 	}
@@ -2479,6 +2495,24 @@ func lambdaDynamoDBMappingUpdate(infraLambda *InfraLambda, desired *lambdaDynamo
 		needsUpdate = true
 	}
 	return update, needsUpdate, nil
+}
+
+// S3 preserves the failed invocation payload after the source stream expires.
+// This deliberately exposes only a bucket ARN, not the full destination API.
+func validateDynamoDBFailureDestination(value string) error {
+	parsed, err := arn.Parse(value)
+	if err != nil || parsed.Service != "s3" || parsed.Region != "" || parsed.AccountID != "" ||
+		!regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`).MatchString(parsed.Resource) {
+		return fmt.Errorf("DynamoDB failure destination must be an S3 bucket ARN: %q", value)
+	}
+	return nil
+}
+
+func dynamoDBFailureDestination(config *lambdatypes.DestinationConfig) string {
+	if config == nil || config.OnFailure == nil {
+		return ""
+	}
+	return aws.ToString(config.OnFailure.Destination)
 }
 
 func int32PointersEqual(a, b *int32) bool {

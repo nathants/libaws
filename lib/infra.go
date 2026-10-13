@@ -1039,17 +1039,23 @@ func (scope infraListScope) listLambda(ctx context.Context, triggersChan <-chan 
 					infra := ArnToInfraName(*mapping.EventSourceArn)
 					switch infra {
 					case lambdaTriggerDynamoDB:
+						attrs := []string{
+							DynamoDBStreamArnToTableName(*mapping.EventSourceArn),
+							fmt.Sprintf("batch=%d", *mapping.BatchSize),
+							fmt.Sprintf("parallel=%d", *mapping.ParallelizationFactor),
+							fmt.Sprintf("retry=%d", *mapping.MaximumRetryAttempts),
+							fmt.Sprintf("start=%s", strings.ToLower(string(mapping.StartingPosition))),
+							fmt.Sprintf("window=%d", *mapping.MaximumBatchingWindowInSeconds),
+						}
+						if destination := dynamoDBFailureDestination(mapping.DestinationConfig); destination != "" {
+							if err := validateDynamoDBFailureDestination(destination); err != nil {
+								errChan <- err
+								return
+							}
+							attrs = append(attrs, "on-failure="+destination)
+						}
 						localTriggers = append(localTriggers, &InfraTrigger{
-							lambdaName: *fn.FunctionName,
-							Type:       infra,
-							Attr: []string{
-								DynamoDBStreamArnToTableName(*mapping.EventSourceArn),
-								fmt.Sprintf("batch=%d", *mapping.BatchSize),
-								fmt.Sprintf("parallel=%d", *mapping.ParallelizationFactor),
-								fmt.Sprintf("retry=%d", *mapping.MaximumRetryAttempts),
-								fmt.Sprintf("start=%s", strings.ToLower(string(mapping.StartingPosition))),
-								fmt.Sprintf("window=%d", *mapping.MaximumBatchingWindowInSeconds),
-							},
+							lambdaName: *fn.FunctionName, Type: infra, Attr: attrs,
 						})
 					case lambdaTriggerSQS:
 						localTriggers = append(localTriggers, &InfraTrigger{
