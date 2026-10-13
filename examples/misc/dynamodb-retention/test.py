@@ -12,7 +12,9 @@ def test():
     os.environ["uid"] = str(uuid.uuid4())[-12:]
     os.environ["LIBAWS_DYNAMODB_RETENTION_INFRA"] = os.path.abspath("infra.yaml")
     os.environ["LIBAWS_DYNAMODB_RETENTION_UID"] = os.environ["uid"]
-    shell.run("go test ../../../lib -run '^TestDynamoDBRetentionMonitoringIntegration$' -count=1 -timeout=25m -v", stream=True)
+    # 45 minutes of work plus five independent 3-minute finalizers and a
+    # 2-minute absence check. Keep cleanup ahead of Go's hard process timeout.
+    shell.run("go test ../../../lib -run '^TestDynamoDBRetentionMonitoringIntegration$' -count=1 -timeout=65m -v", stream=True)
 
 
 if __name__ == "__main__":

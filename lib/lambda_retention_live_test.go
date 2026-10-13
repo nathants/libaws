@@ -32,7 +32,10 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 		t.Fatal("requires a unique 12-hex uid")
 	}
 	requireLiveAWSAccount(t)
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Minute)
+	// Sequential mapping transitions and real metric publication each have AWS
+	// control-plane latency. Keep the full run bounded without borrowing the
+	// independent cleanup budget reserved by the example's outer timeout.
+	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Minute)
 	defer cancel()
 	infraPath := os.Getenv("LIBAWS_DYNAMODB_RETENTION_INFRA")
 	infra, err := InfraParse(infraPath)
@@ -104,8 +107,10 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 		if preview {
 			args = append(args, "--preview")
 		}
+		started := time.Now()
+		t.Logf("starting ensure preview=%t", preview)
 		out, err := exec.CommandContext(ctx, "libaws", args...).CombinedOutput()
-		t.Log(string(out))
+		t.Logf("ensure preview=%t took %s:\n%s", preview, time.Since(started), out)
 		if err != nil {
 			t.Fatalf("ensure: %v", err)
 		}

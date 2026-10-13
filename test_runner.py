@@ -51,7 +51,10 @@ def run_test(label, logs):
             cwd = ROOT
         else:
             env["PYTEST_ADDOPTS"] = env.get("PYTEST_ADDOPTS", "") + f" --basetemp={temporary}/pytest -o cache_dir={temporary}/cache"
-            command = ["timeout", "--kill-after=30s", "1800", "uv", "run", "--locked", "python", "-u"]
+            # Retention checks include serial mapping changes and real alarm
+            # publication; its Go owner reserves cleanup inside a 65-minute bound.
+            timeout = "4200" if source == "examples/misc/dynamodb-retention/test.py" else "1800"
+            command = ["timeout", "--kill-after=30s", timeout, "uv", "run", "--locked", "python", "-u"]
             if source == CLEANUP and selection:
                 command += ["-m", "pytest", "-svvx", "--tb", "native"]
                 if selection == "nonlive":
