@@ -77,7 +77,7 @@ def test():
         os.environ["LIBAWS_LAMBDA_DYNAMODB_TEST_FUNCTION"] = f"test-lambda-{uid}"
         run("go test ../../../../lib -run '^TestLambdaDynamoDBStreamMappingIntegration$' -count=1 -v")
         os.environ["LIBAWS_DYNAMODB_FAILURE_BUCKET"] = f"test-failed-events-{uid}"
-        run(f"LIBAWS_DYNAMODB_EXAMPLE_UID={uid} go test ../../../../lib -run '^TestDynamoDBExampleFailures$' -count=1 -v")
+        run(f"LIBAWS_DYNAMODB_EXAMPLE_UID={uid} go test ../../../../lib -run '^TestDynamoDBExampleFailures$' -count=1 -timeout=20m -v")
     finally:
         run("libaws infra-rm infra.yaml")
     assert "deleted trigger:" in preview, preview
