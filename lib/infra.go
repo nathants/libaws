@@ -1048,10 +1048,8 @@ func (scope infraListScope) listLambda(ctx context.Context, triggersChan <-chan 
 							fmt.Sprintf("window=%d", *mapping.MaximumBatchingWindowInSeconds),
 						}
 						if destination := dynamoDBFailureDestination(mapping.DestinationConfig); destination != "" {
-							if err := validateDynamoDBFailureDestination(destination); err != nil {
-								errChan <- err
-								return
-							}
+							// Observe even externally managed destination kinds. Desired
+							// declarations, not inventory, enforce the S3-only API.
 							attrs = append(attrs, "on-failure="+destination)
 						}
 						localTriggers = append(localTriggers, &InfraTrigger{

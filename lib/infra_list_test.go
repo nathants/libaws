@@ -14,11 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
@@ -680,6 +682,57 @@ func TestInfraListEventVerifiesLambdaIdentity(t *testing.T) {
 				}
 			} else if len(triggers) != 0 {
 				t.Fatalf("fabricated local trigger from %s", target)
+			}
+		})
+	}
+}
+
+// Inventory observes provider configuration, including destinations the narrow
+// declaration API does not create. One such mapping must not hide other resources.
+func TestInfraListLambdaRetainsExternalFailureDestinations(t *testing.T) {
+	for _, destination := range []string{"arn:aws:s3:::private-failures", "arn:aws:sqs:us-east-1:123456789012:failures", "arn:aws:sns:us-east-1:123456789012:failures"} {
+		t.Run(destination, func(t *testing.T) {
+			installInfraSetClients(t, infraSetTransport(func(r *http.Request) (*http.Response, error) {
+				body := ""
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/functions"):
+					body = `{"Functions":[{"FunctionName":"owned","FunctionArn":"arn:aws:lambda:us-east-1:123456789012:function:owned","Role":"arn:aws:iam::123456789012:role/owned"}]}`
+				case strings.Contains(r.URL.Path, "/tags/"), strings.HasSuffix(r.URL.Path, "/concurrency"):
+					body = `{}`
+				case strings.HasSuffix(r.URL.Path, "/url"):
+					response := infraSetResponse(r, 404, `{"message":"no URL"}`)
+					response.Header.Set("X-Amzn-Errortype", "ResourceNotFoundException")
+					return response, nil
+				case strings.Contains(r.Header.Get("X-Amz-Target"), "DescribeLogGroups"):
+					body = `{}`
+				case strings.HasSuffix(r.URL.Path, "/event-source-mappings"):
+					body = fmt.Sprintf(`{"EventSourceMappings":[{"State":"Enabled","EventSourceArn":"arn:aws:dynamodb:us-east-1:123456789012:table/owned/stream/current","BatchSize":100,"ParallelizationFactor":1,"MaximumRetryAttempts":5,"StartingPosition":"LATEST","MaximumBatchingWindowInSeconds":3,"DestinationConfig":{"OnFailure":{"Destination":%q}}}]}`, destination)
+				default:
+					if err := r.ParseForm(); err != nil {
+						return nil, err
+					}
+					action := r.Form.Get("Action")
+					if slices.Contains([]string{"ListAttachedRolePolicies", "ListRolePolicies", "ListReceiptRuleSets"}, action) {
+						body = "<" + action + "Response><" + action + "Result></" + action + "Result></" + action + "Response>"
+					}
+				}
+				if body == "" {
+					return nil, fmt.Errorf("unexpected inventory request: %s", r.URL)
+				}
+				return infraSetResponse(r, 200, body), nil
+			}))
+			oldLogs, oldSES := logsClient, sesClient
+			logsClient, sesClient = cloudwatchlogs.NewFromConfig(*sess), ses.NewFromConfig(*sess)
+			t.Cleanup(func() { logsClient, sesClient = oldLogs, oldSES })
+			ch := make(chan *InfraTrigger)
+			close(ch)
+			found, err := (infraListScope{}).listLambda(t.Context(), ch, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			fn := found["owned"]
+			if fn == nil || len(fn.Trigger) != 1 || !slices.Contains(fn.Trigger[0].Attr, "on-failure="+destination) {
+				t.Fatal("inventory lost the actual external failure destination")
 			}
 		})
 	}
