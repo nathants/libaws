@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
@@ -148,7 +149,7 @@ func TestPreviewPreservesPolicyDisappearanceAfterDiscovery(t *testing.T) {
 
 func TestPreviewReadErrorsIntegration(t *testing.T) {
 	requireLiveAWSAccount(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	name := "test-preview-" + uuid.Must(uuid.NewV4()).String()
 	identity, err := STSClient().GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
@@ -202,6 +203,24 @@ func TestPreviewReadErrorsIntegration(t *testing.T) {
 				t.Fatalf("preview must retain real AWS AccessDenied: %v", err)
 			}
 		})
+	}
+	// A new retained-event alarm must not mistake a denied table read for a
+	// not-yet-created mapping. Use the same real no-permission role.
+	oldDDB := dynamoDBClient
+	t.Cleanup(func() { dynamoDBClient = oldDDB })
+	dynamoDBClient = dynamodb.NewFromConfig(config)
+	alarm := &lambdaAlarmConfig{name: name, metric: lambdaAlarmMetricRetained, monitoredLambdaName: name, tableName: name}
+	if _, err := lambdaAlarmResolveMapping(ctx, alarm, "aws", config.Region, aws.ToString(identity.Account), true, nil); err == nil {
+		t.Fatal("retained-event preview hid a denied DynamoDB read")
+	} else {
+		var denied smithy.APIError
+		if !errors.As(err, &denied) || denied.ErrorCode() != "AccessDeniedException" {
+			t.Fatalf("retained-event preview lost real AWS denial: %v", err)
+		}
+	}
+	dynamoDBClient = dynamodb.NewFromConfig(*Session())
+	if mapping, err := lambdaAlarmResolveMapping(ctx, alarm, "aws", config.Region, aws.ToString(identity.Account), true, nil); err != nil || mapping != nil {
+		t.Fatalf("absent retained-event mapping preview: %v %v", mapping, err)
 	}
 	// With full credentials, previews of genuinely absent resources still work.
 	iamClient, lambdaClient = adminIAM, lambda.NewFromConfig(*Session())

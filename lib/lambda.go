@@ -2162,9 +2162,9 @@ func lambdaEnsureTriggerDynamoDB(ctx context.Context, client lambdaEventSourceMa
 		Logger.Println("error:", err)
 		return err
 	}
-	mappings := make([]*lambdaDynamoDBCurrentMapping, 0, len(listed))
+	mappings := make([]*lambdatypes.EventSourceMappingConfiguration, 0, len(listed))
 	for _, listedMapping := range listed {
-		mapping, err := lambdaDynamoDBCurrentMappingFromConfiguration(listedMapping)
+		mapping, err := lambdaEventSourceMappingFromConfiguration(listedMapping)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
@@ -2178,9 +2178,9 @@ func lambdaEnsureTriggerDynamoDB(ctx context.Context, client lambdaEventSourceMa
 			continue
 		}
 		configuredStreamARNs = append(configuredStreamARNs, aws.ToString(desiredMapping.create.EventSourceArn))
-		var matches []*lambdaDynamoDBCurrentMapping
+		var matches []*lambdatypes.EventSourceMappingConfiguration
 		for _, mapping := range mappings {
-			if aws.ToString(mapping.eventSourceARN) == aws.ToString(desiredMapping.create.EventSourceArn) {
+			if aws.ToString(mapping.EventSourceArn) == aws.ToString(desiredMapping.create.EventSourceArn) {
 				matches = append(matches, mapping)
 			}
 		}
@@ -2199,7 +2199,7 @@ func lambdaEnsureTriggerDynamoDB(ctx context.Context, client lambdaEventSourceMa
 	}
 
 	for _, mapping := range mappings {
-		streamARN := aws.ToString(mapping.eventSourceARN)
+		streamARN := aws.ToString(mapping.EventSourceArn)
 		if !lambdaDynamoDBStreamARN(streamARN) || slices.Contains(configuredStreamARNs, streamARN) {
 			continue
 		}
@@ -2214,19 +2214,19 @@ func lambdaEnsureTriggerDynamoDB(ctx context.Context, client lambdaEventSourceMa
 			Logger.Println(PreviewString(true)+"deleted trigger:", infraLambda.Name, tableName)
 			continue
 		}
-		settled, err := lambdaWaitEventSourceMappingSettled(ctx, client, aws.ToString(mapping.uuid))
+		settled, err := lambdaWaitEventSourceMappingSettled(ctx, client, aws.ToString(mapping.UUID))
 		if err != nil {
 			return err
 		}
 		if settled == nil {
 			continue
 		}
-		_, err = client.DeleteEventSourceMapping(ctx, &lambda.DeleteEventSourceMappingInput{UUID: settled.uuid})
+		_, err = client.DeleteEventSourceMapping(ctx, &lambda.DeleteEventSourceMappingInput{UUID: settled.UUID})
 		if err != nil && !lambdaEventSourceMappingNotFound(err) {
 			Logger.Println("error:", err)
 			return err
 		}
-		if err := lambdaWaitEventSourceMappingDeleted(ctx, client, aws.ToString(settled.uuid)); err != nil {
+		if err := lambdaWaitEventSourceMappingDeleted(ctx, client, aws.ToString(settled.UUID)); err != nil {
 			return err
 		}
 		Logger.Println("deleted trigger:", infraLambda.Name, tableName)
@@ -2240,20 +2240,29 @@ type lambdaDynamoDBDesiredMapping struct {
 	create       *lambda.CreateEventSourceMappingInput
 }
 
-type lambdaDynamoDBCurrentMapping struct {
-	uuid                           *string
-	eventSourceARN                 *string
-	state                          *string
-	stateTransitionReason          *string
-	batchSize                      *int32
-	maximumBatchingWindowInSeconds *int32
-	maximumRetryAttempts           *int32
-	parallelizationFactor          *int32
-	startingPosition               lambdatypes.EventSourcePosition
-	destinationConfig              *lambdatypes.DestinationConfig
+func lambdaDynamoDBDesiredMappings(ctx context.Context, resolveStreamARN lambdaDynamoDBStreamARNResolver, infraLambda *InfraLambda, preview bool) ([]*lambdaDynamoDBDesiredMapping, error) {
+	desired, err := lambdaDynamoDBParseMappings(infraLambda)
+	if err != nil {
+		return nil, err
+	}
+	for _, mapping := range desired {
+		streamARN, err := resolveStreamARN(ctx, mapping.tableName)
+		if err != nil {
+			if preview && lambdaDynamoDBResourceNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("resolve DynamoDB stream for %s: %w", mapping.tableName, err)
+		}
+		if streamARN == "" {
+			return nil, fmt.Errorf("resolve DynamoDB stream for %s: empty stream ARN", mapping.tableName)
+		}
+		mapping.create.EventSourceArn = aws.String(streamARN)
+	}
+	return desired, nil
 }
 
-func lambdaDynamoDBDesiredMappings(ctx context.Context, resolveStreamARN lambdaDynamoDBStreamARNResolver, infraLambda *InfraLambda, preview bool) ([]*lambdaDynamoDBDesiredMapping, error) {
+// Parse every declaration before resolving any source or mutating infrastructure.
+func lambdaDynamoDBParseMappings(infraLambda *InfraLambda) ([]*lambdaDynamoDBDesiredMapping, error) {
 	var desired []*lambdaDynamoDBDesiredMapping
 	seenTables := map[string]struct{}{}
 	for _, trigger := range infraLambda.Trigger {
@@ -2277,12 +2286,17 @@ func lambdaDynamoDBDesiredMappings(ctx context.Context, resolveStreamARN lambdaD
 			MaximumRetryAttempts:           aws.Int32(-1),
 			ParallelizationFactor:          aws.Int32(1),
 		}
+		seenAttrs := map[string]bool{}
 		for _, line := range triggerAttrs {
 			attr, value, err := SplitOnce(line, "=")
 			if err != nil {
 				return nil, err
 			}
 			attr = lambdaDynamoDBTriggerAttrShortcut(attr)
+			if seenAttrs[attr] {
+				return nil, fmt.Errorf("duplicate lambda DynamoDB trigger attribute: %s", attr)
+			}
+			seenAttrs[attr] = true
 			switch attr {
 			case "BatchSize":
 				size, err := strconv.Atoi(value)
@@ -2308,6 +2322,13 @@ func lambdaDynamoDBDesiredMappings(ctx context.Context, resolveStreamARN lambdaD
 					return nil, err
 				}
 				create.ParallelizationFactor = aws.Int32(int32(factor))
+			case "metrics":
+				if value != "event_count" {
+					return nil, fmt.Errorf("DynamoDB trigger metrics must be event_count: %q", value)
+				}
+				create.MetricsConfig = &lambdatypes.EventSourceMappingMetricsConfig{
+					Metrics: []lambdatypes.EventSourceMappingMetric{lambdatypes.EventSourceMappingMetricEventCount},
+				}
 			case "on-failure":
 				if err := validateDynamoDBFailureDestination(value); err != nil {
 					return nil, err
@@ -2325,78 +2346,42 @@ func lambdaDynamoDBDesiredMappings(ctx context.Context, resolveStreamARN lambdaD
 		if create.StartingPosition != lambdatypes.EventSourcePositionLatest && create.StartingPosition != lambdatypes.EventSourcePositionTrimHorizon {
 			return nil, fmt.Errorf("lambda DynamoDB trigger for %s has invalid starting position: %s", tableName, create.StartingPosition)
 		}
-		streamARN, err := resolveStreamARN(ctx, tableName)
-		if err != nil {
-			if preview && lambdaDynamoDBResourceNotFound(err) {
-				desired = append(desired, &lambdaDynamoDBDesiredMapping{tableName: tableName, triggerAttrs: triggerAttrs, create: create})
-				continue
-			}
-			return nil, fmt.Errorf("resolve DynamoDB stream for %s: %w", tableName, err)
-		}
-		if streamARN == "" {
-			return nil, fmt.Errorf("resolve DynamoDB stream for %s: empty stream ARN", tableName)
-		}
-		create.EventSourceArn = aws.String(streamARN)
 		desired = append(desired, &lambdaDynamoDBDesiredMapping{tableName: tableName, triggerAttrs: triggerAttrs, create: create})
 	}
 	return desired, nil
 }
 
-func lambdaDynamoDBCurrentMappingFromConfiguration(mapping lambdatypes.EventSourceMappingConfiguration) (*lambdaDynamoDBCurrentMapping, error) {
-	return lambdaDynamoDBCurrentMappingFromValues(
-		mapping.UUID,
-		mapping.EventSourceArn,
-		mapping.State,
-		mapping.StateTransitionReason,
-		mapping.BatchSize,
-		mapping.MaximumBatchingWindowInSeconds,
-		mapping.MaximumRetryAttempts,
-		mapping.ParallelizationFactor,
-		mapping.StartingPosition,
-		mapping.DestinationConfig,
-	)
+func lambdaEventSourceMappingFromConfiguration(mapping lambdatypes.EventSourceMappingConfiguration) (*lambdatypes.EventSourceMappingConfiguration, error) {
+	if aws.ToString(mapping.UUID) == "" {
+		return nil, fmt.Errorf("lambda event source mapping lacks a UUID")
+	}
+	if aws.ToString(mapping.EventSourceArn) == "" {
+		return nil, fmt.Errorf("lambda event source mapping %s lacks an event source ARN", *mapping.UUID)
+	}
+	if aws.ToString(mapping.State) == "" {
+		return nil, fmt.Errorf("lambda event source mapping %s lacks a state", *mapping.UUID)
+	}
+	return &mapping, nil
 }
 
-func lambdaDynamoDBCurrentMappingFromGet(mapping *lambda.GetEventSourceMappingOutput) (*lambdaDynamoDBCurrentMapping, error) {
+func lambdaEventSourceMappingFromGet(mapping *lambda.GetEventSourceMappingOutput) (*lambdatypes.EventSourceMappingConfiguration, error) {
 	if mapping == nil {
 		return nil, fmt.Errorf("lambda returned an empty event source mapping")
 	}
-	return lambdaDynamoDBCurrentMappingFromValues(
-		mapping.UUID,
-		mapping.EventSourceArn,
-		mapping.State,
-		mapping.StateTransitionReason,
-		mapping.BatchSize,
-		mapping.MaximumBatchingWindowInSeconds,
-		mapping.MaximumRetryAttempts,
-		mapping.ParallelizationFactor,
-		mapping.StartingPosition,
-		mapping.DestinationConfig,
-	)
-}
-
-func lambdaDynamoDBCurrentMappingFromValues(uuid, eventSourceARN, state, stateTransitionReason *string, batchSize, maximumBatchingWindowInSeconds, maximumRetryAttempts, parallelizationFactor *int32, startingPosition lambdatypes.EventSourcePosition, destinationConfig *lambdatypes.DestinationConfig) (*lambdaDynamoDBCurrentMapping, error) {
-	if uuid == nil || *uuid == "" {
-		return nil, fmt.Errorf("lambda event source mapping lacks a UUID")
-	}
-	if eventSourceARN == nil || *eventSourceARN == "" {
-		return nil, fmt.Errorf("lambda event source mapping %s lacks an event source ARN", *uuid)
-	}
-	if state == nil || *state == "" {
-		return nil, fmt.Errorf("lambda event source mapping %s lacks a state", *uuid)
-	}
-	return &lambdaDynamoDBCurrentMapping{
-		uuid:                           uuid,
-		eventSourceARN:                 eventSourceARN,
-		state:                          state,
-		stateTransitionReason:          stateTransitionReason,
-		batchSize:                      batchSize,
-		maximumBatchingWindowInSeconds: maximumBatchingWindowInSeconds,
-		maximumRetryAttempts:           maximumRetryAttempts,
-		parallelizationFactor:          parallelizationFactor,
-		startingPosition:               startingPosition,
-		destinationConfig:              destinationConfig,
-	}, nil
+	return lambdaEventSourceMappingFromConfiguration(lambdatypes.EventSourceMappingConfiguration{
+		UUID:                           mapping.UUID,
+		EventSourceArn:                 mapping.EventSourceArn,
+		FunctionArn:                    mapping.FunctionArn,
+		State:                          mapping.State,
+		StateTransitionReason:          mapping.StateTransitionReason,
+		BatchSize:                      mapping.BatchSize,
+		MaximumBatchingWindowInSeconds: mapping.MaximumBatchingWindowInSeconds,
+		MaximumRetryAttempts:           mapping.MaximumRetryAttempts,
+		ParallelizationFactor:          mapping.ParallelizationFactor,
+		StartingPosition:               mapping.StartingPosition,
+		DestinationConfig:              mapping.DestinationConfig,
+		MetricsConfig:                  mapping.MetricsConfig,
+	})
 }
 
 func lambdaCreateDynamoDBMapping(ctx context.Context, client lambdaEventSourceMappingClient, infraLambda *InfraLambda, desired *lambdaDynamoDBDesiredMapping, preview bool) error {
@@ -2424,11 +2409,11 @@ func lambdaCreateDynamoDBMapping(ctx context.Context, client lambdaEventSourceMa
 	return nil
 }
 
-func lambdaConvergeDynamoDBMapping(ctx context.Context, client lambdaEventSourceMappingClient, infraLambda *InfraLambda, desired *lambdaDynamoDBDesiredMapping, listed *lambdaDynamoDBCurrentMapping, preview bool) error {
+func lambdaConvergeDynamoDBMapping(ctx context.Context, client lambdaEventSourceMappingClient, infraLambda *InfraLambda, desired *lambdaDynamoDBDesiredMapping, listed *lambdatypes.EventSourceMappingConfiguration, preview bool) error {
 	current := listed
 	if !preview {
 		var err error
-		current, err = lambdaWaitEventSourceMappingSettled(ctx, client, aws.ToString(listed.uuid))
+		current, err = lambdaWaitEventSourceMappingSettled(ctx, client, aws.ToString(listed.UUID))
 		if err != nil {
 			return err
 		}
@@ -2448,7 +2433,7 @@ func lambdaConvergeDynamoDBMapping(ctx context.Context, client lambdaEventSource
 			Logger.Println("error:", err)
 			return err
 		}
-		if err := lambdaWaitEventSourceMappingEnabled(ctx, client, aws.ToString(current.uuid)); err != nil {
+		if err := lambdaWaitEventSourceMappingEnabled(ctx, client, aws.ToString(current.UUID)); err != nil {
 			return err
 		}
 	}
@@ -2456,41 +2441,48 @@ func lambdaConvergeDynamoDBMapping(ctx context.Context, client lambdaEventSource
 	return nil
 }
 
-func lambdaDynamoDBMappingUpdate(infraLambda *InfraLambda, desired *lambdaDynamoDBDesiredMapping, current *lambdaDynamoDBCurrentMapping, preview bool) (*lambda.UpdateEventSourceMappingInput, bool, error) {
-	update := &lambda.UpdateEventSourceMappingInput{UUID: current.uuid, FunctionName: desired.create.FunctionName}
+func lambdaDynamoDBMappingUpdate(infraLambda *InfraLambda, desired *lambdaDynamoDBDesiredMapping, current *lambdatypes.EventSourceMappingConfiguration, preview bool) (*lambda.UpdateEventSourceMappingInput, bool, error) {
+	update := &lambda.UpdateEventSourceMappingInput{UUID: current.UUID, FunctionName: desired.create.FunctionName}
 	needsUpdate := false
-	if !int32PointersEqual(current.batchSize, desired.create.BatchSize) {
-		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.batchSize), aws.ToInt32(desired.create.BatchSize))
+	if !int32PointersEqual(current.BatchSize, desired.create.BatchSize) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping BatchSize for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.BatchSize), aws.ToInt32(desired.create.BatchSize))
 		update.BatchSize = desired.create.BatchSize
 		needsUpdate = true
 	}
-	if !int32PointersEqual(current.maximumRetryAttempts, desired.create.MaximumRetryAttempts) {
-		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.maximumRetryAttempts), aws.ToInt32(desired.create.MaximumRetryAttempts))
+	if !int32PointersEqual(current.MaximumRetryAttempts, desired.create.MaximumRetryAttempts) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumRetryAttempts for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.MaximumRetryAttempts), aws.ToInt32(desired.create.MaximumRetryAttempts))
 		update.MaximumRetryAttempts = desired.create.MaximumRetryAttempts
 		needsUpdate = true
 	}
-	if !int32PointersEqual(current.parallelizationFactor, desired.create.ParallelizationFactor) {
-		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.parallelizationFactor), aws.ToInt32(desired.create.ParallelizationFactor))
+	if !int32PointersEqual(current.ParallelizationFactor, desired.create.ParallelizationFactor) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping ParallelizationFactor for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.ParallelizationFactor), aws.ToInt32(desired.create.ParallelizationFactor))
 		update.ParallelizationFactor = desired.create.ParallelizationFactor
 		needsUpdate = true
 	}
-	if !int32PointersEqual(current.maximumBatchingWindowInSeconds, desired.create.MaximumBatchingWindowInSeconds) {
-		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.maximumBatchingWindowInSeconds), aws.ToInt32(desired.create.MaximumBatchingWindowInSeconds))
+	if !int32PointersEqual(current.MaximumBatchingWindowInSeconds, desired.create.MaximumBatchingWindowInSeconds) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping MaximumBatchingWindowInSeconds for %s %s: %d => %d\n", infraLambda.Name, desired.tableName, aws.ToInt32(current.MaximumBatchingWindowInSeconds), aws.ToInt32(desired.create.MaximumBatchingWindowInSeconds))
 		update.MaximumBatchingWindowInSeconds = desired.create.MaximumBatchingWindowInSeconds
 		needsUpdate = true
 	}
-	if before, after := dynamoDBFailureDestination(current.destinationConfig), dynamoDBFailureDestination(desired.create.DestinationConfig); before != after {
+	if before, after := dynamoDBFailureDestination(current.DestinationConfig), dynamoDBFailureDestination(desired.create.DestinationConfig); before != after {
 		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping failure destination for %s %s: %s => %s\n", infraLambda.Name, desired.tableName, before, after)
 		// AWS requires an explicit empty destination to remove it; omitting the
 		// configuration leaves a previously configured destination unchanged.
 		update.DestinationConfig = &lambdatypes.DestinationConfig{OnFailure: &lambdatypes.OnFailure{Destination: aws.String(after)}}
 		needsUpdate = true
 	}
-	if current.startingPosition != desired.create.StartingPosition {
-		return nil, false, fmt.Errorf("cannot update StartingPosition for %s %s: %s => %s", infraLambda.Name, desired.tableName, current.startingPosition, desired.create.StartingPosition)
+	before, after := lambdaMappingMetrics(current.MetricsConfig), lambdaMappingMetrics(desired.create.MetricsConfig)
+	if !slices.Equal(before, after) {
+		Logger.Printf(PreviewString(preview)+"will update lambda event source mapping metrics for %s %s: %v => %v\n", infraLambda.Name, desired.tableName, before, after)
+		// An explicit empty list disables metrics; omitting the field preserves them.
+		update.MetricsConfig = &lambdatypes.EventSourceMappingMetricsConfig{Metrics: append([]lambdatypes.EventSourceMappingMetric{}, after...)}
+		needsUpdate = true
 	}
-	if aws.ToString(current.state) != "Enabled" {
-		Logger.Printf(PreviewString(preview)+"will enable lambda event source mapping for %s %s: %s => Enabled\n", infraLambda.Name, desired.tableName, aws.ToString(current.state))
+	if current.StartingPosition != desired.create.StartingPosition {
+		return nil, false, fmt.Errorf("cannot update StartingPosition for %s %s: %s => %s", infraLambda.Name, desired.tableName, current.StartingPosition, desired.create.StartingPosition)
+	}
+	if aws.ToString(current.State) != "Enabled" {
+		Logger.Printf(PreviewString(preview)+"will enable lambda event source mapping for %s %s: %s => Enabled\n", infraLambda.Name, desired.tableName, aws.ToString(current.State))
 		update.Enabled = aws.Bool(true)
 		needsUpdate = true
 	}
@@ -2517,11 +2509,18 @@ func dynamoDBFailureDestination(config *lambdatypes.DestinationConfig) string {
 	return aws.ToString(config.OnFailure.Destination)
 }
 
+func lambdaMappingMetrics(config *lambdatypes.EventSourceMappingMetricsConfig) []lambdatypes.EventSourceMappingMetric {
+	if config == nil {
+		return nil
+	}
+	return config.Metrics
+}
+
 func int32PointersEqual(a, b *int32) bool {
 	return a != nil && b != nil && *a == *b
 }
 
-func lambdaWaitEventSourceMappingSettled(ctx context.Context, client lambdaEventSourceMappingClient, uuid string) (*lambdaDynamoDBCurrentMapping, error) {
+func lambdaWaitEventSourceMappingSettled(ctx context.Context, client lambdaEventSourceMappingClient, uuid string) (*lambdatypes.EventSourceMappingConfiguration, error) {
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	for {
@@ -2532,19 +2531,19 @@ func lambdaWaitEventSourceMappingSettled(ctx context.Context, client lambdaEvent
 		if err != nil {
 			return nil, err
 		}
-		mapping, err := lambdaDynamoDBCurrentMappingFromGet(output)
+		mapping, err := lambdaEventSourceMappingFromGet(output)
 		if err != nil {
 			return nil, err
 		}
-		switch aws.ToString(mapping.state) {
+		switch aws.ToString(mapping.State) {
 		case "Enabled", "Disabled":
 			return mapping, nil
 		case "Creating", "Enabling", "Disabling", "Updating", "Deleting":
 		default:
-			return nil, fmt.Errorf("lambda event source mapping %s has unknown state %q", uuid, aws.ToString(mapping.state))
+			return nil, fmt.Errorf("lambda event source mapping %s has unknown state %q", uuid, aws.ToString(mapping.State))
 		}
 		if err := lambdaEventSourceMappingPoll(waitCtx); err != nil {
-			return nil, fmt.Errorf("wait for Lambda event source mapping %s to settle in state %s (%s): %w", uuid, aws.ToString(mapping.state), aws.ToString(mapping.stateTransitionReason), err)
+			return nil, fmt.Errorf("wait for Lambda event source mapping %s to settle in state %s (%s): %w", uuid, aws.ToString(mapping.State), aws.ToString(mapping.StateTransitionReason), err)
 		}
 	}
 }
@@ -2557,8 +2556,8 @@ func lambdaWaitEventSourceMappingEnabled(ctx context.Context, client lambdaEvent
 	if mapping == nil {
 		return fmt.Errorf("lambda event source mapping %s disappeared before reaching Enabled", uuid)
 	}
-	if aws.ToString(mapping.state) != "Enabled" {
-		return fmt.Errorf("lambda event source mapping %s reached %s instead of Enabled: %s", uuid, aws.ToString(mapping.state), aws.ToString(mapping.stateTransitionReason))
+	if aws.ToString(mapping.State) != "Enabled" {
+		return fmt.Errorf("lambda event source mapping %s reached %s instead of Enabled: %s", uuid, aws.ToString(mapping.State), aws.ToString(mapping.StateTransitionReason))
 	}
 	return nil
 }
@@ -2574,12 +2573,12 @@ func lambdaWaitEventSourceMappingDeleted(ctx context.Context, client lambdaEvent
 		if err != nil {
 			return err
 		}
-		mapping, err := lambdaDynamoDBCurrentMappingFromGet(output)
+		mapping, err := lambdaEventSourceMappingFromGet(output)
 		if err != nil {
 			return err
 		}
 		if err := lambdaEventSourceMappingPoll(waitCtx); err != nil {
-			return fmt.Errorf("wait for Lambda event source mapping %s deletion in state %s (%s): %w", uuid, aws.ToString(mapping.state), aws.ToString(mapping.stateTransitionReason), err)
+			return fmt.Errorf("wait for Lambda event source mapping %s deletion in state %s (%s): %w", uuid, aws.ToString(mapping.State), aws.ToString(mapping.StateTransitionReason), err)
 		}
 	}
 }
@@ -2743,9 +2742,9 @@ func LambdaEnsureTriggerSQS(ctx context.Context, infraLambda *InfraLambda, previ
 				if current == nil {
 					count = 0 // A deleting mapping must be recreated, not updated.
 				} else {
-					found.State = current.state
-					found.BatchSize = current.batchSize
-					found.MaximumBatchingWindowInSeconds = current.maximumBatchingWindowInSeconds
+					found.State = current.State
+					found.BatchSize = current.BatchSize
+					found.MaximumBatchingWindowInSeconds = current.MaximumBatchingWindowInSeconds
 				}
 			}
 			switch count {
@@ -3292,7 +3291,16 @@ func lambdaPrepareQuickPackage(infraLambda *InfraLambda, updateZipFn LambdaUpdat
 	return LambdaIncludeInZip(infraLambda)
 }
 
-func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview, showEnvVarValues bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) error {
+func lambdaFinalizeTriggers(ctx context.Context, infraLambda *InfraLambda, permissions []string, preview bool, declarations map[string]*InfraLambda) error {
+	sids, err := lambdaEnsureTriggerAlarm(ctx, CloudwatchClient(), StsAccount, Region(), lambdaEnsurePermissionWithSourceAccount, infraLambda, preview, declarations)
+	if err != nil {
+		return err
+	}
+	return lambdaRemoveUnusedPermissions(ctx, infraLambda.Name, append(permissions, sids...), preview)
+}
+
+// Provision every function and mapping before alarms resolve cross-function sources.
+func lambdaEnsureResources(ctx context.Context, infraLambda *InfraLambda, quick, preview, showEnvVarValues bool, updateZipFn LambdaUpdateZipFn, createZipFn LambdaCreateZipFn) ([]string, error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "lambdaEnsure"}
 		d.Start()
@@ -3300,7 +3308,13 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 	}
 	if err := validateLambdaName(infraLambda.Name); err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
+	}
+	if _, err := lambdaDynamoDBParseMappings(infraLambda); err != nil {
+		return nil, err
+	}
+	if err := validateLambdaAlarms(map[string]*InfraLambda{infraLambda.Name: infraLambda}); err != nil {
+		return nil, err
 	}
 	var err error
 	var concurrency *int32
@@ -3311,14 +3325,14 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		k, v, err := SplitOnce(attr, "=")
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 		switch k {
 		case lambdaAttrConcurrency:
 			concurrency, err = parseLambdaConcurrency(v)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		case lambdaAttrMemory:
 			memory = Atoi(v)
@@ -3329,25 +3343,25 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		default:
 			err := fmt.Errorf("unknown attr: %s", k)
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 	}
 	environmentVariables, err := lambdaEnvironmentVariables(infraLambda.Env)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	// New functions must also fit the update request, so every accepted
 	// declaration remains reconcilable. Validate before packaging or provisioning.
 	if err := validateLambdaConfigurationRequestSize(environmentVariables, timeout, memory); err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	if quick {
 		err = lambdaPrepareQuickPackage(infraLambda, updateZipFn, createZipFn)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 		err = applyLambdaUpdateStages(
 			func() error {
@@ -3359,52 +3373,52 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
-		return nil
+		return nil, nil
 	}
 	err = LogsEnsureGroup(ctx, infraLambda.infraSetName, "/aws/lambda/"+infraLambda.Name, logsTTLDays, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	err = IamEnsureRole(ctx, infraLambda.infraSetName, infraLambda.Name, "lambda", preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	// Keep the running code's grants until replacement activation succeeds.
 	// API identities must exist before their required grants can be resolved.
 	if err := lambdaPrepareIAMAPIs(ctx, infraLambda, preview); err != nil {
-		return err
+		return nil, err
 	}
 	if err := iamEnsureRolePolicies(ctx, infraLambda.Name, infraLambda.Policy, preview, false); err != nil {
-		return err
+		return nil, err
 	}
 	if err := iamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview, false); err != nil {
-		return err
+		return nil, err
 	}
 	arnRole, err := IamRoleArn(ctx, "lambda", infraLambda.Name)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	var zipBytes []byte
 	if infraLambda.runtime != lambdaRuntimeContainer {
 		err = createZipFn(infraLambda)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 		err = LambdaIncludeInZip(infraLambda)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 		zipBytes, err = LambdaZipBytes(infraLambda)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 	}
 	var getFunctionOut *lambda.GetFunctionOutput
@@ -3425,7 +3439,7 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 	})
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	if getFunctionOut == nil {
 		getFunctionOut = &lambda.GetFunctionOutput{}
@@ -3455,33 +3469,33 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 			_, err := diffMapStringString(new, existing, PreviewString(preview)+"container", true)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		} else {
 			existing := map[string]string{}
 			new, err := zipSha256Hex(zipBytes)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 			_, err = diffMapStringString(new, existing, PreviewString(preview)+"zip", true)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		}
 		if !preview {
 			getFunctionOut, err = createLambdaFunction(ctx, LambdaClient(), createInput, 5*time.Minute)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		}
 		logPrefix := PreviewString(preview) + "updated env var for: " + infraLambda.Name + ","
 		_, err := diffMapStringStringExact(createInput.Environment.Variables, map[string]string{}, logPrefix, showEnvVarValues)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 		Logger.Printf(PreviewString(preview)+"update timeout: %d => %d\n", 0, timeout)
 		Logger.Printf(PreviewString(preview)+"update memory: %d => %d\n", 0, memory)
@@ -3494,25 +3508,25 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 			diff, err = diffMapStringString(new, existing, PreviewString(preview)+"entrypoint", true)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		} else {
 			if getFunctionOut.Configuration == nil || getFunctionOut.Configuration.CodeSha256 == nil {
 				err := fmt.Errorf("lambda function returned no code hash: %s", infraLambda.Name)
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 			newCodeHash, _, err := lambdaExpectedPublishedCode(zipBytes, "")
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 			existing := map[string]string{"package": aws.ToString(getFunctionOut.Configuration.CodeSha256)}
 			new := map[string]string{"package": newCodeHash}
 			diff, err = diffMapStringString(new, existing, PreviewString(preview)+"zip", true)
 			if err != nil {
 				Logger.Println("error:", err)
-				return err
+				return nil, err
 			}
 		}
 		err = applyLambdaUpdateStages(
@@ -3530,98 +3544,88 @@ func lambdaEnsure(ctx context.Context, infraLambda *InfraLambda, quick, preview,
 		)
 		if err != nil {
 			Logger.Println("error:", err)
-			return err
+			return nil, err
 		}
 	}
 	if getFunctionOut.Configuration != nil {
 		infraLambda.Arn = aws.ToString(getFunctionOut.Configuration.FunctionArn)
 		if !lambdaFunctionARNMatches(infraLambda.Arn, Region(), infraLambda.Name) {
-			return fmt.Errorf("invalid Lambda function ARN %q", infraLambda.Arn)
+			return nil, fmt.Errorf("invalid Lambda function ARN %q", infraLambda.Arn)
 		}
 	} else if expectedErr != nil && preview {
 		callerARN, err := StsArn(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		identity, err := lambdaIdentityFromCallerARN(infraLambda.Name, infraLambda.infraSetName, Region(), callerARN)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		infraLambda.Arn = identity.arn
 	} else {
-		return fmt.Errorf("lambda %q returned no function configuration", infraLambda.Name)
+		return nil, fmt.Errorf("lambda %q returned no function configuration", infraLambda.Name)
 	}
 	var permissionSids []string
 	sids, err := LambdaEnsureTriggerApi(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	permissionSids = append(permissionSids, sids...)
-	// Activation completed; failed activation leaves the prior grants intact.
-	if err := IamEnsureRolePolicies(ctx, infraLambda.Name, infraLambda.Policy, preview); err != nil {
-		return err
-	}
-	if err := IamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview); err != nil {
-		return err
-	}
 	err = LambdaEnsureTriggerDynamoDB(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
+	}
+	// Keep prior grants through code activation and the settled destination
+	// transition. A failed mapping update must retain access to its old bucket.
+	if err := IamEnsureRolePolicies(ctx, infraLambda.Name, infraLambda.Policy, preview); err != nil {
+		return nil, err
+	}
+	if err := IamEnsureRoleAllows(ctx, infraLambda.Name, infraLambda.Allow, preview); err != nil {
+		return nil, err
 	}
 	sids, err = LambdaEnsureTriggerSchedule(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
-	}
-	permissionSids = append(permissionSids, sids...)
-	sids, err = LambdaEnsureTriggerAlarm(ctx, infraLambda, preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	permissionSids = append(permissionSids, sids...)
 	sid, err := LambdaEnsureTriggerSes(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	permissionSids = append(permissionSids, sid)
 	sids, err = LambdaEnsureTriggerEcr(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	permissionSids = append(permissionSids, sids...)
 	sids, err = LambdaEnsureTriggerURL(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	permissionSids = append(permissionSids, sids...)
 	sids, err = LambdaEnsureTriggerS3(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	permissionSids = append(permissionSids, sids...)
 	err = LambdaEnsureTriggerSQS(ctx, infraLambda, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
 	err = LambdaSetConcurrency(ctx, infraLambda.Name, concurrency, preview)
 	if err != nil {
 		Logger.Println("error:", err)
-		return err
+		return nil, err
 	}
-	err = lambdaRemoveUnusedPermissions(ctx, infraLambda.Name, permissionSids, preview)
-	if err != nil {
-		Logger.Println("error:", err)
-		return err
-	}
-	return nil
+	return permissionSids, nil
 }
 
 func lambdaExpectedPublishedCode(zipBytes []byte, imageURI string) (string, string, error) {

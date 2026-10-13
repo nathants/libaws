@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
@@ -32,7 +37,7 @@ func TestDynamoDBExampleFailures(t *testing.T) {
 		t.Fatal("DynamoDB example requires a unique 12-hex uid")
 	}
 	requireLiveAWSAccount(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	function, source, target := "test-lambda-"+uid, "test-table-"+uid, "test-other-table-"+uid
 	set := "test-infraset-" + uid
@@ -51,6 +56,17 @@ func TestDynamoDBExampleFailures(t *testing.T) {
 	configuration, err := LambdaClient().GetFunction(ctx, &lambda.GetFunctionInput{FunctionName: aws.String(function)})
 	if err != nil || configuration == nil || configuration.Tags[infraSetTagName] != set {
 		t.Fatalf("Lambda fixture is not owned or could not be read: %v", err)
+	}
+	bucket := os.Getenv("LIBAWS_DYNAMODB_FAILURE_BUCKET")
+	if bucket != "" {
+		if bucket != "test-failed-events-"+uid {
+			t.Fatal("failure bucket does not belong to this fixture")
+		}
+		if !t.Run("destination transition retains IAM grants", func(t *testing.T) {
+			assertDynamoDBDestinationIAM(t, ctx, function, bucket, uid)
+		}) {
+			return
+		}
 	}
 	streamARN, err := DynamoDBStreamArn(ctx, source)
 	if err != nil {
@@ -112,32 +128,58 @@ func TestDynamoDBExampleFailures(t *testing.T) {
 			return
 		}
 	}
-	if bucket := os.Getenv("LIBAWS_DYNAMODB_FAILURE_BUCKET"); bucket != "" {
-		if bucket != "test-failed-events-"+uid {
-			t.Fatal("failure bucket does not belong to this fixture")
+	if bucket != "" {
+		for _, view := range []ddbtypes.StreamViewType{
+			ddbtypes.StreamViewTypeKeysOnly, ddbtypes.StreamViewTypeNewImage,
+			ddbtypes.StreamViewTypeOldImage, ddbtypes.StreamViewTypeNewAndOldImages,
+		} {
+			if !t.Run("retained payload/"+string(view), func(t *testing.T) {
+				// Stream type is immutable while enabled. Rotate the owned
+				// stream, then reconcile its destination through the real owner.
+				for _, spec := range []*ddbtypes.StreamSpecification{
+					{StreamEnabled: aws.Bool(false)},
+					{StreamEnabled: aws.Bool(true), StreamViewType: view},
+				} {
+					if _, err := DynamoDBClient().UpdateTable(ctx, &dynamodb.UpdateTableInput{TableName: aws.String(source), StreamSpecification: spec}); err != nil {
+						t.Fatal(err)
+					}
+					if err := DynamoDBWaitForReady(ctx, source); err != nil {
+						t.Fatal(err)
+					}
+				}
+				declaration := &InfraLambda{Name: function, Trigger: []*InfraTrigger{{Type: lambdaTriggerDynamoDB,
+					Attr: []string{source, "start=trim_horizon", "batch=1", "retry=3", "on-failure=arn:aws:s3:::" + bucket},
+				}}}
+				if err := LambdaEnsureTriggerDynamoDB(ctx, declaration, false); err != nil {
+					t.Fatal(err)
+				}
+				assertDynamoDBFailurePayload(t, ctx, source, bucket, uid, view)
+			}) {
+				return
+			}
 		}
-		t.Run("discarded stream invocation retains its complete payload", func(t *testing.T) {
-			assertDynamoDBFailurePayload(t, ctx, source, bucket, uid)
-		})
 	}
 }
 
-func assertDynamoDBFailurePayload(t *testing.T, ctx context.Context, source, bucket, uid string) {
+func assertDynamoDBFailurePayload(t *testing.T, ctx context.Context, source, bucket, uid string, view ddbtypes.StreamViewType) {
 	t.Helper()
 	// The output table was removed above. This real stream event must fail all
 	// configured retries before Lambda itself delivers it to the S3 destination.
-	marker := "retained-" + uid
-	private := "private-failed-image-" + uid
-	_, err := DynamoDBClient().PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(source),
-		Item: map[string]ddbtypes.AttributeValue{
-			"userid":  &ddbtypes.AttributeValueMemberS{Value: marker},
-			"version": &ddbtypes.AttributeValueMemberN{Value: "1"},
-			"data":    &ddbtypes.AttributeValueMemberS{Value: private},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
+	marker := "retained-" + uid + "-" + string(view)
+	// A MODIFY event provides both an old and a new image where the selected
+	// stream view includes them. Keys-only must not acquire invented images.
+	for _, data := range []string{"old-private-" + uid, "new-private-" + uid} {
+		_, err := DynamoDBClient().PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(source),
+			Item: map[string]ddbtypes.AttributeValue{
+				"userid":  &ddbtypes.AttributeValueMemberS{Value: marker},
+				"version": &ddbtypes.AttributeValueMemberN{Value: "1"},
+				"data":    &ddbtypes.AttributeValueMemberS{Value: data},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
@@ -175,11 +217,27 @@ func assertDynamoDBFailurePayload(t *testing.T, ctx context.Context, source, buc
 				t.Fatal("missing complete failure payload")
 			}
 			for _, record := range event.Records {
-				if record.Change.Keys["userid"].String() != marker {
+				if record.Change.Keys["userid"].String() != marker || record.EventName != "MODIFY" {
 					continue
 				}
-				if record.Change.NewImage["data"].String() != private || envelope.RequestContext.Condition != "RetryAttemptsExhausted" {
-					t.Fatal("discarded stream image or failure reason was lost")
+				if envelope.RequestContext.Condition != "RetryAttemptsExhausted" || record.Change.StreamViewType != string(view) || len(record.Change.Keys) != 2 || record.Change.Keys["version"].Number() != "1" {
+					t.Fatal("discarded stream keys, view, or failure reason was lost")
+				}
+				for _, image := range []struct {
+					value map[string]events.DynamoDBAttributeValue
+					want  bool
+					data  string
+				}{
+					{record.Change.OldImage, view == ddbtypes.StreamViewTypeOldImage || view == ddbtypes.StreamViewTypeNewAndOldImages, "old-private-" + uid},
+					{record.Change.NewImage, view == ddbtypes.StreamViewTypeNewImage || view == ddbtypes.StreamViewTypeNewAndOldImages, "new-private-" + uid},
+				} {
+					if !image.want {
+						if len(image.value) != 0 {
+							t.Fatal("destination added an image absent from the stream view")
+						}
+					} else if len(image.value) != 3 || image.value["userid"].String() != marker || image.value["version"].Number() != "1" || image.value["data"].String() != image.data {
+						t.Fatal("destination lost or changed a stream image")
+					}
 				}
 				return
 			}
@@ -188,5 +246,102 @@ func assertDynamoDBFailurePayload(t *testing.T, ctx context.Context, source, buc
 			t.Fatal("Lambda did not retain the discarded stream event")
 		}
 		time.Sleep(time.Second)
+	}
+}
+
+type dynamoDBDestinationTransport func(*http.Request) (*http.Response, error)
+
+func (transport dynamoDBDestinationTransport) Do(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+func assertDynamoDBDestinationIAM(t *testing.T, ctx context.Context, function, bucket, uid string) {
+	t.Helper()
+	t.Setenv("uid", uid)
+	original, err := InfraParse("../examples/simple/go/dynamodb/infra.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired, err := InfraParse("../examples/simple/go/dynamodb/infra.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := desired.Lambda[function]
+	fn.Allow = slices.DeleteFunc(fn.Allow, func(grant string) bool { return strings.Contains(grant, "arn:aws:s3:::"+bucket) })
+	fn.Trigger[0].Attr = slices.DeleteFunc(fn.Trigger[0].Attr, func(attr string) bool { return strings.HasPrefix(attr, "on-failure=") })
+	grants := []*IamAllow{
+		{Action: "s3:PutObject", Resource: "arn:aws:s3:::" + bucket + "/*"},
+		{Action: "s3:ListBucket", Resource: "arn:aws:s3:::" + bucket},
+	}
+	checkGrants := func(present bool) error {
+		for _, grant := range grants {
+			_, err := IamClient().GetRolePolicy(ctx, &iam.GetRolePolicyInput{RoleName: aws.String(function), PolicyName: aws.String(grant.policyName())})
+			if present && err != nil {
+				return err
+			}
+			if !present {
+				if err == nil {
+					return errors.New("obsolete grant remains")
+				}
+				if _, ok := errors.AsType[*iamtypes.NoSuchEntityException](err); !ok {
+					return fmt.Errorf("read obsolete grant: %w", err)
+				}
+			}
+		}
+		return nil
+	}
+	oldClient := LambdaClient()
+	defer func() { lambdaClient = oldClient }()
+	base := Session().HTTPClient
+	if base == nil {
+		base = http.DefaultClient
+	}
+	for _, fail := range []bool{true, false} {
+		attempt, cancel := context.WithCancel(ctx)
+		reached := false
+		lambdaClient = lambda.NewFromConfig(*Session(), func(options *lambda.Options) {
+			options.HTTPClient = dynamoDBDestinationTransport(func(request *http.Request) (*http.Response, error) {
+				if request.Method == "PUT" && strings.Contains(request.URL.Path, "/event-source-mappings/") {
+					reached = true
+					// Read real IAM at the dispatch boundary, including the
+					// attempt canceled after actual ensure-side IAM mutations.
+					if err := checkGrants(true); err != nil {
+						cancel()
+						return nil, err
+					}
+					if fail {
+						cancel()
+						return nil, context.Canceled
+					}
+				}
+				return base.Do(request)
+			})
+		})
+		err := InfraEnsureLambda(attempt, desired, "", false, false)
+		cancel()
+		lambdaClient = oldClient
+		if !reached || fail && !errors.Is(err, context.Canceled) || !fail && err != nil {
+			t.Fatalf("destination transition fail=%t: reached=%t err=%v", fail, reached, err)
+		}
+		if err := checkGrants(fail); err != nil {
+			t.Fatal(err)
+		}
+		mappings, err := lambdaListEventSourceMappings(ctx, function)
+		if err != nil || len(mappings) != 1 {
+			t.Fatalf("read mapping: %v %v", mappings, err)
+		}
+		want := ""
+		if fail {
+			want = "arn:aws:s3:::" + bucket
+		}
+		if dynamoDBFailureDestination(mappings[0].DestinationConfig) != want || aws.ToString(mappings[0].State) != "Enabled" {
+			t.Fatal("destination transition left incorrect mapping state")
+		}
+	}
+	if err := InfraEnsureLambda(ctx, original, "", false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkGrants(true); err != nil {
+		t.Fatal(err)
 	}
 }

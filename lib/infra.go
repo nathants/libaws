@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -1046,6 +1047,17 @@ func (scope infraListScope) listLambda(ctx context.Context, triggersChan <-chan 
 							fmt.Sprintf("retry=%d", *mapping.MaximumRetryAttempts),
 							fmt.Sprintf("start=%s", strings.ToLower(string(mapping.StartingPosition))),
 							fmt.Sprintf("window=%d", *mapping.MaximumBatchingWindowInSeconds),
+						}
+						if metrics := lambdaMappingMetrics(mapping.MetricsConfig); len(metrics) != 0 {
+							var names []string
+							for _, metric := range metrics {
+								if metric == lambdatypes.EventSourceMappingMetricEventCount {
+									names = append(names, "event_count")
+								} else {
+									names = append(names, string(metric))
+								}
+							}
+							attrs = append(attrs, "metrics="+strings.Join(names, ","))
 						}
 						if destination := dynamoDBFailureDestination(mapping.DestinationConfig); destination != "" {
 							// Observe even externally managed destination kinds. Desired
@@ -2278,11 +2290,14 @@ func InfraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 	return infraEnsureLambda(ctx, infraSet, quick, preview, showEnvVarValues, nil)
 }
 
-// validateLambdaSelection checks every declared Lambda name and that quick mode
-// names one of them, before any provider call.
+// validateLambdaSelection checks declared Lambda names, stream/alarm triggers, and
+// that quick mode names a declared function, before any provider call.
 func validateLambdaSelection(infraSet *InfraSet, quick string) error {
-	for lambdaName := range infraSet.Lambda {
+	for lambdaName, infraLambda := range infraSet.Lambda {
 		if err := validateLambdaName(lambdaName); err != nil {
+			return err
+		}
+		if _, err := lambdaDynamoDBParseMappings(infraLambda); err != nil {
 			return err
 		}
 	}
@@ -2291,7 +2306,7 @@ func validateLambdaSelection(infraSet *InfraSet, quick string) error {
 			return fmt.Errorf("cannot use quick mode for unknown lambda name: %s", quick)
 		}
 	}
-	return nil
+	return validateLambdaAlarms(infraSet.Lambda)
 }
 
 func infraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, preview, showEnvVarValues bool, artifacts *infraBuildArtifacts) error {
@@ -2304,7 +2319,9 @@ func infraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 		Logger.Println("error:", err)
 		return err
 	}
-	for lambdaName, infraLambda := range infraSet.Lambda {
+	permissions := map[string][]string{}
+	for _, lambdaName := range slices.Sorted(maps.Keys(infraSet.Lambda)) {
+		infraLambda := infraSet.Lambda[lambdaName]
 		if quick != "" && quick != lambdaName {
 			continue
 		}
@@ -2331,10 +2348,17 @@ func infraEnsureLambda(ctx context.Context, infraSet *InfraSet, quick string, pr
 		default:
 			panic("unknown lambda runtime: " + runtime)
 		}
-		err = lambdaEnsure(ctx, infraLambda, quick != "", preview, showEnvVarValues, updateZipFn, createZipFn)
+		permissions[lambdaName], err = lambdaEnsureResources(ctx, infraLambda, quick != "", preview, showEnvVarValues, updateZipFn, createZipFn)
 		if err != nil {
 			Logger.Println("error:", err)
 			return err
+		}
+	}
+	if quick == "" {
+		for name, infraLambda := range infraSet.Lambda {
+			if err := lambdaFinalizeTriggers(ctx, infraLambda, permissions[name], preview, infraSet.Lambda); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -2369,6 +2393,9 @@ func infraEnsure(ctx context.Context, infraSet *InfraSet, quick string, preview,
 		d := &Debug{start: time.Now(), name: "InfraEnsure"}
 		d.Start()
 		defer d.End()
+	}
+	if err := validateLambdaSelection(infraSet, quick); err != nil {
+		return err
 	}
 	if quick == "" {
 		err := InfraEnsureKeypair(ctx, infraSet, preview)
@@ -2988,7 +3015,6 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	alarmNames := map[string]bool{}
 	hasSESTrigger := false
 	for _, infraLambda := range infraSet.Lambda {
 		infraLambda.infraSetName = infraSet.Name
@@ -3019,6 +3045,9 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 				return nil, err
 			}
 		}
+		if _, err := lambdaDynamoDBParseMappings(infraLambda); err != nil {
+			return nil, err
+		}
 		for _, trigger := range infraLambda.Trigger {
 			if err := lambdaValidateTriggerSource(trigger); err != nil {
 				return nil, err
@@ -3037,20 +3066,10 @@ func InfraParse(yamlPath string) (*InfraSet, error) {
 				}
 				hasSESTrigger = true
 			}
-			if trigger.Type == lambdaTriggerAlarm {
-				config, err := parseLambdaAlarmTrigger(trigger)
-				if err != nil {
-					Logger.Println("error:", err)
-					return nil, err
-				}
-				if alarmNames[config.name] {
-					err := fmt.Errorf("duplicate Lambda alarm name %q", config.name)
-					Logger.Println("error:", err)
-					return nil, err
-				}
-				alarmNames[config.name] = true
-			}
 		}
+	}
+	if err := validateLambdaAlarms(infraSet.Lambda); err != nil {
+		return nil, err
 	}
 	return infraSet, nil
 }

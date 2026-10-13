@@ -70,7 +70,7 @@ It should be easy to create:
   * [SQS](#sqs-1) queue puts
   * Cron [schedules](#schedule)
   * [ECR](#ecr) Docker pushes
-  * Lambda invocation [alarms](#alarm)
+  * Lambda invocation and retention [alarms](#alarm)
 
 ## What
 
@@ -369,6 +369,7 @@ go doc github.com/nathants/libaws/lib.InfraListSet
 
 * [Coexisting infrastructure sets](https://github.com/nathants/libaws/tree/master/examples/misc/infrasets): exact-set inventory while an independent set is being removed.
 * [Literal S3 keys](https://github.com/nathants/libaws/tree/master/examples/misc/s3-keys): object/version CLI operations without path normalization.
+* [DynamoDB failure retention](https://github.com/nathants/libaws/tree/master/examples/misc/dynamodb-retention): S3 retention, retained-event and destination-delivery alarms.
 * [DynamoDB indexes](https://github.com/nathants/libaws/tree/master/examples/misc/dynamodb-indexes): provisioned global indexes and local-index projections.
 
 * [S3 append-only](https://github.com/nathants/libaws/tree/master/examples/complex/s3-appendonly): append-only storage with separate writer and reader IAM users.
@@ -1319,10 +1320,11 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
   * `window=VALUE`, maximum batching window in seconds, default: `0`
   * `start=VALUE`, required starting position: `latest | trim_horizon`; immutable on existing mappings.
   * `on-failure=ARN`, optional S3 bucket ARN for complete failed invocation records. Removing it clears the destination; previews never change it.
+  * `metrics=event_count`, opt in to Lambda event-source mapping `EventCount` metrics. Omission disables these metrics.
 
 * Handlers must return or raise an error for Lambda to count failures and retry; an HTTP-shaped error response does not fail a stream invocation. The examples log record IDs, source ARNs, and failed operations without item contents. Their three-retry limit permits discarded batches; logs and error metrics are not durable failed-event storage. The default `retry=-1` retries until records expire from the stream (24 hours).
 
-* An S3 failure destination retains the original payload after retries are exhausted or the stream record expires. Declare the private bucket separately and grant the execution role `s3:PutObject` on its objects and `s3:ListBucket` on the bucket. Keep the bucket until failed records are reconciled; monitor destination delivery failures. No replay or cleanup worker is created. AWS recommends an `s3:ResourceAccount` IAM condition to prevent delivery to a bucket recreated in another account; conditional grants require a separately managed IAM policy.
+* An S3 failure destination retains payloads discarded by Lambda, such as after retry exhaustion, including exactly the keys and images selected by the table's `stream` attribute. It cannot recover unread records that expire in DynamoDB. Declare the private bucket separately and grant the execution role `s3:PutObject` on its objects and `s3:ListBucket` on the bucket. Keep the bucket until failed records are reconciled. No replay, cleanup worker, or alarm is created automatically. Optional [alarms](#alarm) distinguish retained failures from failures to store the recovery copy. AWS recommends an `s3:ResourceAccount` IAM condition to prevent delivery to a bucket recreated in another account; conditional grants require a separately managed IAM policy.
 
 * Schema:
 
@@ -1434,15 +1436,19 @@ Defines an [ECR trigger](https://docs.aws.amazon.com/AWSCloudFormation/latest/Us
 
 ##### Alarm
 
-Defines a [CloudWatch alarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html) that invokes the declaring Lambda when the monitored Lambda records at least the specified number of invocations in one minute.
+Defines a CloudWatch alarm over [Lambda metrics](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-metrics-types.html) that invokes the declaring Lambda. The monitored Lambda may be a different function.
 
-* The following attributes are required:
-
+* Required attributes:
   * `name=VALUE`, account-and-region-unique alarm name, 1–255 ASCII letters, digits, dots, hyphens, or underscores.
-  * `lambda-invocations=VALUE`, Lambda to monitor.
-  * `at-least=VALUE/minute`, positive integer invocation threshold, maximum: `2147483647`.
-
-* Missing data does not breach the alarm.
+  * `at-least=VALUE/minute`, positive integer count threshold, maximum: `2147483647`.
+  * Exactly one metric selector:
+    * `lambda-invocations=FUNCTION`: `Invocations`, scoped to `FunctionName`.
+    * `lambda-retained-failures=FUNCTION`: `OnFailureDestinationDeliveredEventCount`, scoped to `EventSourceMappingUUID`. Also requires `dynamodb-table=TABLE` and that mapping's `metrics=event_count`. The function and table resolve the current mapping; re-ensure reconciles replacement mappings.
+    * `lambda-destination-delivery-failures=FUNCTION`: `DestinationDeliveryFailures`, scoped to `FunctionName`, **not one table or mapping**. No EventCount opt-in required.
+* Fixed evaluation: `AWS/Lambda`, `Sum`, one 60-second period, one breaching datapoint. Missing data does not breach; an idle alarm is not proof of healthy polling.
+* Retained counts measure records/events, not batches, and indicate reconciliation work—not replay or repair. `DroppedEventCount` is not equivalent: it excludes successful on-failure deliveries and records expired by the source's own retention limit.
+* Destination-delivery failures mean the recovery copy was not stored. This is the final alert layer; there are no further fallback destinations or alerts.
+* Notifications occur on transitions into `ALARM`, not once per failed batch. Sending the alarm to the same unavailable or throttled Lambda can delay notification; this is not independent outage detection.
 
 * Schema:
 
@@ -1468,6 +1474,17 @@ Defines a [CloudWatch alarm](https://docs.aws.amazon.com/AmazonCloudWatch/latest
             - name=beta-invocations-runaway
             - lambda-invocations=beta
             - at-least=300/minute
+        - type: alarm
+          attr:
+            - name=beta-retained-failures
+            - lambda-retained-failures=beta
+            - dynamodb-table=events
+            - at-least=1/minute
+        - type: alarm
+          attr:
+            - name=beta-retention-delivery-failed
+            - lambda-destination-delivery-failures=beta
+            - at-least=1/minute
   ```
 
 ## Bash Completion

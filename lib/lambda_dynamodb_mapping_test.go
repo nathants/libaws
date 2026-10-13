@@ -424,7 +424,7 @@ func TestLambdaDynamoDBStreamMappingIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if disabled == nil || aws.ToString(disabled.state) != "Disabled" {
+	if disabled == nil || aws.ToString(disabled.State) != "Disabled" {
 		t.Fatalf("disabled mapping state = %v, want Disabled", disabled)
 	}
 	if err := LambdaEnsureTriggerDynamoDB(ctx, infraLambda, false); err != nil {
@@ -670,5 +670,63 @@ func TestDynamoDBFailureDestinationRejectsUnsupportedTargets(t *testing.T) {
 				t.Fatalf("invalid destination accepted or misreported: %v", err)
 			}
 		})
+	}
+}
+
+func TestLambdaDynamoDBEventCountMetrics(t *testing.T) {
+	const stream = "arn:aws:dynamodb:us-west-2:123456789012:table/table/stream/current"
+	infra := testLambdaDynamoDBInfra("table", "arn:aws:lambda:us-west-2:123456789012:function:function")
+	infra.Trigger[0].Attr = append(infra.Trigger[0].Attr, "metrics=event_count")
+	resolve := func(context.Context, string) (string, error) { return stream, nil }
+	mapping := testLambdaDynamoDBMapping("mapping", stream, infra.Arn, "Enabled")
+	writes := 0
+	client := &lambdaEventSourceMappingClientStub{
+		list: func(context.Context, *lambda.ListEventSourceMappingsInput) (*lambda.ListEventSourceMappingsOutput, error) {
+			return &lambda.ListEventSourceMappingsOutput{EventSourceMappings: []lambdatypes.EventSourceMappingConfiguration{mapping}}, nil
+		},
+		get: func(context.Context, *lambda.GetEventSourceMappingInput) (*lambda.GetEventSourceMappingOutput, error) {
+			out := testLambdaDynamoDBGetOutput(mapping)
+			out.MetricsConfig = mapping.MetricsConfig
+			return out, nil
+		},
+		update: func(_ context.Context, in *lambda.UpdateEventSourceMappingInput) (*lambda.UpdateEventSourceMappingOutput, error) {
+			writes++
+			if in.MetricsConfig == nil || in.MetricsConfig.Metrics == nil {
+				t.Fatal("metrics reconciliation omitted its explicit list")
+			}
+			mapping.MetricsConfig = in.MetricsConfig
+			return &lambda.UpdateEventSourceMappingOutput{UUID: mapping.UUID}, nil
+		},
+	}
+	desired, err := lambdaDynamoDBDesiredMappings(t.Context(), resolve, infra, false)
+	if err != nil || len(lambdaMappingMetrics(desired[0].create.MetricsConfig)) != 1 {
+		t.Fatalf("missing create metrics: %v", err)
+	}
+	for _, enabled := range []bool{true, false} {
+		if !enabled {
+			infra.Trigger[0].Attr = infra.Trigger[0].Attr[:2]
+		}
+		before := writes
+		for i, preview := range []bool{true, false, false} {
+			if err := lambdaEnsureTriggerDynamoDB(t.Context(), client, resolve, infra, preview); err != nil {
+				t.Fatal(err)
+			}
+			want := before
+			if i > 0 {
+				want++
+			}
+			if writes != want {
+				t.Fatalf("preview/change/idempotence: writes=%d want=%d", writes, want)
+			}
+		}
+		if (len(lambdaMappingMetrics(mapping.MetricsConfig)) == 1) != enabled {
+			t.Fatal("wrong metrics state")
+		}
+	}
+	for _, attrs := range [][]string{{"metrics="}, {"metrics=EventCount"}, {"metrics=all"}, {"metrics=event_count", "metrics=event_count"}} {
+		infra.Trigger[0].Attr = append([]string{"table", "start=latest"}, attrs...)
+		if _, err := lambdaDynamoDBParseMappings(infra); err == nil {
+			t.Fatalf("accepted invalid metrics: %v", attrs)
+		}
 	}
 }

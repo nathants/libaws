@@ -16,32 +16,55 @@ import (
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 )
 
 const (
-	lambdaTriggerAlarm             = "alarm"
-	lambdaAlarmInvocationPrincipal = "lambda.alarms.cloudwatch.amazonaws.com"
-	lambdaAlarmAttrName            = "name"
-	lambdaAlarmAttrInvocations     = "lambda-invocations"
-	lambdaAlarmAttrAtLeast         = "at-least"
-	lambdaAlarmRateUnit            = "/minute"
+	lambdaTriggerAlarm              = "alarm"
+	lambdaAlarmInvocationPrincipal  = "lambda.alarms.cloudwatch.amazonaws.com"
+	lambdaAlarmAttrName             = "name"
+	lambdaAlarmAttrInvocations      = "lambda-invocations"
+	lambdaAlarmAttrAtLeast          = "at-least"
+	lambdaAlarmAttrRetained         = "lambda-retained-failures"
+	lambdaAlarmAttrDeliveryFailures = "lambda-destination-delivery-failures"
+	lambdaAlarmAttrTable            = "dynamodb-table"
+	lambdaAlarmRateUnit             = "/minute"
 
-	lambdaAlarmNamespace         = "AWS/Lambda"
-	lambdaAlarmMetric            = "Invocations"
-	lambdaAlarmDimension         = "FunctionName"
-	lambdaAlarmPeriod            = int32(60)
-	lambdaAlarmEvaluationPeriods = int32(1)
-	lambdaAlarmDatapointsToAlarm = int32(1)
-	lambdaAlarmMissingData       = "notBreaching"
+	lambdaAlarmNamespace              = "AWS/Lambda"
+	lambdaAlarmMetricInvocations      = "Invocations"
+	lambdaAlarmMetricRetained         = "OnFailureDestinationDeliveredEventCount"
+	lambdaAlarmMetricDeliveryFailures = "DestinationDeliveryFailures"
+	lambdaAlarmMappingDimension       = "EventSourceMappingUUID"
+	lambdaAlarmDimension              = "FunctionName"
+	lambdaAlarmPeriod                 = int32(60)
+	lambdaAlarmEvaluationPeriods      = int32(1)
+	lambdaAlarmDatapointsToAlarm      = int32(1)
+	lambdaAlarmMissingData            = "notBreaching"
 )
 
 var lambdaAlarmNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,255}$`)
 var lambdaAlarmRatePattern = regexp.MustCompile(`^[1-9][0-9]*$`)
+var lambdaAlarmTablePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{3,255}$`)
 
 type lambdaAlarmConfig struct {
-	name                 string
-	invocationLambdaName string
-	invocationsPerMinute int32
+	name                string
+	monitoredLambdaName string
+	countPerMinute      int32
+	metric              string
+	tableName           string
+	mappingUUID         string
+}
+
+func (config *lambdaAlarmConfig) monitorAttribute() string {
+	switch config.metric {
+	case lambdaAlarmMetricRetained:
+		return lambdaAlarmAttrRetained
+	case lambdaAlarmMetricDeliveryFailures:
+		return lambdaAlarmAttrDeliveryFailures
+	default:
+		return lambdaAlarmAttrInvocations
+	}
 }
 
 func parseLambdaAlarmTrigger(trigger *InfraTrigger) (*lambdaAlarmConfig, error) {
@@ -58,13 +81,13 @@ func parseLambdaAlarmTrigger(trigger *InfraTrigger) (*lambdaAlarmConfig, error) 
 			return nil, fmt.Errorf("duplicate Lambda alarm attribute %q", key)
 		}
 		switch key {
-		case lambdaAlarmAttrName, lambdaAlarmAttrInvocations, lambdaAlarmAttrAtLeast:
+		case lambdaAlarmAttrName, lambdaAlarmAttrInvocations, lambdaAlarmAttrRetained, lambdaAlarmAttrDeliveryFailures, lambdaAlarmAttrTable, lambdaAlarmAttrAtLeast:
 			values[key] = value
 		default:
 			return nil, fmt.Errorf("unknown Lambda alarm attribute %q", key)
 		}
 	}
-	for _, key := range []string{lambdaAlarmAttrName, lambdaAlarmAttrInvocations, lambdaAlarmAttrAtLeast} {
+	for _, key := range []string{lambdaAlarmAttrName, lambdaAlarmAttrAtLeast} {
 		if values[key] == "" {
 			return nil, fmt.Errorf("lambda alarm is missing %q", key)
 		}
@@ -73,9 +96,31 @@ func parseLambdaAlarmTrigger(trigger *InfraTrigger) (*lambdaAlarmConfig, error) 
 	if !lambdaAlarmNamePattern.MatchString(name) {
 		return nil, fmt.Errorf("invalid Lambda alarm name %q", name)
 	}
-	invocationLambdaName := values[lambdaAlarmAttrInvocations]
-	if err := validateLambdaName(invocationLambdaName); err != nil {
-		return nil, fmt.Errorf("invalid Lambda alarm %s %q: %w", lambdaAlarmAttrInvocations, invocationLambdaName, err)
+	config := &lambdaAlarmConfig{name: name, tableName: values[lambdaAlarmAttrTable]}
+	for attr, metric := range map[string]string{
+		lambdaAlarmAttrInvocations:      lambdaAlarmMetricInvocations,
+		lambdaAlarmAttrRetained:         lambdaAlarmMetricRetained,
+		lambdaAlarmAttrDeliveryFailures: lambdaAlarmMetricDeliveryFailures,
+	} {
+		if value := values[attr]; value != "" {
+			if config.metric != "" {
+				return nil, errors.New("lambda alarm requires exactly one monitored metric")
+			}
+			if err := validateLambdaName(value); err != nil {
+				return nil, fmt.Errorf("invalid Lambda alarm %s: %w", attr, err)
+			}
+			config.monitoredLambdaName, config.metric = value, metric
+		}
+	}
+	if config.metric == "" {
+		return nil, errors.New("lambda alarm requires a monitored metric")
+	}
+	if config.metric == lambdaAlarmMetricRetained {
+		if !lambdaAlarmTablePattern.MatchString(config.tableName) {
+			return nil, errors.New("retained-failure alarm requires a DynamoDB table name")
+		}
+	} else if config.tableName != "" {
+		return nil, errors.New("DynamoDB table scope is only supported for retained-failure alarms")
 	}
 	rate := values[lambdaAlarmAttrAtLeast]
 	count, hasUnit := strings.CutSuffix(rate, lambdaAlarmRateUnit)
@@ -86,14 +131,15 @@ func parseLambdaAlarmTrigger(trigger *InfraTrigger) (*lambdaAlarmConfig, error) 
 	if err != nil {
 		return nil, fmt.Errorf("lambda alarm %s is too large: %q", lambdaAlarmAttrAtLeast, rate)
 	}
-	return &lambdaAlarmConfig{
-		name:                 name,
-		invocationLambdaName: invocationLambdaName,
-		invocationsPerMinute: int32(parsed),
-	}, nil
+	config.countPerMinute = int32(parsed)
+	return config, nil
 }
 
 func (config *lambdaAlarmConfig) metricAlarm(targetARN string) *cwtypes.MetricAlarm {
+	dimensions := []cwtypes.Dimension{{Name: aws.String(lambdaAlarmDimension), Value: aws.String(config.monitoredLambdaName)}}
+	if config.metric == lambdaAlarmMetricRetained {
+		dimensions = []cwtypes.Dimension{{Name: aws.String(lambdaAlarmMappingDimension), Value: aws.String(config.mappingUUID)}}
+	}
 	return &cwtypes.MetricAlarm{
 		ActionsEnabled:     aws.Bool(true),
 		AlarmActions:       []string{targetARN},
@@ -101,17 +147,14 @@ func (config *lambdaAlarmConfig) metricAlarm(targetARN string) *cwtypes.MetricAl
 		AlarmName:          aws.String(config.name),
 		ComparisonOperator: cwtypes.ComparisonOperatorGreaterThanOrEqualToThreshold,
 		DatapointsToAlarm:  aws.Int32(lambdaAlarmDatapointsToAlarm),
-		Dimensions: []cwtypes.Dimension{{
-			Name:  aws.String(lambdaAlarmDimension),
-			Value: aws.String(config.invocationLambdaName),
-		}},
-		EvaluationPeriods: aws.Int32(lambdaAlarmEvaluationPeriods),
-		MetricName:        aws.String(lambdaAlarmMetric),
-		Namespace:         aws.String(lambdaAlarmNamespace),
-		Period:            aws.Int32(lambdaAlarmPeriod),
-		Statistic:         cwtypes.StatisticSum,
-		Threshold:         aws.Float64(float64(config.invocationsPerMinute)),
-		TreatMissingData:  aws.String(lambdaAlarmMissingData),
+		Dimensions:         dimensions,
+		EvaluationPeriods:  aws.Int32(lambdaAlarmEvaluationPeriods),
+		MetricName:         aws.String(config.metric),
+		Namespace:          aws.String(lambdaAlarmNamespace),
+		Period:             aws.Int32(lambdaAlarmPeriod),
+		Statistic:          cwtypes.StatisticSum,
+		Threshold:          aws.Float64(float64(config.countPerMinute)),
+		TreatMissingData:   aws.String(lambdaAlarmMissingData),
 	}
 }
 
@@ -267,6 +310,7 @@ func LambdaEnsureTriggerAlarm(ctx context.Context, infraLambda *InfraLambda, pre
 		lambdaEnsurePermissionWithSourceAccount,
 		infraLambda,
 		preview,
+		nil,
 	)
 }
 
@@ -278,6 +322,7 @@ func lambdaEnsureTriggerAlarm(
 	ensurePermission lambdaAlarmPermissionEnsurer,
 	infraLambda *InfraLambda,
 	preview bool,
+	declarations map[string]*InfraLambda,
 ) ([]string, error) {
 	var configs []*lambdaAlarmConfig
 	for _, trigger := range infraLambda.Trigger {
@@ -303,6 +348,17 @@ func lambdaEnsureTriggerAlarm(
 	if err != nil || functionARN.AccountID != account ||
 		!lambdaFunctionARNMatches(infraLambda.Arn, region, infraLambda.Name) {
 		return nil, fmt.Errorf("invalid Lambda identity ARN %q", infraLambda.Arn)
+	}
+	for _, config := range configs {
+		if config.metric == lambdaAlarmMetricRetained {
+			mapping, err := lambdaAlarmResolveMapping(ctx, config, functionARN.Partition, region, account, preview, declarations)
+			if err != nil {
+				return nil, err
+			}
+			if mapping != nil {
+				config.mappingUUID = aws.ToString(mapping.UUID)
+			}
+		}
 	}
 	permissionSIDs := make([]string, 0, len(configs))
 	configuredNames := make(map[string]bool, len(configs))
@@ -330,7 +386,9 @@ func lambdaEnsureTriggerAlarm(
 		}
 		create := len(alarms) == 0
 		desired := config.metricAlarm(infraLambda.Arn)
-		if create || !lambdaAlarmMatches(&alarms[0], desired) {
+		if config.metric == lambdaAlarmMetricRetained && config.mappingUUID == "" {
+			Logger.Println(PreviewString(true)+"will resolve CloudWatch alarm mapping:", config.name, config.monitoredLambdaName, config.tableName)
+		} else if create || !lambdaAlarmMatches(&alarms[0], desired) {
 			if !preview {
 				if _, err := client.PutMetricAlarm(ctx, config.putInput(infraLambda.Arn, infraLambda.infraSetName, create)); err != nil {
 					return nil, err
@@ -395,18 +453,32 @@ func lambdaAlarmConfigFromMetricAlarm(alarm *cwtypes.MetricAlarm) (*lambdaAlarmC
 	if !exactFunctionARN {
 		return nil, false
 	}
-	dimension := alarm.Dimensions[0]
-	invocationLambdaName := aws.ToString(dimension.Value)
 	threshold := aws.ToFloat64(alarm.Threshold)
-	if aws.ToString(dimension.Name) != lambdaAlarmDimension || validateLambdaName(invocationLambdaName) != nil ||
-		threshold < 1 || threshold > float64(int64(1<<31-1)) || math.Trunc(threshold) != threshold {
+	if threshold < 1 || threshold > float64(int64(1<<31-1)) || math.Trunc(threshold) != threshold {
 		return nil, false
 	}
 	config := &lambdaAlarmConfig{
-		name:                 aws.ToString(alarm.AlarmName),
-		invocationLambdaName: invocationLambdaName,
-		invocationsPerMinute: int32(threshold),
+		name:           aws.ToString(alarm.AlarmName),
+		metric:         aws.ToString(alarm.MetricName),
+		countPerMinute: int32(threshold),
 	}
+	dimension := alarm.Dimensions[0]
+	value := aws.ToString(dimension.Value)
+	switch config.metric {
+	case lambdaAlarmMetricRetained:
+		if aws.ToString(dimension.Name) != lambdaAlarmMappingDimension || value == "" {
+			return nil, false
+		}
+		config.mappingUUID = value
+	case lambdaAlarmMetricInvocations, lambdaAlarmMetricDeliveryFailures:
+		if aws.ToString(dimension.Name) != lambdaAlarmDimension || validateLambdaName(value) != nil {
+			return nil, false
+		}
+		config.monitoredLambdaName = value
+	default:
+		return nil, false
+	}
+
 	if !lambdaAlarmNamePattern.MatchString(config.name) || !lambdaAlarmMatches(alarm, config.metricAlarm(alarm.AlarmActions[0])) {
 		return nil, false
 	}
@@ -443,16 +515,136 @@ func lambdaAlarmTriggers(ctx context.Context, setName string) ([]*InfraTrigger, 
 		if !representable {
 			continue
 		}
+		if config.metric == lambdaAlarmMetricRetained {
+			mapping, err := LambdaClient().GetEventSourceMapping(ctx, &lambda.GetEventSourceMappingInput{UUID: aws.String(config.mappingUUID)})
+			if err != nil {
+				return nil, err
+			}
+			if mapping == nil || aws.ToString(mapping.UUID) != config.mappingUUID {
+				return nil, errors.New("alarm mapping read returned an incomplete or different identity")
+			}
+			alarmARN, err := awsarn.Parse(aws.ToString(alarm.AlarmArn))
+			if err != nil {
+				return nil, err
+			}
+			function, table, err := lambdaAlarmMappingIdentity(aws.ToString(mapping.FunctionArn), aws.ToString(mapping.EventSourceArn), alarmARN.Partition, alarmARN.Region, alarmARN.AccountID)
+			if err != nil {
+				return nil, err
+			}
+			config.monitoredLambdaName, config.tableName = function, table
+		}
 		lambdaName, _ := lambdaAlarmActionFunctionName(&alarm)
-		triggers = append(triggers, &InfraTrigger{
-			lambdaName: lambdaName,
-			Type:       lambdaTriggerAlarm,
-			Attr: []string{
-				lambdaAlarmAttrName + "=" + config.name,
-				lambdaAlarmAttrInvocations + "=" + config.invocationLambdaName,
-				lambdaAlarmAttrAtLeast + "=" + strconv.FormatInt(int64(config.invocationsPerMinute), 10) + lambdaAlarmRateUnit,
-			},
-		})
+		attrs := []string{lambdaAlarmAttrName + "=" + config.name, config.monitorAttribute() + "=" + config.monitoredLambdaName}
+		if config.tableName != "" {
+			attrs = append(attrs, lambdaAlarmAttrTable+"="+config.tableName)
+		}
+		attrs = append(attrs, lambdaAlarmAttrAtLeast+"="+strconv.FormatInt(int64(config.countPerMinute), 10)+lambdaAlarmRateUnit)
+		triggers = append(triggers, &InfraTrigger{lambdaName: lambdaName, Type: lambdaTriggerAlarm, Attr: attrs})
 	}
 	return triggers, nil
+}
+
+func lambdaAlarmMappingIdentity(functionARN, sourceARN, partition, region, account string) (string, string, error) {
+	function, valid := lambdaUnqualifiedFunctionName(functionARN)
+	fn, fnErr := awsarn.Parse(functionARN)
+	source, sourceErr := awsarn.Parse(sourceARN)
+	table, tableErr := lambdaDynamoDBStreamTableName(sourceARN)
+	if !valid || fnErr != nil || sourceErr != nil || tableErr != nil || len(strings.Split(source.Resource, "/")) != 4 ||
+		fn.Partition != partition || source.Partition != partition || fn.Region != region || source.Region != region ||
+		fn.AccountID != account || source.AccountID != account {
+		return "", "", fmt.Errorf("invalid alarm mapping identity: function=%q source=%q", functionARN, sourceARN)
+	}
+	return function, table, nil
+}
+
+func lambdaAlarmResolveMapping(ctx context.Context, config *lambdaAlarmConfig, partition, region, account string, preview bool, declarations map[string]*InfraLambda) (*lambdatypes.EventSourceMappingConfiguration, error) {
+	stream, err := DynamoDBStreamArn(ctx, config.tableName)
+	if err != nil {
+		if preview && lambdaDynamoDBResourceNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	mappings, err := lambdaListEventSourceMappings(ctx, config.monitoredLambdaName)
+	if err != nil {
+		if preview && lambdaEventSourceMappingNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var found *lambdatypes.EventSourceMappingConfiguration
+	for _, mapping := range mappings {
+		if aws.ToString(mapping.EventSourceArn) != stream {
+			continue
+		}
+		function, table, err := lambdaAlarmMappingIdentity(aws.ToString(mapping.FunctionArn), aws.ToString(mapping.EventSourceArn), partition, region, account)
+		if err != nil {
+			return nil, err
+		}
+		if function != config.monitoredLambdaName || table != config.tableName || aws.ToString(mapping.UUID) == "" {
+			return nil, errors.New("alarm mapping identity does not match declaration")
+		}
+		if found != nil {
+			return nil, fmt.Errorf("ambiguous alarm mapping for %s %s", function, table)
+		}
+		found = &mapping
+	}
+	if found == nil {
+		if preview {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("no DynamoDB mapping for alarm %s: %s %s", config.name, config.monitoredLambdaName, config.tableName)
+	}
+	// A full preview may be enabling metrics before ensuring this alarm.
+	if preview && declarations[config.monitoredLambdaName] != nil {
+		if err := lambdaAlarmValidateDeclaredMapping(config, declarations); err != nil {
+			return nil, err
+		}
+		return found, nil
+	}
+	if !slices.Contains(lambdaMappingMetrics(found.MetricsConfig), lambdatypes.EventSourceMappingMetricEventCount) {
+		return nil, fmt.Errorf("alarm %s requires metrics=event_count on %s %s", config.name, config.monitoredLambdaName, config.tableName)
+	}
+	return found, nil
+}
+
+// Validate cross-function declarations without resolving provider identities.
+func validateLambdaAlarms(declarations map[string]*InfraLambda) error {
+	names := map[string]bool{}
+	for _, function := range declarations {
+		for _, trigger := range function.Trigger {
+			if trigger.Type != lambdaTriggerAlarm {
+				continue
+			}
+			config, err := parseLambdaAlarmTrigger(trigger)
+			if err != nil {
+				return err
+			}
+			if names[config.name] {
+				return fmt.Errorf("duplicate Lambda alarm name %q", config.name)
+			}
+			names[config.name] = true
+			if err := lambdaAlarmValidateDeclaredMapping(config, declarations); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func lambdaAlarmValidateDeclaredMapping(config *lambdaAlarmConfig, declarations map[string]*InfraLambda) error {
+	function := declarations[config.monitoredLambdaName]
+	if config.metric != lambdaAlarmMetricRetained || function == nil {
+		return nil
+	}
+	mappings, err := lambdaDynamoDBParseMappings(function)
+	if err != nil {
+		return err
+	}
+	for _, mapping := range mappings {
+		if mapping.tableName == config.tableName && slices.Contains(lambdaMappingMetrics(mapping.create.MetricsConfig), lambdatypes.EventSourceMappingMetricEventCount) {
+			return nil
+		}
+	}
+	return fmt.Errorf("alarm %s requires a DynamoDB trigger with metrics=event_count on %s %s", config.name, config.monitoredLambdaName, config.tableName)
 }

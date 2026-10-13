@@ -3,6 +3,8 @@ package lib
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 )
 
 type stubCloudwatchAlarmClient struct {
@@ -408,7 +412,7 @@ func TestLambdaEnsureTriggerAlarmRejectsQualifiedOrWrongFunctionARN(t *testing.T
 			infraSetName: "better-game",
 		}
 		if _, err := lambdaEnsureTriggerAlarm(
-			context.Background(), client, resolveAccount, "us-west-2", ensurePermission, infraLambda, false,
+			context.Background(), client, resolveAccount, "us-west-2", ensurePermission, infraLambda, false, nil,
 		); err == nil {
 			t.Fatalf("invalid Lambda ARN %q was accepted", functionARN)
 		}
@@ -517,7 +521,7 @@ func TestLambdaEnsureTriggerAlarmReconcilesUnsupportedAndStaleAlarms(t *testing.
 	}
 	resolveAccount := func(context.Context) (string, error) { return account, nil }
 
-	sids, err := lambdaEnsureTriggerAlarm(context.Background(), client, resolveAccount, region, ensurePermission, infraLambda, false)
+	sids, err := lambdaEnsureTriggerAlarm(context.Background(), client, resolveAccount, region, ensurePermission, infraLambda, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +536,7 @@ func TestLambdaEnsureTriggerAlarmReconcilesUnsupportedAndStaleAlarms(t *testing.
 	}
 
 	putCount, deleteCount, permissionCount = 0, 0, 0
-	if _, err := lambdaEnsureTriggerAlarm(context.Background(), client, resolveAccount, region, ensurePermission, infraLambda, false); err != nil {
+	if _, err := lambdaEnsureTriggerAlarm(context.Background(), client, resolveAccount, region, ensurePermission, infraLambda, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	if putCount != 0 || deleteCount != 0 || permissionCount != 1 {
@@ -714,10 +718,160 @@ func TestLambdaAlarmIntegration(t *testing.T) {
 		alarm := getAlarm()
 		config, representable := lambdaAlarmConfigFromMetricAlarm(alarm)
 		if !representable || !reflect.DeepEqual(alarm.AlarmActions, []string{functionARN}) ||
-			config.name != alarmName || config.invocationLambdaName != functionName || config.invocationsPerMinute != 1 {
+			config.name != alarmName || config.monitoredLambdaName != functionName || config.countPerMinute != 1 {
 			t.Fatalf("alarm did not converge to the declared subset: %#v, config %#v", alarm, config)
 		}
 	default:
 		t.Fatalf("unknown integration mode %q", mode)
+	}
+}
+
+func TestLambdaRetentionAlarmConfiguration(t *testing.T) {
+	for _, test := range []struct{ attr, metric, dimension, value string }{
+		{"lambda-retained-failures", "OnFailureDestinationDeliveredEventCount", "EventSourceMappingUUID", "mapping-id"},
+		{"lambda-destination-delivery-failures", "DestinationDeliveryFailures", "FunctionName", "processor"},
+	} {
+		attrs := []string{"name=retention", test.attr + "=processor", "at-least=1/minute"}
+		if test.attr == "lambda-retained-failures" {
+			attrs = append(attrs, "dynamodb-table=table")
+		}
+		config, err := parseLambdaAlarmTrigger(&InfraTrigger{Type: "alarm", Attr: attrs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.mappingUUID = "mapping-id"
+		alarm := config.metricAlarm("arn:aws:lambda:us-west-2:123456789012:function:notifier")
+		alarm.AlarmArn = aws.String("arn:aws:cloudwatch:us-west-2:123456789012:alarm:retention")
+		if aws.ToString(alarm.MetricName) != test.metric || len(alarm.Dimensions) != 1 || aws.ToString(alarm.Dimensions[0].Name) != test.dimension || aws.ToString(alarm.Dimensions[0].Value) != test.value {
+			t.Fatalf("wrong metric scope: %#v", alarm)
+		}
+		decoded, ok := lambdaAlarmConfigFromMetricAlarm(alarm)
+		if !ok || decoded.metric != test.metric {
+			t.Fatalf("inventory lost metric: %#v", decoded)
+		}
+		if test.metric == lambdaAlarmMetricRetained {
+			config.mappingUUID = "replacement-id"
+			if lambdaAlarmMatches(alarm, config.metricAlarm(alarm.AlarmActions[0])) {
+				t.Fatal("replacement mapping failed to change alarm")
+			}
+		}
+	}
+	for _, attrs := range [][]string{
+		{"lambda-retained-failures=processor"},
+		{"lambda-retained-failures=processor", "dynamodb-table=table", "lambda-invocations=processor"},
+		{"lambda-destination-delivery-failures=processor", "dynamodb-table=table"},
+		{"lambda-invocations=processor", "dynamodb-table=table"},
+		{"lambda-iterator-age=processor", "dynamodb-table=table"},
+	} {
+		attrs = append(attrs, "name=alarm", "at-least=1/minute")
+		if _, err := parseLambdaAlarmTrigger(&InfraTrigger{Type: "alarm", Attr: attrs}); err == nil {
+			t.Fatalf("invalid alarm accepted: %v", attrs)
+		}
+	}
+}
+
+func TestLambdaRetentionAlarmDeclarationValidation(t *testing.T) {
+	for _, mapping := range []string{"", "start=latest", "start=latest, metrics=event_count"} {
+		data := "name: fixture\nlambda:\n  notifier:\n    entrypoint: main.go\n    trigger:\n      - type: alarm\n        attr: [name=retained, lambda-retained-failures=processor, dynamodb-table=table, at-least=1/minute]\n  processor:\n    entrypoint: main.go\n"
+		if mapping != "" {
+			data += "    trigger:\n      - type: dynamodb\n        attr: [table, " + mapping + "]\n"
+		}
+		file := filepath.Join(t.TempDir(), "infra.yaml")
+		if err := os.WriteFile(file, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := InfraParse(file)
+		if (err == nil) != strings.Contains(mapping, "metrics=event_count") {
+			t.Fatalf("mapping %q: %v", mapping, err)
+		}
+	}
+}
+
+type lambdaAlarmReadTransport func(*http.Request) (*http.Response, error)
+
+func (transport lambdaAlarmReadTransport) Do(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+func TestLambdaAlarmMappingResolution(t *testing.T) {
+	const stream = "arn:aws:dynamodb:us-west-2:123456789012:table/table/stream/current"
+	const function = "arn:aws:lambda:us-west-2:123456789012:function:processor"
+	for _, mode := range []string{"exact", "paginated", "ambiguous", "wrong-function", "wrong-account", "no-metrics", "missing-table", "missing-function", "missing-mapping", "table-denied", "lambda-denied"} {
+		for _, preview := range []bool{false, true} {
+			t.Run(mode+"/preview="+Json(preview), func(t *testing.T) {
+				mapping := map[string]any{"UUID": "mapping", "EventSourceArn": stream, "FunctionArn": function, "MetricsConfig": map[string]any{"Metrics": []string{"EventCount"}}}
+				if mode == "wrong-function" {
+					mapping["FunctionArn"] = function + ":alias"
+				}
+				if mode == "wrong-account" {
+					mapping["FunctionArn"] = strings.ReplaceAll(function, "123456789012", "000000000000")
+				}
+				if mode == "no-metrics" {
+					delete(mapping, "MetricsConfig")
+				}
+				reads := 0
+				transport := lambdaAlarmReadTransport(func(request *http.Request) (*http.Response, error) {
+					reads++
+					status, data := 200, ""
+					if request.Header.Get("X-Amz-Target") == "DynamoDB_20120810.DescribeTable" {
+						data = Json(map[string]any{"Table": map[string]any{"LatestStreamArn": stream, "StreamSpecification": map[string]any{"StreamEnabled": true}}})
+						if mode == "missing-table" {
+							status, data = 400, `{"__type":"ResourceNotFoundException"}`
+						}
+						if mode == "table-denied" {
+							status, data = 400, `{"__type":"AccessDeniedException"}`
+						}
+					} else if request.Method == "GET" && strings.HasSuffix(request.URL.Path, "/event-source-mappings") {
+						if request.URL.Query().Get("FunctionName") != "processor" {
+							t.Fatalf("wrong function query: %s", request.URL)
+						}
+						mappings := []any{mapping}
+						if mode == "missing-mapping" {
+							mappings = nil
+						}
+						if mode == "ambiguous" {
+							mappings = append(mappings, mapping)
+						}
+						data = Json(map[string]any{"EventSourceMappings": mappings})
+						if mode == "paginated" && request.URL.Query().Get("Marker") == "" {
+							data = `{"EventSourceMappings":[],"NextMarker":"next"}`
+						}
+						if mode == "missing-function" {
+							status, data = 404, `{"code":"ResourceNotFoundException","message":"missing"}`
+						}
+						if mode == "lambda-denied" {
+							status, data = 403, `{"code":"AccessDeniedException","message":"denied"}`
+						}
+					} else {
+						t.Fatalf("unexpected provider call: %s %s", request.Method, request.URL)
+					}
+					return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"application/x-amz-json-1.0"}}, Body: io.NopCloser(strings.NewReader(data)), Request: request}, nil
+				})
+				oldDDB, oldLambda := dynamoDBClient, lambdaClient
+				t.Cleanup(func() { dynamoDBClient, lambdaClient = oldDDB, oldLambda })
+				awsConfig := aws.Config{Region: "us-west-2", Credentials: aws.AnonymousCredentials{}, RetryMaxAttempts: 1, HTTPClient: transport}
+				dynamoDBClient, lambdaClient = dynamodb.NewFromConfig(awsConfig), lambda.NewFromConfig(awsConfig)
+				config := &lambdaAlarmConfig{name: "retained", metric: lambdaAlarmMetricRetained, monitoredLambdaName: "processor", tableName: "table"}
+				got, err := lambdaAlarmResolveMapping(t.Context(), config, "aws", "us-west-2", "123456789012", preview, nil)
+				absent := strings.HasPrefix(mode, "missing-")
+				valid := mode == "exact" || mode == "paginated"
+				if valid || absent && preview {
+					if err != nil || (got == nil) != absent {
+						t.Fatalf("resolution: got=%v err=%v", got, err)
+					}
+				} else if err == nil {
+					t.Fatalf("invalid mapping accepted: %v", got)
+				}
+				if mode == "paginated" && reads != 3 {
+					t.Fatalf("pagination reads=%d", reads)
+				}
+				if mode == "no-metrics" && preview {
+					planned := map[string]*InfraLambda{"processor": {Trigger: []*InfraTrigger{{Type: "dynamodb", Attr: []string{"table", "start=latest", "metrics=event_count"}}}}}
+					if got, err := lambdaAlarmResolveMapping(t.Context(), config, "aws", "us-west-2", "123456789012", true, planned); err != nil || got == nil {
+						t.Fatalf("planned metrics enable: %v %v", got, err)
+					}
+				}
+			})
+		}
 	}
 }

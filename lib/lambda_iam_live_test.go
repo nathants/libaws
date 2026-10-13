@@ -200,7 +200,7 @@ func TestLambdaIAMOrderingIntegration(t *testing.T) {
 		}
 		return os.WriteFile(LambdaZipFile(declaration.Name), data.Bytes(), 0600)
 	}
-	if err := lambdaEnsure(ctx, declaration, false, false, false, nil, prepare); err != nil {
+	if _, err := lambdaEnsureResources(ctx, declaration, false, false, false, nil, prepare); err != nil {
 		t.Fatal(err)
 	}
 	if dispatches != 1 {
@@ -210,7 +210,7 @@ func TestLambdaIAMOrderingIntegration(t *testing.T) {
 	wantGrants = []*IamAllow{oldGrant, newGrant}
 	wantManaged = []string{"AWSLambdaBasicExecutionRole", "AWSXRayDaemonWriteAccess"}
 	declaration.Allow, declaration.Policy = []string{newGrant.String(), apiGrant}, []string{"AWSXRayDaemonWriteAccess"}
-	if err := lambdaEnsure(ctx, declaration, false, false, false, nil, prepare); err != nil {
+	if _, err := lambdaEnsureResources(ctx, declaration, false, false, false, nil, prepare); err != nil {
 		t.Fatal(err)
 	}
 	if dispatches != 2 {
@@ -265,7 +265,7 @@ func TestLambdaIAMOrderingIntegration(t *testing.T) {
 	})
 	generation = 3
 	declaration.Allow = append(declaration.Allow, oldGrant.String())
-	err = lambdaEnsure(failed, declaration, false, false, false, nil, prepare)
+	_, err = lambdaEnsureResources(failed, declaration, false, false, false, nil, prepare)
 	iamClient = oldIAM
 	if err == nil || !injected || dispatches != 2 {
 		t.Fatalf("failed prerequisite did not fence real activation: dispatches=%d injected=%t err=%v", dispatches, injected, err)

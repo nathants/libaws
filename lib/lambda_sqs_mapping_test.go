@@ -128,7 +128,7 @@ func TestLambdaSQSMappingIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, err := lambdaWaitEventSourceMappingSettled(ctx, LambdaClient(), aws.ToString(mapping.UUID))
-	if err != nil || current == nil || aws.ToString(current.state) != "Disabled" {
+	if err != nil || current == nil || aws.ToString(current.State) != "Disabled" {
 		t.Fatalf("disable fixture: mapping=%v err=%v", current, err)
 	}
 	for _, preview := range []bool{true, false} {

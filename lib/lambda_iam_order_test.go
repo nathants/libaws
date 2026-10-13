@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 )
@@ -28,12 +29,17 @@ func (transport lambdaIAMOrderTransport) Do(request *http.Request) (*http.Respon
 // both permission families, failed prerequisites, activation and later pruning.
 func TestLambdaEnsureIAMBeforeActivation(t *testing.T) {
 	for _, creating := range []bool{false, true} {
-		for _, mode := range []string{"activation", "inline-failure", "managed-failure", "api-failure", "api", "websocket", "prune"} {
+		for _, mode := range []string{"activation", "inline-failure", "managed-failure", "api-failure", "api", "websocket", "prune", "destination", "destination-failure"} {
+			if creating && strings.HasPrefix(mode, "destination") {
+				continue
+			}
 			t.Run(fmt.Sprintf("create=%t/%s", creating, mode), func(t *testing.T) {
 				t.Setenv(lambdaEnvVarApiID, "stale-http")
 				t.Setenv(lambdaEnvVarWebsocketID, "stale-websocket")
 				oldSession, oldIAM, oldLogs, oldLambda, oldAPI := sess, iamClient, logsClient, lambdaClient, apiClient
 				oldAccount, oldARN := stsAccount, stsArn
+				oldDDB := dynamoDBClient
+				t.Cleanup(func() { dynamoDBClient = oldDDB })
 				t.Cleanup(func() {
 					sess, iamClient, logsClient, lambdaClient, apiClient = oldSession, oldIAM, oldLogs, oldLambda, oldAPI
 					stsAccount, stsArn = oldAccount, oldARN
@@ -57,6 +63,14 @@ func TestLambdaEnsureIAMBeforeActivation(t *testing.T) {
 				} else {
 					declaration.Allow = []string{newAllow.String()}
 				}
+				destinationMode := strings.HasPrefix(mode, "destination")
+				if destinationMode {
+					oldAllow = &IamAllow{Action: "s3:PutObject", Resource: "arn:aws:s3:::old-failures/*"}
+					newAllow = &IamAllow{Action: "s3:PutObject", Resource: "arn:aws:s3:::new-failures/*"}
+					declaration.Allow = []string{newAllow.String()}
+					declaration.Trigger = []*InfraTrigger{{Type: lambdaTriggerDynamoDB, Attr: []string{"table", "start=trim_horizon", "on-failure=arn:aws:s3:::new-failures"}}}
+				}
+				mappingUpdated, mappingSettled := false, false
 				inline := map[string]string{oldAllow.policyName(): oldAllow.policyDocument()}
 				managed := map[string]bool{"old-managed": true}
 				activated, failureReached, pruned, apiCreated := false, false, false, false
@@ -92,6 +106,9 @@ func TestLambdaEnsureIAMBeforeActivation(t *testing.T) {
 							}
 							managed["new-managed"] = true
 						case "DetachRolePolicy":
+							if destinationMode && !mappingSettled {
+								t.Error("old managed grant pruned before destination settled")
+							}
 							if !activated {
 								t.Error("prior managed grant removed before activation")
 							}
@@ -125,6 +142,9 @@ func TestLambdaEnsureIAMBeforeActivation(t *testing.T) {
 							}
 							result += "</PolicyNames>"
 						case "DeleteRolePolicy":
+							if destinationMode && !mappingSettled {
+								t.Error("old destination write grant pruned before destination settled")
+							}
 							if !activated {
 								t.Error("prior inline grant removed before activation")
 							}
@@ -171,8 +191,37 @@ func TestLambdaEnsureIAMBeforeActivation(t *testing.T) {
 							}
 							body = `{"items":[{"name":"` + name + `","apiId":"actual-api","protocolType":"` + protocol + `"}]}`
 						}
+					} else if strings.HasPrefix(request.URL.Host, "dynamodb.") {
+						body = `{"Table":{"LatestStreamArn":"arn:aws:dynamodb:us-west-2:123456789012:table/table/stream/current","StreamSpecification":{"StreamEnabled":true}}}`
 					} else if strings.HasPrefix(request.URL.Host, "lambda.") {
 						switch {
+						case strings.Contains(request.URL.Path, "/event-source-mappings"):
+							if request.Method == "PUT" {
+								if pruned || inline[oldAllow.policyName()] == "" || !managed["old-managed"] {
+									t.Error("destination switch lost prior grants")
+								}
+								if mode == "destination-failure" {
+									failureReached = true
+									cancel()
+									return nil, context.Canceled
+								}
+								mappingUpdated = true
+							}
+							destination := "arn:aws:s3:::old-failures"
+							if mappingUpdated {
+								destination = "arn:aws:s3:::new-failures"
+								if request.Method == "GET" {
+									mappingSettled = true
+								}
+							}
+							body = `{"UUID":"mapping","EventSourceArn":"arn:aws:dynamodb:us-west-2:123456789012:table/table/stream/current","State":"Enabled","BatchSize":100,"MaximumRetryAttempts":-1,"MaximumBatchingWindowInSeconds":0,"ParallelizationFactor":1,"StartingPosition":"TRIM_HORIZON","DestinationConfig":{"OnFailure":{"Destination":"` + destination + `"}}}`
+							if strings.HasSuffix(request.URL.Path, "/event-source-mappings") {
+								if destinationMode {
+									body = `{"EventSourceMappings":[` + body + `]}`
+								} else {
+									body = `{}`
+								}
+							}
 						case request.Method == "POST" && strings.HasSuffix(request.URL.Path, "/functions"), request.Method == "PUT" && strings.HasSuffix(request.URL.Path, "/code"):
 							activated = true
 							if inline[newAllow.policyName()] != newAllow.policyDocument() || !managed["new-managed"] {
@@ -181,7 +230,7 @@ func TestLambdaEnsureIAMBeforeActivation(t *testing.T) {
 							if inline[oldAllow.policyName()] != oldAllow.policyDocument() || !managed["old-managed"] {
 								t.Error("activation lost prior-code grants")
 							}
-							if mode != "prune" {
+							if mode != "prune" && !destinationMode {
 								cancel()
 								return nil, context.Canceled
 							}
@@ -210,16 +259,21 @@ func TestLambdaEnsureIAMBeforeActivation(t *testing.T) {
 				})
 				config := aws.Config{Region: "us-west-2", Credentials: aws.AnonymousCredentials{}, RetryMaxAttempts: 1, HTTPClient: transport}
 				sess = &config
+				dynamoDBClient = dynamodb.NewFromConfig(config)
 				iamClient, logsClient, lambdaClient, apiClient = iam.NewFromConfig(config), cloudwatchlogs.NewFromConfig(config), lambda.NewFromConfig(config), apigatewayv2.NewFromConfig(config)
-				err := lambdaEnsure(ctx, declaration, false, false, false, nil, nil)
-				if strings.HasSuffix(mode, "-failure") {
+				_, err := lambdaEnsureResources(ctx, declaration, false, false, false, nil, nil)
+				if mode == "destination-failure" {
+					if err == nil || !failureReached || !activated || pruned || !managed["old-managed"] || inline[oldAllow.policyName()] == "" {
+						t.Fatalf("failed destination switch lost grants: activated=%t pruned=%t err=%v", activated, pruned, err)
+					}
+				} else if strings.HasSuffix(mode, "-failure") {
 					if err == nil || !failureReached || activated || pruned {
 						t.Fatalf("failed prerequisite did not fence activation: activated=%t pruned=%t err=%v", activated, pruned, err)
 					}
 				} else if !activated {
 					t.Fatalf("ensure did not reach activation: %v", err)
 				}
-				if mode == "prune" && !pruned {
+				if (mode == "prune" || mode == "destination") && !pruned {
 					t.Fatalf("ensure did not reach post-activation pruning: %v", err)
 				}
 			})
