@@ -40,7 +40,7 @@ def test():
                                               "key": ["userid:s:hash",
                                                       "version:n:range"]},
                     },
-                    "s3": {f"test-failed-events-{uid}": {"attr": ["acl=private", "metrics=false"]}},
+                    "s3": {f"test-failed-events-{uid}": {"attr": ["acl=private"]}},
                     "lambda": {
                         f"test-lambda-{uid}": {
                             "allow": [f"dynamodb:GetItem arn:aws:dynamodb:*:*:table/test-table-{uid}",
