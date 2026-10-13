@@ -159,6 +159,8 @@ func TestLambdaRetentionAlarmPreflight(t *testing.T) {
 			oldS3, oldLogs := s3Client, logsClient
 			s3Client, logsClient = s3.NewFromConfig(config), cloudwatchlogs.NewFromConfig(config)
 			fn := &InfraLambda{Name: "function", Entrypoint: "main.go", Trigger: []*InfraTrigger{{Type: "alarm", Attr: []string{"name=alarm", metric + "=function", "dynamodb-table=table", "at-least=1/minute"}}}}
+			// EventCount alone cannot emit retained events without a destination.
+			fn.Trigger = append(fn.Trigger, &InfraTrigger{Type: "dynamodb", Attr: []string{"table", "start=latest", "metrics=event_count"}})
 			set := &InfraSet{Name: "fixture", S3: map[string]*InfraS3{"bucket": {}}, Lambda: map[string]*InfraLambda{"function": fn}}
 			for _, owner := range []func() error{
 				func() error { return InfraEnsure(ctx, set, "", preview, false) },

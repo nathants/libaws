@@ -392,7 +392,6 @@ func TestLambdaDynamoDBStreamMappingIntegration(t *testing.T) {
 	}
 
 	if destination := dynamoDBFailureDestination(initial.DestinationConfig); destination != "" {
-		// Exercise removal and restoration through the real ensure owner.
 		if err := LambdaEnsureTriggerDynamoDB(ctx, infraLambda, true); err != nil {
 			t.Fatal(err)
 		}

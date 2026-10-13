@@ -25,6 +25,16 @@ lambda:
           - name=test-delivery-${uid}
           - lambda-destination-delivery-failures=test-retention-${uid}
           - at-least=1/minute
+      - type: alarm
+        attr:
+          - name=test-errors-${uid}
+          - lambda-errors=test-retention-${uid}
+          - at-least=1/minute
+      - type: alarm
+        attr:
+          - name=test-age-${uid}
+          - lambda-iterator-age=test-retention-${uid}
+          - at-least=10s
     env: ["uid=${uid}"]
 
   test-retention-${uid}:

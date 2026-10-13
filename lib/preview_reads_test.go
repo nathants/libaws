@@ -204,8 +204,7 @@ func TestPreviewReadErrorsIntegration(t *testing.T) {
 			}
 		})
 	}
-	// A new retained-event alarm must not mistake a denied table read for a
-	// not-yet-created mapping. Use the same real no-permission role.
+	// A denied table read is not an absent mapping.
 	oldDDB := dynamoDBClient
 	t.Cleanup(func() { dynamoDBClient = oldDDB })
 	dynamoDBClient = dynamodb.NewFromConfig(config)

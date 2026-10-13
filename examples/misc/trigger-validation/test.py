@@ -46,7 +46,7 @@ def test():
                 result = subprocess.run(["libaws", "infra-ensure", "infra.yaml", *options], cwd=DIRECTORY, capture_output=True, text=True)
                 assert result.returncode != 0 and expected_error in result.stderr, result
                 assert "panic:" not in result.stderr, result
-                verify_absent()  # Real provider checks before teardown, not tag-based absence.
+                verify_absent()
 
 
 if __name__ == "__main__":

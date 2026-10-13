@@ -70,7 +70,7 @@ It should be easy to create:
   * [SQS](#sqs-1) queue puts
   * Cron [schedules](#schedule)
   * [ECR](#ecr) Docker pushes
-  * Lambda invocation and retention [alarms](#alarm)
+  * Lambda invocation, error, retention, and stream-age [alarms](#alarm)
 
 ## What
 
@@ -310,14 +310,16 @@ Depth-based colors by [YAML](https://gist.github.com/nathants/1955b2c3130b7d1a00
 
 ### Build and Deploy Lambda Artifacts Separately
 
-Build the infrastructure set's Go Lambda code into a directory of artifacts, then deploy those exact bytes from the directory:
+Build Go Lambda artifacts once, then deploy them from the saved directory:
 
 ```bash
 libaws infra-ensure ./infra.yaml --build-only ./build
 libaws infra-ensure ./infra.yaml --from-build ./build
 ```
 
-`--build-only` writes each artifact and a `manifest.json` recording its name, file, sha256, and the entrypoint Git checkout's commit and dirty state. It never accesses AWS. `--from-build` uses only hash-verified artifacts: it never compiles, and it never reads Lambda entrypoint sources. Only Go Lambdas are built into artifacts; Python and container Lambdas are unaffected, and Python Lambdas still package from their entrypoint and requirements on the deploy host. A missing or mismatched artifact fails before any AWS call, as does `--from-build` when the selected infrastructure set needs no artifact. An empty directory value, a `--from-build` path without a manifest, and an unwritable `--build-only` directory are errors. Both flags also combine with `--quick LAMBDA_NAME`.
+`--build-only` builds Go Lambdas without AWS access. Its `manifest.json` records each artifact's name, file, SHA-256 hash, and source checkout's commit and dirty state. `--from-build` verifies all selected artifacts before contacting AWS and deploys without source files or compilation. Both flags support `--quick LAMBDA_NAME`.
+
+Python and container Lambdas use their normal deployment paths; Python code and dependencies are still packaged on the deployment host.
 
 ### Delete the Infrastructure Set
 
@@ -369,7 +371,7 @@ go doc github.com/nathants/libaws/lib.InfraListSet
 
 * [Coexisting infrastructure sets](https://github.com/nathants/libaws/tree/master/examples/misc/infrasets): exact-set inventory while an independent set is being removed.
 * [Literal S3 keys](https://github.com/nathants/libaws/tree/master/examples/misc/s3-keys): object/version CLI operations without path normalization.
-* [DynamoDB failure retention](https://github.com/nathants/libaws/tree/master/examples/misc/dynamodb-retention): S3 retention, retained-event and destination-delivery alarms.
+* [DynamoDB failure retention](https://github.com/nathants/libaws/tree/master/examples/misc/dynamodb-retention): S3 retention with error, retained-event, delivery-failure, and stream-age alarms.
 * [DynamoDB indexes](https://github.com/nathants/libaws/tree/master/examples/misc/dynamodb-indexes): provisioned global indexes and local-index projections.
 
 * [S3 append-only](https://github.com/nathants/libaws/tree/master/examples/complex/s3-appendonly): append-only storage with separate writer and reader IAM users.
@@ -900,14 +902,11 @@ Defines an EC2 [instance profile](https://docs.aws.amazon.com/AWSCloudFormation/
 
 Defines a [Lambda](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-lambda-function.html).
 
-Full ensure adds required role grants before creating or updating code, retaining
-prior grants until activation succeeds. API identities are resolved before
-API-dependent grants. A failed prerequisite prevents activation; a failed
-activation leaves prior grants intact. Obsolete grants are removed afterward.
-This orders acknowledged AWS operations, not global IAM propagation or drainage
-of already-running invocations. Stage permission removals in a later deployment
-when old invocations still require them. `--quick` remains a configuration/code
-update and requires infrastructure prerequisites to be deployed already.
+Full ensure adds required IAM grants before deploying code and removes obsolete
+grants after code activation and stream-destination updates succeed. IAM changes
+can take time to propagate; defer permission removals if running invocations still
+need them. `--quick` updates configuration and code only; deploy infrastructure
+prerequisites first.
 
 * Schema:
 
@@ -1319,12 +1318,16 @@ Defines a [DynamoDB trigger](https://docs.aws.amazon.com/AWSCloudFormation/lates
   * `retry=VALUE`, maximum retry attempts, default: `-1`
   * `window=VALUE`, maximum batching window in seconds, default: `0`
   * `start=VALUE`, required starting position: `latest | trim_horizon`; immutable on existing mappings.
-  * `on-failure=ARN`, optional S3 bucket ARN for complete failed invocation records. Removing it clears the destination; previews never change it.
-  * `metrics=event_count`, opt in to Lambda event-source mapping `EventCount` metrics. Omission disables these metrics.
+  * `on-failure=ARN`, optional S3 bucket ARN for discarded invocation payloads.
+  * `metrics=event_count`, enable Lambda event-source mapping `EventCount` metrics, default: disabled. Metric activation can lag behind mapping updates.
 
-* Handlers must return or raise an error for Lambda to count failures and retry; an HTTP-shaped error response does not fail a stream invocation. The examples log record IDs, source ARNs, and failed operations without item contents. Their three-retry limit permits discarded batches; logs and error metrics are not durable failed-event storage. The default `retry=-1` retries until records expire from the stream (24 hours).
+* Handlers must return or raise an error to trigger retries; returning an HTTP-style error response counts as success. With `retry=-1`, Lambda retries until records expire from the stream after 24 hours.
 
-* An S3 failure destination retains payloads discarded by Lambda, such as after retry exhaustion, including exactly the keys and images selected by the table's `stream` attribute. It cannot recover unread records that expire in DynamoDB. Declare the private bucket separately and grant the execution role `s3:PutObject` on its objects and `s3:ListBucket` on the bucket. Keep the bucket until failed records are reconciled. No replay, cleanup worker, or alarm is created automatically. Optional [alarms](#alarm) distinguish retained failures from failures to store the recovery copy. AWS recommends an `s3:ResourceAccount` IAM condition to prevent delivery to a bucket recreated in another account; conditional grants require a separately managed IAM policy.
+* The failure payload contains the keys and images selected by the table's `stream` attribute. Unread records that expire in DynamoDB cannot be retained.
+
+* Declare a private destination bucket and grant the execution role `s3:PutObject` on its objects and `s3:ListBucket` on the bucket. Keep it until failed records are reconciled; `infra-rm` deletes buckets in the removed set.
+
+* To prevent writes to a bucket recreated in another account, use an `s3:ResourceAccount` condition in a separately managed IAM policy.
 
 * Schema:
 
@@ -1440,15 +1443,18 @@ Defines a CloudWatch alarm over [Lambda metrics](https://docs.aws.amazon.com/lam
 
 * Required attributes:
   * `name=VALUE`, account-and-region-unique alarm name, 1–255 ASCII letters, digits, dots, hyphens, or underscores.
-  * `at-least=VALUE/minute`, positive integer count threshold, maximum: `2147483647`.
+  * `at-least=VALUE/minute`, positive integer count threshold, maximum: `2147483647`. For iterator age, use a positive duration in whole milliseconds, e.g. `at-least=15m`.
   * Exactly one metric selector:
     * `lambda-invocations=FUNCTION`: `Invocations`, scoped to `FunctionName`.
-    * `lambda-retained-failures=FUNCTION`: `OnFailureDestinationDeliveredEventCount`, scoped to `EventSourceMappingUUID`. Also requires `dynamodb-table=TABLE` and that mapping's `metrics=event_count`. The function and table resolve the current mapping; re-ensure reconciles replacement mappings.
-    * `lambda-destination-delivery-failures=FUNCTION`: `DestinationDeliveryFailures`, scoped to `FunctionName`, **not one table or mapping**. No EventCount opt-in required.
-* Fixed evaluation: `AWS/Lambda`, `Sum`, one 60-second period, one breaching datapoint. Missing data does not breach; an idle alarm is not proof of healthy polling.
-* Retained counts measure records/events, not batches, and indicate reconciliation work—not replay or repair. `DroppedEventCount` is not equivalent: it excludes successful on-failure deliveries and records expired by the source's own retention limit.
-* Destination-delivery failures mean the recovery copy was not stored. This is the final alert layer; there are no further fallback destinations or alerts.
-* Notifications occur on transitions into `ALARM`, not once per failed batch. Sending the alarm to the same unavailable or throttled Lambda can delay notification; this is not independent outage detection.
+    * `lambda-errors=FUNCTION`: `Errors`, scoped to `FunctionName`; no EventCount opt-in required.
+    * `lambda-retained-failures=FUNCTION`: `OnFailureDestinationDeliveredEventCount`, scoped to `EventSourceMappingUUID`. Also requires `dynamodb-table=TABLE`, `metrics=event_count`, and an `on-failure` destination on that mapping. The function and table resolve the current mapping; re-ensure reconciles replacement mappings.
+    * `lambda-destination-delivery-failures=FUNCTION`: `DestinationDeliveryFailures`, scoped to `FunctionName`, not one table or mapping. Counts failed destination-delivery attempts, including asynchronous invocation destinations; no EventCount opt-in required.
+    * `lambda-iterator-age=FUNCTION`: `IteratorAge`, scoped to `FunctionName`, not one table or mapping. No EventCount opt-in required.
+* Evaluation uses `AWS/Lambda` and one 60-second period: `Sum` for counts, `Maximum` for iterator age. Age thresholds are converted to milliseconds. Missing data does not breach.
+* `Errors` counts failed invocations, including failed retries, not unique records. Throttled requests are excluded.
+* Retained-failure counts measure records, not batches; delivery does not mean they have been replayed or repaired. `DroppedEventCount` excludes successful on-failure deliveries and records expired by the source's retention limit.
+* `IteratorAge` measures the age of the last record when a batch is sent to the function, not a continuously running backlog clock. A disabled or stalled consumer can stop emitting useful data. A `15m` threshold warns well before DynamoDB's 24-hour retention limit while processing continues.
+* Notifications occur on transitions into `ALARM`, not once per failed batch. Sending the alarm to the same unavailable or throttled Lambda can delay notification.
 
 * Schema:
 
@@ -1476,6 +1482,11 @@ Defines a CloudWatch alarm over [Lambda metrics](https://docs.aws.amazon.com/lam
             - at-least=300/minute
         - type: alarm
           attr:
+            - name=beta-errors
+            - lambda-errors=beta
+            - at-least=1/minute
+        - type: alarm
+          attr:
             - name=beta-retained-failures
             - lambda-retained-failures=beta
             - dynamodb-table=events
@@ -1485,6 +1496,11 @@ Defines a CloudWatch alarm over [Lambda metrics](https://docs.aws.amazon.com/lam
             - name=beta-retention-delivery-failed
             - lambda-destination-delivery-failures=beta
             - at-least=1/minute
+        - type: alarm
+          attr:
+            - name=beta-stream-age
+            - lambda-iterator-age=beta
+            - at-least=15m
   ```
 
 ## Bash Completion
@@ -1525,7 +1541,7 @@ make test
 
 Set `LIBAWS_TEST_JOBS` to change concurrency (default: `4`; `1` for sequential runs). Do not overlap live suites in one account.
 
-Live DNS/domain examples preserve the supplied Route53 zone and automatically ensure and retain a regional wildcard ACM certificate, its DNS validation record, and an untagged, unmapped `acm-fixture.${LIBAWS_TEST_DOMAIN}` API Gateway custom domain. The custom domain keeps the certificate eligible for managed renewal; it has no Route53 record. Tests remove only their uniquely named resources outside these shared fixtures.
+DNS/domain tests leave the supplied zone, a regional wildcard ACM certificate and its validation record, and the `acm-fixture.${LIBAWS_TEST_DOMAIN}` API Gateway domain in place. The unmapped domain keeps the certificate eligible for renewal and has no DNS record.
 
 R2 tests are opt-in: set `LIBAWS_R2_TEST_ACCOUNT` to your `R2_ACCOUNT_ID` and supply `R2_ACCESS_KEY_ID` and `R2_ACCESS_KEY_SECRET`. They create and remove unique `libaws-testing-*` buckets.
 

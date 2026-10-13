@@ -1060,8 +1060,7 @@ func (scope infraListScope) listLambda(ctx context.Context, triggersChan <-chan 
 							attrs = append(attrs, "metrics="+strings.Join(names, ","))
 						}
 						if destination := dynamoDBFailureDestination(mapping.DestinationConfig); destination != "" {
-							// Observe even externally managed destination kinds. Desired
-							// declarations, not inventory, enforce the S3-only API.
+							// Preserve destination kinds that declarations do not support.
 							attrs = append(attrs, "on-failure="+destination)
 						}
 						localTriggers = append(localTriggers, &InfraTrigger{

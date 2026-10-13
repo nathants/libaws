@@ -173,7 +173,7 @@ func TestLambdaAlarmTriggerRepresentationRequiresExactOpinionatedSubset(t *testi
 	}{
 		{"description", func(alarm *cwtypes.MetricAlarm) { alarm.AlarmDescription = aws.String("custom") }},
 		{"namespace", func(alarm *cwtypes.MetricAlarm) { alarm.Namespace = aws.String("Custom") }},
-		{"metric", func(alarm *cwtypes.MetricAlarm) { alarm.MetricName = aws.String("Errors") }},
+		{"metric", func(alarm *cwtypes.MetricAlarm) { alarm.MetricName = aws.String("Throttles") }},
 		{"dimension", func(alarm *cwtypes.MetricAlarm) { alarm.Dimensions[0].Name = aws.String("Resource") }},
 		{"extra dimension", func(alarm *cwtypes.MetricAlarm) {
 			alarm.Dimensions = append(alarm.Dimensions, cwtypes.Dimension{Name: aws.String("Extra"), Value: aws.String("value")})
@@ -718,7 +718,7 @@ func TestLambdaAlarmIntegration(t *testing.T) {
 		alarm := getAlarm()
 		config, representable := lambdaAlarmConfigFromMetricAlarm(alarm)
 		if !representable || !reflect.DeepEqual(alarm.AlarmActions, []string{functionARN}) ||
-			config.name != alarmName || config.monitoredLambdaName != functionName || config.countPerMinute != 1 {
+			config.name != alarmName || config.monitoredLambdaName != functionName || config.threshold != 1 {
 			t.Fatalf("alarm did not converge to the declared subset: %#v, config %#v", alarm, config)
 		}
 	default:
@@ -726,8 +726,9 @@ func TestLambdaAlarmIntegration(t *testing.T) {
 	}
 }
 
-func TestLambdaRetentionAlarmConfiguration(t *testing.T) {
+func TestLambdaFailureAlarmConfiguration(t *testing.T) {
 	for _, test := range []struct{ attr, metric, dimension, value string }{
+		{"lambda-errors", "Errors", "FunctionName", "processor"},
 		{"lambda-retained-failures", "OnFailureDestinationDeliveredEventCount", "EventSourceMappingUUID", "mapping-id"},
 		{"lambda-destination-delivery-failures", "DestinationDeliveryFailures", "FunctionName", "processor"},
 	} {
@@ -746,7 +747,7 @@ func TestLambdaRetentionAlarmConfiguration(t *testing.T) {
 			t.Fatalf("wrong metric scope: %#v", alarm)
 		}
 		decoded, ok := lambdaAlarmConfigFromMetricAlarm(alarm)
-		if !ok || decoded.metric != test.metric {
+		if !ok || decoded.metric != test.metric || decoded.monitorAttribute() != test.attr {
 			t.Fatalf("inventory lost metric: %#v", decoded)
 		}
 		if test.metric == lambdaAlarmMetricRetained {
@@ -757,6 +758,10 @@ func TestLambdaRetentionAlarmConfiguration(t *testing.T) {
 		}
 	}
 	for _, attrs := range [][]string{
+		{"lambda-errors=processor", "dynamodb-table=table"},
+		{"lambda-errors=processor", "lambda-invocations=processor"},
+		{"lambda-errors=processor", "lambda-destination-delivery-failures=processor"},
+		{"lambda-errors=processor", "lambda-retained-failures=processor", "dynamodb-table=table"},
 		{"lambda-retained-failures=processor"},
 		{"lambda-retained-failures=processor", "dynamodb-table=table", "lambda-invocations=processor"},
 		{"lambda-destination-delivery-failures=processor", "dynamodb-table=table"},
@@ -771,18 +776,27 @@ func TestLambdaRetentionAlarmConfiguration(t *testing.T) {
 }
 
 func TestLambdaRetentionAlarmDeclarationValidation(t *testing.T) {
-	for _, mapping := range []string{"", "start=latest", "start=latest, metrics=event_count"} {
+	for _, test := range []struct {
+		mapping string
+		valid   bool
+	}{
+		{"", false},
+		{"start=latest", false},
+		{"start=latest, metrics=event_count", false},
+		{"start=latest, on-failure=arn:aws:s3:::failures", false},
+		{"start=latest, metrics=event_count, on-failure=arn:aws:s3:::failures", true},
+	} {
 		data := "name: fixture\nlambda:\n  notifier:\n    entrypoint: main.go\n    trigger:\n      - type: alarm\n        attr: [name=retained, lambda-retained-failures=processor, dynamodb-table=table, at-least=1/minute]\n  processor:\n    entrypoint: main.go\n"
-		if mapping != "" {
-			data += "    trigger:\n      - type: dynamodb\n        attr: [table, " + mapping + "]\n"
+		if test.mapping != "" {
+			data += "    trigger:\n      - type: dynamodb\n        attr: [table, " + test.mapping + "]\n"
 		}
 		file := filepath.Join(t.TempDir(), "infra.yaml")
 		if err := os.WriteFile(file, []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		_, err := InfraParse(file)
-		if (err == nil) != strings.Contains(mapping, "metrics=event_count") {
-			t.Fatalf("mapping %q: %v", mapping, err)
+		if (err == nil) != test.valid {
+			t.Errorf("mapping %q: %v", test.mapping, err)
 		}
 	}
 }
@@ -796,10 +810,20 @@ func (transport lambdaAlarmReadTransport) Do(request *http.Request) (*http.Respo
 func TestLambdaAlarmMappingResolution(t *testing.T) {
 	const stream = "arn:aws:dynamodb:us-west-2:123456789012:table/table/stream/current"
 	const function = "arn:aws:lambda:us-west-2:123456789012:function:processor"
-	for _, mode := range []string{"exact", "paginated", "ambiguous", "wrong-function", "wrong-account", "no-metrics", "missing-table", "missing-function", "missing-mapping", "table-denied", "lambda-denied"} {
+	for _, mode := range []string{"exact", "paginated", "ambiguous", "wrong-function", "wrong-account", "no-metrics", "no-destination", "empty-destination", "missing-table", "missing-function", "missing-mapping", "table-denied", "lambda-denied"} {
 		for _, preview := range []bool{false, true} {
 			t.Run(mode+"/preview="+Json(preview), func(t *testing.T) {
-				mapping := map[string]any{"UUID": "mapping", "EventSourceArn": stream, "FunctionArn": function, "MetricsConfig": map[string]any{"Metrics": []string{"EventCount"}}}
+				mapping := map[string]any{
+					"UUID": "mapping", "EventSourceArn": stream, "FunctionArn": function,
+					"MetricsConfig":     map[string]any{"Metrics": []string{"EventCount"}},
+					"DestinationConfig": map[string]any{"OnFailure": map[string]any{"Destination": "arn:aws:s3:::failures"}},
+				}
+				if mode == "no-destination" {
+					delete(mapping, "DestinationConfig")
+				}
+				if mode == "empty-destination" {
+					mapping["DestinationConfig"] = map[string]any{"OnFailure": map[string]any{"Destination": ""}}
+				}
 				if mode == "wrong-function" {
 					mapping["FunctionArn"] = function + ":alias"
 				}
@@ -865,13 +889,85 @@ func TestLambdaAlarmMappingResolution(t *testing.T) {
 				if mode == "paginated" && reads != 3 {
 					t.Fatalf("pagination reads=%d", reads)
 				}
-				if mode == "no-metrics" && preview {
-					planned := map[string]*InfraLambda{"processor": {Trigger: []*InfraTrigger{{Type: "dynamodb", Attr: []string{"table", "start=latest", "metrics=event_count"}}}}}
+				if (mode == "no-metrics" || mode == "no-destination" || mode == "empty-destination") && preview {
+					planned := map[string]*InfraLambda{"processor": {Trigger: []*InfraTrigger{{Type: "dynamodb", Attr: []string{"table", "start=latest", "metrics=event_count", "on-failure=arn:aws:s3:::failures"}}}}}
 					if got, err := lambdaAlarmResolveMapping(t.Context(), config, "aws", "us-west-2", "123456789012", true, planned); err != nil || got == nil {
-						t.Fatalf("planned metrics enable: %v %v", got, err)
+						t.Fatalf("planned retention enable: %v %v", got, err)
+					}
+				}
+				if mode == "exact" && preview {
+					planned := map[string]*InfraLambda{"processor": {Trigger: []*InfraTrigger{{Type: "dynamodb", Attr: []string{"table", "start=latest", "metrics=event_count"}}}}}
+					if _, err := lambdaAlarmResolveMapping(t.Context(), config, "aws", "us-west-2", "123456789012", true, planned); err == nil {
+						t.Fatal("preview accepted a retained alarm after planned destination removal")
 					}
 				}
 			})
+		}
+	}
+}
+
+func TestLambdaIteratorAgeAlarm(t *testing.T) {
+	for _, test := range []struct {
+		duration string
+		millis   float64
+	}{
+		{"1ms", 1},
+		{"1.5s", 1500},
+		{"15m", 900000},
+		{"48h", 172800000},
+		{"9223372036854ms", 9223372036854},
+	} {
+		trigger := &InfraTrigger{Type: "alarm", Attr: []string{"name=age", "lambda-iterator-age=processor", "at-least=" + test.duration}}
+		config, err := parseLambdaAlarmTrigger(trigger)
+		if err != nil {
+			t.Fatal(err)
+		}
+		alarm := config.metricAlarm("arn:aws:lambda:us-west-2:123456789012:function:notifier")
+		alarm.AlarmArn = aws.String("arn:aws:cloudwatch:us-west-2:123456789012:alarm:age")
+		if aws.ToString(alarm.MetricName) != "IteratorAge" || alarm.Statistic != cwtypes.StatisticMaximum || aws.ToFloat64(alarm.Threshold) != test.millis ||
+			len(alarm.Dimensions) != 1 || aws.ToString(alarm.Dimensions[0].Name) != "FunctionName" || aws.ToString(alarm.Dimensions[0].Value) != "processor" {
+			t.Fatalf("wrong age alarm: %#v", alarm)
+		}
+		decoded, ok := lambdaAlarmConfigFromMetricAlarm(alarm)
+		if !ok || decoded.monitorAttribute() != "lambda-iterator-age" || !lambdaAlarmMatches(alarm, decoded.metricAlarm(alarm.AlarmActions[0])) {
+			t.Fatalf("age alarm inventory lost configuration: %#v", decoded)
+		}
+		trigger.Attr[2] = "at-least=" + decoded.thresholdAttribute()
+		roundTrip, err := parseLambdaAlarmTrigger(trigger)
+		if err != nil || !lambdaAlarmMatches(alarm, roundTrip.metricAlarm(alarm.AlarmActions[0])) {
+			t.Fatalf("duration round trip: %v %v", roundTrip, err)
+		}
+		alarm.Statistic = cwtypes.StatisticSum
+		if lambdaAlarmTriggerRepresentable(alarm) {
+			t.Fatal("IteratorAge Sum was accepted instead of Maximum")
+		}
+	}
+	for _, threshold := range []string{"0s", "-1s", "0.5ms", "15", "1/minute", "24d", "999999999999h", "9223372036855ms"} {
+		trigger := &InfraTrigger{Type: "alarm", Attr: []string{"name=age", "lambda-iterator-age=processor", "at-least=" + threshold}}
+		if _, err := parseLambdaAlarmTrigger(trigger); err == nil {
+			t.Fatalf("invalid age threshold accepted: %q", threshold)
+		}
+	}
+}
+
+func TestLambdaFunctionAlarmPreflight(t *testing.T) {
+	for _, attrs := range [][]string{
+		{"lambda-errors=processor", "at-least=0/minute"},
+		{"lambda-errors=processor", "lambda-invocations=processor", "at-least=1/minute"},
+		{"lambda-iterator-age=processor", "at-least=1/minute"},
+		{"lambda-iterator-age=processor", "at-least=0.5ms"},
+		{"lambda-iterator-age=processor", "dynamodb-table=table", "at-least=15m"},
+		{"lambda-iterator-age=processor", "lambda-errors=processor", "at-least=15m"},
+	} {
+		fn := &InfraLambda{Name: "notifier", Trigger: []*InfraTrigger{{Type: "alarm", Attr: append(attrs, "name=alarm")}}}
+		for _, preview := range []bool{false, true} {
+			_, err := lambdaEnsureTriggerAlarm(t.Context(), nil, func(context.Context) (string, error) {
+				t.Fatal("provider called before validating alarm")
+				return "", nil
+			}, "us-west-2", nil, fn, preview, nil)
+			if err == nil {
+				t.Fatalf("invalid function alarm accepted: %v", attrs)
+			}
 		}
 	}
 }

@@ -687,8 +687,6 @@ func TestInfraListEventVerifiesLambdaIdentity(t *testing.T) {
 	}
 }
 
-// Inventory observes provider configuration, including destinations the narrow
-// declaration API does not create. One such mapping must not hide other resources.
 func TestInfraListLambdaRetainsExternalFailureDestinations(t *testing.T) {
 	for _, destination := range []string{"arn:aws:s3:::private-failures", "arn:aws:sqs:us-east-1:123456789012:failures", "arn:aws:sns:us-east-1:123456789012:failures"} {
 		t.Run(destination, func(t *testing.T) {

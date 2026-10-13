@@ -2491,8 +2491,6 @@ func lambdaDynamoDBMappingUpdate(infraLambda *InfraLambda, desired *lambdaDynamo
 
 var dynamoDBFailureBucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
 
-// S3 preserves the failed invocation payload after the source stream expires.
-// This deliberately exposes only a bucket ARN, not the full destination API.
 func validateDynamoDBFailureDestination(value string) error {
 	parsed, err := arn.Parse(value)
 	if err != nil || parsed.Service != "s3" || parsed.Region != "" || parsed.AccountID != "" ||

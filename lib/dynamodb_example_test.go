@@ -134,8 +134,7 @@ func TestDynamoDBExampleFailures(t *testing.T) {
 			ddbtypes.StreamViewTypeOldImage, ddbtypes.StreamViewTypeNewAndOldImages,
 		} {
 			if !t.Run("retained payload/"+string(view), func(t *testing.T) {
-				// Stream type is immutable while enabled. Rotate the owned
-				// stream, then reconcile its destination through the real owner.
+				// Changing stream view requires disabling the stream first.
 				for _, spec := range []*ddbtypes.StreamSpecification{
 					{StreamEnabled: aws.Bool(false)},
 					{StreamEnabled: aws.Bool(true), StreamViewType: view},
@@ -163,11 +162,9 @@ func TestDynamoDBExampleFailures(t *testing.T) {
 
 func assertDynamoDBFailurePayload(t *testing.T, ctx context.Context, source, bucket, uid string, view ddbtypes.StreamViewType) {
 	t.Helper()
-	// The output table was removed above. This real stream event must fail all
-	// configured retries before Lambda itself delivers it to the S3 destination.
+	// The missing output table makes the handler exhaust its retries.
 	marker := "retained-" + uid + "-" + string(view)
-	// A MODIFY event provides both an old and a new image where the selected
-	// stream view includes them. Keys-only must not acquire invented images.
+	// MODIFY supplies both images when the stream view includes them.
 	for _, data := range []string{"old-private-" + uid, "new-private-" + uid} {
 		_, err := DynamoDBClient().PutItem(ctx, &dynamodb.PutItemInput{
 			TableName: aws.String(source),
@@ -303,8 +300,7 @@ func assertDynamoDBDestinationIAM(t *testing.T, ctx context.Context, function, b
 			options.HTTPClient = dynamoDBDestinationTransport(func(request *http.Request) (*http.Response, error) {
 				if request.Method == "PUT" && strings.Contains(request.URL.Path, "/event-source-mappings/") {
 					reached = true
-					// Read real IAM at the dispatch boundary, including the
-					// attempt canceled after actual ensure-side IAM mutations.
+					// Check grants when the mapping update is dispatched.
 					if err := checkGrants(true); err != nil {
 						cancel()
 						return nil, err

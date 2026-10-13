@@ -41,6 +41,8 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 	}
 	name, notifier := "test-retention-"+uid, "test-notify-"+uid
 	retained, failed, decoy := "test-retained-"+uid, "test-delivery-"+uid, "test-decoy-"+uid
+	invocationErrors, age := "test-errors-"+uid, "test-age-"+uid
+	alarmNames := []string{retained, failed, invocationErrors, age, decoy}
 	if infra.Name != name || len(infra.Lambda) != 2 || infra.Lambda[name] == nil || infra.Lambda[notifier] == nil {
 		t.Fatal("unexpected fixture declaration")
 	}
@@ -50,7 +52,7 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 			func(ctx context.Context) error { return LambdaDelete(ctx, notifier, false) },
 			func(ctx context.Context) error { return LambdaDelete(ctx, name, false) },
 			func(ctx context.Context) error {
-				_, err := CloudwatchClient().DeleteAlarms(ctx, &cloudwatch.DeleteAlarmsInput{AlarmNames: []string{retained, failed, decoy}})
+				_, err := CloudwatchClient().DeleteAlarms(ctx, &cloudwatch.DeleteAlarmsInput{AlarmNames: alarmNames})
 				return err
 			},
 			func(ctx context.Context) error { return DynamoDBDeleteTable(ctx, name, false, false) },
@@ -87,7 +89,7 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 		if err := s3.NewBucketNotExistsWaiter(S3Client()).Wait(ctx, &s3.HeadBucketInput{Bucket: aws.String(name)}, time.Minute); err != nil {
 			t.Error("bucket remains after cleanup:", err)
 		}
-		alarms, err := cloudwatchDescribeMetricAlarms(ctx, CloudwatchClient(), []string{retained, failed, decoy})
+		alarms, err := cloudwatchDescribeMetricAlarms(ctx, CloudwatchClient(), alarmNames)
 		if err != nil || len(alarms) != 0 {
 			t.Errorf("alarms remain after cleanup: %v %v", alarms, err)
 		}
@@ -206,6 +208,39 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 	if err := LambdaEnsureTriggerDynamoDB(ctx, processor, false); err != nil {
 		t.Fatal(err)
 	}
+	// A retained-event alarm needs a destination, not just enabled metrics.
+	processor.Trigger[0].Attr = slices.DeleteFunc(slices.Clone(originalAttrs), func(attr string) bool { return strings.HasPrefix(attr, "on-failure=") })
+	if err := LambdaEnsureTriggerDynamoDB(ctx, processor, false); err != nil {
+		t.Fatal(err)
+	}
+	beforePolicy, err := LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{FunctionName: aws.String(notifier)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, preview := range []bool{true, false} {
+		if err := InfraEnsure(ctx, infra, "", preview, false); err == nil || !strings.Contains(err.Error(), "requires an on-failure destination") {
+			t.Fatalf("declaration without retention passed preflight: %v", err)
+		}
+		if _, err := LambdaEnsureTriggerAlarm(ctx, notification, preview); err == nil || !strings.Contains(err.Error(), "requires an on-failure destination") {
+			t.Fatalf("live mapping without retention accepted: %v", err)
+		}
+	}
+	ensureCLI(true) // The unchanged declaration plans to restore the destination.
+	if dynamoDBFailureDestination(getMapping().DestinationConfig) != "" {
+		t.Fatal("preview restored the failure destination")
+	}
+	afterPolicy, err := LambdaClient().GetPolicy(ctx, &lambda.GetPolicyInput{FunctionName: aws.String(notifier)})
+	if err != nil || aws.ToString(afterPolicy.RevisionId) != aws.ToString(beforePolicy.RevisionId) {
+		t.Fatalf("rejected alarm or preview changed invocation permissions: %v", err)
+	}
+	unchangedAlarms, err = cloudwatchDescribeMetricAlarms(ctx, CloudwatchClient(), []string{retained})
+	if err != nil || len(unchangedAlarms) != 1 || !aws.ToTime(unchangedAlarms[0].AlarmConfigurationUpdatedTimestamp).Equal(*initialAlarms[0].AlarmConfigurationUpdatedTimestamp) {
+		t.Fatalf("rejected alarm or preview changed alarm configuration: %v", err)
+	}
+	processor.Trigger[0].Attr = originalAttrs
+	if err := LambdaEnsureTriggerDynamoDB(ctx, processor, false); err != nil {
+		t.Fatal(err)
+	}
 	// Replace the ephemeral mapping without changing its declarative identity.
 	if _, err := LambdaClient().DeleteEventSourceMapping(ctx, &lambda.DeleteEventSourceMappingInput{UUID: initial.UUID}); err != nil {
 		t.Fatal(err)
@@ -231,7 +266,7 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertInventory()
-	decoyConfig := &lambdaAlarmConfig{name: decoy, monitoredLambdaName: name, metric: lambdaAlarmMetricDeliveryFailures, countPerMinute: 1000}
+	decoyConfig := &lambdaAlarmConfig{name: decoy, monitoredLambdaName: name, metric: lambdaAlarmMetricDeliveryFailures, threshold: 1000}
 	if _, err := CloudwatchClient().PutMetricAlarm(ctx, decoyConfig.putInput(notification.Arn, name+"-other", true)); err != nil {
 		t.Fatal(err)
 	}
@@ -249,9 +284,57 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	observe := func(alarmName string, start time.Time) {
+		t.Helper()
+		for _, trigger := range notification.Trigger {
+			config, err := parseLambdaAlarmTrigger(trigger)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if config.name == alarmName {
+				config.mappingUUID = aws.ToString(replacement.UUID)
+				waitRetentionObservation(t, ctx, notifier, config.metricAlarm(notification.Arn), start)
+				return
+			}
+		}
+		t.Fatalf("missing alarm declaration: %s", alarmName)
+	}
+	// Accumulate a backlog without errors or EventCount metrics.
+	processor.Trigger[0].Attr = slices.DeleteFunc(slices.Clone(originalAttrs), func(attr string) bool { return attr == "metrics=event_count" })
+	if err := LambdaEnsureTriggerDynamoDB(ctx, processor, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LambdaClient().UpdateEventSourceMapping(ctx, &lambda.UpdateEventSourceMappingInput{UUID: replacement.UUID, Enabled: aws.Bool(false)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lambdaWaitEventSourceMappingSettled(ctx, LambdaClient(), aws.ToString(replacement.UUID)); err != nil {
+		t.Fatal(err)
+	}
 	start := time.Now().UTC().Add(-time.Minute)
+	put("backlog-" + uid)
+	select {
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	case <-time.After(30 * time.Second):
+	}
+	if err := LambdaEnsureTriggerDynamoDB(ctx, processor, false); err != nil {
+		t.Fatal(err)
+	}
+	observe(age, start)
+	logs, err := LogsRecent(ctx, "/aws/lambda/"+name, 100)
+	if err != nil || !strings.Contains(strings.Join(logs, "\n"), "processed backlog-"+uid) {
+		t.Fatalf("backlogged record was not processed successfully: %v %v", logs, err)
+	}
+	processor.Trigger[0].Attr = originalAttrs
+	if err := LambdaEnsureTriggerDynamoDB(ctx, processor, false); err != nil {
+		t.Fatal(err)
+	}
+	// Metrics activation can lag behind the mapping's Enabled state.
+	waitRetentionMetrics(t, ctx, aws.ToString(replacement.UUID))
+	start = time.Now().UTC().Add(-time.Minute)
 	put("retained-" + uid)
-	waitRetentionObservation(t, ctx, name, notifier, retained, lambdaAlarmMetricRetained, lambdaAlarmMappingDimension, aws.ToString(replacement.UUID), start)
+	observe(retained, start)
+	observe(invocationErrors, start)
 	objects, err := S3Client().ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: aws.String(name)})
 	if err != nil || len(objects.Contents) == 0 {
 		t.Fatalf("no retained payload: %v %v", objects, err)
@@ -293,28 +376,32 @@ func TestDynamoDBRetentionMonitoringIntegration(t *testing.T) {
 	}
 	start = time.Now().UTC().Add(-time.Minute)
 	put("denied-" + uid)
-	waitRetentionObservation(t, ctx, name, notifier, failed, lambdaAlarmMetricDeliveryFailures, lambdaAlarmDimension, name, start)
+	observe(failed, start)
 	if _, err := S3Client().DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{Bucket: aws.String(name)}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// Observe genuine AWS data and alarm history: never inject metrics or force state.
-func waitRetentionObservation(t *testing.T, ctx context.Context, function, notifier, alarm, metric, dimension, value string, start time.Time) {
+func waitRetentionObservation(t *testing.T, ctx context.Context, notifier string, expected *cwtypes.MetricAlarm, start time.Time) {
 	t.Helper()
+	alarm, metric := aws.ToString(expected.AlarmName), aws.ToString(expected.MetricName)
 	deadline := time.Now().Add(6 * time.Minute)
 	metricSeen, alarmSeen, notificationSeen := false, false, false
 	for {
 		data, err := CloudwatchClient().GetMetricStatistics(ctx, &cloudwatch.GetMetricStatisticsInput{
 			Namespace: aws.String("AWS/Lambda"), MetricName: aws.String(metric),
-			Dimensions: []cwtypes.Dimension{{Name: aws.String(dimension), Value: aws.String(value)}},
-			StartTime:  aws.Time(start), EndTime: aws.Time(time.Now().UTC()), Period: aws.Int32(60), Statistics: []cwtypes.Statistic{cwtypes.StatisticSum},
+			Dimensions: expected.Dimensions,
+			StartTime:  aws.Time(start), EndTime: aws.Time(time.Now().UTC()), Period: aws.Int32(60), Statistics: []cwtypes.Statistic{expected.Statistic},
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, point := range data.Datapoints {
-			if aws.ToFloat64(point.Sum) > 0 {
+			value := aws.ToFloat64(point.Sum)
+			if expected.Statistic == cwtypes.StatisticMaximum {
+				value = aws.ToFloat64(point.Maximum)
+			}
+			if value >= aws.ToFloat64(expected.Threshold) {
 				metricSeen = true
 			}
 		}
@@ -345,15 +432,44 @@ func waitRetentionObservation(t *testing.T, ctx context.Context, function, notif
 			}
 		}
 		if metricSeen && alarmSeen && notificationSeen {
-			t.Logf("observed %s {%s=%s}: positive Sum, ALARM transition, CloudWatch → %s delivery", metric, dimension, value, notifier)
+			t.Logf("observed %s {%s=%s}: %s >= %g, ALARM transition, CloudWatch → %s delivery", metric, aws.ToString(expected.Dimensions[0].Name), aws.ToString(expected.Dimensions[0].Value), expected.Statistic, aws.ToFloat64(expected.Threshold), notifier)
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%s for %s: metric=%t alarm=%t notification=%t after bounded wait", metric, function, metricSeen, alarmSeen, notificationSeen)
+			t.Fatalf("%s for %s: metric=%t alarm=%t notification=%t after bounded wait", metric, alarm, metricSeen, alarmSeen, notificationSeen)
 		}
 		select {
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
+		case <-time.After(10 * time.Second):
+		}
+	}
+}
+
+func waitRetentionMetrics(t *testing.T, ctx context.Context, mappingUUID string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+	defer cancel()
+	since := time.Now().UTC()
+	for {
+		data, err := CloudwatchClient().GetMetricStatistics(ctx, &cloudwatch.GetMetricStatisticsInput{
+			Namespace: aws.String("AWS/Lambda"), MetricName: aws.String("PolledEventCount"),
+			Dimensions: []cwtypes.Dimension{{Name: aws.String("EventSourceMappingUUID"), Value: aws.String(mappingUUID)}},
+			StartTime:  aws.Time(since.Add(-time.Minute)), EndTime: aws.Time(time.Now().UTC()), Period: aws.Int32(60), Statistics: []cwtypes.Statistic{cwtypes.StatisticSum},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, point := range data.Datapoints {
+			// Empty polls emit zero; require a new datapoint, not a positive count.
+			if aws.ToTime(point.Timestamp).After(since) {
+				t.Log("EventCount metrics active on", mappingUUID)
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("EventCount metrics did not become visible:", ctx.Err())
 		case <-time.After(10 * time.Second):
 		}
 	}
