@@ -15,7 +15,8 @@ import (
 
 func TestDynamoDBEnsureIndexReusesKeyDefinitions(t *testing.T) {
 	requireLiveAWSAccount(t)
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	// Even a one-row GSI backfill can take several minutes in the control plane.
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
 	defer cancel()
 	name := "test-index-reuse-" + uuid.Must(uuid.NewV4()).String()
 	_, err := DynamoDBClient().DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(name)})
@@ -25,10 +26,16 @@ func TestDynamoDBEnsureIndexReusesKeyDefinitions(t *testing.T) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		if err := DynamoDBDeleteTable(ctx, name, false, false); err != nil {
+		// Independent SDK cleanup need not wait for the index being tested.
+		// DynamoDB permits table deletion while its GSI is still backfilling.
+		_, err := DynamoDBClient().DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(name)})
+		if _, absent := errors.AsType[*ddbtypes.ResourceNotFoundException](err); err != nil && !absent {
 			t.Error("fixture cleanup:", err)
 		}
-		_, err := DynamoDBClient().DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(name)})
+		if err := dynamodb.NewTableNotExistsWaiter(DynamoDBClient()).Wait(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(name)}, 2*time.Minute); err != nil {
+			t.Error("fixture deletion did not settle:", err)
+		}
+		_, err = DynamoDBClient().DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(name)})
 		if _, absent := errors.AsType[*ddbtypes.ResourceNotFoundException](err); !absent {
 			t.Error("fixture remains:", err)
 		}

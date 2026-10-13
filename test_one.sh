@@ -12,7 +12,13 @@ for test in "${tests[@]}"; do
     if [[ "$test" != lib_test.go && "$test" == "${name}_test.go" ]]; then
         matched=true
         go test lib_test.go "${sources[@]}" "$test" -o "$work/libaws.test" -c
-        timeout --kill-after=30s 600 "$work/libaws.test" -test.v -test.failfast
+        # Reserve cleanup after a slow real GSI backfill, without extending
+        # unrelated library fixtures.
+        limit=600
+        if [[ "$name" == dynamodb_index_reuse ]]; then
+            limit=1200
+        fi
+        timeout --kill-after=30s "$limit" "$work/libaws.test" -test.v -test.failfast
     fi
 done
 if [[ "$matched" == false ]]; then
