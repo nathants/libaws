@@ -1525,7 +1525,7 @@ make test
 
 Set `LIBAWS_TEST_JOBS` to change concurrency (default: `4`; `1` for sequential runs). Do not overlap live suites in one account.
 
-Tests retain shared certificate, DNS, and API-domain fixtures; see [testing guidance](NINA.md#architecture-and-testing) for details.
+Live DNS/domain examples preserve the supplied Route53 zone and automatically ensure and retain a regional wildcard ACM certificate, its DNS validation record, and an untagged, unmapped `acm-fixture.${LIBAWS_TEST_DOMAIN}` API Gateway custom domain. The custom domain keeps the certificate eligible for managed renewal; it has no Route53 record. Tests remove only their uniquely named resources outside these shared fixtures.
 
 R2 tests are opt-in: set `LIBAWS_R2_TEST_ACCOUNT` to your `R2_ACCOUNT_ID` and supply `R2_ACCESS_KEY_ID` and `R2_ACCESS_KEY_SECRET`. They create and remove unique `libaws-testing-*` buckets.
 
