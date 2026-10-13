@@ -680,6 +680,9 @@ func DynamoDBEnsure(ctx context.Context, input *dynamodb.CreateTableInput, ttl *
 	for _, index := range input.GlobalSecondaryIndexes {
 		existing, ok := existingGlobalIndices[*index.IndexName]
 		if !ok {
+			// Creating a GSI requires its key definitions in this request,
+			// even when another index already uses the same attributes.
+			update.AttributeDefinitions = input.AttributeDefinitions
 			update.GlobalSecondaryIndexUpdates = append(
 				update.GlobalSecondaryIndexUpdates,
 				ddbtypes.GlobalSecondaryIndexUpdate{
