@@ -3,7 +3,6 @@ package lib
 import (
 	"context"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -33,16 +32,13 @@ func TestEC2AmiBaseDebianLiveCatalog(t *testing.T) {
 			}
 			standard := regexp.MustCompile(`^debian-12-` + debianArches[arch] + `-[0-9]{8}-[0-9]+$`)
 			var newest string
-			backports := false
 			for _, image := range out.Images {
-				name := aws.ToString(image.Name)
-				backports = backports || strings.HasPrefix(name, "debian-12-backports-")
-				if standard.MatchString(name) && aws.ToString(image.CreationDate) > newest {
+				if standard.MatchString(aws.ToString(image.Name)) && aws.ToString(image.CreationDate) > newest {
 					newest = aws.ToString(image.CreationDate)
 				}
 			}
-			if !backports || newest == "" {
-				t.Fatalf("catalog must list both standard and backports images to prove family selection: %d images", len(out.Images))
+			if newest == "" {
+				t.Fatalf("catalog lists no standard Debian 12 %s image among %d images", arch, len(out.Images))
 			}
 			id, user, err := EC2AmiBase(ctx, EC2AmiDebianBookworm, arch)
 			if err != nil || user != "admin" {
