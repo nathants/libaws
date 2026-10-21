@@ -1742,6 +1742,12 @@ var debians = map[string]string{
 	"stretch":  "debian-9-",
 }
 
+// debianArches maps EC2 architectures to Debian image name architectures.
+var debianArches = map[string]string{
+	EC2ArchAmd64: "amd64",
+	EC2ArchArm64: "arm64",
+}
+
 func keys(m map[string]string) []string {
 	var ks []string
 	for k := range m {
@@ -1791,11 +1797,20 @@ func ec2AmiDebian(ctx context.Context, name, arch string) (string, error) {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	_ = fragment
+	debianArch, ok := debianArches[arch]
+	if !ok {
+		err := fmt.Errorf("bad debian arch %s, should be one of: %v", arch, keys(debianArches))
+		Logger.Println("error:", err)
+		return "", err
+	}
+	// Debian publishes standard and backports-kernel images for each release
+	// (debian-12-amd64-*, debian-12-backports-amd64-*). Select only the
+	// standard family, whichever was published last.
+	family := fragment + debianArch + "-"
 	out, err := EC2Client().DescribeImages(ctx, &ec2.DescribeImagesInput{
 		Owners: []string{"136693071363"},
 		Filters: []ec2types.Filter{
-			{Name: aws.String("name"), Values: []string{fmt.Sprintf("%s*", fragment)}},
+			{Name: aws.String("name"), Values: []string{family + "*"}},
 			{Name: aws.String("architecture"), Values: []string{arch}},
 		},
 	})
@@ -1803,10 +1818,18 @@ func ec2AmiDebian(ctx context.Context, name, arch string) (string, error) {
 		Logger.Println("error:", err)
 		return "", err
 	}
-	sort.Slice(out.Images, func(i, j int) bool {
-		return *out.Images[i].CreationDate > *out.Images[j].CreationDate
+	images := slices.DeleteFunc(out.Images, func(image ec2types.Image) bool {
+		return !strings.HasPrefix(aws.ToString(image.Name), family)
 	})
-	return *out.Images[0].ImageId, nil
+	if len(images) == 0 {
+		err := fmt.Errorf("no official debian %s %s image", name, arch)
+		Logger.Println("error:", err)
+		return "", err
+	}
+	newest := slices.MaxFunc(images, func(a, b ec2types.Image) int {
+		return strings.Compare(aws.ToString(a.CreationDate), aws.ToString(b.CreationDate))
+	})
+	return aws.ToString(newest.ImageId), nil
 }
 
 func ec2AmiAmzn2(ctx context.Context, arch string) (string, error) {

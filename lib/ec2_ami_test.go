@@ -258,3 +258,52 @@ func TestEC2DeleteAmiAbsentAndCanceled(t *testing.T) {
 		t.Fatalf("cancellation must prevent deregistration: error=%v calls=%v", err, *calls)
 	}
 }
+
+func debianTestImage(id, name, created string) string {
+	return "<item><imageId>" + id + "</imageId><name>" + name + "</name><creationDate>" + created +
+		"</creationDate><imageOwnerId>136693071363</imageOwnerId><imageState>available</imageState></item>"
+}
+
+// Debian publishes a backports-kernel image beside each standard image, often
+// later the same day. The base image stays in the standard family.
+func TestEC2AmiBaseDebianSelectsNewestStandardImage(t *testing.T) {
+	catalog := map[string]string{
+		EC2ArchAmd64: debianTestImage("ami-00000000000000011", "debian-12-amd64-20261018-2635", "2026-10-18T14:27:36.000Z") +
+			debianTestImage("ami-00000000000000012", "debian-12-backports-amd64-20261021-2638", "2026-10-21T14:50:14.000Z") +
+			debianTestImage("ami-00000000000000013", "debian-12-amd64-20261021-2638", "2026-10-21T14:00:47.000Z"),
+		EC2ArchArm64: debianTestImage("ami-00000000000000021", "debian-12-backports-arm64-20261021-2638", "2026-10-21T14:50:14.000Z") +
+			debianTestImage("ami-00000000000000022", "debian-12-arm64-20261021-2638", "2026-10-21T14:00:47.000Z") +
+			debianTestImage("ami-00000000000000023", "debian-12-arm64-20261018-2635", "2026-10-18T14:27:36.000Z") +
+			debianTestImage("ami-00000000000000024", "debian-13-arm64-20261022-2639", "2026-10-22T14:00:00.000Z"),
+	}
+	serve := func(images map[string]string) func(string, url.Values) (string, int) {
+		return func(action string, params url.Values) (string, int) {
+			if action != "DescribeImages" || params.Get("Owner.1") != "136693071363" {
+				return "", 0
+			}
+			for i := 1; params.Has(fmt.Sprintf("Filter.%d.Name", i)); i++ {
+				if params.Get(fmt.Sprintf("Filter.%d.Name", i)) == "architecture" {
+					return "<imagesSet>" + images[params.Get(fmt.Sprintf("Filter.%d.Value.1", i))] + "</imagesSet>", 200
+				}
+			}
+			return "", 0
+		}
+	}
+	for arch, want := range map[string]string{EC2ArchAmd64: "ami-00000000000000013", EC2ArchArm64: "ami-00000000000000022"} {
+		t.Run(arch, func(t *testing.T) {
+			installEC2AmiTestClient(t, serve(catalog))
+			id, user, err := EC2AmiBase(context.Background(), EC2AmiDebianBookworm, arch)
+			if err != nil || id != want || user != "admin" {
+				t.Fatalf("selected %q user %q error %v, want standard image %s", id, user, err, want)
+			}
+		})
+	}
+	t.Run("backports-only", func(t *testing.T) {
+		installEC2AmiTestClient(t, serve(map[string]string{
+			EC2ArchAmd64: debianTestImage("ami-00000000000000031", "debian-12-backports-amd64-20261021-2638", "2026-10-21T14:50:14.000Z"),
+		}))
+		if id, _, err := EC2AmiBase(context.Background(), EC2AmiDebianBookworm, EC2ArchAmd64); err == nil {
+			t.Fatalf("selected a non-standard image: %s", id)
+		}
+	})
+}
