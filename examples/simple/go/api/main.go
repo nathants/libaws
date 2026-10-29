@@ -13,7 +13,7 @@ func handleRequest(_ context.Context, request events.APIGatewayProxyRequest) (ev
 	case "/backend-fail":
 		return events.APIGatewayProxyResponse{Body: "backend unavailable", StatusCode: 503}, nil
 	case "/integration-fail":
-		return events.APIGatewayProxyResponse{}, errors.New("access log integration fixture failure")
+		return events.APIGatewayProxyResponse{}, errors.New("access log integration fixture failure: " + request.Body)
 	default:
 		return events.APIGatewayProxyResponse{Body: "hi\n", StatusCode: 200}, nil
 	}

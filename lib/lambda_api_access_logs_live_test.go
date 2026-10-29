@@ -88,9 +88,9 @@ func TestAPIAccessLogsIntegration(t *testing.T) {
 	for _, test := range []struct {
 		path   string
 		status int
-	}{{"/", 200}, {"/backend-fail", 503}, {"/integration-fail", 502}} {
+	}{{"/", 200}, {"/backend-fail", 503}, {"/integration-fail", 500}} {
 		url := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com%s?private=%s", apiID, Region(), test.path, privateMarker)
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(privateMarker))
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(privateMarker+" \"quoted\"\nbackslash\\"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,8 +147,8 @@ func TestAPIAccessLogsIntegration(t *testing.T) {
 			if status == 503 && (record["integration_status"] != "200" || record["backend_status"] != "503") {
 				t.Fatalf("backend error confused with provider failure: %s", event.Message)
 			}
-			if status == 502 && (record["integration_error"] == "" || record["integration_error"] == "-") {
-				t.Fatalf("integration failure has no cause: %s", event.Message)
+			if status == 500 && (record["integration_status"] != "200" || record["error_type"] != "INTEGRATION_FAILURE" || record["error_message"] == "" || record["error_message"] == "-") {
+				t.Fatalf("function failure has no Gateway classification: %s", event.Message)
 			}
 			delete(wanted, record["request_id"])
 		}

@@ -15,8 +15,10 @@ import (
 const lambdaAPIAccessLogsAttr = "access-logs"
 
 // Keep request bodies, headers, query strings, paths and client identity out of
-// these records. The existing Lambda log group owns retention and retrieval.
-const lambdaAPIAccessLogFormat = `{"kind":"http-api-access","api_id":"$context.apiId","stage":"$context.stage","request_id":"$context.requestId","request_time_epoch":"$context.requestTimeEpoch","method":"$context.httpMethod","route":"$context.routeKey","status":"$context.status","response_ms":"$context.responseLatency","response_bytes":"$context.responseLength","integration_request_id":"$context.integration.requestId","integration_status":"$context.integration.integrationStatus","backend_status":"$context.integration.status","integration_ms":"$context.integration.latency","error_type":"$context.error.responseType","integration_error":"$context.integrationErrorMessage"}`
+// these records. Integration error text can contain function errors derived from
+// private request content; use the invocation ID to find the function's own logs.
+// The existing Lambda log group owns retention and retrieval.
+const lambdaAPIAccessLogFormat = `{"kind":"http-api-access","api_id":"$context.apiId","stage":"$context.stage","request_id":"$context.requestId","request_time_epoch":"$context.requestTimeEpoch","method":"$context.httpMethod","route":"$context.routeKey","status":"$context.status","response_ms":"$context.responseLatency","response_bytes":"$context.responseLength","integration_request_id":"$context.integration.requestId","integration_status":"$context.integration.integrationStatus","backend_status":"$context.integration.status","integration_ms":"$context.integration.latency","error_type":"$context.error.responseType","error_message":"$context.error.message"}`
 
 func lambdaAPIAccessLogsEnabled(trigger *InfraTrigger) (*bool, error) {
 	if trigger.Type != lambdaTriggerApi && trigger.Type != lambdaTriggerWebsocket {
