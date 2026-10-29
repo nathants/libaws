@@ -1,4 +1,5 @@
 # type: ignore
+from contextlib import ExitStack
 import json
 import uuid
 import pytest
@@ -36,7 +37,9 @@ def test():
     os.environ['uid'] = uid = str(uuid.uuid4())[-12:]
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
-    try:
+    with ExitStack() as cleanup:
+        cleanup.callback(run, f"libaws lambda-rm test-lambda-{uid}")
+        cleanup.callback(run, "libaws infra-rm infra.yaml")
         run("libaws infra-ensure infra.yaml --preview")
         run("libaws infra-ensure infra.yaml")
         infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
@@ -90,8 +93,6 @@ def test():
         run(f"libaws lambda-rm test-lambda-{uid} --preview")
         run(f"libaws lambda-rm test-lambda-{uid}")
         run("libaws infra-rm infra.yaml --preview")
-    finally:
-        run("libaws infra-rm infra.yaml")
     infra = yaml.safe_load(run(f"libaws infra-ls --env-values --infraset test-infraset-{uid}"))
     assert infra.get("infraset", {}) == {}, infra
     assert f"test-lambda-{uid}" not in run("libaws api-ls").splitlines()

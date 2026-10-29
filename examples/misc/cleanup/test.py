@@ -149,6 +149,8 @@ def test_plain_failure_cleanup(example, failure, tmp_path):
     with patch.dict(os.environ, LIBAWS_TEST_ACCOUNT="guarded"), patch.object(module, "run", side_effect=fake_run):
         with pytest.raises(InjectedFailure):
             invoke(module, example, tmp_path)
+        if example == "simple/go/api":
+            assert f"libaws lambda-rm test-lambda-{os.environ['uid']}" in commands, commands
     assert "libaws infra-rm infra.yaml" in commands, commands
     if example == "misc/api_binary":
         assert local_files and all(not path.parent.exists() for path in local_files), local_files
