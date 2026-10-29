@@ -105,14 +105,14 @@ func TestAPIAccessLogsIntegration(t *testing.T) {
 		if readErr != nil || closeErr != nil {
 			t.Fatalf("response body: read=%v close=%v", readErr, closeErr)
 		}
-		if response.StatusCode != test.status {
-			t.Fatalf("%s returned %d, want %d", test.path, response.StatusCode, test.status)
-		}
 		requestID := response.Header.Get("Apigw-Requestid")
+		if response.StatusCode != test.status {
+			t.Errorf("%s returned %d, want %d; request ID %s", test.path, response.StatusCode, test.status, requestID)
+		}
 		if requestID == "" {
 			t.Fatal("response has no Gateway request ID")
 		}
-		wanted[requestID] = test.status
+		wanted[requestID] = response.StatusCode
 	}
 	deadline := time.NewTimer(time.Minute)
 	defer deadline.Stop()
@@ -140,6 +140,7 @@ func TestAPIAccessLogsIntegration(t *testing.T) {
 			if !ok {
 				continue
 			}
+			t.Logf("correlated access record: %s", event.Message)
 			if record["kind"] != "http-api-access" || record["api_id"] != apiID || record["status"] != fmt.Sprint(status) || record["response_ms"] == "" || record["response_ms"] == "-" || record["integration_request_id"] == "" || record["integration_request_id"] == "-" {
 				t.Fatalf("missing response correlation: %s", event.Message)
 			}
