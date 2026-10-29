@@ -10,6 +10,8 @@ lambda:
       - AWSLambdaBasicExecutionRole
     trigger:
       - type: api
+        attr:
+          - access-logs=true
       - type: schedule
         attr:
           - rate(15 minutes)

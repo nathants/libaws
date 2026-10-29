@@ -331,6 +331,8 @@ func TestInfraListAPIURLsUseProtocolAndDomainMapping(t *testing.T) {
 						body = `{"items":[{"apiMappingId":"mapping","apiId":"selected","apiMappingKey":"","stage":"$default"}]}`
 					case "/v2/apis/selected/integrations":
 						body = `{"items":[{"integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:123456789012:function:function"}]}`
+					case "/v2/apis/selected/stages/$default":
+						body = `{"stageName":"$default"}`
 					default:
 						return nil, fmt.Errorf("unexpected request: %s", r.URL)
 					}
@@ -376,6 +378,8 @@ func TestInfraListSetAPIBoundsDomainAndDNSReads(t *testing.T) {
 					body = `<ListResourceRecordSetsResponse><ResourceRecordSets><ResourceRecordSet><Name>api.example.com.</Name><Type>A</Type><AliasTarget><HostedZoneId>ZAPIGATEWAY</HostedZoneId><DNSName>d-selected.execute-api.us-east-1.amazonaws.com.</DNSName><EvaluateTargetHealth>false</EvaluateTargetHealth></AliasTarget></ResourceRecordSet></ResourceRecordSets><IsTruncated>false</IsTruncated></ListResourceRecordSetsResponse>`
 				case "/v2/apis/selected/integrations":
 					body = `{"items":[{"integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:123456789012:function:cross-named-function"}]}`
+				case "/v2/apis/selected/stages/$default":
+					body = `{"stageName":"$default"}`
 				default:
 					return nil, fmt.Errorf("unrelated resource hydration: %s", r.URL)
 				}
@@ -567,6 +571,8 @@ func TestInfraListSetPaginatesAPIIntegrations(t *testing.T) {
 						return infraSetResponse(r, 200, fmt.Sprintf(`{"items":[{"apiId":"selected","name":%q,"protocolType":%q,"routeSelectionExpression":%q,"tags":{"libaws.infraset":"wanted"}}]}`, name, protocol, lambdaRouteSelection)), nil
 					case "/v2/domainnames":
 						return infraSetResponse(r, 200, `{"items":[]}`), nil
+					case "/v2/apis/selected/stages/$default":
+						return infraSetResponse(r, 200, `{"stageName":"$default"}`), nil
 					case "/v2/apis/selected/integrations":
 						pages++
 						integration := `{"integrationType":"AWS_PROXY","integrationUri":"arn:aws:lambda:us-east-1:123456789012:function:named-function"}`

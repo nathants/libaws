@@ -1315,6 +1315,20 @@ func (scope infraListScope) listApi(ctx context.Context, triggersChan chan<- *In
 					return
 				}
 				if lambdaAPIIntegrationMatches(&integrations[0], identity.arn) {
+					if api.ProtocolType == apitypes.ProtocolTypeHttp {
+						settings, err := lambdaReadAPIAccessLogs(ctx, ApiClient(), aws.ToString(api.ApiId), identity.arn)
+						if err != nil {
+							errChan <- err
+							return
+						}
+						if settings != nil {
+							if aws.ToString(settings.Format) != lambdaAPIAccessLogFormat {
+								errChan <- fmt.Errorf("API %s access log format is not representable", aws.ToString(api.ApiId))
+								return
+							}
+							attrs = append(attrs, lambdaAPIAccessLogsAttr+"=true")
+						}
+					}
 					infraApi.lambdaName = lambdaName
 					triggersChan <- &InfraTrigger{
 						lambdaName: lambdaName,
@@ -2297,6 +2311,9 @@ func validateLambdaSelection(infraSet *InfraSet, quick string) error {
 			return err
 		}
 		if _, err := lambdaDynamoDBParseMappings(infraLambda); err != nil {
+			return err
+		}
+		if err := lambdaValidateAPIAccessLogs(infraLambda); err != nil {
 			return err
 		}
 	}

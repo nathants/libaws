@@ -816,6 +816,9 @@ func lambdaS3SourceARN(functionARN, bucket string) (string, error) {
 }
 
 func lambdaValidateTriggerSource(trigger *InfraTrigger) error {
+	if _, err := lambdaAPIAccessLogsEnabled(trigger); err != nil {
+		return err
+	}
 	switch trigger.Type {
 	case lambdaTrigerS3:
 		if len(trigger.Attr) != 1 || strings.TrimSpace(trigger.Attr[0]) == "" || strings.Contains(trigger.Attr[0], "=") {
@@ -1653,6 +1656,9 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 		d.Start()
 		defer d.End()
 	}
+	if err := lambdaValidateAPIAccessLogs(infraLambda); err != nil {
+		return nil, err
+	}
 	var permissionSids []string
 	hasApi := false
 	hasWebsocket := false
@@ -1730,6 +1736,13 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 				}
 			}
 			permissionSids = append(permissionSids, sid)
+			enabled, err := lambdaAPIAccessLogsEnabled(trigger)
+			if err != nil {
+				return nil, err
+			}
+			if err := lambdaEnsureAPIAccessLogs(ctx, ApiClient(), api, arnLambda, enabled, preview); err != nil {
+				return nil, err
+			}
 			for _, attr := range trigger.Attr {
 				k, v, err := SplitOnce(attr, "=")
 				if err != nil {
@@ -1737,6 +1750,8 @@ func LambdaEnsureTriggerApi(ctx context.Context, infraLambda *InfraLambda, previ
 					return nil, err
 				}
 				switch k {
+				case lambdaAPIAccessLogsAttr:
+					continue // Reconciled with the default stage above.
 				case lambdaTriggerApiAttrDns: // apigateway custom domain + route53
 					domainName = v
 					err := lambdaEnsureTriggerApiDns(
@@ -3309,6 +3324,9 @@ func lambdaEnsureResources(ctx context.Context, infraLambda *InfraLambda, quick,
 		return nil, err
 	}
 	if _, err := lambdaDynamoDBParseMappings(infraLambda); err != nil {
+		return nil, err
+	}
+	if err := lambdaValidateAPIAccessLogs(infraLambda); err != nil {
 		return nil, err
 	}
 	if err := validateLambdaAlarms(map[string]*InfraLambda{infraLambda.Name: infraLambda}); err != nil {

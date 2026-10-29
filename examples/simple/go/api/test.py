@@ -43,7 +43,8 @@ def test():
         infra.pop("region")
         infra.pop("account")
         infra["infraset"][f"test-infraset-{uid}"].pop("keypair", None)
-        infra["infraset"][f"test-infraset-{uid}"]["lambda"][f"test-lambda-{uid}"]['trigger'][1].pop("attr")
+        api_attrs = infra["infraset"][f"test-infraset-{uid}"]["lambda"][f"test-lambda-{uid}"]['trigger'][1]["attr"]
+        api_attrs.remove(next(attr for attr in api_attrs if attr.startswith("url=")))
         expected = {
             "infraset": {
                 f"test-infraset-{uid}": {
@@ -54,7 +55,7 @@ def test():
                             "trigger": [
                                 {"attr": ["rate(15 minutes)"],
                                  "type": "schedule"},
-                                {"type": "api"},
+                                {"type": "api", "attr": ["access-logs=true"]},
                             ],
                         }
                     }
@@ -75,6 +76,12 @@ def test():
         else:
             assert False, "fail"
         assert 'hi' == run(f'curl {url} 2>/dev/null')
+        run("libaws infra-ensure infra.yaml --preview")
+        run("libaws infra-ensure infra.yaml")
+        run(
+            f"LIBAWS_API_LOGS_TEST_FUNCTION=test-lambda-{uid} "
+            "go test ../../../../lib -run '^TestAPIAccessLogsIntegration$' -count=1 -v"
+        )
         run(
             "LIBAWS_INTEGRATION=1 "
             f"LIBAWS_LAMBDA_DELETE_TEST_FUNCTION=test-lambda-{uid} "

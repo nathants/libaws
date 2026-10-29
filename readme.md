@@ -1179,6 +1179,8 @@ Defines an [API Gateway v2](https://docs.aws.amazon.com/AWSCloudFormation/latest
 
 * Add a custom domain with attr: `domain=api.example.com`. Inventory reports `url=https://api.example.com`; use `api-url-domain NAME` to obtain the DNS alias target for externally managed DNS.
 
+* `access-logs=true` writes HTTP API request IDs, status, integration errors and timing to the Lambda's existing CloudWatch log group, with its `logs-ttl-days` retention. The fixed JSON format excludes request bodies, headers, paths, query strings and client identity. `access-logs=false` disables these logs; omission leaves the current setting unchanged. A custom destination is refused, not overwritten; an explicit setting owns the format in the Lambda's group. Inventory includes enabled access logs and rejects unrepresentable formats. Logging requires the deploying identity's API Gateway log-delivery permissions.
+
 * Add a custom domain and update Route53 with attr: `dns=api.example.com`
 
   * Use `dns=*.example.com` to accept any subdomain
