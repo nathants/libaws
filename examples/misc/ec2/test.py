@@ -236,7 +236,7 @@ def verify_instance_store(uid, key, sg_id):
         )
         fixture = json.loads((Path(directory) / "fixture.json").read_text())
         instance_id = run(
-            "timeout", "--signal=INT", "--kill-after=330s", "300",
+            "timeout", "--signal=INT", "--kill-after=390s", "300",
             LIBAWS, "ec2-new", f"test-ec2-nvme-{uid}", "--spot", "lowestPrice", "--type", "i4i.large",
             "--ami", "trixie", "--key", key, "--sg", sg_id, "--subnets", fixture["subnet"],
             "--gigs", "8", "--seconds-timeout", "900", "--init", str(Path(directory) / "init.sh"),
@@ -282,9 +282,10 @@ def test():
                 instance_name = f"test-ec2-{mode}-{uid}"
                 market = ["--spot", "lowestPrice"] if lifecycle == "spot" else []
                 instance_id = run(
-                    # Give interrupted EC2 library calls their bounded five-minute
-                    # cleanup window. This adds no delay to successful launches.
-                    "timeout", "--signal=INT", "--kill-after=330s", "300",
+                    # Give interrupted EC2 library calls their bounded cleanup
+                    # window: five minutes for the fleet and one for its launch
+                    # template. This adds no delay to successful launches.
+                    "timeout", "--signal=INT", "--kill-after=390s", "300",
                     LIBAWS, "ec2-new", instance_name, *market, "--type", "t3.small",
                     "--ami", "trixie", "--key", key, "--sg", sg_id,
                     "--gigs", "8", "--seconds-timeout", "600", *selection,
@@ -294,6 +295,7 @@ def test():
                 env = dict(
                     os.environ,
                     LIBAWS_EC2_SUBNET_TEST_INSTANCE=instance_id,
+                    LIBAWS_EC2_SUBNET_TEST_NAME=instance_name,
                     LIBAWS_EC2_SUBNET_TEST_VPC=vpc_id,
                     LIBAWS_EC2_SUBNET_TEST_SUBNETS=" ".join(expected),
                     LIBAWS_EC2_SUBNET_TEST_LIFECYCLE=lifecycle,
@@ -302,6 +304,11 @@ def test():
                     "go", "test", "./lib", "-run", "^TestEC2SubnetsFromVpcIntegration$",
                     "-count=1", "-v", cwd=ROOT, env=env, stream=True,
                 )
+                if lifecycle == "spot":
+                    # The guest carries EC2's fleet and template tags, verified
+                    # above; ec2-ls must hide them, leaving its tags column empty.
+                    fields = run(LIBAWS, "ec2-ls", instance_id).split()
+                    assert len(fields) == 8 and fields[3] == instance_id and fields[5] == "spot", fields
                 if mode == "vpc":
                     verify_transport_flags(instance_id)
                     verify_transfer_failure_exits(instance_id, dict(env, LIBAWS_EC2_EXAMPLE_UID=uid))

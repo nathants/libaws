@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
@@ -739,5 +740,55 @@ func TestInfraListLambdaRetainsExternalFailureDestinations(t *testing.T) {
 				t.Fatal("inventory lost the actual external failure destination")
 			}
 		})
+	}
+}
+
+// Spot guests from separate requests differ only in the tags EC2 adds to
+// libaws launches. Listings hide exactly those, so the guests still group.
+func TestEC2ListingsHideLaunchTags(t *testing.T) {
+	instance := func(id, fleet, template, created string) string {
+		tags := ""
+		for _, tag := range [][2]string{
+			{"Name", "guest"}, {"user", "admin"}, {"creation-date", created},
+			{"aws:ec2spot:fleet-request-id", fleet}, {"aws:ec2launchtemplate:id", template}, {"aws:ec2launchtemplate:version", "1"},
+			{"aws:cloudformation:stack-name", "stack"},
+		} {
+			tags += "<item><key>" + tag[0] + "</key><value>" + tag[1] + "</value></item>"
+		}
+		return "<item><instanceId>" + id + "</instanceId><imageId>ami-test</imageId><instanceType>t3.small</instanceType><vpcId>vpc-test</vpcId>" +
+			"<spotInstanceRequestId>sir-" + id + "</spotInstanceRequestId><launchTime>" + created + "</launchTime><instanceState><name>running</name></instanceState>" +
+			"<groupSet><item><groupName>test-sg</groupName></item></groupSet><tagSet>" + tags + "</tagSet></item>"
+	}
+	body := "<DescribeInstancesResponse><reservationSet><item><instancesSet>" +
+		instance("i-0000000000000000a", "sfr-a", "lt-a", "2026-11-10T00:00:00Z") +
+		instance("i-0000000000000000b", "sfr-b", "lt-b", "2026-11-10T00:01:00Z") +
+		"</instancesSet></item></reservationSet></DescribeInstancesResponse>"
+	oldEC2 := ec2Client
+	ec2Client = ec2.NewFromConfig(aws.Config{
+		Region: "us-east-1", Credentials: credentials.NewStaticCredentialsProvider("key", "secret", ""), RetryMaxAttempts: 1,
+		HTTPClient: &http.Client{Transport: infraSetTransport(func(r *http.Request) (*http.Response, error) {
+			if err := r.ParseForm(); err != nil {
+				return nil, err
+			}
+			if r.Form.Get("Action") != "DescribeInstances" {
+				return nil, fmt.Errorf("unexpected request: %v", r.Form)
+			}
+			return infraSetResponse(r, 200, body), nil
+		})},
+	})
+	t.Cleanup(func() { ec2Client = oldEC2 })
+	found, err := InfraListEC2(t.Context())
+	want := []string{"type=t3.small", "ami=ami-test", "kind=spot", "vpc=vpc-test", "sg=test-sg", "tag.user=admin", "tag.aws:cloudformation:stack-name=stack"}
+	if err != nil || len(found) != 1 || found["guest"] == nil || found["guest"].Count != 2 || !slices.Equal(found["guest"].Attr, want) {
+		t.Fatalf("inventory did not group the guests without their launch tags: %s %v", Pformat(found), err)
+	}
+	instances, err := EC2ListInstances(t.Context(), nil, "")
+	if err != nil || len(instances) != 2 {
+		t.Fatal(instances, err)
+	}
+	for _, instance := range instances {
+		if tags := EC2Tags(instance.Tags); tags != "aws:cloudformation:stack-name=stack" {
+			t.Fatalf("ec2-ls tags column = %q", tags)
+		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/smithy-go/middleware"
+	"github.com/gofrs/uuid"
 )
 
 func ec2ExampleConfig(t *testing.T, ctx context.Context, uid string) *EC2Config {
@@ -78,7 +79,8 @@ func TestEC2ExampleComputeAbsent(t *testing.T) {
 
 // The Python parent has already registered cleanup and owns this fixture. A
 // zero-capacity fleet keeps an active AWS request without launching any guests;
-// the parent then injects a CLI failure that returned no instance ID.
+// the parent then injects a CLI failure that returned no instance ID. Like a
+// killed ec2-new, it leaves the fleet's launch template behind.
 func TestEC2ExampleEmptyFleet(t *testing.T) {
 	uid := ec2ExampleUID(t)
 	path := os.Getenv("LIBAWS_EC2_EXAMPLE_FLEET_FILE")
@@ -100,16 +102,25 @@ func TestEC2ExampleEmptyFleet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	init, err := makeInit(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := EC2Client().CreateLaunchTemplate(ctx, &ec2.CreateLaunchTemplateInput{
+		LaunchTemplateName: aws.String("libaws-spot-fleet-" + uuid.Must(uuid.NewV4()).String()),
+		LaunchTemplateData: ec2SpotFleetTemplateData(config, init),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	fleet, err := EC2Client().RequestSpotFleet(ctx, &ec2.RequestSpotFleetInput{SpotFleetRequestConfig: &ec2types.SpotFleetRequestConfigData{
 		IamFleetRole: role.Role.Arn, AllocationStrategy: ec2types.AllocationStrategyLowestPrice,
 		Type: ec2types.FleetTypeMaintain, TargetCapacity: aws.Int32(0),
 		ValidUntil:                       aws.Time(time.Now().UTC().Add(time.Hour).Truncate(time.Second)),
 		TerminateInstancesWithExpiration: aws.Bool(true),
-		LaunchSpecifications: []ec2types.SpotFleetLaunchSpecification{{
-			ImageId: aws.String(config.AmiID), KeyName: aws.String(config.Key),
-			SubnetId: aws.String(config.SubnetIds[0]), InstanceType: config.InstanceType,
-			SecurityGroups:      []ec2types.GroupIdentifier{{GroupId: aws.String(config.SgID)}},
-			BlockDeviceMappings: makeBlockDeviceMapping(config),
+		LaunchTemplateConfigs: []ec2types.LaunchTemplateConfig{{
+			LaunchTemplateSpecification: &ec2types.FleetLaunchTemplateSpecification{LaunchTemplateId: template.LaunchTemplate.LaunchTemplateId, Version: aws.String("1")},
+			Overrides:                   []ec2types.LaunchTemplateOverrides{{SubnetId: aws.String(config.SubnetIds[0])}},
 		}},
 	}})
 	if err != nil {
@@ -154,6 +165,7 @@ func TestEC2SpotFleetFailureIntegration(t *testing.T) {
 			defer launchCancel()
 			injected := errors.New("injected EC2 " + phase + " failure")
 			var id *string
+			var templateID string
 			fired, finalized := false, false
 			opts := realClient.Options()
 			opts.APIOptions = append(opts.APIOptions, func(stack *middleware.Stack) error {
@@ -167,6 +179,9 @@ func TestEC2SpotFleetFailureIntegration(t *testing.T) {
 					out, metadata, err := next.HandleInitialize(callCtx, in)
 					if result, ok := out.Result.(*ec2.RequestSpotFleetOutput); ok && err == nil {
 						id = result.SpotFleetRequestId
+					}
+					if result, ok := out.Result.(*ec2.CreateLaunchTemplateOutput); ok && err == nil && result.LaunchTemplate != nil {
+						templateID = aws.ToString(result.LaunchTemplate.LaunchTemplateId)
 					}
 					if finalizing && err == nil {
 						finalized = true
@@ -205,6 +220,7 @@ func TestEC2SpotFleetFailureIntegration(t *testing.T) {
 				t.Fatalf("failed launch left its fleet active: %v %v", fleet, err)
 			}
 			// Assert before the safety finalizer, so it cannot hide a library leak.
+			waitEC2ExampleLaunchTemplateDeleted(t, ctx, templateID)
 			assertEC2ExampleComputeAbsent(t, ctx, config.Key)
 		})
 	}

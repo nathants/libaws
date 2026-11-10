@@ -717,6 +717,80 @@ func makeBlockDeviceMapping(config *EC2Config) []ec2types.BlockDeviceMapping {
 	}}
 }
 
+const ec2LaunchTemplateCleanupTimeout = time.Minute
+
+// ec2LaunchTemplateVisibilityTimeout bounds how long a confirmed template may
+// read as missing before its absence is accepted.
+const ec2LaunchTemplateVisibilityTimeout = 10 * time.Second
+
+// ec2SpotFleetTemplateData is the launch configuration shared by every subnet
+// of a Spot Fleet request. Call makeInit first, since it can add tags.
+func ec2SpotFleetTemplateData(config *EC2Config, init string) *ec2types.RequestLaunchTemplateData {
+	var devices []ec2types.LaunchTemplateBlockDeviceMappingRequest
+	for _, device := range makeBlockDeviceMapping(config) {
+		devices = append(devices, ec2types.LaunchTemplateBlockDeviceMappingRequest{
+			DeviceName: device.DeviceName,
+			Ebs: &ec2types.LaunchTemplateEbsBlockDeviceRequest{
+				DeleteOnTermination: device.Ebs.DeleteOnTermination,
+				Encrypted:           device.Ebs.Encrypted,
+				VolumeType:          device.Ebs.VolumeType,
+				Iops:                device.Ebs.Iops,
+				Throughput:          device.Ebs.Throughput,
+				VolumeSize:          device.Ebs.VolumeSize,
+			},
+		})
+	}
+	data := &ec2types.RequestLaunchTemplateData{
+		ImageId:             aws.String(config.AmiID),
+		KeyName:             aws.String(config.Key),
+		InstanceType:        config.InstanceType,
+		UserData:            aws.String(init),
+		EbsOptimized:        aws.Bool(true),
+		SecurityGroupIds:    []string{config.SgID},
+		BlockDeviceMappings: devices,
+		MetadataOptions: &ec2types.LaunchTemplateInstanceMetadataOptionsRequest{
+			HttpEndpoint:            ec2types.LaunchTemplateInstanceMetadataEndpointStateEnabled,
+			HttpTokens:              ec2types.LaunchTemplateHttpTokensStateRequired,
+			HttpPutResponseHopLimit: aws.Int32(1),
+		},
+		TagSpecifications: []ec2types.LaunchTemplateTagSpecificationRequest{{
+			ResourceType: ec2types.ResourceTypeInstance,
+			Tags:         makeTags(config),
+		}},
+	}
+	if config.Profile != "" {
+		data.IamInstanceProfile = &ec2types.LaunchTemplateIamInstanceProfileSpecificationRequest{Name: aws.String(config.Profile)}
+	}
+	return data
+}
+
+// ec2DeleteLaunchTemplate deletes a launch template by name with its own
+// bounded context, so it also runs after caller cancellation. A failed create
+// may still have created the template, so absence is then accepted. A
+// confirmed template can briefly read as missing, so absence is retried
+// before it is accepted.
+func ec2DeleteLaunchTemplate(ctx context.Context, name string, created bool) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ec2LaunchTemplateCleanupTimeout)
+	defer cancel()
+	visible := time.Now().Add(ec2LaunchTemplateVisibilityTimeout)
+	for {
+		_, err := EC2Client().DeleteLaunchTemplate(ctx, &ec2.DeleteLaunchTemplateInput{LaunchTemplateName: aws.String(name)})
+		if err == nil {
+			Logger.Println("deleted launch template", name)
+			return nil
+		}
+		var apiErr smithy.APIError
+		if !errors.As(err, &apiErr) || !slices.Contains([]string{"InvalidLaunchTemplateName.NotFoundException", "InvalidLaunchTemplateId.NotFound"}, apiErr.ErrorCode()) {
+			return fmt.Errorf("delete launch template %s: %w", name, err)
+		}
+		if !created || time.Now().After(visible) {
+			Logger.Println("launch template already absent", name)
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+}
+
 func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationStrategy, config *EC2Config) (instances []ec2types.Instance, err error) {
 	if doDebug {
 		d := &Debug{start: time.Now(), name: "EC2RequestSpotFleet"}
@@ -751,36 +825,43 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	launchSpecs := []ec2types.SpotFleetLaunchSpecification{}
-	tags := makeTags(config)
+	// Spot Fleet launch specifications cannot set metadata options, so each
+	// request launches from its own template. The template holds the user data,
+	// so it exists only while the fleet can launch from it.
+	templateName := "libaws-spot-fleet-" + uuid.Must(uuid.NewV4()).String()
+	created, deleted := false, false
+	defer func() {
+		if !deleted {
+			err = errors.Join(err, ec2DeleteLaunchTemplate(ctx, templateName, created))
+		}
+	}()
+	templateData := ec2SpotFleetTemplateData(config, init)
+	template, err := EC2Client().CreateLaunchTemplate(ctx, &ec2.CreateLaunchTemplateInput{
+		LaunchTemplateName: aws.String(templateName),
+		LaunchTemplateData: templateData,
+	})
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	created = true
+	if template.LaunchTemplate == nil || aws.ToString(template.LaunchTemplate.LaunchTemplateId) == "" {
+		return nil, fmt.Errorf("create launch template %s: missing ID", templateName)
+	}
+	var overrides []ec2types.LaunchTemplateOverrides
 	for _, subnetId := range config.SubnetIds {
-		launchSpec := ec2types.SpotFleetLaunchSpecification{
-			ImageId:      aws.String(config.AmiID),
-			KeyName:      aws.String(config.Key),
-			SubnetId:     aws.String(subnetId),
-			InstanceType: config.InstanceType,
-			UserData:     aws.String(init),
-			EbsOptimized: aws.Bool(true),
-			SecurityGroups: []ec2types.GroupIdentifier{{
-				GroupId: aws.String(config.SgID),
-			}},
-			BlockDeviceMappings: makeBlockDeviceMapping(config),
-			TagSpecifications: []ec2types.SpotFleetTagSpecification{
-				{
-					ResourceType: ec2types.ResourceTypeInstance,
-					Tags:         tags,
-				},
-			},
-		}
-		if config.Profile != "" {
-			launchSpec.IamInstanceProfile = &ec2types.IamInstanceProfileSpecification{Name: aws.String(config.Profile)}
-		}
-		launchSpecs = append(launchSpecs, launchSpec)
+		overrides = append(overrides, ec2types.LaunchTemplateOverrides{SubnetId: aws.String(subnetId)})
 	}
 	spotFleet, err := EC2Client().RequestSpotFleet(ctx, &ec2.RequestSpotFleetInput{
 		SpotFleetRequestConfig: &ec2types.SpotFleetRequestConfigData{
-			IamFleetRole:                     role.Role.Arn,
-			LaunchSpecifications:             launchSpecs,
+			IamFleetRole: role.Role.Arn,
+			LaunchTemplateConfigs: []ec2types.LaunchTemplateConfig{{
+				LaunchTemplateSpecification: &ec2types.FleetLaunchTemplateSpecification{
+					LaunchTemplateId: template.LaunchTemplate.LaunchTemplateId,
+					Version:          aws.String("1"),
+				},
+				Overrides: overrides,
+			}},
 			AllocationStrategy:               spotStrategy,
 			InstanceInterruptionBehavior:     ec2types.InstanceInterruptionBehaviorTerminate,
 			Type:                             ec2types.FleetTypeRequest,
@@ -791,9 +872,8 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 	})
 	Logger.Println("type:", config.InstanceType)
 	Logger.Println("subnets:", config.SubnetIds)
-	launchSpecs[0].UserData = nil
-	launchSpecs[0].SubnetId = nil
-	Logger.Println("request spot fleet", Pformat(launchSpecs[0]))
+	templateData.UserData = nil
+	Logger.Println("request spot fleet", Pformat(templateData))
 	if err != nil {
 		Logger.Println("error:", err)
 		return nil, err
@@ -811,6 +891,14 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 	}
 	err = ec2CancelSpotFleet(ctx, spotFleet.SpotFleetRequestId, false)
 	if err != nil {
+		return nil, err
+	}
+	// The cancelled fleet launches nothing more. If its template cannot be
+	// deleted, the launch fails and its instances are torn down.
+	deleted = true
+	err = ec2DeleteLaunchTemplate(ctx, templateName, true)
+	if err != nil {
+		Logger.Println("error:", err)
 		return nil, err
 	}
 	var instanceIDs []string
@@ -939,6 +1027,11 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]ec2types.Instanc
 		BlockDeviceMappings: makeBlockDeviceMapping(config),
 		MinCount:            aws.Int32(int32(config.NumInstances)),
 		MaxCount:            aws.Int32(int32(config.NumInstances)),
+		MetadataOptions: &ec2types.InstanceMetadataOptionsRequest{
+			HttpEndpoint:            ec2types.InstanceMetadataEndpointStateEnabled,
+			HttpTokens:              ec2types.HttpTokensStateRequired,
+			HttpPutResponseHopLimit: aws.Int32(1),
+		},
 		TagSpecifications: []ec2types.TagSpecification{
 			{
 				ResourceType: ec2types.ResourceTypeInstance,
@@ -2032,10 +2125,15 @@ func EC2SgID(ctx context.Context, vpcName, sgName string) (string, error) {
 	return *out.SecurityGroups[0].GroupId, nil
 }
 
+// ec2LaunchTag reports the tags EC2 adds to instances that libaws launches.
+func ec2LaunchTag(key string) bool {
+	return slices.Contains([]string{"aws:ec2spot:fleet-request-id", "aws:ec2launchtemplate:id", "aws:ec2launchtemplate:version"}, key)
+}
+
 func EC2Tags(tags []ec2types.Tag) string {
 	var res []string
 	for _, tag := range tags {
-		if !slices.Contains([]string{"Name", "aws:ec2spot:fleet-request-id", "creation-date", "user"}, *tag.Key) {
+		if !slices.Contains([]string{"Name", "creation-date", "user"}, *tag.Key) && !ec2LaunchTag(*tag.Key) {
 			res = append(res, fmt.Sprintf("%s=%s", *tag.Key, *tag.Value))
 		}
 	}

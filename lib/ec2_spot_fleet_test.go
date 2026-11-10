@@ -146,17 +146,49 @@ func TestEC2TeardownSpotFleetWaitsForTermination(t *testing.T) {
 	}
 }
 
+func TestEC2NewInstancesRequiresIMDSv2(t *testing.T) {
+	launched := false
+	installEC2SpotFleetTestClient(t, func(_ context.Context, action string, form url.Values) (string, int) {
+		if action != "RunInstances" {
+			return "", 0
+		}
+		launched = true
+		for key, want := range map[string]string{
+			"MetadataOptions.HttpTokens":              "required",
+			"MetadataOptions.HttpEndpoint":            "enabled",
+			"MetadataOptions.HttpPutResponseHopLimit": "1",
+		} {
+			if form.Get(key) != want {
+				t.Errorf("RunInstances %s = %q, want %q", key, form.Get(key), want)
+			}
+		}
+		return `<RunInstancesResponse><instancesSet><item><instanceId>` + spotFleetTestInstanceID + `</instanceId></item></instancesSet></RunInstancesResponse>`, 200
+	})
+	instances, err := EC2NewInstances(context.Background(), &EC2Config{
+		NumInstances: 1, Name: "test-ec2", UserName: "admin", Key: "test-keypair", SgID: "sg-test", AmiID: "ami-test",
+		InstanceType: ec2types.InstanceTypeT3Small, SubnetIds: []string{"subnet-a"}, Gigs: 8,
+	})
+	if err != nil || !launched || len(instances) != 1 {
+		t.Fatalf("launch failed: launched=%t instances=%v err=%v", launched, instances, err)
+	}
+}
+
 func TestEC2RequestSpotFleetCleansEveryPostCreateFailure(t *testing.T) {
-	for _, failure := range []string{"wait", "finalize", "finalize-result", "fleet-instances", "instances", "empty", "cleanup", "none"} {
+	const templateID = "lt-0123456789abcdef0"
+	notFound := `<Response><Errors><Error><Code>InvalidLaunchTemplateName.NotFoundException</Code><Message>template not found</Message></Error></Errors></Response>`
+	for _, failure := range []string{"template-lost", "template-rejected", "request", "wait", "finalize", "finalize-result", "fleet-instances", "instances", "empty", "cleanup", "template-delete", "template-visibility", "template-absent", "none"} {
 		t.Run(failure, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			var cancellations []string
+			var calls, cancellations []string
 			fleetState := "active"
-			instanceState := "running"
+			instanceState := "" // the fake fleet launches its instance on request
 			instanceReads := 0
 			failed := false
+			templateName, templateState := "", ""
+			deletes, finalizedAt := 0, -1
 			installEC2SpotFleetTestClient(t, func(callCtx context.Context, action string, form url.Values) (string, int) {
+				calls = append(calls, action)
 				if !failed && ((failure == "fleet-instances" && action == "DescribeSpotFleetInstances" && instanceReads == 1) || (failure == "instances" && action == "DescribeInstances")) {
 					failed = true
 					cancel()
@@ -165,7 +197,62 @@ func TestEC2RequestSpotFleetCleansEveryPostCreateFailure(t *testing.T) {
 				switch action {
 				case "GetRole":
 					return `<GetRoleResponse><GetRoleResult><Role><Arn>arn:aws:iam::123456789012:role/fleet</Arn></Role></GetRoleResult></GetRoleResponse>`, 200
+				case "CreateLaunchTemplate":
+					templateName = form.Get("LaunchTemplateName")
+					for key, want := range map[string]string{
+						"LaunchTemplateData.MetadataOptions.HttpTokens":              "required",
+						"LaunchTemplateData.MetadataOptions.HttpEndpoint":            "enabled",
+						"LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit": "1",
+						"LaunchTemplateData.KeyName":                                 "test-keypair",
+						"LaunchTemplateData.TagSpecification.1.ResourceType":         "instance",
+					} {
+						if form.Get(key) != want {
+							t.Errorf("launch template %s = %q, want %q", key, form.Get(key), want)
+						}
+					}
+					if form.Get("LaunchTemplateData.UserData") == "" {
+						t.Error("launch template has no user data")
+					}
+					if failure == "template-rejected" {
+						return `<Response><Errors><Error><Code>InvalidParameterValue</Code><Message>template rejected</Message></Error></Errors></Response>`, 400
+					}
+					templateState = "exists"
+					if failure == "template-lost" {
+						// AWS created the template, but the caller never sees the response.
+						cancel()
+						return "", 0
+					}
+					return `<CreateLaunchTemplateResponse><launchTemplate><launchTemplateId>` + templateID + `</launchTemplateId></launchTemplate></CreateLaunchTemplateResponse>`, 200
+				case "DeleteLaunchTemplate":
+					deletes++
+					deadline, bounded := callCtx.Deadline()
+					if !bounded || time.Until(deadline) > 2*time.Minute || callCtx.Err() != nil {
+						t.Error("template deletion needs its own bounded, uncanceled context")
+					}
+					if templateName == "" || form.Get("LaunchTemplateName") != templateName {
+						t.Errorf("deleted the wrong template: %q, created %q", form.Get("LaunchTemplateName"), templateName)
+					}
+					if failure == "template-delete" {
+						return `<Response><Errors><Error><Code>UnauthorizedOperation</Code><Message>template deletion rejected</Message></Error></Errors></Response>`, 403
+					}
+					if failure == "template-absent" {
+						// An earlier delete succeeded, but its response was lost.
+						templateState = "deleted"
+					}
+					if templateState != "exists" || (failure == "template-visibility" && deletes == 1) {
+						return notFound, 400
+					}
+					templateState = "deleted"
+					return `<DeleteLaunchTemplateResponse/>`, 200
 				case "RequestSpotFleet":
+					config := "SpotFleetRequestConfig.LaunchTemplateConfigs.1."
+					if templateState != "exists" || form.Get(config+"LaunchTemplateSpecification.LaunchTemplateId") != templateID || form.Get(config+"Overrides.1.SubnetId") != "subnet-a" || form.Get(config+"Overrides.2.SubnetId") != "subnet-b" {
+						t.Errorf("fleet must launch from the created template in every subnet: %v", form)
+					}
+					if failure == "request" {
+						return `<Response><Errors><Error><Code>InvalidSpotFleetRequestConfig</Code><Message>fleet rejected</Message></Error></Errors></Response>`, 400
+					}
+					instanceState = "running"
 					return `<RequestSpotFleetResponse><spotFleetRequestId>` + spotFleetTestID + `</spotFleetRequestId></RequestSpotFleetResponse>`, 200
 				case "DescribeSpotFleetRequests":
 					if failure == "wait" && fleetState == "active" {
@@ -200,6 +287,7 @@ func TestEC2RequestSpotFleetCleansEveryPostCreateFailure(t *testing.T) {
 						fleetState = "cancelled_terminating"
 					} else {
 						fleetState = "cancelled_running"
+						finalizedAt = len(calls) - 1
 					}
 					return spotFleetTestCancelResult(spotFleetTestID, fleetState), 200
 				case "TerminateInstances":
@@ -213,18 +301,45 @@ func TestEC2RequestSpotFleetCleansEveryPostCreateFailure(t *testing.T) {
 				}
 				return "", 0
 			})
+			started := time.Now()
 			instances, err := EC2RequestSpotFleet(ctx, ec2types.AllocationStrategyLowestPrice, &EC2Config{
 				NumInstances: 1, Name: "test-ec2", UserName: "admin", Key: "test-keypair", SgID: "sg-test", AmiID: "ami-test",
-				InstanceType: ec2types.InstanceTypeT3Small, SubnetIds: []string{"subnet-test"}, Gigs: 8,
+				InstanceType: ec2types.InstanceTypeT3Small, SubnetIds: []string{"subnet-a", "subnet-b"}, Gigs: 8,
 			})
-			if failure == "none" {
+			elapsed := time.Since(started)
+			// The template may go only once the fleet can no longer launch from it:
+			// after its finalization, otherwise after its teardown.
+			deletedAt := slices.Index(calls, "DeleteLaunchTemplate")
+			if failure != "template-delete" && (templateState == "exists" || deletedAt < 0 || (finalizedAt >= 0 && deletedAt < finalizedAt) || (finalizedAt < 0 && calls[len(calls)-1] != "DeleteLaunchTemplate")) {
+				t.Fatalf("template survived or was deleted while the fleet could launch: state=%s calls=%v", templateState, calls)
+			}
+			if failure == "none" || failure == "template-visibility" || failure == "template-absent" {
 				if err != nil || len(instances) != 1 || aws.ToString(instances[0].InstanceId) != spotFleetTestInstanceID || !slices.Equal(cancellations, []string{"false"}) || instanceState != "running" {
 					t.Fatalf("successful launch was not retained: instances=%v err=%v cancellations=%v state=%s", instances, err, cancellations, instanceState)
 				}
+				// Absence is retried only within the visibility window.
+				if failure == "template-absent" && (deletes < 2 || elapsed > ec2LaunchTemplateVisibilityTimeout+5*time.Second) {
+					t.Fatalf("persistent absence was not accepted after a bounded retry: deletes=%d elapsed=%s", deletes, elapsed)
+				}
 				return
 			}
-			if err == nil || len(instances) != 0 || instanceState != "terminated" {
-				t.Fatalf("post-create failure abandoned instances: err=%v instances=%v state=%s cancellations=%v", err, instances, instanceState, cancellations)
+			if err == nil || len(instances) != 0 {
+				t.Fatalf("failure was not returned: err=%v instances=%v", err, instances)
+			}
+			if failure == "template-lost" || failure == "template-rejected" || failure == "request" {
+				if instanceState != "" || len(cancellations) != 0 {
+					t.Fatalf("failure before the fleet existed touched compute: state=%s cancellations=%v", instanceState, cancellations)
+				}
+			} else if instanceState != "terminated" {
+				t.Fatalf("post-create failure abandoned instances: err=%v state=%s cancellations=%v", err, instanceState, cancellations)
+			}
+			// A template that cannot be deleted fails the launch, so its
+			// instances are torn down rather than returned.
+			if failure == "template-delete" && (!strings.Contains(err.Error(), "template deletion rejected") || deletedAt < finalizedAt || deletedAt > slices.Index(calls, "TerminateInstances")) {
+				t.Fatalf("template deletion failure was not a launch failure: err=%v calls=%v", err, calls)
+			}
+			if failure == "template-rejected" && strings.Contains(err.Error(), "delete launch template") {
+				t.Fatalf("an absent template after a rejected create is not a cleanup failure: %v", err)
 			}
 			if failure == "cleanup" && (!strings.Contains(err.Error(), "finalization rejected") || !strings.Contains(err.Error(), "cleanup rejected")) {
 				t.Fatalf("launch or cleanup error was lost: %v", err)
@@ -243,15 +358,27 @@ func TestEC2ExampleDiscoveryPreservesOwnedPages(t *testing.T) {
 			return `<Response><Errors><Error><Code>UnauthorizedOperation</Code><Message>second page denied</Message></Error></Errors></Response>`, 403
 		}
 		switch action {
-		case "DescribeSpotFleetRequests":
-			item := func(id string, keys ...string) string {
-				var specs string
-				for _, name := range keys {
-					specs += "<item><keyName>" + name + "</keyName></item>"
-				}
-				return "<item><spotFleetRequestId>" + id + "</spotFleetRequestId><spotFleetRequestConfig><launchSpecifications>" + specs + "</launchSpecifications></spotFleetRequestConfig></item>"
+		case "DescribeLaunchTemplateVersions":
+			if form.Get("LaunchTemplateVersion.1") != "$Latest" {
+				t.Fatalf("template discovery must read every latest version: %v", form)
 			}
-			return `<DescribeSpotFleetRequestsResponse><nextToken>more</nextToken><spotFleetRequestConfigSet>` + item(spotFleetTestID, key) + item("sfr-mixed", key, "foreign") + item("sfr-empty") + item("sfr-foreign", "foreign") + `</spotFleetRequestConfigSet></DescribeSpotFleetRequestsResponse>`, 200
+			version := func(id, name, keyName string) string {
+				return "<item><launchTemplateId>" + id + "</launchTemplateId><launchTemplateName>" + name + "</launchTemplateName><launchTemplateData><keyName>" + keyName + "</keyName></launchTemplateData></item>"
+			}
+			return `<DescribeLaunchTemplateVersionsResponse><nextToken>more</nextToken><launchTemplateVersionSet>` + version("lt-owned", "owned", key) + version("lt-named", "named", key) + version("lt-foreign", "foreign", "foreign") + `</launchTemplateVersionSet></DescribeLaunchTemplateVersionsResponse>`, 200
+		case "DescribeSpotFleetRequests":
+			item := func(id string, refs ...string) string {
+				var configs string
+				for _, ref := range refs {
+					field := "launchTemplateId"
+					if !strings.HasPrefix(ref, "lt-") {
+						field = "launchTemplateName"
+					}
+					configs += "<item><launchTemplateSpecification><" + field + ">" + ref + "</" + field + "></launchTemplateSpecification></item>"
+				}
+				return "<item><spotFleetRequestId>" + id + "</spotFleetRequestId><spotFleetRequestConfig><launchTemplateConfigs>" + configs + "</launchTemplateConfigs></spotFleetRequestConfig></item>"
+			}
+			return `<DescribeSpotFleetRequestsResponse><nextToken>more</nextToken><spotFleetRequestConfigSet>` + item(spotFleetTestID, "lt-owned") + item("sfr-named", "named") + item("sfr-mixed", "lt-owned", "lt-foreign") + item("sfr-empty") + item("sfr-foreign", "lt-foreign") + item("sfr-unknown", "lt-unknown") + `</spotFleetRequestConfigSet></DescribeSpotFleetRequestsResponse>`, 200
 		case "DescribeInstances":
 			if form.Get("Filter.1.Name") != "key-name" || form.Get("Filter.1.Value.1") != key {
 				t.Fatalf("instance discovery escaped its fixture: %v", form)
@@ -261,7 +388,7 @@ func TestEC2ExampleDiscoveryPreservesOwnedPages(t *testing.T) {
 		return "", 0
 	})
 	fleets, err := ec2ExampleOwnedFleets(context.Background(), key)
-	if err == nil || !strings.Contains(err.Error(), "second page denied") || len(fleets) != 1 || aws.ToString(fleets[0].SpotFleetRequestId) != spotFleetTestID {
+	if err == nil || strings.Count(err.Error(), "second page denied") != 2 || len(fleets) != 2 || aws.ToString(fleets[0].SpotFleetRequestId) != spotFleetTestID || aws.ToString(fleets[1].SpotFleetRequestId) != "sfr-named" {
 		t.Fatalf("partial owned fleets or error lost: %v %v", fleets, err)
 	}
 	instances, err := ec2ExampleOwnedInstances(context.Background(), key)

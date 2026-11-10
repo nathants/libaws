@@ -4,16 +4,19 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 )
 
 func lambdaZipHashForTest(data []byte) string {
@@ -121,31 +124,62 @@ func ec2ExampleUID(t *testing.T) string {
 	return uid
 }
 
-// Fleet requests have no infrastructure-set membership. The unique fixture key
-// proves ownership even before instances exist or after membership tags are lost.
-func ec2ExampleOwnedFleets(ctx context.Context, key string) ([]ec2types.SpotFleetRequestConfig, error) {
-	var owned []ec2types.SpotFleetRequestConfig
-	pages := ec2.NewDescribeSpotFleetRequestsPaginator(EC2Client(), &ec2.DescribeSpotFleetRequestsInput{})
+// Fleet requests have no infrastructure-set membership, and libaws fleets
+// launch from templates. The unique fixture key in a template proves ownership
+// even before instances exist or after membership tags are lost.
+func ec2ExampleOwnedLaunchTemplates(ctx context.Context, key string) ([]ec2types.LaunchTemplateVersion, error) {
+	var owned []ec2types.LaunchTemplateVersion
+	pages := ec2.NewDescribeLaunchTemplateVersionsPaginator(EC2Client(), &ec2.DescribeLaunchTemplateVersionsInput{Versions: []string{"$Latest"}})
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)
 		if err != nil {
 			return owned, err
 		}
+		for _, version := range page.LaunchTemplateVersions {
+			if version.LaunchTemplateData != nil && aws.ToString(version.LaunchTemplateData.KeyName) == key {
+				owned = append(owned, version)
+			}
+		}
+	}
+	return owned, nil
+}
+
+// A fleet is owned when every template it launches from is owned. Once its
+// template is gone, a fleet is no longer attributable; its instances are still
+// found by key.
+func ec2ExampleOwnedFleets(ctx context.Context, key string) ([]ec2types.SpotFleetRequestConfig, error) {
+	templates, err := ec2ExampleOwnedLaunchTemplates(ctx, key)
+	ownedTemplates := map[string]bool{}
+	for _, template := range templates {
+		for _, ref := range []string{aws.ToString(template.LaunchTemplateId), aws.ToString(template.LaunchTemplateName)} {
+			if ref != "" {
+				ownedTemplates[ref] = true
+			}
+		}
+	}
+	var owned []ec2types.SpotFleetRequestConfig
+	pages := ec2.NewDescribeSpotFleetRequestsPaginator(EC2Client(), &ec2.DescribeSpotFleetRequestsInput{})
+	for pages.HasMorePages() {
+		page, pageErr := pages.NextPage(ctx)
+		if pageErr != nil {
+			return owned, errors.Join(err, pageErr)
+		}
 		for _, fleet := range page.SpotFleetRequestConfigs {
 			if fleet.SpotFleetRequestConfig == nil {
 				continue
 			}
-			specifications := fleet.SpotFleetRequestConfig.LaunchSpecifications
-			matches := len(specifications) > 0
-			for _, specification := range specifications {
-				matches = matches && aws.ToString(specification.KeyName) == key
+			configs := fleet.SpotFleetRequestConfig.LaunchTemplateConfigs
+			matches := len(configs) > 0
+			for _, config := range configs {
+				spec := config.LaunchTemplateSpecification
+				matches = matches && spec != nil && (ownedTemplates[aws.ToString(spec.LaunchTemplateId)] || ownedTemplates[aws.ToString(spec.LaunchTemplateName)])
 			}
 			if matches {
 				owned = append(owned, fleet)
 			}
 		}
 	}
-	return owned, nil
+	return owned, err
 }
 
 func ec2ExampleOwnedInstances(ctx context.Context, key string) ([]ec2types.Instance, error) {
@@ -187,6 +221,87 @@ func assertEC2ExampleComputeAbsent(t *testing.T, ctx context.Context, key string
 			t.Errorf("owned instance %s remains %s", aws.ToString(instance.InstanceId), instance.State.Name)
 		}
 	}
+	// A successful deletion is not immediate absence proof. Wait boundedly for
+	// deleted templates to disappear, then report any that remain.
+	templates, err := ec2ExampleOwnedLaunchTemplates(ctx, key)
+	for deadline := time.Now().Add(30 * time.Second); err == nil && len(templates) > 0 && time.Now().Before(deadline); {
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		case <-time.After(2 * time.Second):
+			templates, err = ec2ExampleOwnedLaunchTemplates(ctx, key)
+		}
+	}
+	if err != nil {
+		t.Error(err)
+	}
+	for _, template := range templates {
+		t.Errorf("owned launch template %s remains", aws.ToString(template.LaunchTemplateId))
+	}
+}
+
+// waitEC2ExampleLaunchTemplateDeleted fails unless the template is gone,
+// allowing a bounded wait for a successful deletion to become visible.
+func waitEC2ExampleLaunchTemplateDeleted(t *testing.T, ctx context.Context, id string) {
+	t.Helper()
+	if !strings.HasPrefix(id, "lt-") {
+		t.Fatalf("invalid launch template ID %q", id)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		out, err := EC2Client().DescribeLaunchTemplates(ctx, &ec2.DescribeLaunchTemplatesInput{LaunchTemplateIds: []string{id}})
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidLaunchTemplateId.NotFound" {
+			return
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(out.LaunchTemplates) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("launch template %s survived its launch", id)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// assertEC2ExampleLaunch checks what every libaws launch guarantees: the guest
+// requires IMDSv2 with a hop limit of one, and a Spot Fleet launch leaves no
+// launch template behind. It returns the instance's fleet, if any.
+func assertEC2ExampleLaunch(t *testing.T, ctx context.Context, instance ec2types.Instance) *ec2types.SpotFleetRequestConfig {
+	t.Helper()
+	id := aws.ToString(instance.InstanceId)
+	metadata := instance.MetadataOptions
+	if metadata == nil || metadata.HttpTokens != ec2types.HttpTokensStateRequired || metadata.HttpEndpoint != ec2types.InstanceMetadataEndpointStateEnabled || aws.ToInt32(metadata.HttpPutResponseHopLimit) != 1 {
+		t.Fatalf("instance %s does not require IMDSv2 with hop limit 1: %s", id, Pformat(metadata))
+	}
+	fleetID := EC2GetTag(instance.Tags, "aws:ec2spot:fleet-request-id", "")
+	if fleetID == "" {
+		t.Logf("verified IMDSv2 on %s", id)
+		return nil
+	}
+	fleet, err := EC2DescribeSpotFleet(ctx, &fleetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := fleet.SpotFleetRequestConfig
+	if config == nil || len(config.LaunchSpecifications) != 0 || len(config.LaunchTemplateConfigs) != 1 || config.LaunchTemplateConfigs[0].LaunchTemplateSpecification == nil {
+		t.Fatalf("fleet %s does not launch from exactly one template: %s", fleetID, Pformat(config))
+	}
+	template := aws.ToString(config.LaunchTemplateConfigs[0].LaunchTemplateSpecification.LaunchTemplateId)
+	// EC2 tags the guest with its template; listings must hide that tag.
+	if EC2GetTag(instance.Tags, "aws:ec2launchtemplate:id", "") != template {
+		t.Fatalf("instance %s is not tagged with its template %s: %v", id, template, instance.Tags)
+	}
+	waitEC2ExampleLaunchTemplateDeleted(t, ctx, template)
+	t.Logf("verified IMDSv2 on %s; fleet %s template %s is deleted", id, fleetID, template)
+	return fleet
 }
 
 func cleanupEC2ExampleCompute(t *testing.T, ctx context.Context, key string) {
@@ -230,6 +345,16 @@ func cleanupEC2ExampleCompute(t *testing.T, ctx context.Context, key string) {
 	}
 	if len(wait) > 0 {
 		if err := EC2WaitState(ctx, wait, ec2types.InstanceStateNameTerminated); err != nil {
+			t.Error(err)
+		}
+	}
+	// Templates go only after their fleets can no longer launch from them.
+	templates, err := ec2ExampleOwnedLaunchTemplates(ctx, key)
+	if err != nil {
+		t.Error(err)
+	}
+	for _, template := range templates {
+		if err := ec2DeleteLaunchTemplate(ctx, aws.ToString(template.LaunchTemplateName), false); err != nil {
 			t.Error(err)
 		}
 	}

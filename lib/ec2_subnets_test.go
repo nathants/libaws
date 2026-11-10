@@ -328,25 +328,26 @@ func TestEC2SubnetsFromVpcIntegration(t *testing.T) {
 	if aws.ToString(instance.VpcId) != vpcID || instance.InstanceLifecycle != wantLifecycle || !slices.Contains(expected, aws.ToString(instance.SubnetId)) || instance.IamInstanceProfile != nil {
 		t.Fatalf("unexpected launch: VPC=%s subnet=%s lifecycle=%s profile=%v", aws.ToString(instance.VpcId), aws.ToString(instance.SubnetId), instance.InstanceLifecycle, instance.IamInstanceProfile)
 	}
+	// Spot Fleet applies these tags from its launch template.
+	name := os.Getenv("LIBAWS_EC2_SUBNET_TEST_NAME")
+	if name == "" || EC2GetTag(instance.Tags, "Name", "") != name || EC2GetTag(instance.Tags, "user", "") != "admin" || EC2GetTag(instance.Tags, "creation-date", "") == "" {
+		t.Fatalf("launch tags were not applied: %v", instance.Tags)
+	}
+	fleet := assertEC2ExampleLaunch(t, ctx, instance)
 	if lifecycle == "spot" {
-		fleetID := EC2GetTag(instance.Tags, "aws:ec2spot:fleet-request-id", "")
-		if fleetID == "" {
+		if fleet == nil {
 			t.Fatal("launched instance has no Spot Fleet request tag")
 		}
-		fleet, err := EC2DescribeSpotFleet(ctx, &fleetID)
-		if err != nil {
-			t.Fatal(err)
-		}
 		var actual []string
-		for _, spec := range fleet.SpotFleetRequestConfig.LaunchSpecifications {
-			actual = append(actual, aws.ToString(spec.SubnetId))
+		for _, override := range fleet.SpotFleetRequestConfig.LaunchTemplateConfigs[0].Overrides {
+			actual = append(actual, aws.ToString(override.SubnetId))
 		}
 		slices.Sort(expected)
 		slices.Sort(actual)
 		if !slices.Equal(actual, expected) {
 			t.Fatalf("AWS fleet subnets = %v, want %v", actual, expected)
 		}
-		t.Logf("verified AWS fleet %s: subnets=%v", fleetID, actual)
+		t.Logf("verified AWS fleet %s: subnets=%v", aws.ToString(fleet.SpotFleetRequestId), actual)
 	} else {
 		t.Logf("verified on-demand instance %s: subnet=%s", instanceID, aws.ToString(instance.SubnetId))
 	}

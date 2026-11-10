@@ -1638,7 +1638,7 @@ func (scope infraListScope) listEC2(ctx context.Context, vpcIDs []string) (map[s
 			infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("state=%s", instance.State.Name))
 		}
 		for _, tag := range instance.Tags {
-			if *tag.Key != "creation-date" && *tag.Key != "Name" && *tag.Key != "aws:ec2spot:fleet-request-id" {
+			if *tag.Key != "creation-date" && *tag.Key != "Name" && !ec2LaunchTag(*tag.Key) {
 				infraEC2.Attr = append(infraEC2.Attr, fmt.Sprintf("tag.%s=%s", *tag.Key, *tag.Value))
 			}
 		}

@@ -175,6 +175,9 @@ func TestEC2NVMeExampleIntegration(t *testing.T) {
 	if aws.ToString(instance.KeyName) != "test-keypair-"+uid || instance.InstanceType != ec2types.InstanceTypeI4iLarge || instance.InstanceLifecycle != ec2types.InstanceLifecycleTypeSpot || instance.IamInstanceProfile != nil || aws.ToString(instance.SubnetId) != fixture["subnet"] {
 		t.Fatal("guest does not belong to the no-credentials i4i Spot fixture")
 	}
+	if assertEC2ExampleLaunch(t, ctx, instance) == nil {
+		t.Fatal("Spot guest has no fleet")
+	}
 	volumes, err := EC2Client().DescribeVolumes(ctx, &ec2.DescribeVolumesInput{VolumeIds: []string{fixture["volume"]}})
 	if err != nil || len(volumes.Volumes) != 1 || EC2GetTag(volumes.Volumes[0].Tags, "Name", "") != "test-ec2-nvme-"+uid || len(volumes.Volumes[0].Attachments) != 0 {
 		t.Fatalf("volume does not belong to the available fixture: %v", err)
