@@ -341,8 +341,6 @@ libaws s3-ensure --help
 
 For `ec2-ssh`, `ec2-scp`, `ec2-rsync`, and `ec2-wait-ssh`, `-p`/`--preview` only lists targets. Across the CLI, `-p` always means `--preview`; `--private-ip`, `--profile`, and `--period` have no short aliases.
 
-SSH users from `--user` or a `user` tag must match `^[a-z_][a-z0-9_-]{0,31}$`. `ec2-scp` and `ec2-rsync` take one SOURCE and one DESTINATION; `ec2-rsync` reads extra options from `RSYNC_OPTIONS`.
-
 `ec2-rm-ami AMI_ID` deregisters an owned AMI and asks EC2 to delete its associated snapshots, preserving snapshots used by other AMIs. `--preview`/`-p` lists verified backing snapshots as conditional deletions because sharing is checked at deletion time. Snapshot-deletion failures return an error even if deregistration succeeded; their snapshot IDs identify any remaining cleanup. An AMI ID that exists but is not owned by this account fails instead of being treated as absent.
 
 ### Explore the Go API
@@ -615,7 +613,7 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   * `metrics=VALUE`, values: `true | false`, default: `false`
   * `cors=VALUE`, values: `true | false`, default: `false`
   * `ttldays=VALUE`, values: `0 | n`, default: `0`. Bucket-wide expiration in days.
-  * `allow_put=VALUE`, values: `$principal.amazonaws.com`. Grants that service `s3:PutObject`, limited to this account via `aws:SourceAccount`.
+  * `allow_put=VALUE`, values: `$principal.amazonaws.com`
 
 * Managed buckets require TLS, use SSE-S3 encryption, and reject SSE-C.
 
