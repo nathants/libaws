@@ -615,7 +615,7 @@ Defines a [S3](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aw
   * `metrics=VALUE`, values: `true | false`, default: `false`
   * `cors=VALUE`, values: `true | false`, default: `false`
   * `ttldays=VALUE`, values: `0 | n`, default: `0`. Bucket-wide expiration in days.
-  * `allow_put=VALUE`, values: `$principal.amazonaws.com`
+  * `allow_put=VALUE`, values: `$principal.amazonaws.com`. Grants that service `s3:PutObject`, limited to this account via `aws:SourceAccount`.
 
 * Managed buckets require TLS, use SSE-S3 encryption, and reject SSE-C.
 

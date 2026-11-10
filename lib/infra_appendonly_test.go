@@ -25,7 +25,7 @@ func TestS3AppendOnlyPolicy(t *testing.T) {
 	input := s3EnsureInputDefault()
 	input.name = bucket
 	input.appendOnly = true
-	got, err := s3DesiredPolicy(input)
+	got, err := s3DesiredPolicy(input, "123456789012")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,10 +57,8 @@ func TestS3EnsureInputAppendOnly(t *testing.T) {
 	if !input.appendOnly || input.acl != "public" || input.versioning {
 		t.Fatalf("append-only input not configured independently: %#v", input)
 	}
-	if input.CustomPolicy == nil {
-		t.Fatal("append-only input lost the independent allow_put policy")
-	}
-	desired, err := s3DesiredPolicy(input)
+	const account = "123456789012"
+	desired, err := s3DesiredPolicy(input, account)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +74,7 @@ func TestS3EnsureInputAppendOnly(t *testing.T) {
 	}
 	allowPut := false
 	for _, statement := range policy.Statement {
-		if principal, ok := s3AllowPutPrincipal("backup-bucket", statement); ok && principal == "lambda.amazonaws.com" {
+		if principal, ok := s3AllowPutPrincipal("backup-bucket", account, statement); ok && principal == "lambda.amazonaws.com" {
 			allowPut = true
 		}
 	}
@@ -100,27 +98,12 @@ func TestS3PublicPolicyAlwaysDeniesInsecureTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := s3DesiredPolicy(input)
+	data, err := s3DesiredPolicy(input, "123456789012")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(data, `"Sid":"DenyInsecureTransport"`) {
 		t.Fatalf("public bucket policy allows unspecified insecure transport: %s", data)
-	}
-}
-
-func TestS3AllowPutPrincipalRejectsConditionedStatement(t *testing.T) {
-	bucket := "backup-bucket"
-	statement := IamStatementEntry{
-		Sid:       "allow put from lambda.amazonaws.com",
-		Effect:    "Allow",
-		Principal: map[string]any{"Service": "lambda.amazonaws.com"},
-		Action:    "s3:PutObject",
-		Resource:  "arn:aws:s3:::" + bucket + "/*",
-		Condition: map[string]any{"StringEquals": map[string]string{"aws:SourceAccount": "123456789012"}},
-	}
-	if principal, ok := s3AllowPutPrincipal(bucket, statement); ok {
-		t.Fatalf("conditioned custom statement was classified as managed allow_put=%q", principal)
 	}
 }
 
@@ -131,7 +114,7 @@ func TestS3DesiredPolicyPreservesCustomStatementFields(t *testing.T) {
 	}
 	custom := `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","NotAction":"s3:GetObject","NotResource":"arn:aws:s3:::other/*","NotPrincipal":{"AWS":"arn:aws:iam::123456789012:root"}}]}`
 	input.CustomPolicy = &custom
-	desired, err := s3DesiredPolicy(input)
+	desired, err := s3DesiredPolicy(input, "123456789012")
 	if err != nil {
 		t.Fatal(err)
 	}

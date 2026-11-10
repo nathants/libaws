@@ -1826,6 +1826,12 @@ func (scope infraListScope) listS3(ctx context.Context, triggersChan chan<- *Inf
 			public := false
 			custom := false
 			if descr.Policy != nil {
+				account, err := StsAccount(ctx)
+				if err != nil {
+					Logger.Println("error:", err)
+					errChan <- err
+					return
+				}
 				policyData, err := json.Marshal(descr.Policy)
 				if err != nil {
 					Logger.Println("error:", err)
@@ -1844,7 +1850,7 @@ func (scope infraListScope) listS3(ctx context.Context, triggersChan chan<- *Inf
 							managed = managed || s3PolicyStatementEqual(statement, expected)
 						}
 					}
-					if principal, ok := s3AllowPutPrincipal(*bucket.Name, statement); ok {
+					if principal, ok := s3AllowPutPrincipal(*bucket.Name, account, statement); ok {
 						infraS3.Attr = append(infraS3.Attr, "allow_put="+principal)
 						managed = true
 					}

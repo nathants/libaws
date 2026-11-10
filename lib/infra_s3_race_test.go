@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -386,6 +387,99 @@ func TestInfraListS3VerifiesLambdaIdentity(t *testing.T) {
 				}
 			} else if err == nil || !strings.Contains(err.Error(), "unsupported S3 Lambda notification") || len(triggers) != 0 {
 				t.Fatalf("must reject unrepresentable target %s: triggers=%d err=%v", target, len(triggers), err)
+			}
+		})
+	}
+}
+
+func TestInfraListS3AllowPutRequiresSourceAccount(t *testing.T) {
+	const bucket = "selected-allow-put"
+	const account = "123456789012"
+	deny := `{"Sid":"DenyInsecureTransport","Effect":"Deny","Principal":"*","Action":"s3:*","Resource":["arn:aws:s3:::selected-allow-put","arn:aws:s3:::selected-allow-put/*"],"Condition":{"Bool":{"aws:SecureTransport":"false"}}}`
+	allowPut := `{"Sid":"allow put from ses.amazonaws.com","Effect":"Allow","Principal":{"Service":"ses.amazonaws.com"},"Action":"s3:PutObject","Resource":"arn:aws:s3:::selected-allow-put/*"`
+	for _, scenario := range []struct {
+		name      string
+		condition string
+		managed   bool
+	}{
+		{"current account", `,"Condition":{"StringEquals":{"aws:SourceAccount":"123456789012"}}`, true},
+		{"unconditioned", ``, false},
+		{"other account", `,"Condition":{"StringEquals":{"aws:SourceAccount":"210987654321"}}`, false},
+		{"extra condition", `,"Condition":{"StringEquals":{"aws:SourceAccount":"123456789012"},"ArnLike":{"aws:SourceArn":"arn:aws:ses:*:123456789012:*"}}`, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			oldAccount := stsAccount
+			stsAccount = aws.String(account)
+			t.Cleanup(func() { stsAccount = oldAccount })
+			policy := `{"Version":"2012-10-17","Statement":[` + deny + `,` + allowPut + scenario.condition + `}]}`
+			installInfraListS3TestClient(t, infraListS3RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				status := 200
+				var body string
+				switch {
+				case r.URL.Path == "/":
+					body = infraListS3ListBucketsXML(bucket)
+				case r.URL.Query().Has("tagging"):
+					body = `<Tagging><TagSet><Tag><Key>libaws.infraset</Key><Value>wanted</Value></Tag></TagSet></Tagging>`
+				case r.URL.Query().Has("versioning"):
+					body = `<VersioningConfiguration/>`
+				case r.URL.Query().Has("acl"):
+					body = `<AccessControlPolicy/>`
+				case r.URL.Query().Has("cors"):
+					status, body = 404, `<Error><Code>NoSuchCORSConfiguration</Code></Error>`
+				case r.URL.Query().Has("encryption"):
+					body = `<ServerSideEncryptionConfiguration><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault><BlockedEncryptionTypes><EncryptionType>SSE-C</EncryptionType></BlockedEncryptionTypes><BucketKeyEnabled>false</BucketKeyEnabled></Rule></ServerSideEncryptionConfiguration>`
+				case r.URL.Query().Has("lifecycle"):
+					status, body = 404, `<Error><Code>NoSuchLifecycleConfiguration</Code></Error>`
+				case r.URL.Query().Has("logging"):
+					body = `<BucketLoggingStatus/>`
+				case r.URL.Query().Has("notification"):
+					body = `<NotificationConfiguration/>`
+				case r.URL.Query().Has("policy"):
+					body = policy
+				case r.URL.Query().Has("replication"):
+					status, body = 404, `<Error><Code>ReplicationConfigurationNotFoundError</Code></Error>`
+				case r.URL.Query().Has("metrics"):
+					status, body = 404, `<Error><Code>NoSuchConfiguration</Code></Error>`
+				default:
+					return nil, fmt.Errorf("unexpected request: %s %s", r.Method, r.URL)
+				}
+				return infraListS3Response(r, status, body), nil
+			}), true)
+			s3BucketRegionLock.Lock()
+			s3BucketRegion[bucket] = "us-east-1"
+			s3BucketRegionLock.Unlock()
+			buckets, err := (infraListScope{setName: "wanted"}).listS3(context.Background(), make(chan *InfraTrigger, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			listed, ok := buckets[bucket]
+			if !ok {
+				t.Fatalf("selected bucket missing from inventory: %#v", buckets)
+			}
+			want := []string{"acl=custom"}
+			if scenario.managed {
+				want = []string{"allow_put=ses.amazonaws.com", "acl=private"}
+			}
+			if !reflect.DeepEqual(listed.Attr, want) {
+				t.Fatalf("inventory attrs = %q, want %q", listed.Attr, want)
+			}
+			if !scenario.managed {
+				return
+			}
+			input, err := S3EnsureInput("wanted", bucket, listed.Attr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			desired, err := s3DesiredPolicy(input, account)
+			if err != nil {
+				t.Fatal(err)
+			}
+			equal, err := iamPolicyEqual(desired, policy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !equal {
+				t.Fatalf("inventory attrs do not reproduce the stored policy:\ngot:  %s\nwant: %s", desired, policy)
 			}
 		})
 	}

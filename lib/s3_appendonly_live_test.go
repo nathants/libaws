@@ -60,6 +60,21 @@ func TestS3EnsureAppendOnlyConvergesAndEnforces(t *testing.T) {
 	if !s3AppendOnlyPolicyMatches(bucket, aws.ToString(policy.Policy)) {
 		t.Fatalf("bucket does not have the append-only policy: %s", aws.ToString(policy.Policy))
 	}
+	account, err := StsAccount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired, err := s3DesiredPolicy(input, account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal, err := iamPolicyEqual(aws.ToString(policy.Policy), desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equal {
+		t.Fatalf("stored bucket policy mismatch:\ngot:  %s\nwant: %s", aws.ToString(policy.Policy), desired)
+	}
 	versioning, err := client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{Bucket: aws.String(bucket)})
 	if err != nil {
 		t.Fatal(err)

@@ -28,6 +28,25 @@ def assert_source_account_permission(function_name, service):
     assert statements[0]["Condition"]["ArnLike"]["AWS:SourceArn"]
 
 
+def assert_bucket_source_account(bucket, account):
+    policy = json.loads(run(f"libaws s3-describe {bucket}"))["Policy"]
+    statements = [
+        statement
+        for statement in policy["Statement"]
+        if statement.get("Principal") == {"Service": "ses.amazonaws.com"}
+    ]
+    assert statements == [
+        {
+            "Sid": "allow put from ses.amazonaws.com",
+            "Effect": "Allow",
+            "Principal": {"Service": "ses.amazonaws.com"},
+            "Action": "s3:PutObject",
+            "Resource": f"arn:aws:s3:::{bucket}/*",
+            "Condition": {"StringEquals": {"aws:SourceAccount": account}},
+        }
+    ], policy
+
+
 def captured(*argv):
     result = subprocess.run(argv, text=True, capture_output=True)
     sys.stdout.write(result.stdout)
@@ -110,6 +129,7 @@ def test():
         infra, region, account = listed(uid)
         assert account == os.environ["LIBAWS_TEST_ACCOUNT"]
         assert infra == expected(uid, domain), infra
+        assert_bucket_source_account(bucket, account)
         assert domain in receipt_rules()
         assert_source_account_permission(function_name, "ses.amazonaws.com")
         run(f"LIBAWS_SES_ROLLBACK_TEST_DOMAIN={domain} go test ../../../../lib -run '^TestSESActiveRuleRollbackIntegration$' -count=1 -v")

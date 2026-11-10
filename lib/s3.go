@@ -85,6 +85,7 @@ type s3EnsureInput struct {
 	cors         *bool
 	corsOrigins  []string
 	ttlDays      int
+	allowPut     []string
 
 	// NOTE: you almost never want to use this, danger close.
 	// currently used in cmd/vpc/ensure_flowlogs.go
@@ -148,7 +149,20 @@ func s3PublicReadStatement(bucket string) IamStatementEntry {
 	}
 }
 
-func s3AllowPutPrincipal(bucket string, statement IamStatementEntry) (string, bool) {
+// The source-account condition keeps resources in other accounts from using
+// the service principal to write into this bucket.
+func s3AllowPutStatement(bucket, principal, account string) IamStatementEntry {
+	return IamStatementEntry{
+		Sid:       "allow put from " + principal,
+		Effect:    "Allow",
+		Principal: map[string]string{"Service": principal},
+		Action:    "s3:PutObject",
+		Resource:  "arn:aws:s3:::" + bucket + "/*",
+		Condition: map[string]any{"StringEquals": map[string]string{"aws:SourceAccount": account}},
+	}
+}
+
+func s3AllowPutPrincipal(bucket, account string, statement IamStatementEntry) (string, bool) {
 	var principal string
 	switch value := statement.Principal.(type) {
 	case map[string]any:
@@ -160,14 +174,7 @@ func s3AllowPutPrincipal(bucket string, statement IamStatementEntry) (string, bo
 	if principal == "" {
 		return "", false
 	}
-	expected := IamStatementEntry{
-		Sid:       "allow put from " + principal,
-		Effect:    "Allow",
-		Principal: map[string]string{"Service": principal},
-		Action:    "s3:PutObject",
-		Resource:  "arn:aws:s3:::" + bucket + "/*",
-	}
-	if !s3PolicyStatementEqual(statement, expected) {
+	if !s3PolicyStatementEqual(statement, s3AllowPutStatement(bucket, principal, account)) {
 		return "", false
 	}
 	return principal, true
@@ -220,10 +227,6 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 	input := s3EnsureInputDefault()
 	input.infraSetName = infraSetName
 	input.name = bucketName
-	policy := IamPolicyDocument{
-		Version:   "2012-10-17",
-		Statement: []IamStatementEntry{},
-	}
 	for _, line := range attrs {
 		line = strings.ToLower(line)
 		attr, value, err := SplitOnce(line, "=")
@@ -242,13 +245,7 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 				return nil, err
 			}
 		case "allow_put":
-			policy.Statement = append(policy.Statement, IamStatementEntry{
-				Sid:       "allow put from " + value,
-				Effect:    "Allow",
-				Action:    "s3:PutObject",
-				Resource:  "arn:aws:s3:::" + bucketName + "/*",
-				Principal: map[string]string{"Service": value},
-			})
+			input.allowPut = append(input.allowPut, value)
 		case "ttldays":
 			input.ttlDays = Atoi(value)
 		case "corsorigin":
@@ -303,14 +300,6 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 	if input.appendOnly && input.ttlDays != 0 {
 		return nil, errors.New("appendonly=true cannot be combined with object expiration")
 	}
-	if len(policy.Statement) > 0 {
-		data, err := json.Marshal(policy)
-		if err != nil {
-			Logger.Println("error:", err)
-			return nil, err
-		}
-		input.CustomPolicy = aws.String(string(data))
-	}
 	if input.cors != nil && !*input.cors && len(input.corsOrigins) > 0 {
 		err := fmt.Errorf("cannot specify cors=false and corsorigin=VALUE: %s", Pformat(input.corsOrigins))
 		Logger.Println("error:", err)
@@ -322,11 +311,14 @@ func S3EnsureInput(infraSetName, bucketName string, attrs []string) (*s3EnsureIn
 	return input, nil
 }
 
-func s3DesiredPolicy(input *s3EnsureInput) (string, error) {
+func s3DesiredPolicy(input *s3EnsureInput, account string) (string, error) {
 	policy := s3BasePolicy(input.name)
 	if input.acl == "public" {
 		policy.Id = "S3PublicPolicy"
 		policy.Statement = append(policy.Statement, s3PublicReadStatement(input.name))
+	}
+	for _, principal := range input.allowPut {
+		policy.Statement = append(policy.Statement, s3AllowPutStatement(input.name, principal, account))
 	}
 	if input.CustomPolicy != nil {
 		custom := IamPolicyDocument{}
@@ -552,7 +544,7 @@ func S3Ensure(ctx context.Context, input *s3EnsureInput, preview bool) error {
 		}
 		Logger.Printf(PreviewString(preview)+"created public access block for %s: %s\n", input.name, input.acl)
 	}
-	desiredPolicy, err := s3DesiredPolicy(input)
+	desiredPolicy, err := s3DesiredPolicy(input, account)
 	if err != nil {
 		Logger.Println("error:", err)
 		return err

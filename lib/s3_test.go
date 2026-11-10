@@ -21,7 +21,11 @@ func checkS3BucketPolicy(t *testing.T, ctx context.Context, input *s3EnsureInput
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected, err := s3DesiredPolicy(input)
+	account, err := StsAccount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := s3DesiredPolicy(input, account)
 	if err != nil {
 		t.Fatal(err)
 	}
