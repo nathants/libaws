@@ -56,6 +56,98 @@ def verify_transfer_failure_exits(instance_id, env):
         print(f"verified {command}: selected guest, top-level failure=1, per-host failure=1", flush=True)
 
 
+def set_guest_tags(env, user=None, ssh_id=None):
+    # None removes the tag.
+    fixture = {k: v for k, v in env.items() if not k.startswith("LIBAWS_EC2_TAG_FIXTURE_")}
+    if user is not None:
+        fixture["LIBAWS_EC2_TAG_FIXTURE_USER"] = user
+    if ssh_id is not None:
+        fixture["LIBAWS_EC2_TAG_FIXTURE_SSH_ID"] = ssh_id
+    run(
+        "go", "test", "./lib", "-run", "^TestEC2TransportTagFixture$", "-count=1", "-v",
+        cwd=ROOT, env=fixture, stream=True,
+    )
+
+
+def verify_hostile_tags(instance_id, env):
+    with tempfile.TemporaryDirectory(prefix="libaws-ec2-tags-") as temp:
+        directory = Path(temp)
+        marker = directory / "transport.log"
+        # Record every program a transport command could start, including the
+        # readiness callback, with NUL-separated arguments.
+        for name in ("ssh", "scp", "rsync", "bash", "aws-ec2-ip-callback"):
+            stub = directory / name
+            stub.write_text('#!/bin/sh\nprintf \'%s\\0\' "$0" "$@" >> "$LIBAWS_EC2_TRANSPORT_LOG"\n')
+            stub.chmod(0o700)
+        local = str(directory / "local file")
+        Path(local).write_text("fixture\n")
+        transport_env = dict(
+            os.environ, PATH=str(directory), LIBAWS_EC2_TRANSPORT_LOG=str(marker),
+            RSYNC_OPTIONS="--exclude=*.tmp --chmod=F600",
+        )
+        commands = {
+            "ec2-rsync-upload": ["ec2-rsync", local, ":/tmp/fixture destination/", instance_id, "--private-ip"],
+            "ec2-rsync-download": ["ec2-rsync", ":/tmp/fixture source", local, instance_id, "--private-ip"],
+            "ec2-scp": ["ec2-scp", local, ":/tmp/fixture destination", instance_id, "--private-ip"],
+            "ec2-ssh": ["ec2-ssh", instance_id, "--cmd", "true", "--private-ip"],
+            "ec2-ssh-login": ["ec2-ssh", instance_id],
+            # Never allow automatic termination, even if validation regresses.
+            "ec2-wait-ssh": ["ec2-wait-ssh", instance_id, "--max-wait", "0", "--private-ip"],
+        }
+
+        def transport(args):
+            return subprocess.run(
+                [LIBAWS, *args], env=transport_env, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True, timeout=60,
+            )
+
+        def rejected(args, message):
+            result = transport(args)
+            assert result.returncode == 1 and message in result.stderr and not result.stdout, result
+            assert not marker.exists(), marker.read_bytes()
+
+        for user, ssh_id, message in (
+            ("x@attacker.invalid:/loot/ --out-format=", None, "invalid ssh user"),  # another rsync host
+            ("x /tmp/victim/ y", None, "invalid ssh user"),  # extra local rsync source
+            ("-oProxyCommand=false", None, "invalid ssh user"),
+            ("fixture", "../../../../home/fixture/.ssh", "invalid ssh-id tag"),
+            ("fixture", f"{uuid.uuid4()} -o ProxyCommand=false", "invalid ssh-id tag"),
+        ):
+            set_guest_tags(env, user, ssh_id)
+            for args in commands.values():
+                rejected(args, message)
+            if ssh_id is None:
+                rejected(["ec2-ssh-user", instance_id], message)
+            print(f"verified hostile tags user={user!r} ssh-id={ssh_id!r}: no transport started", flush=True)
+
+        # A well-formed ssh-id without a local key falls back to default keys.
+        absent = str(uuid.uuid4())
+        assert not Path("/tmp/libaws", absent).exists()
+        set_guest_tags(env, "fixture", absent)
+        for args in commands.values():
+            rejected([*args, "--user", "x /tmp/victim/ y"], "invalid ssh user")
+        assert run(LIBAWS, "ec2-ssh-user", instance_id) == "fixture"
+        host = "fixture@" + run(LIBAWS, "ec2-ip-private", instance_id)
+        rsync = [
+            str(directory / "rsync"), "-avh", "--delete", "-e", "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no",
+            "--exclude=*.tmp", "--chmod=F600", "--",
+        ]
+        for name, want in (
+            ("ec2-rsync-upload", [*rsync, local, f"{host}:/tmp/fixture destination/"]),
+            ("ec2-rsync-download", [*rsync, f"{host}:/tmp/fixture source", local]),
+            ("ec2-scp", [
+                str(directory / "scp"), "-o", "UserKnownHostsFile=/dev/null", "-o", "StrictHostKeyChecking=no",
+                "--", local, f"{host}:/tmp/fixture destination",
+            ]),
+        ):
+            result = transport(commands[name])
+            assert result.returncode == 0, result
+            argv = marker.read_bytes().removesuffix(b"\0").decode().split("\0")
+            assert argv == want, argv
+            marker.unlink()
+        print("verified transfer paths with spaces stay single arguments after --", flush=True)
+
+
 def verify_transport_flags(instance_id):
     with tempfile.TemporaryDirectory(prefix="libaws-ec2-flags-") as temp:
         directory = Path(temp)
@@ -213,6 +305,7 @@ def test():
                 if mode == "vpc":
                     verify_transport_flags(instance_id)
                     verify_transfer_failure_exits(instance_id, dict(env, LIBAWS_EC2_EXAMPLE_UID=uid))
+                    verify_hostile_tags(instance_id, dict(env, LIBAWS_EC2_EXAMPLE_UID=uid))
             verify_wait_configuration_failures(instance_ids[0], directory)
             run(
                 "go", "test", "./lib", "-run", "^TestEC2WaitGoSshScopeIntegration$",

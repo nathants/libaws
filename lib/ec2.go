@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/sync/semaphore"
@@ -52,6 +53,11 @@ const (
 
 var ec2RegexpAlpine = regexp.MustCompile(`alpine\-\d\d?\.\d\d?\.\d\d?`)
 var ec2RegexpInstanceID = regexp.MustCompile(`^i-([0-9a-f]{8}|[0-9a-f]{17})$`)
+
+// SSH users and ephemeral-key IDs come from tags anyone with ec2:CreateTags can
+// set, and reach ssh, scp and rsync argv, local key paths and guest init scripts.
+var ec2RegexpUser = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+var ec2RegexpSshID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 var ec2Client *ec2.Client
 var ec2ClientLock sync.Mutex
@@ -722,8 +728,7 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	if config.UserName == "" {
-		err := fmt.Errorf("user name is required %v", *config)
+	if err := ec2ValidateUser(config.UserName); err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
@@ -829,8 +834,8 @@ func EC2RequestSpotFleet(ctx context.Context, spotStrategy ec2types.AllocationSt
 }
 
 func makeInit(config *EC2Config) (string, error) {
-	if config.UserName == "" {
-		err := fmt.Errorf("makeInit needs a username")
+	// The user name is interpolated into the root init script below.
+	if err := ec2ValidateUser(config.UserName); err != nil {
 		Logger.Println("error:", err)
 		return "", err
 	}
@@ -907,8 +912,7 @@ func EC2NewInstances(ctx context.Context, config *EC2Config) ([]ec2types.Instanc
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	if config.UserName == "" {
-		err := fmt.Errorf("user name is required %v", *config)
+	if err := ec2ValidateUser(config.UserName); err != nil {
 		Logger.Println("error:", err)
 		return nil, err
 	}
@@ -996,22 +1000,18 @@ func EC2Rsync(ctx context.Context, input *EC2RsyncInput) ([]*ec2SshResult, error
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	if input.User == "" {
-		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
-		for _, instance := range input.Instances[1:] {
-			user := EC2GetTag(instance.Tags, "user", "")
-			if input.User != user {
-				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
-				Logger.Println("error:", err)
-				return nil, err
-			}
-		}
-		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
-		if input.User == "" {
-			err := fmt.Errorf("no user provied and no user tag available")
-			Logger.Println("error:", err)
-			return nil, err
-		}
+	user, err := ec2SshPreflight(input.Instances, input.User)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
+	}
+	input.User = user
+	// rsync re-splits its -e command. Refuse key paths that splitting or quote
+	// parsing would change rather than depend on one rsync's quoting rules.
+	if strings.ContainsFunc(input.Key, func(r rune) bool { return unicode.IsSpace(r) || r == '\'' || r == '"' }) {
+		err := fmt.Errorf("rsync key path cannot contain whitespace or quotes: %q", input.Key)
+		Logger.Println("error:", err)
+		return nil, err
 	}
 	if input.MaxConcurrency == 0 {
 		input.MaxConcurrency = 32
@@ -1067,7 +1067,12 @@ func ec2Rsync(ctx context.Context, instance ec2types.Instance, input *EC2RsyncIn
 		"-avh",
 		"--delete",
 	}
-	tempKey := ec2EphemeralKey(instance.Tags)
+	tempKey, err := ec2EphemeralKey(instance.Tags)
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
 	if tempKey != "" {
 		rsyncCmd = append(rsyncCmd, []string{"-e", fmt.Sprintf("ssh -i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no", tempKey)}...)
 	} else if input.Key != "" {
@@ -1075,6 +1080,7 @@ func ec2Rsync(ctx context.Context, instance ec2types.Instance, input *EC2RsyncIn
 	} else {
 		rsyncCmd = append(rsyncCmd, []string{"-e", "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"}...)
 	}
+	// RSYNC_OPTIONS is the operator's space-separated option list.
 	if os.Getenv("RSYNC_OPTIONS") != "" {
 		rsyncCmd = append(rsyncCmd, SplitWhiteSpace(os.Getenv("RSYNC_OPTIONS"))...)
 	}
@@ -1095,18 +1101,7 @@ func ec2Rsync(ctx context.Context, instance ec2types.Instance, input *EC2RsyncIn
 		Logger.Println("error:", result.Err)
 		return result
 	}
-	for _, src := range SplitWhiteSpace(source) {
-		src = strings.Trim(src, " ")
-		if src != "" {
-			rsyncCmd = append(rsyncCmd, src)
-		}
-	}
-	for _, dst := range SplitWhiteSpace(destination) {
-		dst = strings.Trim(dst, " ")
-		if dst != "" {
-			rsyncCmd = append(rsyncCmd, dst)
-		}
-	}
+	rsyncCmd = append(rsyncCmd, "--", source, destination)
 	cmd := exec.CommandContext(ctx, rsyncCmd[0], rsyncCmd[1:]...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -1211,23 +1206,12 @@ func EC2Scp(ctx context.Context, input *EC2ScpInput) ([]*ec2SshResult, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	if input.User == "" {
-		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
-		for _, instance := range input.Instances[1:] {
-			user := EC2GetTag(instance.Tags, "user", "")
-			if input.User != user {
-				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
-				Logger.Println("error:", err)
-				return nil, err
-			}
-		}
-		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
-		if input.User == "" {
-			err := fmt.Errorf("no user provied and no user tag available")
-			Logger.Println("error:", err)
-			return nil, err
-		}
+	user, err := ec2SshPreflight(input.Instances, input.User)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
 	}
+	input.User = user
 	if input.MaxConcurrency == 0 {
 		input.MaxConcurrency = 32
 	}
@@ -1283,7 +1267,12 @@ func ec2Scp(ctx context.Context, instance ec2types.Instance, input *EC2ScpInput)
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
-	tempKey := ec2EphemeralKey(instance.Tags)
+	tempKey, err := ec2EphemeralKey(instance.Tags)
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
 	if tempKey != "" {
 		scpCmd = append(scpCmd, []string{"-o", "IdentitiesOnly=yes", "-i", tempKey}...)
 	} else if input.Key != "" {
@@ -1306,7 +1295,7 @@ func ec2Scp(ctx context.Context, instance ec2types.Instance, input *EC2ScpInput)
 		Logger.Println("error:", result.Err)
 		return result
 	}
-	scpCmd = append(scpCmd, []string{source, destination}...)
+	scpCmd = append(scpCmd, "--", source, destination)
 	cmd := exec.CommandContext(ctx, scpCmd[0], scpCmd[1:]...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -1444,23 +1433,12 @@ func EC2Ssh(ctx context.Context, input *EC2SshInput) ([]*ec2SshResult, error) {
 		Logger.Println("error:", err)
 		return nil, err
 	}
-	if input.User == "" {
-		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
-		for _, instance := range input.Instances[1:] {
-			user := EC2GetTag(instance.Tags, "user", "")
-			if input.User != user {
-				err := fmt.Errorf("not all instance users are the same, want: %s, got: %s", input.User, user)
-				Logger.Println("error:", err)
-				return nil, err
-			}
-		}
-		input.User = EC2GetTag(input.Instances[0].Tags, "user", "")
-		if input.User == "" {
-			err := fmt.Errorf("no user provied and no user tag available")
-			Logger.Println("error:", err)
-			return nil, err
-		}
+	user, err := ec2SshPreflight(input.Instances, input.User)
+	if err != nil {
+		Logger.Println("error:", err)
+		return nil, err
 	}
+	input.User = user
 	if !strings.HasPrefix(input.Cmd, "#!") && !strings.HasPrefix(input.Cmd, "set ") {
 		input.Cmd = "#!/bin/bash\nset -eou pipefail\n" + input.Cmd
 	}
@@ -1511,16 +1489,66 @@ type ec2SshResult struct {
 	Stdout     []string
 }
 
-func ec2EphemeralKey(tags []ec2types.Tag) string {
-	for _, tag := range tags {
-		if *tag.Key == "ssh-id" {
-			path := fmt.Sprintf("/tmp/libaws/%s/id_ed25519", *tag.Value)
-			if Exists(path) {
-				return path
+// ec2ValidateUser rejects SSH login names that ssh, scp, rsync or a shell
+// could read as anything other than a single user name.
+func ec2ValidateUser(user string) error {
+	if !ec2RegexpUser.MatchString(user) {
+		return fmt.Errorf("invalid ssh user %q, must match %s", user, ec2RegexpUser)
+	}
+	return nil
+}
+
+// EC2SshUser returns the validated login user: user when provided, otherwise
+// the user tag shared by every instance.
+func EC2SshUser(instances []ec2types.Instance, user string) (string, error) {
+	if user == "" {
+		if len(instances) == 0 {
+			return "", fmt.Errorf("no instances")
+		}
+		user = EC2GetTag(instances[0].Tags, "user", "")
+		for _, instance := range instances[1:] {
+			if other := EC2GetTag(instance.Tags, "user", ""); other != user {
+				return "", fmt.Errorf("not all instance users are the same, want: %q, got: %q", user, other)
 			}
 		}
+		if user == "" {
+			return "", fmt.Errorf("no user provided and no user tag available")
+		}
 	}
-	return ""
+	if err := ec2ValidateUser(user); err != nil {
+		return "", err
+	}
+	return user, nil
+}
+
+// ec2SshPreflight validates the login user and every instance's ephemeral-key
+// tag before any transport process starts for any instance.
+func ec2SshPreflight(instances []ec2types.Instance, user string) (string, error) {
+	user, err := EC2SshUser(instances, user)
+	if err != nil {
+		return "", err
+	}
+	for _, instance := range instances {
+		if _, err := ec2EphemeralKey(instance.Tags); err != nil {
+			return "", err
+		}
+	}
+	return user, nil
+}
+
+func ec2EphemeralKey(tags []ec2types.Tag) (string, error) {
+	id, ok := ec2Tags(tags)["ssh-id"]
+	if !ok {
+		return "", nil
+	}
+	if !ec2RegexpSshID.MatchString(id) {
+		return "", fmt.Errorf("invalid ssh-id tag %q, must be a lowercase uuid", id)
+	}
+	path := fmt.Sprintf("/tmp/libaws/%s/id_ed25519", id)
+	if !Exists(path) {
+		return "", nil
+	}
+	return path, nil
 }
 
 func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput) *ec2SshResult {
@@ -1537,7 +1565,12 @@ func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput)
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
-	tempKey := ec2EphemeralKey(instance.Tags)
+	tempKey, err := ec2EphemeralKey(instance.Tags)
+	if err != nil {
+		Logger.Println("error:", err)
+		result.Err = err
+		return result
+	}
 	if tempKey != "" {
 		sshCmd = append(sshCmd, []string{"-i", tempKey, "-o", "IdentitiesOnly=yes"}...)
 	} else if input.Key != "" {
@@ -1549,7 +1582,7 @@ func ec2Ssh(ctx context.Context, instance ec2types.Instance, input *EC2SshInput)
 	} else {
 		target += *instance.PublicDnsName
 	}
-	sshCmd = append(sshCmd, target)
+	sshCmd = append(sshCmd, "--", target)
 	failureMessage := "failure"
 	if len(input.Instances) == 1 {
 		failureMessage = fmt.Sprintf("failure on %s", *instance.InstanceId)
@@ -1643,31 +1676,32 @@ func EC2SshLogin(instance ec2types.Instance, user, key string) error {
 		d.Start()
 		defer d.End()
 	}
-	if user == "" {
-		user = EC2GetTag(instance.Tags, "user", "")
-		if user == "" {
-			err := fmt.Errorf("no user provied and no user tag available")
-			Logger.Println("error:", err)
-			return err
-		}
+	user, err := ec2SshPreflight([]ec2types.Instance{instance}, user)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
 	}
 	sshCmd := []string{
 		"ssh",
-		user + "@" + *instance.PublicDnsName,
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 	}
-	tempKey := ec2EphemeralKey(instance.Tags)
+	tempKey, err := ec2EphemeralKey(instance.Tags)
+	if err != nil {
+		Logger.Println("error:", err)
+		return err
+	}
 	if tempKey != "" {
 		sshCmd = append(sshCmd, []string{"-i", tempKey, "-o", "IdentitiesOnly=yes"}...)
 	} else if key != "" {
 		sshCmd = append(sshCmd, []string{"-i", key, "-o", "IdentitiesOnly=yes"}...)
 	}
+	sshCmd = append(sshCmd, "--", user+"@"+*instance.PublicDnsName)
 	cmd := exec.Command(sshCmd[0], sshCmd[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		Logger.Println("error:", err)
 		return err
@@ -1693,6 +1727,10 @@ func EC2AmiUser(ctx context.Context, amiID string) (string, error) {
 	user := EC2GetTag(out.Images[0].Tags, "user", "")
 	if user == "" {
 		err := fmt.Errorf("no user for: %s", amiID)
+		Logger.Println("error:", err)
+		return "", err
+	}
+	if err := ec2ValidateUser(user); err != nil {
 		Logger.Println("error:", err)
 		return "", err
 	}
@@ -2083,6 +2121,12 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 		d.Start()
 		defer d.End()
 	}
+	if input.User != "" {
+		if err := ec2ValidateUser(input.User); err != nil {
+			Logger.Println("error:", err)
+			return nil, err
+		}
+	}
 	start := time.Now()
 	for {
 		now := time.Now()
@@ -2111,10 +2155,17 @@ func EC2WaitSsh(ctx context.Context, input *EC2WaitSshInput) ([]string, error) {
 				ips = append(ips, *instance.PublicDnsName)
 			}
 		}
+		// Tag errors are configuration failures, not unready hosts.
+		if len(instances) > 0 {
+			if _, err := ec2SshPreflight(instances, input.User); err != nil {
+				Logger.Println("error:", err)
+				return nil, err
+			}
+		}
 		// add an executable on PATH named `aws-ec2-ip-callback` which
 		// will be invoked with the ipv4 of all instances to be waited
 		// before each attempt
-		_ = exec.Command("bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(ips, " "))).Run()
+		_ = exec.Command("bash", append([]string{"-c", `aws-ec2-ip-callback "$@" && sleep 1`, "aws-ec2-ip-callback"}, ips...)...).Run()
 
 		results, err := EC2Ssh(context.Background(), &EC2SshInput{
 			User:           input.User,
@@ -2338,7 +2389,7 @@ func ec2WaitGoSsh(ctx context.Context, input *EC2WaitGoSshInput, runSSH func(con
 		if len(sshInput.TargetAddrs) > 0 {
 			// An optional callback on PATH receives the selected addresses before
 			// each attempt, with a one-second delay after a successful callback.
-			_ = exec.CommandContext(ctx, "bash", "-c", fmt.Sprintf("aws-ec2-ip-callback %s && sleep 1", strings.Join(sshInput.TargetAddrs, " "))).Run()
+			_ = exec.CommandContext(ctx, "bash", append([]string{"-c", `aws-ec2-ip-callback "$@" && sleep 1`, "aws-ec2-ip-callback"}, sshInput.TargetAddrs...)...).Run()
 			results, err = runSSH(ctx, sshInput)
 		}
 		if ctx.Err() != nil {
@@ -2415,6 +2466,12 @@ func EC2NewAmi(ctx context.Context, input *EC2NewAmiInput) (string, error) {
 	now := time.Now()
 	imageName := fmt.Sprintf("%s__%d", name, now.Unix())
 	userTag := EC2GetTag(i.Tags, "user", "")
+	if userTag != "" {
+		if err := ec2ValidateUser(userTag); err != nil {
+			Logger.Println("error:", err)
+			return "", err
+		}
+	}
 	createdAt := now.UTC().Format(time.RFC3339)
 
 	baseTags := []ec2types.Tag{
@@ -2898,6 +2955,9 @@ type ec2GoSshResult struct {
 func ec2GoSshConfig(input *EC2GoSshInput) (*ssh.ClientConfig, error) {
 	if input.User == "" {
 		return nil, fmt.Errorf("expected user")
+	}
+	if err := ec2ValidateUser(input.User); err != nil {
+		return nil, err
 	}
 	if input.MaxConcurrency < 0 || input.TimeoutSeconds < 0 {
 		return nil, fmt.Errorf("SSH concurrency and timeout must not be negative")

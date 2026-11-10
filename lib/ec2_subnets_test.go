@@ -231,6 +231,71 @@ func TestEC2TransferFailureFixture(t *testing.T) {
 	}
 }
 
+// Set the owned guest's user and ssh-id tags for the example's hostile-tag
+// assertions. An unset variable removes that tag.
+func TestEC2TransportTagFixture(t *testing.T) {
+	id, uid := os.Getenv("LIBAWS_EC2_SUBNET_TEST_INSTANCE"), os.Getenv("LIBAWS_EC2_EXAMPLE_UID")
+	if id == "" || uid == "" {
+		t.Skip("run through examples/misc/ec2")
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{12}$`).MatchString(uid) {
+		t.Fatal("requires unique example ID")
+	}
+	requireLiveAWSAccount(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	instances, err := EC2DescribeInstances(ctx, []string{id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(instances) != 1 || aws.ToString(instances[0].KeyName) != "test-keypair-"+uid || EC2Name(instances[0].Tags) != "test-ec2-vpc-"+uid {
+		t.Fatal("requires the example's owned VPC-mode guest")
+	}
+	want := map[string]*string{}
+	var set, remove []ec2types.Tag
+	for key, name := range map[string]string{"user": "LIBAWS_EC2_TAG_FIXTURE_USER", "ssh-id": "LIBAWS_EC2_TAG_FIXTURE_SSH_ID"} {
+		if value, ok := os.LookupEnv(name); ok {
+			set = append(set, ec2types.Tag{Key: aws.String(key), Value: aws.String(value)})
+			want[key] = aws.String(value)
+		} else {
+			remove = append(remove, ec2types.Tag{Key: aws.String(key)})
+			want[key] = nil
+		}
+	}
+	if len(set) > 0 {
+		if _, err := EC2Client().CreateTags(ctx, &ec2.CreateTagsInput{Resources: []string{id}, Tags: set}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(remove) > 0 {
+		if _, err := EC2Client().DeleteTags(ctx, &ec2.DeleteTagsInput{Resources: []string{id}, Tags: remove}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for {
+		instances, err := EC2ListInstances(ctx, []string{id}, ec2types.InstanceStateNameRunning)
+		if err != nil {
+			t.Fatal(err)
+		}
+		visible := len(instances) == 1
+		if visible {
+			tags := ec2Tags(instances[0].Tags)
+			for key, value := range want {
+				got, ok := tags[key]
+				visible = visible && ok == (value != nil) && (value == nil || got == *value)
+			}
+		}
+		if visible {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(time.Second):
+		}
+	}
+}
+
 // The CLI example owns the launch and cleanup; this checks the request AWS stored.
 func TestEC2SubnetsFromVpcIntegration(t *testing.T) {
 	instanceID := os.Getenv("LIBAWS_EC2_SUBNET_TEST_INSTANCE")

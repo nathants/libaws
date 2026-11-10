@@ -3,7 +3,6 @@ package libaws
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/alexflint/go-arg"
 	"github.com/nathants/libaws/lib"
@@ -30,16 +29,9 @@ func ec2SshUser() {
 	if err != nil {
 		lib.Logger.Fatal("error: ", err)
 	}
-	users := map[string]any{}
-	for _, instance := range instances {
-		users[lib.EC2GetTag(instance.Tags, "user", "")] = nil
+	user, err := lib.EC2SshUser(instances, "")
+	if err != nil {
+		lib.Logger.Fatal("error: ", err)
 	}
-	if len(users) > 1 {
-		lib.Logger.Fatal("error: too many users ", lib.Pformat(instances))
-	}
-	for user := range users {
-		fmt.Println(user)
-		os.Exit(0)
-	}
-	lib.Logger.Fatal("no user tag found")
+	fmt.Println(user)
 }

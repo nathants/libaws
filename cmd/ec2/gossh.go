@@ -17,7 +17,7 @@ func init() {
 
 type ec2GosshArgs struct {
 	Selectors          []string `arg:"positional,required" help:"instance-id | dns-name | private-dns-name | tag | vpc-id | subnet-id | security-group-id | ip-address | private-ip-address"`
-	User               string   `arg:"-u,--user" help:"gossh user if not tagged on instance as 'user'"`
+	User               string   `arg:"-u,--user" help:"ssh user (required)"`
 	Cmd                string   `arg:"-c,--cmd"`
 	Stdin              string   `arg:"-s,--stdin" help:"stdin value to be provided to remote cmd"`
 	Timeout            int      `arg:"-t,--timeout" help:"seconds before gossh cmd is considered failed"`

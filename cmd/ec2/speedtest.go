@@ -101,6 +101,7 @@ func ec2Speedtest() {
 		"ssh",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
+		"--",
 		sshUser+"@"+*instances[0].PublicDnsName,
 		"cat /dev/zero",
 	)
@@ -153,6 +154,7 @@ func ec2Speedtest() {
 		"ssh",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
+		"--",
 		sshUser+"@"+*instances[0].PublicDnsName,
 		"cat > /dev/null",
 	)

@@ -54,7 +54,7 @@ func TestEC2WaitGoSshConfigurationFailureNeverTerminates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"missing-user", "missing-key", "invalid-key", "invalid-rsa", "negative-concurrency", "negative-wait", "no-selectors", "empty-selector"} {
+	for _, name := range []string{"missing-user", "invalid-user", "missing-key", "invalid-key", "invalid-rsa", "negative-concurrency", "negative-wait", "no-selectors", "empty-selector"} {
 		t.Run(name, func(t *testing.T) {
 			// No callback or real SSH executable may run in this regression.
 			t.Setenv("PATH", t.TempDir())
@@ -93,6 +93,8 @@ func TestEC2WaitGoSshConfigurationFailureNeverTerminates(t *testing.T) {
 			switch name {
 			case "missing-user":
 				input.User = ""
+			case "invalid-user":
+				input.User = "x@attacker.invalid:/loot/ --out-format="
 			case "missing-key":
 				input.Ed25519PrivKey = ""
 			case "invalid-key":
@@ -383,6 +385,7 @@ func TestEC2GoSshRejectsInvalidConfiguration(t *testing.T) {
 		edit func(*EC2GoSshInput)
 	}{
 		{"missing-user", func(input *EC2GoSshInput) { input.User = "" }},
+		{"invalid-user", func(input *EC2GoSshInput) { input.User = "-oProxyCommand=false" }},
 		{"missing-key", func(input *EC2GoSshInput) { input.Ed25519PrivKey = "" }},
 		{"invalid-key", func(input *EC2GoSshInput) { input.Ed25519PrivKey = "invalid" }},
 		{"invalid-rsa", func(input *EC2GoSshInput) { input.RsaPrivKey = "invalid" }},
